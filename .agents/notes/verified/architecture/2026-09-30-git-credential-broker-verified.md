@@ -44,6 +44,14 @@ DSH 容器 dsh
 
 ## 2. 与提案的偏离（每条都是实测驱动）
 
+**`init` 的 `--mode`：一个不能省的开关。** `config.json` 里的路径由**读它的那个 broker 进程**解析。
+宿主进程看到的是宿主文件系统，sidecar 只看到它 `volumes:` 挂载进来的东西 —— 同一份文件在两种部署下
+含义不同，所以**一份配置服务不了两种部署**。原先两个脚本各写各的路径（host-setup.sh 写宿主路径，
+deploy-sidecar.sh 写容器内路径）就不会有这个问题；把两者合并成一个 `init` 时我漏了这件事，于是
+`init` 记录宿主路径、`compose` 却按容器路径挂载 —— **sidecar 起不来（读不到自己的私钥）**。
+现在两种模式的路径由 `src/commands/deployment.ts` 单点定义，`init --mode` 与 `compose` 都从那里取，
+并有交叉测试钉住；sidecar 模式下传了冲突的 `--socket-path` 会直接报错而不是静默记下。
+
 | 提案 | 实际实现 | 理由 |
 |---|---|---|
 | broker 走 **LAN HTTP + 共享密钥** | **unix domain socket** | 容器 `all_proxy` 指向另一台机器，明文 HTTP 会把共享密钥与 token 送进第三方进程。socket 不受代理影响、不暴露端口、无需 TLS/防重放。共享密钥随之取消 |

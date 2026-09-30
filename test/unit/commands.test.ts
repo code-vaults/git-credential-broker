@@ -14,9 +14,11 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { renderCompose } from '../../src/commands/compose.ts';
+import { SIDECAR } from '../../src/commands/deployment.ts';
 import { buildBrokerConfig, parsePermissions, performInit } from '../../src/commands/init.ts';
 import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../src/commands/support.ts';
 import { performSetup } from '../../src/commands/setup.ts';
+import type { BrokerConfig, GithubAppHostConfig } from '../../src/types.ts';
 
 /** Scratch space for the whole file. */
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-commands-'));
@@ -55,6 +57,18 @@ function writeKey(target: string): string {
 function gitEntries(file: string): string[] {
   const output = execFileSync('git', ['config', '--file', file, '--list'], { encoding: 'utf8' });
   return output.split('\n').filter((line) => line.length > 0);
+}
+
+/**
+ * The github-app host block of a config, narrowed past the provider union.
+ *
+ * @param config - a validated configuration.
+ * @returns the host block.
+ */
+function appHost(config: BrokerConfig): GithubAppHostConfig {
+  const block = config.hosts['github.com'];
+  if (block?.provider !== 'github-app') throw new Error('expected a github-app host block');
+  return block;
 }
 
 describe('parseArgs', () => {
@@ -158,13 +172,13 @@ describe('init', () => {
   const fakeHome = dir('init-home');
   const baseInput = {
     allow: ['acme/widget'],
-    socketPath: '/run/git-broker/broker.sock',
+    hostSocketPath: '/run/git-cred-broker/broker.sock',
     clientId: 'Iv1.example',
     appId: 123456,
     permissions: { contents: 'write' },
     force: false,
     // This suite runs inside the very container init refuses to run in, so the detected
-    // environment is injected. The guard itself is exercised by the mount test below.
+    // environment is injected. The guard itself is exercised by the tests below.
     env: { isInsideContainer: () => false, home: fakeHome },
   };
 
@@ -177,7 +191,51 @@ describe('init', () => {
     assert.equal(fs.statSync(result.keyPath).mode & 0o777, 0o600);
     assert.equal(fs.statSync(result.configPath).mode & 0o777, 0o600);
     assert.equal(result.config.hosts['github.com']?.allow[0], 'acme/widget');
-    assert.equal(result.config.socketPath, '/run/git-broker/broker.sock');
+    assert.equal(result.config.socketPath, baseInput.hostSocketPath);
+    assert.equal(result.mode, 'host');
+  });
+
+  it('records host paths in host mode and sidecar paths in sidecar mode', () => {
+    const root = dir(`init-modes-${Math.random().toString(36).slice(2)}`);
+    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    const dir0 = path.join(root, 'deploy');
+
+    const hostMode = performInit({ ...baseInput, cert, dir: dir0 });
+    const hostKey = appHost(hostMode.config).privateKeyPath;
+    assert.equal(hostKey, path.join(dir0, 'app.pem'), 'a host process reads the host path');
+    assert.equal(hostMode.config.auditPath, path.join(dir0, 'log', 'audit.jsonl'));
+
+    // Omitted entirely: a plain `init --mode sidecar` must not be rejected for a flag it does
+    // not need, which is exactly the bug this covers.
+    const sidecarMode = performInit({
+      ...baseInput,
+      hostSocketPath: undefined,
+      cert,
+      dir: dir0,
+      mode: 'sidecar',
+      force: true,
+    });
+    assert.equal(appHost(sidecarMode.config).privateKeyPath, SIDECAR.keyPath);
+    assert.equal(sidecarMode.config.socketPath, SIDECAR.socketPath);
+    assert.equal(sidecarMode.config.auditPath, SIDECAR.auditPath);
+    // The key itself is still a host file in both modes; only what the config records differs.
+    assert.equal(sidecarMode.keyPath, path.join(dir0, 'app.pem'));
+  });
+
+  it('rejects an override that the sidecar deployment fixes, instead of ignoring it', () => {
+    const root = dir(`init-fixed-${Math.random().toString(36).slice(2)}`);
+    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    assert.throws(
+      () =>
+        performInit({
+          ...baseInput,
+          cert,
+          dir: path.join(root, 'deploy'),
+          mode: 'sidecar',
+          hostSocketPath: '/somewhere/else.sock',
+        }),
+      /must be \/run\/git-broker\/broker\.sock with --mode sidecar/,
+    );
   });
 
   it('refuses to run inside the container', () => {
@@ -257,7 +315,7 @@ describe('init', () => {
           cert: '/tmp/whatever.pem',
           dir: '/tmp/deploy',
           clientId: '',
-          socketPath: '',
+          hostSocketPath: '',
         }),
       /socketPath is required/,
     );
@@ -269,7 +327,6 @@ describe('compose', () => {
     dir: '/volume1/docker/git-cred-broker',
     socketDir: '/volume1/homes/u/Workspaces/h/.dsh/git-broker',
     user: '1026:100',
-    socketPath: '/run/git-broker/broker.sock',
     image: 'node:24-slim',
     packageSpec: 'git-credential-broker@0.1.0',
     name: 'git-cred-broker',
@@ -290,6 +347,40 @@ describe('compose', () => {
 
   it('runs the daemon from the published package, not from a copied checkout', () => {
     assert.match(rendered, /npx --yes --package 'git-credential-broker@0\.1\.0' git-credential-brokerd/);
-    assert.match(rendered, /socketDir.*|.*:\/run\/git-broker/);
+    assert.match(rendered, new RegExp(`--config ${SIDECAR.configPath}`));
+  });
+
+  it('states the config paths it requires, so --mode sidecar is discoverable', () => {
+    assert.match(rendered, /git-credential-broker init --mode sidecar/);
+    assert.match(rendered, new RegExp(`privateKeyPath ${SIDECAR.keyPath.replace(/[/.]/g, '\\$&')}`));
+  });
+
+  it('mounts exactly the paths a --mode sidecar config records', () => {
+    // The regression this guards: `init` once recorded host paths while `compose` mounted the
+    // files at container paths, so the sidecar could not read its own key.
+    const deployDir = '/volume1/docker/git-cred-broker';
+    const config = buildBrokerConfig({
+      cert: '/tmp/unused.pem',
+      dir: deployDir,
+      allow: ['acme/widget'],
+      hostSocketPath: '/ignored-in-sidecar-mode.sock',
+      mode: 'sidecar',
+      clientId: 'Iv1.x',
+      appId: 1,
+      permissions: { contents: 'write' },
+      force: true,
+    });
+
+    assert.equal(config.socketPath, SIDECAR.socketPath);
+    assert.equal(appHost(config).privateKeyPath, SIDECAR.keyPath);
+    assert.equal(config.auditPath, SIDECAR.auditPath);
+
+    assert.equal(rendered.includes(`${deployDir}/config.json:${SIDECAR.configPath}:ro`), true);
+    assert.equal(rendered.includes(`${deployDir}/app.pem:${SIDECAR.keyPath}:ro`), true);
+    assert.equal(rendered.includes(`${deployDir}/log:${SIDECAR.auditDir}`), true);
+    assert.equal(
+      rendered.includes('/volume1/homes/u/Workspaces/h/.dsh/git-broker:' + SIDECAR.socketDir),
+      true,
+    );
   });
 });

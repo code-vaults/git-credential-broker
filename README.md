@@ -108,11 +108,16 @@ rather than silently over-granting.
 
 ## Install
 
-### Host: install the key and write the config
-
 ```sh
 npm install -g git-credential-broker      # or use npx git-credential-broker ...
 ```
+
+The paths inside `config.json` are resolved by the **broker process**, not by whoever wrote the
+file. A host process sees the host's filesystem; a sidecar sees only what its `volumes:` mount.
+So `--mode` picks which deployment the recorded paths must suit, and it has to match how you
+start the broker.
+
+### Host process (the host has Node)
 
 ```sh
 git-credential-broker init \
@@ -120,32 +125,44 @@ git-credential-broker init \
   --allow code-vaults/my-repo \
   --client-id Iv23lifamTDN4XTLvLuk \
   --app-id 5138420
-```
 
-`init` installs the key `0600`, generates the configuration and **validates it with the same code
-the daemon uses**, so a mistake is caught here rather than at the first push. It refuses to run
-inside the container, refuses to put the key anywhere the container can read, and refuses a
-malformed allowlist entry. `--force` overwrites an existing config;
-`--permissions contents=write,pull_requests=write` changes what the token may do.
-
-Then run the daemon, or see the sidecar section below if the host has no Node:
-
-```sh
 git-credential-brokerd --config /volume1/docker/git-cred-broker/config.json --check   # validate, bind nothing
 git-credential-brokerd --config /volume1/docker/git-cred-broker/config.json
 ```
 
-### Containerised deployment (when the host has no Node)
+This records `privateKeyPath: /volume1/docker/git-cred-broker/app.pem` and whatever
+`--socket-path` you gave it (default `/run/git-cred-broker/broker.sock`).
+
+### Docker sidecar (the usual NAS case: Docker present, Node absent)
 
 A NAS that has Docker usually does not have Node — and the broker does not need a checkout there
 at all. `compose` prints a self-contained sidecar that fetches the published package:
 
 ```sh
+git-credential-broker init --mode sidecar \
+  --cert ~/Downloads/git-credential-broker.private-key.pem \
+  --allow code-vaults/my-repo \
+  --client-id Iv23lifamTDN4XTLvLuk \
+  --app-id 5138420
+
 git-credential-broker compose \
   --dir /volume1/docker/git-cred-broker \
   --socket-dir ~/Workspaces/my-project/.dsh/git-broker > docker-compose.broker.yml
 docker compose -f docker-compose.broker.yml up -d
 ```
+
+`--mode sidecar` records `/etc/git-cred-broker/app.pem`, `/run/git-broker/broker.sock` and
+`/var/log/git-cred-broker/audit.jsonl` — exactly the paths `compose` mounts. Both commands read
+that list from one definition, so they cannot drift apart, and a conflicting `--socket-path` in
+sidecar mode is **rejected** rather than silently recorded. (They did drift once: `init` recorded
+host paths while `compose` mounted the files at container paths, which produced a sidecar that
+could not read its own key.)
+
+In both modes `init` installs the key `0600`, generates the configuration and **validates it with
+the same code the daemon uses**, so a mistake is caught here rather than at the first push. It
+refuses to run inside the container, refuses to put the key anywhere the container can read, and
+refuses a malformed allowlist entry. `--force` overwrites an existing config;
+`--permissions contents=write,pull_requests=write` changes what the token may do.
 
 The sidecar runs with the key mounted read-only, no published ports, no capabilities and a
 read-only root filesystem. There is nothing to copy and nothing to build, which is the point of

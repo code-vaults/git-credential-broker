@@ -1,26 +1,26 @@
 /**
  * `compose` — print a Docker sidecar definition for the broker.
  *
- * Replaces the old `deploy-sidecar.sh` compose generation. The broker runs in its own container
- * with the private key mounted read-only, no ports, no capabilities and a read-only root
- * filesystem; the only surface it shares with anything else is the socket directory.
+ * The broker runs in its own container with the private key mounted read-only, no published
+ * ports, no capabilities and a read-only root filesystem; the only surface it shares with
+ * anything else is the socket directory. The container fetches the published package, so there
+ * is no checkout to copy and nothing to build on the host.
  *
- * The container fetches the package itself, so there is no checkout to copy and nothing to
- * build on the host — which is the point of publishing this to npm.
+ * The mount targets are constants from `deployment.ts`, shared with `init --mode sidecar`, so
+ * the paths recorded in `config.json` and the paths this file mounts cannot drift apart.
  */
 import { packageVersion } from '../version.ts';
+import { SIDECAR } from './deployment.ts';
 import { fail, parseArgs, say } from './support.ts';
 
 /** Everything `compose` needs, resolved. */
 export interface ComposeInput {
   /** Host directory holding config.json, app.pem and log/. */
   readonly dir: string;
-  /** Host directory the DSH container already mounts, where the socket will appear. */
+  /** Host directory the pushing container already mounts, where the socket will appear. */
   readonly socketDir: string;
   /** `uid:gid` the sidecar runs as; must match the container that needs the socket. */
   readonly user: string;
-  /** Socket path inside the sidecar. Must match the config's `socketPath`. */
-  readonly socketPath: string;
   /** Base image. */
   readonly image: string;
   /** npm spec to run, e.g. `git-credential-broker@0.1.0`. */
@@ -45,6 +45,20 @@ export function renderCompose(input: ComposeInput): string {
 #
 #   docker compose -f <this file> up -d
 #
+# IMPORTANT: this file fixes where the sidecar sees things, so config.json must have been
+# written for it. Create it with:
+#
+#   git-credential-broker init --mode sidecar --cert <key.pem> --allow <owner/repo> \\
+#     --client-id <id> --app-id <id> --dir ${input.dir}
+#
+# which records exactly these paths (both commands read them from one definition):
+#
+#   socketPath     ${SIDECAR.socketPath}
+#   privateKeyPath ${SIDECAR.keyPath}
+#   auditPath      ${SIDECAR.auditPath}
+#
+# A config written with --mode host records host paths and the sidecar will not start.
+#
 # The image installs the package on start. If you would rather not depend on the registry at
 # boot, build a two-line image instead:
 #
@@ -52,7 +66,7 @@ export function renderCompose(input: ComposeInput): string {
 #   RUN npm install -g ${input.packageSpec}
 #
 # and replace \`command\` below with:
-#   ["git-credential-brokerd", "--config", "/etc/git-cred-broker/config.json"]
+#   ["git-credential-brokerd", "--config", "${SIDECAR.configPath}"]
 services:
   ${input.name}:
     image: ${input.image}
@@ -72,14 +86,14 @@ services:
     command:
       - sh
       - -c
-      - exec npx --yes --package '${input.packageSpec}' git-credential-brokerd --config /etc/git-cred-broker/config.json
+      - exec npx --yes --package '${input.packageSpec}' git-credential-brokerd --config ${SIDECAR.configPath}
     volumes:
-      - ${input.dir}/config.json:/etc/git-cred-broker/config.json:ro
-      - ${input.dir}/app.pem:/etc/git-cred-broker/app.pem:ro
-      - ${input.dir}/log:/var/log/git-cred-broker
-      - ${socketDir}:/run/git-broker
-# The socket lands at ${socketDir}${input.socketPath.replace('/run/git-broker', '')} on the host, and the config expects it at
-# ${input.socketPath} inside the sidecar. Point the pushing environment at the same socket with:
+      - ${input.dir}/config.json:${SIDECAR.configPath}:ro
+      - ${input.dir}/app.pem:${SIDECAR.keyPath}:ro
+      - ${input.dir}/log:${SIDECAR.auditDir}
+      - ${socketDir}:${SIDECAR.socketDir}
+# The socket appears at ${socketDir}${SIDECAR.socketPath.slice(SIDECAR.socketDir.length)} on the host. Point the pushing
+# environment at the same socket with:
 #   git-credential-broker setup --socket <that path as the pusher sees it>
 `;
 }
@@ -87,12 +101,12 @@ services:
 /** Usage text for `compose`. */
 export const COMPOSE_USAGE = `Usage: git-credential-broker compose [options]
 
-Print a Docker sidecar definition for the broker (to stdout).
+Print a Docker sidecar definition for the broker (to stdout). Pair it with a config written by
+\`init --mode sidecar\`, whose paths this file fixes.
 
   --dir <path>        Host directory holding config.json, app.pem and log/
   --socket-dir <path> Host directory the pushing container already mounts
   --user <uid:gid>    UID the sidecar runs as (default: this user)
-  --socket <path>     Socket path inside the sidecar (default: /run/git-broker/broker.sock)
   --image <name>      Base image (default: node:24-slim)
   --package <spec>    npm spec to run (default: git-credential-broker@<version>)
   --name <name>       Service and container name (default: git-cred-broker)
@@ -127,7 +141,6 @@ export function runCompose(argv: readonly string[]): number {
       dir,
       socketDir,
       user: args.value('user') ?? (uid !== undefined && gid !== undefined ? `${uid}:${gid}` : '1000:1000'),
-      socketPath: args.value('socket') ?? '/run/git-broker/broker.sock',
       image: args.value('image') ?? 'node:24-slim',
       packageSpec: args.value('package') ?? `git-credential-broker@${packageVersion()}`,
       name: args.value('name') ?? 'git-cred-broker',
