@@ -61,13 +61,6 @@ jobs:
           $out = Get-Content $log -Raw
           Write-Host "exit=$code"
           Write-Host $out
-            # An all-backtick fence inside a double-quoted string escapes the closing quote and the
-            # whole step fails to parse, so build it from its character code.
-          $fence = [string]::new([char]96, 3)
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### the broker refuses to start here"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "${fence}text"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ([string]$out)
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $fence
           if ($code -eq 0) { throw 'the broker ran on native Windows' }
           if ($out -notmatch 'native Windows is not supported') { throw 'the refusal did not say why' }
 
@@ -85,11 +78,6 @@ jobs:
           $out = Get-Content $log -Raw
           Write-Host "exit=$code"
           Write-Host $out
-          $fence = [string]::new([char]96, 3)
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### setup refuses to configure git here"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "${fence}text"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ([string]$out)
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $fence
           if ($code -eq 0) { throw 'setup ran on native Windows' }
           if ($out -notmatch 'native Windows is not supported') { throw 'the refusal did not say why' }
 
@@ -107,11 +95,6 @@ jobs:
           $out = Get-Content $log -Raw
           Write-Host "exit=$code"
           Write-Host $out
-          $fence = [string]::new([char]96, 3)
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### compose refuses to describe host paths here"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "${fence}text"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ([string]$out)
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $fence
           if ($code -eq 0) { throw 'compose rendered a file on native Windows' }
           if ($out -notmatch 'native Windows is not supported') { throw 'the refusal did not say why' }
 
@@ -148,11 +131,6 @@ jobs:
           wsl -l -v *>> $log
           $out = Get-Content $log -Raw
           Write-Host $out
-          $fence = [string]::new([char]96, 3)
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### WSL on this runner"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "${fence}text"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ([string]$out)
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $fence
           # @(...) matters: one matching name arrives as a plain string, and `$distros[0]` on a
           # string is its first *character*, not an element — which is how this step died on
           # "[System.Char] does not contain a method named 'Trim'".
@@ -202,11 +180,6 @@ jobs:
           $code = $LASTEXITCODE
           $out = Get-Content $log -Raw
           Write-Host $out
-          $fence = [string]::new([char]96, 3)
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### the suite inside WSL"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "${fence}text"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ([string]$out)
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $fence
           if ($code -ne 0) {
             throw "the suite failed inside WSL (exit=$code)"
           }
