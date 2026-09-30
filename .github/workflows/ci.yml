@@ -139,7 +139,7 @@ jobs:
             Write-Host 'no distribution installed; adding one'
             wsl --install -d Ubuntu --no-launch *>> $log
             Start-Sleep -Seconds 30
-          $distros = @((wsl -l -q 2>$null) -replace "`0", '' | Where-Object { $_.Trim() -ne '' })
+              $distros = @((wsl -l -q 2>$null) -replace "`0", '' | Where-Object { $_.Trim() -ne '' })
           }
           if (-not $distros) {
             throw 'no WSL distribution available on this runner'
