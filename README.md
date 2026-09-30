@@ -52,10 +52,17 @@ socket is a filesystem object, so the broker and the git that uses it must be on
 or — when both are containers — share a volume. A socket cannot be reached over a network share, and
 that is the point: there is no listening port to authenticate and no traffic to send through a proxy.
 
-Everything else is ordinary Node and works on Windows: `npm install -g` (npm writes the shims),
-`stage` (it needs only git, and extracts with `git read-tree` + `checkout-index`), and the helper
-protocol, which is stdio. `setup` records the helper as `!node "<path>"` on Windows, because a `.js`
-file is not executable there. Windows is not covered by the test suite.
+**Native Windows is refused, not half-supported.** There the socket would be a named pipe and the
+mode bits would enforce nothing, so a broker that started would look healthy while every local process
+could ask it for credentials. `git-credential-brokerd` and `setup` exit with that explanation;
+`--help` still works.
+
+**WSL works**, because it is Linux. One trap: the socket directory belongs on the distribution's own
+filesystem (`~/git-broker`), never under `/mnt/c` — a Windows-backed 9p/drvfs mount cannot carry a
+unix socket, and the broker checks for that before it binds.
+
+CI runs the suite on Linux and inside WSL, and checks both refusals on native Windows
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
 ## Install
 

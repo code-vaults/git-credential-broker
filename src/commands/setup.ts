@@ -19,6 +19,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { platformRefusal } from '../platform.ts';
 import {
   fail,
   findSystemCaBundle,
@@ -50,6 +51,8 @@ export interface SetupInput {
   readonly rewriteSshHost: string | null;
   /** Report what would happen without writing anything. */
   readonly dryRun: boolean;
+  /** Platform to answer for; injectable so the refusal is testable. */
+  readonly platform?: NodeJS.Platform;
 }
 
 /** What `setup` did. */
@@ -68,24 +71,20 @@ export interface SetupResult {
  * The real path of the running script, so the configuration keeps working regardless of PATH —
  * `npx` and global installs both land somewhere git would not otherwise look.
  *
- * On Windows that path has to be spelled as a command, because a `.js` file is not executable
- * there (PATHEXT does not cover it) and git only treats a helper value as a shell command when it
- * begins with `!`. On POSIX the built entry point carries a shebang and the executable bit, so the
- * bare path is right and avoids depending on `node` being on PATH.
+ * A bare path is right because the built entry point carries a shebang and the executable bit. A
+ * source checkout has neither, so it has to spell out the interpreter:
+ * `git config --global credential.helper '!node /path/src/cli/helper.ts'`.
  *
- * @param platform - the platform to answer for; injectable so both branches are testable.
- * @returns the resolved path or command, or a bare `git-credential-broker` when it cannot be determined.
+ * @returns the resolved path, or a bare `git-credential-broker` when it cannot be determined.
  */
-export function defaultHelperPath(platform: NodeJS.Platform = process.platform): string {
+export function defaultHelperPath(): string {
   const invoked = process.argv[1];
   if (!invoked) return 'git-credential-broker';
-  let resolved: string;
   try {
-    resolved = fs.realpathSync(invoked);
+    return fs.realpathSync(invoked);
   } catch {
-    resolved = path.resolve(invoked);
+    return path.resolve(invoked);
   }
-  return platform === 'win32' ? `!node "${resolved.replace(/\\/g, '/')}"` : resolved;
 }
 
 /**
@@ -96,6 +95,12 @@ export function defaultHelperPath(platform: NodeJS.Platform = process.platform):
  * @throws {Error} when the target config is a symlink or resolves into the host's dotfiles.
  */
 export async function performSetup(input: SetupInput): Promise<SetupResult> {
+  // Refuse on native Windows: configuring git there would look like success and never work, because
+  // no Windows process can reach the broker's unix socket.
+  const refusal = platformRefusal(input.platform);
+  if (refusal !== null) {
+    throw new Error(refusal);
+  }
   // Writing through a symlink would edit whatever it points at. On the host, ~/.gitconfig is a
   // symlink into ~/.dotfiles, which is mounted into the container — so this is not theoretical.
   if (fs.existsSync(input.gitconfig) && fs.lstatSync(input.gitconfig).isSymbolicLink()) {

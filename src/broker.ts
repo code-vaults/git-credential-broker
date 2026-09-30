@@ -22,6 +22,7 @@ import net from 'node:net';
 import path from 'node:path';
 
 import { tokenFingerprint } from './audit.ts';
+import { socketPathRefusal } from './platform.ts';
 import { hostConfig, normalizeRepoPath, repoAllowed } from './policy.ts';
 import { createLineReader, encodeMessage, parseMessage } from './socket-protocol.ts';
 import type { AuditSink, BrokerConfig, Provider, WireResponse } from './types.ts';
@@ -72,6 +73,12 @@ export interface RequestHandlerOptions {
  * @throws {Error} when the path exists and is not a stale socket, or the directory is a symlink.
  */
 export function prepareSocketPath(socketPath: string): void {
+  // Before creating anything: a Windows-backed mount inside WSL is 9p/drvfs, which will not carry a
+  // unix socket. Failing here names the reason; failing at bind time does not.
+  const refusal = socketPathRefusal(socketPath);
+  if (refusal !== null) {
+    throw new Error(`refusing to bind at ${socketPath}: ${refusal}`);
+  }
   const directory = path.dirname(socketPath);
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   // Explicitly, not only in the mkdir call: on an ACL-based share (Synology's `synoacl`, which is

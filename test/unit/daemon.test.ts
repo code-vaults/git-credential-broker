@@ -58,6 +58,22 @@ function githubAppHost(privateKeyPath: string) {
 }
 
 describe('daemon start-up diagnostics', () => {
+  it('refuses native Windows instead of coming up with nothing enforced', async () => {
+    // Before the config is even read: on Windows the socket would be a named pipe and the mode bits
+    // would enforce nothing, so a broker that started would look healthy and be open to every local
+    // process. No --config is passed here on purpose — the refusal must not depend on one.
+    const err = capture();
+    const code = await runDaemon(['--check'], {
+      stderr: err.stream,
+      stdout: capture().stream,
+      platform: 'win32',
+    });
+
+    assert.equal(code, 1);
+    assert.match(err.text(), /native Windows is not supported/);
+    assert.match(err.text(), /WSL/, 'and points at the place that does work');
+  });
+
   it('names the deployment mismatch instead of a bare ENOENT', async () => {
     const file = writeConfig('sidecar', {
       socketPath: '/run/git-broker/broker.sock',

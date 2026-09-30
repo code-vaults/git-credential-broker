@@ -13,6 +13,7 @@ import type { Writable } from 'node:stream';
 import { createAudit } from './audit.ts';
 import { startBroker } from './broker.ts';
 import { inferMode, loadConfig, resolveConfigPath } from './config.ts';
+import { platformRefusal } from './platform.ts';
 import { createProvider } from './providers/index.ts';
 import type { ProviderDeps } from './providers/index.ts';
 import type { BrokerConfig, Provider } from './types.ts';
@@ -116,13 +117,21 @@ export function assertKeysReadable(config: BrokerConfig): void {
  */
 export async function runDaemon(
   argv: readonly string[],
-  io: { stderr?: Writable; stdout?: Writable } = {},
+  io: { stderr?: Writable; stdout?: Writable; platform?: NodeJS.Platform } = {},
 ): Promise<number> {
   const { stderr = process.stderr, stdout = process.stdout } = io;
   const { configPath, checkOnly, help } = parseArgs(argv);
   if (help) {
     stdout.write(`${USAGE}\n`);
     return 0;
+  }
+  // Refuse before doing anything else: on native Windows the socket would be a named pipe and the
+  // mode bits would enforce nothing, so a broker that came up would look healthy and be open to
+  // every local process. WSL is fine — it is Linux — except for the mount trap checked below.
+  const refusal = platformRefusal(io.platform);
+  if (refusal !== null) {
+    stderr.write(`git-credential-brokerd: ${refusal}\n`);
+    return 1;
   }
   // Same convention as the management commands: --config, else GIT_BROKER_CONFIG, else
   // ./broker.config.json. A wrong pick is loud, because it must load and validate to start at all.

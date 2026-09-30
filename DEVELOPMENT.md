@@ -112,9 +112,13 @@ The end-to-end test needs no network: it serves `git-http-backend` locally and p
 the real helper and a real broker.
 
 The suite is **POSIX-flavoured** and does not run on Windows today: it execs `git http-backend`,
-pins `HOME`, and one test writes a `#!/bin/sh` decoy helper. The CLI itself is portable where it
-matters (see the Platforms note in [README.md](README.md)); the tests are not, and nothing here has
-been run on Windows.
+pins `HOME`, and one test writes a `#!/bin/sh` decoy helper.
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) has three jobs: the suite on Linux, the
+refusals on native Windows — the broker and `setup` must exit non-zero there, which the unit tests
+can only simulate by injecting `'win32'` — and the suite again inside WSL, copied off `/mnt/<drive>`
+first because that mount cannot carry the unix sockets the end-to-end test creates. The two Windows
+jobs are new and have not been run; expect the first iteration to need fixing.
 
 If you add tests, three traps are already paid for in this suite:
 
