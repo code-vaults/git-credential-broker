@@ -6,3 +6,7 @@ dist/
 *.log
 *.tmp
 .yarn/install-state.gz
+# Never commit key material. This project exists to keep secrets out of places they can be
+# read, and its own directory is where someone will first drop an App private key.
+*.pem
+*.key
