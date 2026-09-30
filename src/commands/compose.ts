@@ -12,6 +12,7 @@
 import fs from 'node:fs';
 
 import { inferMode, loadConfig, resolveConfigPath, deploymentDir, SIDECAR } from '../config.ts';
+import { platformRefusal } from '../platform.ts';
 import { packageVersion } from '../version.ts';
 import { fail, parseArgs, say, warn } from './support.ts';
 
@@ -165,6 +166,12 @@ export function runCompose(argv: readonly string[]): number {
     say(COMPOSE_USAGE);
     return 0;
   }
+  // Refused rather than printed wrong: the file binds host paths and a socket directory, so a
+  // version rendered on Windows would either not resolve or put the socket somewhere it cannot live.
+  const refusal = platformRefusal();
+  if (refusal !== null) {
+    fail(refusal);
+  }
 
   const configPath = resolveConfigPath(args.value('config'));
   const socketDir = args.value('socket-dir');
@@ -187,14 +194,21 @@ export function runCompose(argv: readonly string[]): number {
     warn(`no configuration at ${configPath} yet; create it with \`init --mode sidecar\` first`);
   }
 
-  const uid = typeof process.getuid === 'function' ? process.getuid() : undefined;
-  const gid = typeof process.getgid === 'function' ? process.getgid() : undefined;
+  // POSIX only, and guaranteed to exist by the refusal above: the file this prints binds host paths
+  // and a socket directory, neither of which works from a Windows host. Asserting it here rather
+  // than defaulting to a made-up uid — a wrong `user:` line is a silent misconfiguration.
+  const uid = process.getuid?.();
+  const gid = process.getgid?.();
+  if (uid === undefined || gid === undefined) {
+    fail('compose needs a POSIX uid and gid');
+  }
+  const user = args.value('user') ?? `${uid}:${gid}`;
 
   say(
     renderCompose({
       dir,
       socketDir,
-      user: args.value('user') ?? (uid !== undefined && gid !== undefined ? `${uid}:${gid}` : '1000:1000'),
+      user,
       image: args.value('image') ?? 'node:24-slim',
       packageSpec: args.value('package') ?? `git-credential-broker@${packageVersion()}`,
       name: args.value('name') ?? 'git-cred-broker',

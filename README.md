@@ -54,8 +54,9 @@ that is the point: there is no listening port to authenticate and no traffic to 
 
 **Native Windows is refused, not half-supported.** There the socket would be a named pipe and the
 mode bits would enforce nothing, so a broker that started would look healthy while every local process
-could ask it for credentials. `git-credential-brokerd` and `setup` exit with that explanation;
-`--help` still works.
+could ask it for credentials. `git-credential-brokerd`, `setup` and `compose` exit with that
+explanation — the three commands whose result is specific to the machine running them. `--help` still
+works.
 
 **WSL works**, because it is Linux. One trap: the socket directory belongs on the distribution's own
 filesystem (`~/git-broker`), never under `/mnt/c` — a Windows-backed 9p/drvfs mount cannot carry a
