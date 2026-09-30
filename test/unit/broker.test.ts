@@ -187,6 +187,48 @@ describe('broker request handling', () => {
     assert.match(response.reason ?? '', /this installation has not approved it/);
   });
 
+  it('serves a job log for an allowlisted repository, and audits it', async () => {
+    const logs: Provider = {
+  name: 'with-logs',
+  getCredential: () => Promise.reject(new Error('not used here')),
+  getJobLog: () => Promise.resolve({ text: 'job output\n', truncated: false }),
+    };
+    const { handle, events } = makeHarness(['acme/widget'], logs);
+    const response = await handle({ ...REQUEST, op: 'logs', jobId: 7 });
+
+    assert.equal(response.ok, true);
+    assert.equal(response.log, 'job output\n');
+    assert.equal(events.at(-1)?.['event'], 'logs');
+    assert.equal(events.at(-1)?.['job_id'], 7);
+  });
+
+  it('refuses a log for an unlisted repository, and for a provider with no logs', async () => {
+    const withLogs: Provider = {
+  name: 'with-logs',
+  getCredential: () => Promise.reject(new Error('not used here')),
+  getJobLog: () => Promise.resolve({ text: 'x', truncated: false }),
+    };
+    const denied = await makeHarness(['acme/widget'], withLogs).handle({
+  ...REQUEST,
+  op: 'logs',
+  jobId: 7,
+  path: 'acme/other',
+    });
+    assert.equal(denied.code, CODES.REPO_NOT_ALLOWED);
+
+    const noLogs: Provider = {
+  name: 'no-logs',
+  getCredential: () => Promise.reject(new Error('not used here')),
+    };
+    const unsupported = await makeHarness(['acme/widget'], noLogs).handle({
+  ...REQUEST,
+  op: 'logs',
+  jobId: 7,
+    });
+    assert.equal(unsupported.code, CODES.PROVIDER_ERROR);
+    assert.match(unsupported.reason ?? '', /cannot read workflow logs/);
+  });
+
   it('keeps provider failures generic for the caller and detailed in the audit', async () => {
     const exploding: Provider = {
       name: 'exploding',

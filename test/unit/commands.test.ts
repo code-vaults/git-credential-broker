@@ -20,6 +20,7 @@ import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performI
 import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../src/commands/support.ts';
 import { defaultHelperPath, performSetup } from '../../src/commands/setup.ts';
 import type { BrokerConfig, GithubAppHostConfig } from '../../src/types.ts';
+import { runProbe } from '../../src/commands/probe.ts';
 
 /** Scratch space for the whole file. */
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-commands-'));
@@ -538,6 +539,30 @@ describe('diagnose', () => {
       () => runDiagnose(['--config', configPath]),
       /exists only inside the sidecar container/,
     );
+  });
+});
+
+describe('socket discovery', () => {
+  it('honours the socket file, the way the git helper does', async () => {
+    // Regression: probe and logs accepted only --socket and $GIT_BROKER_SOCKET, so in a shell
+    // without the environment they refused even though git itself would have found the broker.
+    const root = dir(`socket-file-${Math.random().toString(36).slice(2)}`);
+    const socketFile = path.join(root, 'socket');
+    fs.writeFileSync(socketFile, path.join(root, 'absent.sock'));
+
+    const savedSocket = process.env['GIT_BROKER_SOCKET'];
+    const savedFile = process.env['GIT_BROKER_SOCKET_FILE'];
+    delete process.env['GIT_BROKER_SOCKET'];
+    process.env['GIT_BROKER_SOCKET_FILE'] = socketFile;
+    try {
+      const code = await runProbe(['--host', 'github.com', '--repo', 'a/one']);
+      assert.equal(code, 3, 'it must use the path from the file and report the broker unreachable');
+    } finally {
+      if (savedSocket === undefined) delete process.env['GIT_BROKER_SOCKET'];
+      else process.env['GIT_BROKER_SOCKET'] = savedSocket;
+      if (savedFile === undefined) delete process.env['GIT_BROKER_SOCKET_FILE'];
+      else process.env['GIT_BROKER_SOCKET_FILE'] = savedFile;
+    }
   });
 });
 

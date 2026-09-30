@@ -22,6 +22,7 @@ import { ProviderConfigError } from '../errors.ts';
 import { readFileSync } from 'node:fs';
 
 import type { Credential, FetchLike, FetchResponseLike, GithubAppHostConfig, Provider } from '../types.ts';
+import type { JobLog, JobLogRequest } from '../types.ts';
 
 /** REST API origin. Overridable for GitHub Enterprise. */
 const DEFAULT_API = 'https://api.github.com';
@@ -153,6 +154,19 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
   const installationTtlMs =
     (typeof cfg.installationCacheSeconds === 'number' ? cfg.installationCacheSeconds : 600) * 1000;
 
+  /**
+   * What a log read asks for: nothing but the log.
+   *
+   * Deliberately not the configured `permissions`, which describe the credential git needs. A token
+   * minted for those should not also be able to read CI logs, so a log read gets its own token,
+   * narrowed to `actions: read`. Whether the agent may read logs at all is then a question about the
+   * app's grant, not about anything running in the container.
+   */
+  const LOG_PERMISSIONS: Record<string, string> = { actions: 'read' };
+
+  /** How much of one log to return: enough to diagnose, bounded so one response stays sane. */
+  const LOG_LIMIT_CHARS = 200_000;
+
   /** owner login (lowercased) -> installation */
   const installations = new Map<string, CachedInstallation>();
   /** owner/repo -> minted credential */
@@ -168,9 +182,14 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
    * @param absent - how to describe a permission that is missing entirely.
    * @returns one message per problem; empty when the grant covers the configuration.
    */
-  function missingPermissions(granted: Record<string, string>, from: string, absent: string): string[] {
+  function missingPermissions(
+    wantedPermissions: Readonly<Record<string, string>>,
+    granted: Record<string, string>,
+    from: string,
+    absent: string,
+  ): string[] {
     const problems: string[] = [];
-    for (const [name, wanted] of Object.entries(permissions)) {
+    for (const [name, wanted] of Object.entries(wantedPermissions)) {
       const have = granted[name];
       if (!have) {
         problems.push(`${name}: ${absent}`);
@@ -231,6 +250,40 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
   }
 
   /**
+   * Call the REST API with one installation token, returning the body as text.
+   *
+   * Used for job logs, whose response is plain text behind a redirect to a signed URL that needs no
+   * authorization — fetch drops the header across origins, which is what GitHub intends.
+   *
+   * @param method - HTTP method.
+   * @param url - absolute URL.
+   * @param token - the installation token to authenticate with.
+   * @returns the status and the body text.
+   * @throws {Error} for a non-2xx response.
+   */
+  async function callWithToken(method: string, url: string, token: string): Promise<{ status: number; text: string }> {
+    const response = await fetchImpl(url, {
+      method,
+      headers: {
+        accept: 'application/vnd.github+json',
+        authorization: `Bearer ${token}`,
+        'x-github-api-version': apiVersion,
+        'user-agent': 'git-credential-broker',
+      },
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      // The URL is safe to name — the token is a header, not part of it — but the body is not, so
+      // this message carries only the endpoint and the status. It is marked as ours, which is what
+      // lets the pusher see it instead of "see the broker log".
+      throw new ProviderConfigError(
+        `GitHub API ${method} ${url.replace(api, '')} answered ${response.status} for the log request`,
+      );
+    }
+    return { status: response.status, text };
+  }
+
+  /**
    * Resolve the installation id for an account, cached per owner.
    *
    * @param owner - the repository owner as it appeared in the path.
@@ -276,9 +329,16 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
    * @returns resolves when the configured permissions are a subset of both grants.
    * @throws {ProviderConfigError} naming each permission that is missing or granted at a lower level.
    */
-  function ensurePermissions(owner: string): Promise<void> {
+  function ensurePermissions(
+    owner: string,
+    wantedPermissions: Readonly<Record<string, string>> = permissions,
+  ): Promise<void> {
     if (!checkPermissions) return Promise.resolve();
-    const key = owner.toLowerCase();
+    // Keyed by both, because a log read checks a different set than a credential does.
+    const key = `${owner.toLowerCase()}|${Object.entries(wantedPermissions)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, level]) => `${name}=${level}`)
+      .join(',')}`;
     const cached = permissionsChecked.get(key);
     if (cached) return cached;
 
@@ -286,6 +346,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       const { json } = await call('GET', `${api}/app`);
       const appGranted = (json as { permissions?: Record<string, string> } | null)?.permissions ?? {};
       const problems = missingPermissions(
+        wantedPermissions,
         appGranted,
         'the app',
         'the app is not granted this permission at all',
@@ -296,7 +357,12 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       const installationGranted =
         (installation as { permissions?: Record<string, string> } | null)?.permissions ?? {};
       problems.push(
-        ...missingPermissions(installationGranted, 'this installation', 'this installation has not approved it'),
+        ...missingPermissions(
+          wantedPermissions,
+          installationGranted,
+          'this installation',
+          'this installation has not approved it',
+        ),
       );
 
       if (problems.length > 0) {
@@ -345,6 +411,51 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       };
       tokens.set(request.full, credential);
       return { ...credential, cached: false };
+    },
+    /**
+     * Read one workflow job's log.
+     *
+     * One call, to the repository-scoped route: the repository is part of the URL, so the allowlist
+     * binds the job id by construction. The global route is keyed by job id alone — an allowlisted
+     * repository could name any job this app can see — and it is the one that answers "Must have
+     * admin rights", which is a permission this broker should never want.
+     *
+     * @param request - the job to read.
+     * @returns the log text, bounded.
+     */
+    async getJobLog(request: JobLogRequest): Promise<JobLog> {
+      await ensurePermissions(request.owner, LOG_PERMISSIONS);
+      const installationId = await resolveInstallationId(request.owner);
+      const { json } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
+        repositories: [request.repo],
+        permissions: LOG_PERMISSIONS,
+      });
+      const token = (json as { token?: unknown } | null)?.token;
+      if (typeof token !== 'string' || !token) {
+        throw new ProviderConfigError('GitHub returned no installation token for the log request');
+      }
+
+      let text: string;
+      try {
+        const body = await callWithToken(
+          'GET',
+          `${api}/repos/${request.owner}/${request.repo}/actions/jobs/${request.jobId}/logs`,
+          token,
+        );
+        text = body.text;
+      } catch (error) {
+        // A 404 here has two ordinary causes, and neither is a broker fault: the job is not in that
+        // repository, or the run it belongs to has not finished — the endpoint serves no log at all
+        // while a job is still running.
+        throw new ProviderConfigError(
+          `${(error as Error).message}; the job has to exist in that repository, and a run that is still in progress has no log yet`,
+        );
+      }
+      if (text.length <= LOG_LIMIT_CHARS) return { text, truncated: false };
+      return {
+        text: `${text.slice(0, LOG_LIMIT_CHARS)}\n… log truncated at ${LOG_LIMIT_CHARS} characters\n`,
+        truncated: true,
+      };
     },
   };
 }

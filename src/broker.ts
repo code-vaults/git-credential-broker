@@ -150,7 +150,7 @@ export function createRequestHandler(
     if (message['op'] === 'ping') {
       return { ok: true, version: BROKER_VERSION, hosts: [...providers.keys()] };
     }
-    if (message['op'] !== 'credential') {
+    if (message['op'] !== 'credential' && message['op'] !== 'logs') {
       return deny(
         context,
         CODES.BAD_REQUEST,
@@ -169,7 +169,11 @@ export function createRequestHandler(
 
     const protocol = message['protocol'];
     const insecureHttpAllowed = block.allowInsecureHttp === true;
-    if (protocol !== 'https' && !(protocol === 'http' && insecureHttpAllowed)) {
+    if (
+      message['op'] === 'credential' &&
+      protocol !== 'https' &&
+      !(protocol === 'http' && insecureHttpAllowed)
+    ) {
       return deny(
         context,
         CODES.PROTOCOL_NOT_HTTPS,
@@ -200,6 +204,52 @@ export function createRequestHandler(
     const provider = providers.get(block.host);
     if (!provider) {
       return deny(context, CODES.PROVIDER_ERROR, 'no provider instance for this host', 'provider unavailable');
+    }
+
+    if (message['op'] === 'logs') {
+      const jobId = message['jobId'];
+      if (typeof jobId !== 'number' || !Number.isInteger(jobId) || jobId <= 0) {
+        return deny(
+          context,
+          CODES.BAD_REQUEST,
+          `bad jobId ${JSON.stringify(jobId)}`,
+          'the request carries no usable workflow job id',
+        );
+      }
+      if (typeof provider.getJobLog !== 'function') {
+        return deny(
+          context,
+          CODES.PROVIDER_ERROR,
+          `provider ${provider.name} cannot read logs`,
+          "this host's provider cannot read workflow logs",
+        );
+      }
+      try {
+        const jobLog = await provider.getJobLog({
+          host: block.host,
+          owner: repo.owner,
+          repo: repo.repo,
+          jobId,
+        });
+        audit.record({
+          event: 'logs',
+          decision: 'allow',
+          ...context,
+          job_id: jobId,
+          bytes: Buffer.byteLength(jobLog.text, 'utf8'),
+          truncated: jobLog.truncated === true,
+        });
+        return { ok: true, log: jobLog.text, truncated: jobLog.truncated === true };
+      } catch (error) {
+        // Same rule as a credential: a provider response can embed anything, so only our own
+        // configuration errors are shown to the caller.
+        const reason = String((error as Error).message ?? error).slice(0, 300);
+        const callerMessage =
+          error instanceof ProviderConfigError
+            ? reason
+            : 'the broker could not read that log; see the broker log';
+        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage);
+      }
     }
 
     try {

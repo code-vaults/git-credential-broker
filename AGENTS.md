@@ -76,6 +76,14 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 - **Ignore `EPIPE` when writing to a child's stdin.** A command that exits before reading closes
   the pipe; an unhandled stream error there takes down the whole test file and reports a
   misleading failure. This already caused an intermittently red suite.
+- **A job log is plain text that can contain NUL bytes.** GitHub logs a Windows step's output as
+  UTF-16, so the fetched log carries NULs — enough for `grep` to report "binary file matches", and
+  I concluded from exactly that message that the endpoint returns a zip and wrote a reader for it.
+  It does not: a log begins with a timestamp, and the giveaway was in the same output, which showed
+  `T h e r e   i s   n o …`. Judge it by the first bytes, not by what `grep` calls it.
+- **A push to `main` cancels the previous run** (`concurrency` with `cancel-in-progress`). A run
+  can therefore end as `cancelled` rather than red or green, and a verdict that looks missing is
+  usually one a later push replaced: read the newest run for the commit, not the first.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
   Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.json`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by
@@ -98,9 +106,12 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 - **Adding a provider** is one module in `src/providers/` plus one case in
   `src/providers/index.ts`. The broker, helper, socket protocol, allowlist and audit are
   provider-agnostic.
-- **The broker answers the container with generic errors on purpose**, because provider errors
-  can embed API responses. Real reasons go to the host-side log and audit. Use
-  `git-credential-broker diagnose` when you need them.
+- **The broker answers the container with generic errors by default**, because provider errors can
+  embed API responses. Real reasons go to the host-side log and audit; `git-credential-broker
+  diagnose` is how you read them. The deliberate exception is `ProviderConfigError`: errors composed
+  from the configuration and a permission name, with nothing from a provider's response body. Those
+  are passed through, so a failed push names the missing permission instead of sending the operator
+  to a host-side log. Mark an error that way only when nothing from a response body can be in it.
 
 ## Environment gotchas (this container)
 
@@ -130,7 +141,7 @@ Full detail and the measurements behind them:
 | `src/policy.ts` | the authorization decision (default deny, exact segment matching) |
 | `src/providers/github-app.ts` | RS256 JWT, installation lookup, permission pre-flight, token cache |
 | `test/e2e/push.test.ts` | a real push over authenticated smart HTTP |
-| `src/commands/` | the management CLI: `setup`, `init`, `stage`, `compose`, `probe`, `diagnose` |
+| `src/commands/` | the management CLI: `setup`, `init`, `stage`, `compose`, `probe`, `logs`, `diagnose` |
 | `src/cli/helper.ts` | the one command that is both the git helper and the CLI |
 | `scripts/postbuild.mjs` | build-time fixup: shebang and exec bit on the CLI entry points |
 | `.agents/notes/proposed/` | the original design and its review |

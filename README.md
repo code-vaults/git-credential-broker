@@ -200,6 +200,27 @@ docker compose -f docker-compose.broker.yml exec git-cred-broker \
   diagnose --config /etc/git-cred-broker/broker.config.json
 ```
 
+### Reading a CI log
+
+`logs` fetches one workflow job's log through the broker. It needs `actions: read` on the app and
+nothing else: the broker mints a short-lived token narrowed to that permission, reads the log, and
+returns only the text, so no credential reaches this side. The job id is the check run id:
+
+```sh
+git-credential-broker logs --host github.com --repo owner/repo --job 1234567890
+```
+
+It talks to the socket, so it runs wherever `probe` runs. Off the container there is neither
+`GIT_BROKER_SOCKET` nor a socket file, so pass the socket explicitly — and give the CLI an absolute
+path, because a relative one is resolved against the current directory, which is not always the
+checkout:
+
+```sh
+node /srv/git-cred-broker/src/cli/helper.ts logs \
+  --socket /srv/git-cred-broker/broker.sock \
+  --host github.com --repo owner/repo --job 1234567890
+```
+
 ## Configuration reference
 
 The broker only ever reads this file; it contains no secrets.

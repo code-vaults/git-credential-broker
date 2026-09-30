@@ -37,6 +37,29 @@ export interface CredentialRequest {
 export interface Provider {
   readonly name: string;
   getCredential(request: CredentialRequest): Promise<Credential>;
+  /**
+   * Read one workflow job's log, when this provider can.
+   *
+   * Optional, and separate from {@link Provider.getCredential} on purpose: reading a log is not
+   * minting a credential. The broker refuses the operation when a provider does not implement it.
+   */
+  getJobLog?(request: JobLogRequest): Promise<JobLog>;
+}
+
+/** What a provider is asked to read a log for. */
+export interface JobLogRequest {
+  readonly host: string;
+  readonly owner: string;
+  readonly repo: string;
+  /** The workflow job id, which is also the check run id. */
+  readonly jobId: number;
+}
+
+/** One job log, as returned to the caller. */
+export interface JobLog {
+  readonly text: string;
+  /** Whether the provider cut the log short, which it says in the text too. */
+  readonly truncated: boolean;
 }
 
 /** Fields every host block shares. */
@@ -106,6 +129,8 @@ export interface WireRequest {
   readonly path?: string;
   readonly session?: string | null;
   readonly pid?: number;
+  /** Workflow job id, for `op: "logs"`. */
+  readonly jobId?: number;
 }
 
 /** One response line on the broker socket. */
@@ -118,6 +143,9 @@ export interface WireResponse {
   readonly expires_at?: string;
   readonly version?: string;
   readonly hosts?: readonly string[];
+  /** The job log, for `op: "logs"`. */
+  readonly log?: string;
+  readonly truncated?: boolean;
 }
 
 /** Where audit records go. */

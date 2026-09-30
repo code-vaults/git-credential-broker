@@ -101,6 +101,16 @@ describe('nextLink', () => {
  * @param options - stub options.
  * @returns the stub.
  */
+/** A plain-text response, which is what the job log endpoint returns. */
+function textResponse(body: string, status = 200) {
+  return {
+    ok: status < 400,
+    status,
+    headers: { get: (): string | null => null },
+    text: () => Promise.resolve(body),
+  };
+}
+
 function createStubFetch(options: {
   installations: unknown;
   nowMs: number;
@@ -108,6 +118,8 @@ function createStubFetch(options: {
   tokenStatus?: number;
   appPermissions?: Record<string, string>;
   installationPermissions?: Record<string, string>;
+  logText?: string;
+  jobMissing?: boolean;
 }): { calls: RecordedCall[]; fetchImpl: FetchLike } {
   const {
     installations,
@@ -116,6 +128,8 @@ function createStubFetch(options: {
     tokenStatus = 201,
     appPermissions = { contents: 'write', pull_requests: 'write' },
     installationPermissions = appPermissions,
+    logText = 'stub log\n',
+    jobMissing = false,
   } = options;
   const calls: RecordedCall[] = [];
   const fetchImpl: FetchLike = (url, init) => {
@@ -127,6 +141,16 @@ function createStubFetch(options: {
     });
     if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
     if (url.includes('/app/installations?')) return Promise.resolve(jsonResponse(installations));
+    if (url.includes('/actions/jobs/') && url.endsWith('/logs')) {
+      return jobMissing
+        ? Promise.resolve(jsonResponse({ message: 'Not Found' }, 404))
+        : Promise.resolve(textResponse(logText));
+    }
+    if (url.includes('/actions/jobs/')) {
+      return jobMissing
+        ? Promise.resolve(jsonResponse({ message: 'Not Found' }, 404))
+        : Promise.resolve(jsonResponse({ id: 7 }));
+    }
     if (/\/app\/installations\/\d+$/.test(url)) {
       return Promise.resolve(jsonResponse({ permissions: installationPermissions }));
     }
@@ -353,6 +377,60 @@ describe('createGithubAppProvider', () => {
     assert.match(error.message, /workflows/, 'naming the permission');
     assert.match(error.message, /installation/, 'and which grant is short of it');
     assert.equal(stub.calls.some((call) => call.method === 'POST'), false, 'still before a token');
+  });
+
+  it('reads a job log with a token narrowed to actions: read', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      appPermissions: { contents: 'write', actions: 'read' },
+      installationPermissions: { contents: 'write', actions: 'read' },
+      logText: 'line one\nline two\n',
+    });
+    const log = await providerFor(stub).getJobLog!({
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      jobId: 7,
+    });
+
+    assert.equal(log.text, 'line one\nline two\n');
+    assert.equal(log.truncated, false);
+    const mint = stub.calls.find((call) => call.url.includes('/access_tokens'));
+    assert.deepEqual(
+      mint?.body?.['permissions'],
+      { actions: 'read' },
+      'the log token must ask for nothing but the log',
+    );
+    assert.ok(
+      stub.calls.some((call) => call.url.endsWith('/repos/acme/widget/actions/jobs/7/logs')),
+      'the log is read through the repository route, which is what binds it to the allowlist',
+    );
+  });
+
+  it('refuses a job the allowlisted repository does not have', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      appPermissions: { actions: 'read' },
+      installationPermissions: { actions: 'read' },
+      jobMissing: true,
+    });
+    const error = await providerFor(stub)
+      .getJobLog!({ host: 'github.com', owner: 'acme', repo: 'widget', jobId: 7 })
+      .then(() => null)
+      .catch((caught: unknown) => caught as Error);
+
+    assert.ok(error, 'it must fail');
+    assert.match(error.message, /actions\/jobs\/7/);
+    assert.match(error.message, /has no log yet/, 'and say why a 404 there is ordinary');
+    assert.equal(
+      stub.calls.some(
+        (call) => call.url.endsWith('/logs') && !call.url.includes('/repos/acme/widget/'),
+      ),
+      false,
+      'a log must never be requested without the repository in the path',
+    );
   });
 
   it('skips the pre-flight when the operator turns it off', async () => {

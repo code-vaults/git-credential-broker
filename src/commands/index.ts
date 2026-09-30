@@ -22,6 +22,7 @@ Commands
   stage      Export the broker from a reviewed commit to where it will run (host, outside mounts)
   compose    Print a Docker sidecar definition for the broker
   probe      Ask the broker what it would do for a repository, without pushing
+  logs       Read a workflow job's log through the broker (the token stays in the broker)
   diagnose   Ask GitHub what the App can actually see (installations, permissions, repositories)
 
 Options
@@ -41,7 +42,7 @@ Environment
 Run \`git-credential-broker <command> --help\` for the options of one command.`;
 
 /** The subcommands, in the order help lists them. */
-export const COMMANDS = ['setup', 'init', 'stage', 'compose', 'probe', 'diagnose'] as const;
+export const COMMANDS = ['setup', 'init', 'stage', 'compose', 'probe', 'logs', 'diagnose'] as const;
 
 /**
  * Dispatch a command line.
@@ -76,6 +77,8 @@ export async function runCli(argv: readonly string[]): Promise<number> {
       return (await import('./compose.ts')).runCompose(rest);
     case 'probe':
       return (await import('./probe.ts')).runProbe(rest);
+    case 'logs':
+      return (await import('./logs.ts')).runLogs(rest);
     case 'diagnose':
       return (await import('./diagnose.ts')).runDiagnose(rest);
     default:

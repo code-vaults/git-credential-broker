@@ -6,7 +6,7 @@
  * paste anywhere. Exit codes: 0 allowed, 1 denied, 3 broker unreachable.
  */
 import { tokenFingerprint } from '../audit.ts';
-import { requestOverSocket } from '../helper.ts';
+import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { fail, parseArgs, say } from './support.ts';
 
 /** Usage text for `probe`. */
@@ -34,10 +34,12 @@ export async function runProbe(argv: readonly string[]): Promise<number> {
     return 0;
   }
 
-  const socketPath = args.value('socket') ?? process.env['GIT_BROKER_SOCKET'];
+  const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const host = args.value('host');
   const repo = args.value('repo');
-  if (!socketPath) fail('no socket given: pass --socket or set GIT_BROKER_SOCKET');
+  if (!socketPath) {
+    fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `git-credential-broker setup`');
+  }
   if (!host) fail('--host is required (e.g. github.com)');
   if (!repo) fail('--repo is required (e.g. owner/name)');
 
