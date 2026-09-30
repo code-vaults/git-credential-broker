@@ -93,6 +93,15 @@ compose 生成）、`probe`、`diagnose`。宿主不再需要 checkout 或构建
 直接 `npx` 拉取已发布的包。同一个 bin 既是 git 的 credential helper（`get|store|erase`），
 也是管理 CLI。
 
+**`init` 是"合并"而不是"重写"。** `config.json` 是唯一事实来源（daemon 只读它、可手改、可进
+dotfiles），所以 `init` 只改你显式传的字段：`--allow` 是**追加**，`--remove-allow` 是删除，
+`--replace-allow` 才整体替换；`--cert`/`--client-id`/`--app-id`/`--permissions` 不传就保持原样。
+会打印 before/after 白名单便于复核；拒绝写出空白名单；拒绝改变已存在文件的 `--mode`（那会
+把路径指向别处）。
+
+> 早先的写法既麻烦又危险：加一个仓库要重打全部参数，而 `--force` 会**静默替换**白名单 ——
+> 加 `b/two` 会把 `a/one` 悄悄丢掉。
+
 ```sh
 # 自检（不 push，不打印凭据，只给指纹）
 git-credential-broker probe --socket /home/app/.dsh/git-broker/broker.sock \

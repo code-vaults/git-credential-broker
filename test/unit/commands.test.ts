@@ -15,7 +15,7 @@ import { after, describe, it } from 'node:test';
 
 import { renderCompose } from '../../src/commands/compose.ts';
 import { SIDECAR } from '../../src/commands/deployment.ts';
-import { buildBrokerConfig, parsePermissions, performInit } from '../../src/commands/init.ts';
+import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit } from '../../src/commands/init.ts';
 import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../src/commands/support.ts';
 import { performSetup } from '../../src/commands/setup.ts';
 import type { BrokerConfig, GithubAppHostConfig } from '../../src/types.ts';
@@ -289,17 +289,127 @@ describe('init', () => {
     );
   });
 
-  it('will not overwrite an existing config unless forced', () => {
-    const root = dir(`init-force-${Math.random().toString(36).slice(2)}`);
+  it('adds a repository without dropping the others, and without re-supplying anything', () => {
+    // The bug this replaces: adding one repository required every flag, and --force then
+    // silently replaced the allowlist, so adding b/two could quietly drop a/one.
+    const root = dir(`init-merge-${Math.random().toString(36).slice(2)}`);
     const cert = writeKey(path.join(root, 'downloaded.pem'));
     const target = path.join(root, 'deploy');
-    performInit({ ...baseInput, cert, dir: target });
-    assert.throws(() => performInit({ ...baseInput, cert, dir: target }), /already exists/);
-    assert.doesNotThrow(() => performInit({ ...baseInput, cert, dir: target, force: true }));
+
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+    const updated = performInit({
+      ...baseInput,
+      cert: undefined,
+      clientId: undefined,
+      appId: undefined,
+      permissions: undefined,
+      dir: target,
+      allow: ['b/two'],
+    });
+
+    assert.deepEqual(appBlock(updated.config).allow, ['a/one', 'b/two']);
+    assert.deepEqual(appBlock(updated.previous as never).allow, ['a/one']);
+    assert.equal(updated.previous !== undefined, true);
+  });
+
+  it('preserves edits made to the file by hand', () => {
+    const root = dir(`init-hand-${Math.random().toString(36).slice(2)}`);
+    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    const target = path.join(root, 'deploy');
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+
+    const file = path.join(target, 'config.json');
+    const edited = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+      hosts: Record<string, { permissions?: unknown }>;
+    };
+    const editedBlock = edited.hosts['github.com'];
+    assert.ok(editedBlock, 'the config must have a github.com block');
+    editedBlock.permissions = { contents: 'write', pull_requests: 'write' };
+    fs.writeFileSync(file, JSON.stringify(edited, null, 2));
+
+    const updated = performInit({
+      ...baseInput,
+      cert: undefined,
+      permissions: undefined,
+      dir: target,
+      allow: ['c/three'],
+    });
+    assert.deepEqual(appBlock(updated.config).permissions, { contents: 'write', pull_requests: 'write' });
+    assert.deepEqual(appBlock(updated.config).allow, ['a/one', 'c/three']);
+  });
+
+  it('removes and replaces entries only when asked', () => {
+    const root = dir(`init-remove-${Math.random().toString(36).slice(2)}`);
+    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    const target = path.join(root, 'deploy');
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one', 'b/two', 'c/three'] });
+
+    const afterRemove = performInit({
+      ...baseInput,
+      cert: undefined,
+      dir: target,
+      allow: [],
+      removeAllow: ['b/two'],
+    });
+    assert.deepEqual(appBlock(afterRemove.config).allow, ['a/one', 'c/three']);
+
+    const afterReplace = performInit({
+      ...baseInput,
+      cert: undefined,
+      dir: target,
+      allow: ['z/last'],
+      replaceAllow: true,
+    });
+    assert.deepEqual(appBlock(afterReplace.config).allow, ['z/last']);
+  });
+
+  it('never lets an update empty the allowlist', () => {
+    const root = dir(`init-empty-${Math.random().toString(36).slice(2)}`);
+    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    const target = path.join(root, 'deploy');
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+    assert.throws(
+      () => performInit({ ...baseInput, cert: undefined, dir: target, allow: [], removeAllow: ['a/one'] }),
+      /default-deny/,
+    );
+  });
+
+  it('refuses to re-point an existing config at another deployment', () => {
+    const root = dir(`init-mode-${Math.random().toString(36).slice(2)}`);
+    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    const target = path.join(root, 'deploy');
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+    assert.throws(
+      () => performInit({ ...baseInput, cert: undefined, dir: target, allow: [], mode: 'sidecar' }),
+      /was written for --mode host/,
+    );
+    assert.doesNotThrow(() =>
+      performInit({
+        ...baseInput,
+        cert,
+        dir: target,
+        allow: ['a/one'],
+        mode: 'sidecar',
+        hostSocketPath: undefined,
+        force: true,
+      }),
+    );
+  });
+
+  it('says so when the key the config points at has gone', () => {
+    const root = dir(`init-nokey-${Math.random().toString(36).slice(2)}`);
+    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    const target = path.join(root, 'deploy');
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+    fs.rmSync(path.join(target, 'app.pem'));
+    assert.throws(
+      () => performInit({ ...baseInput, cert: undefined, dir: target, allow: ['b/two'] }),
+      /pass --cert to install the key/,
+    );
   });
 
   it('parses permission lists and rejects malformed ones', () => {
-    assert.deepEqual(parsePermissions(undefined), { contents: 'write' });
+    assert.equal(parsePermissions(undefined), undefined, 'absent in an update means "leave it alone"');
     assert.deepEqual(parsePermissions('contents=write,pull_requests=write'), {
       contents: 'write',
       pull_requests: 'write',
@@ -319,6 +429,38 @@ describe('init', () => {
         }),
       /socketPath is required/,
     );
+  });
+});
+
+describe('mergeAllowList', () => {
+  it('adds, deduplicates case-insensitively and preserves order', () => {
+    assert.deepEqual(mergeAllowList(['a/one'], { dir: '/x', allow: ['b/two'], force: false }), ['a/one', 'b/two']);
+    assert.deepEqual(mergeAllowList(['a/one'], { dir: '/x', allow: ['A/One'], force: false }), ['a/one']);
+  });
+
+  it('refuses to produce an empty allowlist, which would authorize nothing', () => {
+    assert.throws(() => mergeAllowList([], { dir: '/x', allow: [], force: false }), /default-deny/);
+    assert.throws(
+      () => mergeAllowList(['a/one'], { dir: '/x', replaceAllow: true, force: false }),
+      /default-deny/,
+    );
+  });
+
+  it('removes, and replaces only when told to', () => {
+    assert.deepEqual(
+      mergeAllowList(['a/one', 'b/two'], { dir: '/x', removeAllow: ['A/ONE'], force: false }),
+      ['b/two'],
+    );
+    assert.deepEqual(
+      mergeAllowList(['a/one', 'b/two'], { dir: '/x', allow: ['c/three'], replaceAllow: true, force: false }),
+      ['c/three'],
+    );
+  });
+
+  it('rejects a malformed entry instead of writing it', () => {
+    for (const bad of ['acme', 'acme/wid*', 'acme/other/extra']) {
+      assert.throws(() => mergeAllowList([], { dir: '/x', allow: [bad], force: false }), /not a valid/);
+    }
   });
 });
 

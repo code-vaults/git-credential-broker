@@ -161,8 +161,30 @@ could not read its own key.)
 In both modes `init` installs the key `0600`, generates the configuration and **validates it with
 the same code the daemon uses**, so a mistake is caught here rather than at the first push. It
 refuses to run inside the container, refuses to put the key anywhere the container can read, and
-refuses a malformed allowlist entry. `--force` overwrites an existing config;
-`--permissions contents=write,pull_requests=write` changes what the token may do.
+refuses a malformed allowlist entry.
+
+#### Changing it later
+
+`config.json` is the source of truth — the daemon only ever reads it, and it is meant to be
+reviewed, kept with your dotfiles, and edited by hand. `init` therefore **merges**: it changes
+only what you pass, so nothing has to be repeated and hand edits survive.
+
+```sh
+git-credential-broker init --allow code-vaults/another-repo      # add one repository
+git-credential-broker init --remove-allow code-vaults/old-repo   # drop one
+git-credential-broker init --allow a/one,b/two --replace-allow   # set the list exactly
+git-credential-broker init --permissions contents=write,pull_requests=write
+git-credential-broker init --cert ~/Downloads/new-key.pem        # rotate the key
+```
+
+No `--cert`, `--client-id` or `--app-id` is needed once the file exists, and the command prints
+the before/after allowlist so the change is reviewable. It refuses to write an empty allowlist,
+refuses to change the deployment `--mode` of an existing file (that would re-point its paths),
+and `--force` is only for regenerating a file from flags. Restart the broker to pick a change up.
+
+> Earlier this was both awkward and dangerous: adding one repository required re-supplying every
+> flag, and `--force` then silently *replaced* the allowlist, so adding `b/two` could quietly drop
+> `a/one`.
 
 The sidecar runs with the key mounted read-only, no published ports, no capabilities and a
 read-only root filesystem. There is nothing to copy and nothing to build, which is the point of
