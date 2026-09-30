@@ -145,6 +145,28 @@ bash scripts/host-setup.sh \
   --allow code-vaults/git-credential-broker
 ```
 
+### Containerised deployment (when the host has no Node)
+
+A NAS that has Docker usually does not have Node, so the broker is better run as a sidecar.
+`scripts/deploy-sidecar.sh` stages the key, config and code outside every mount, rebuilds the
+code inside a throwaway container, and starts a sidecar with the key mounted read-only, no
+ports, no capabilities and a read-only root filesystem:
+
+```sh
+bash scripts/deploy-sidecar.sh \
+  --cert /volume1/public/certificates/git-credential-broker.private-key.pem \
+  --allow code-vaults/git-credential-broker
+```
+
+It refuses to run inside the container, refuses a key that lives in a path the container can
+read, and refuses to deploy a **dirty working tree** — the code it stages will run with the
+private key, so it must be code you reviewed; a wrong `$0` that would stage some other tree
+fails too. Add `--dry-run` to see the plan, `--allow-dirty` to override, `--skip-build` to
+reuse an existing `dist/`.
+
+Because the socket lands in `~/.dsh/git-broker/`, which the DSH container already mounts,
+**the container needs no change and no restart** after the sidecar starts.
+
 Startup is fail-fast: a missing key or an over-broad configuration stops the broker rather
 than letting it come up and deny everything silently.
 
