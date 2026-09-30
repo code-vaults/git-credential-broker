@@ -410,6 +410,25 @@ export function parsePermissions(raw: string | undefined): Record<string, string
 }
 
 /**
+ * Render the permissions the broker will actually request, in a stable order.
+ *
+ * An absent map means the provider's default, which is `contents=write` — worth printing, because
+ * "I did not pass anything" and "I passed something that did not stick" otherwise look identical.
+ *
+ * @param permissions - the configured map, if any.
+ * @returns a `name=level` list.
+ */
+function formatPermissions(permissions: Readonly<Record<string, string>> | undefined): string {
+  const effective = permissions ?? { contents: 'write' };
+  return (
+    Object.entries(effective)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, level]) => `${name}=${level}`)
+      .join(' ') || '(none)'
+  );
+}
+
+/**
  * Split a repeatable, comma-separated flag.
  *
  * @param args - the parsed arguments.
@@ -479,13 +498,12 @@ export async function runInit(argv: readonly string[]): Promise<number> {
       say('');
       say(`allowlist      : ${beforeBlock.allow.join(' ')}`);
       say(`              -> ${block.allow.join(' ')}`);
-      const changed = (['clientId', 'appId', 'permissions'] as const).filter(
-        (key) => JSON.stringify(beforeBlock[key]) !== JSON.stringify(block[key]),
-      );
-      if (changed.length > 0) say(`also changed   : ${changed.join(', ')}`);
     } else {
       say(`allowlist      : ${block.allow.join(' ')}`);
     }
+    // Always, not only when it changed: without this, "did --permissions take effect?" could only be
+    // answered by re-reading the file, and a run that did nothing looks exactly like one that worked.
+    say(`permissions    : ${formatPermissions(block.permissions)}${block.permissions ? '' : ' (the default)'}`);
 
     say('');
     say('paths inside the configuration, from the broker\'s point of view:');
