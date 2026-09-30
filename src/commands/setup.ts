@@ -68,16 +68,24 @@ export interface SetupResult {
  * The real path of the running script, so the configuration keeps working regardless of PATH —
  * `npx` and global installs both land somewhere git would not otherwise look.
  *
- * @returns the resolved path, or a bare `git-credential-broker` when it cannot be determined.
+ * On Windows that path has to be spelled as a command, because a `.js` file is not executable
+ * there (PATHEXT does not cover it) and git only treats a helper value as a shell command when it
+ * begins with `!`. On POSIX the built entry point carries a shebang and the executable bit, so the
+ * bare path is right and avoids depending on `node` being on PATH.
+ *
+ * @param platform - the platform to answer for; injectable so both branches are testable.
+ * @returns the resolved path or command, or a bare `git-credential-broker` when it cannot be determined.
  */
-export function defaultHelperPath(): string {
+export function defaultHelperPath(platform: NodeJS.Platform = process.platform): string {
   const invoked = process.argv[1];
   if (!invoked) return 'git-credential-broker';
+  let resolved: string;
   try {
-    return fs.realpathSync(invoked);
+    resolved = fs.realpathSync(invoked);
   } catch {
-    return path.resolve(invoked);
+    resolved = path.resolve(invoked);
   }
+  return platform === 'win32' ? `!node "${resolved.replace(/\\/g, '/')}"` : resolved;
 }
 
 /**

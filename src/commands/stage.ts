@@ -18,6 +18,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { fail, insideMountedPath, parseArgs, say, warn, writeSecretFile } from './support.ts';
@@ -93,8 +94,12 @@ export function performStage(input: StageInput): StageResult {
     );
   }
 
-  const git = (args: readonly string[]): string => {
-    const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  const git = (args: readonly string[], extraEnv: NodeJS.ProcessEnv = {}): string => {
+    const result = spawnSync('git', args, {
+      cwd: repo,
+      encoding: 'utf8',
+      env: { ...process.env, ...extraEnv },
+    });
     if (result.status !== 0) {
       throw new Error(
         `git ${args.join(' ')} failed: ${(result.stderr ?? '').trim() || `exit ${String(result.status)}`}`,
@@ -110,18 +115,22 @@ export function performStage(input: StageInput): StageResult {
     .split('\n')
     .filter((line) => line.length > 0).length;
 
-  const archive = spawnSync('git', ['archive', '--format=tar', sha], { cwd: repo, maxBuffer: 1 << 30 });
-  if (archive.status !== 0 || archive.stdout === null) {
-    throw new Error(`git archive ${sha} failed: ${(archive.stderr?.toString() ?? '').trim()}`);
+  // Exported with git alone. `git archive | tar` would add a dependency on a system `tar`, which is
+  // not a given on Windows, and there is no need for one: a temporary index can address the commit
+  // and `checkout-index` writes it out. The prefix is given with forward slashes because that is
+  // what git accepts on every platform.
+  const indexFile = path.join(os.tmpdir(), `git-credential-broker-stage-${process.pid}-${Date.now()}`);
+  const prefix = `${to.replace(/\\/g, '/')}/`;
+  try {
+    git(['read-tree', sha], { GIT_INDEX_FILE: indexFile });
+    // Cleared rather than merely overwritten: a file deleted since the last stage must not linger
+    // and be imported by surprise.
+    if (entries.length > 0) fs.rmSync(to, { recursive: true, force: true });
+    fs.mkdirSync(to, { recursive: true, mode: 0o755 });
+    git(['checkout-index', '-a', '-f', `--prefix=${prefix}`], { GIT_INDEX_FILE: indexFile });
+  } finally {
+    fs.rmSync(indexFile, { force: true });
   }
-
-  // Cleared rather than merely overwritten: a file deleted since the last stage must not linger
-  // and be imported by surprise.
-  if (entries.length > 0) fs.rmSync(to, { recursive: true, force: true });
-  fs.mkdirSync(to, { recursive: true, mode: 0o755 });
-
-  const untar = spawnSync('tar', ['-x', '-C', to], { input: archive.stdout });
-  if (untar.status !== 0) throw new Error(`tar failed: ${(untar.stderr?.toString() ?? '').trim()}`);
 
   writeSecretFile(
     record,

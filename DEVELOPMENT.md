@@ -111,6 +111,11 @@ corepack yarn check        # typecheck + build + everything; run this before cla
 The end-to-end test needs no network: it serves `git-http-backend` locally and pushes to it through
 the real helper and a real broker.
 
+The suite is **POSIX-flavoured** and does not run on Windows today: it execs `git http-backend`,
+pins `HOME`, and one test writes a `#!/bin/sh` decoy helper. The CLI itself is portable where it
+matters (see the Platforms note in [README.md](README.md)); the tests are not, and nothing here has
+been run on Windows.
+
 If you add tests, three traps are already paid for in this suite:
 
 - **Pin `HOME`.** The helper falls back to `$HOME/.config/git-credential-broker/socket`, so an

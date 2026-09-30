@@ -31,6 +31,24 @@ Two commands are installed:
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Platforms
+
+The broker is designed for a POSIX host — a Linux machine, or a Linux container, which is what Docker
+Desktop runs. Two things are specific to that, and neither is a line of code that can simply be
+fixed:
+
+- **The transport is a unix domain socket**, and unix sockets do not cross the Windows/Linux
+  boundary. A native Windows `git` cannot reach a Linux broker: run the helper on the broker's side
+  (WSL, or a container), or keep the pairing within one of them.
+- **Its access control is file permissions** — `0700` on the socket directory, `0660` on the socket,
+  with the broker and the client sharing a uid. Windows emulates modes without an ACL effect, so
+  those calls would enforce nothing there.
+
+Everything else is ordinary Node and works on Windows: `npm install -g` (npm writes the shims),
+`stage` (it needs only git, and extracts with `git read-tree` + `checkout-index`), and the helper
+protocol, which is stdio. `setup` records the helper as `!node "<path>"` on Windows, because a `.js`
+file is not executable there. Windows is not covered by the test suite.
+
 ## Install
 
 ```sh

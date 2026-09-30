@@ -17,7 +17,7 @@ import { renderCompose } from '../../src/commands/compose.ts';
 import { SIDECAR, resolveConfigPath, deploymentDir } from '../../src/config.ts';
 import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit } from '../../src/commands/init.ts';
 import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../src/commands/support.ts';
-import { performSetup } from '../../src/commands/setup.ts';
+import { defaultHelperPath, performSetup } from '../../src/commands/setup.ts';
 import type { BrokerConfig, GithubAppHostConfig } from '../../src/types.ts';
 
 /** Scratch space for the whole file. */
@@ -126,6 +126,16 @@ describe('setup', () => {
       ...overrides,
     };
   }
+
+  it('records a bare path on POSIX and an interpreter command on Windows', () => {
+    const posix = defaultHelperPath('linux');
+    assert.equal(posix, fs.realpathSync(process.argv[1] as string));
+
+    const win = defaultHelperPath('win32');
+    assert.match(win, /^!node "/, 'git only runs a helper value as a command when it starts with !');
+    assert.match(win, /[^\\]+\.ts"$/, 'and with forward slashes, which git accepts everywhere');
+    assert.equal(win.includes('\\'), false);
+  });
 
   it('writes the three settings git needs, and both socket-path records', async () => {
     const input = setupInput();
