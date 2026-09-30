@@ -44,6 +44,11 @@ fixed:
   with the broker and the client sharing a uid. Windows emulates modes without an ACL effect, so
   those calls would enforce nothing there.
 
+The requirement that matters is a shared **local** filesystem, not merely "runs in a container": the
+socket is a filesystem object, so the broker and the git that uses it must be on the same machine,
+or — when both are containers — share a volume. A socket cannot be reached over a network share, and
+that is the point: there is no listening port to authenticate and no traffic to send through a proxy.
+
 Everything else is ordinary Node and works on Windows: `npm install -g` (npm writes the shims),
 `stage` (it needs only git, and extracts with `git read-tree` + `checkout-index`), and the helper
 protocol, which is stdio. `setup` records the helper as `!node "<path>"` on Windows, because a `.js`
