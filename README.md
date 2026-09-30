@@ -227,15 +227,8 @@ The design record, the review that preceded it, and the measured environment fac
 
 ## Development
 
-```sh
-corepack yarn install
-corepack yarn typecheck    # tsc, no emit
-corepack yarn build        # to dist/
-corepack yarn check        # typecheck + build + all tests — run this before claiming anything works
-corepack yarn pack:check   # exactly what npm would publish
-```
-
-See [AGENTS.md](AGENTS.md) for the invariants that are easy to break.
+Building from a checkout, tests and releasing: [DEVELOPMENT.md](DEVELOPMENT.md). The rules that keep
+this working, and the traps it already paid for, are in [AGENTS.md](AGENTS.md).
 
 ## Layout
 
@@ -248,5 +241,6 @@ src/commands/            the CLI: setup, init, stage, compose, probe, diagnose
 src/cli/                 the two executables (helper, daemon)
 test/                    unit tests, plus an end-to-end push over authenticated smart HTTP
 examples/                configuration and compose snippets
+DEVELOPMENT.md           building from source, tests, releasing
 .agents/notes/           the design, its review, and the measured environment facts
 ```

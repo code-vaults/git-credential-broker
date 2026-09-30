@@ -58,9 +58,10 @@ export function renderCompose(input: ComposeInput): string {
 #
 #   npx --yes --package '${input.packageSpec}' git-credential-brokerd
 #
-# To avoid depending on the registry at boot, either pin a version, build a two-line image
-# (FROM ${input.image} + RUN npm install -g ${input.packageSpec}), or render this file with
-# --code <directory> to run staged code from a mount instead.`;
+# To avoid depending on the registry at boot, either render this file with --code <directory> to
+# run staged code from a mount, or point --image at an image of your own that already has the
+# package installed, and change \`command\` to the binary in it:
+#   ["git-credential-brokerd", "--config", "${SIDECAR.configPath}"]`;
 
   const environment = fromCode
     ? ''
