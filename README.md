@@ -39,7 +39,10 @@ fixed:
 
 - **The transport is a unix domain socket**, and unix sockets do not cross the Windows/Linux
   boundary. A native Windows `git` cannot reach a Linux broker: run the helper on the broker's side
-  (WSL, or a container), or keep the pairing within one of them.
+  (WSL, or a container), or keep the pairing within one of them. Inside WSL that means the socket
+  directory belongs on the distribution's own filesystem (`~`), not under `/mnt/c`: a Windows-backed
+  path (9p/drvfs) cannot carry a unix socket, and the same applies to bind-mounting a Windows
+  directory into a Linux container.
 - **Its access control is file permissions** — `0700` on the socket directory, `0660` on the socket,
   with the broker and the client sharing a uid. Windows emulates modes without an ACL effect, so
   those calls would enforce nothing there.
