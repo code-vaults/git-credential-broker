@@ -83,6 +83,11 @@ export function tryRunAsync(
     child.on('close', (status) => finish({ status, stdout, stderr, error: null }));
 
     // Always close stdin: git can otherwise wait on a pipe that nobody will ever write to.
+    // A command that exits before reading (a fast failure, a usage error) closes the pipe
+    // first, and writing to a closed pipe raises EPIPE asynchronously. Without a handler that
+    // is an unhandled stream error, which takes down the entire test file and hides the real
+    // assertion — this was a genuine intermittent failure of this suite.
+    child.stdin?.on('error', () => {});
     child.stdin?.end(options.input ?? '');
   });
 }

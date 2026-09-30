@@ -7,14 +7,14 @@
  *  - configured but unreachable    -> refuse with `quit=1` (nothing silently falls through).
  */
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { after, describe, it } from 'node:test';
 
-import { parseArgs, parseCredentialInput, runHelper } from '../../src/helper.ts';
+import { parseArgs, parseCredentialInput, resolveSocketPath, runHelper } from '../../src/helper.ts';
 import type { WireResponse } from '../../src/types.ts';
 
 const CLIENT_REQUEST = 'protocol=https\nhost=github.com\npath=acme/widget.git\n\n';
@@ -101,6 +101,37 @@ describe('parseCredentialInput', () => {
   });
 });
 
+describe('resolveSocketPath', () => {
+  it('prefers the command-line flag, then the environment variable', () => {
+    assert.equal(resolveSocketPath('/from/flag', { GIT_BROKER_SOCKET: '/from/env' }), '/from/flag');
+    assert.equal(resolveSocketPath(undefined, { GIT_BROKER_SOCKET: '/from/env' }), '/from/env');
+  });
+
+  it('falls back to the socket file so a non-login shell still works', () => {
+    const home = mkdtempSync(path.join(tmpdir(), 'gcb-home-'));
+    try {
+      const configDir = path.join(home, '.config', 'git-credential-broker');
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(path.join(configDir, 'socket'), '/from/file\n');
+      assert.equal(resolveSocketPath(undefined, { HOME: home }), '/from/file');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('honours GIT_BROKER_SOCKET_FILE and reports nothing when unconfigured', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'gcb-sockfile-'));
+    try {
+      const file = path.join(dir, 'custom-socket-path');
+      writeFileSync(file, '/custom/socket\n');
+      assert.equal(resolveSocketPath(undefined, { GIT_BROKER_SOCKET_FILE: file }), '/custom/socket');
+      assert.equal(resolveSocketPath(undefined, { HOME: dir }), undefined, 'a bare HOME means unconfigured');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('parseArgs', () => {
   it('defaults to get and accepts an explicit socket', () => {
     assert.deepEqual(parseArgs([]), { operation: 'get', socketPath: undefined, strict: false });
@@ -180,6 +211,23 @@ describe('runHelper: configured means fail-closed', () => {
       assert.equal(io.stdoutText(), 'username=x-access-token\npassword=ghs_fake\n');
     } finally {
       await broker.close();
+    }
+  });
+
+  it('uses the socket file when the environment carries no variables at all', async () => {
+    const home = mkdtempSync(path.join(tmpdir(), 'gcb-nonlogin-'));
+    const broker = await startFakeBroker({ ok: true, username: 'x-access-token', password: 'ghs_from_file' });
+    try {
+      const configDir = path.join(home, '.config', 'git-credential-broker');
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(path.join(configDir, 'socket'), `${broker.socketPath}\n`);
+
+      const io = capture(CLIENT_REQUEST);
+      await runHelper(['get'], { ...io, env: { HOME: home } });
+      assert.equal(io.stdoutText(), 'username=x-access-token\npassword=ghs_from_file\n');
+    } finally {
+      await broker.close();
+      rmSync(home, { recursive: true, force: true });
     }
   });
 

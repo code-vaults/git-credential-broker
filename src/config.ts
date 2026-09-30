@@ -6,6 +6,7 @@
  */
 import { readFileSync } from 'node:fs';
 
+import { parseAllowEntry } from './policy.ts';
 import type { BrokerConfig, GithubAppHostConfig, HostConfig, StaticHostConfig } from './types.ts';
 
 /** Providers this build knows how to construct. */
@@ -208,6 +209,15 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
       for (const entry of allowRaw) {
         if (typeof entry !== 'string') {
           errors.push(`${at}.allow must contain only strings`);
+          continue;
+        }
+        // A malformed entry would match nothing and therefore deny, which is safe but silent:
+        // the operator would believe they had allowed a repository. Reject it loudly instead.
+        if (!parseAllowEntry(entry)) {
+          errors.push(
+            `${at}.allow entry ${JSON.stringify(entry)} is not a valid "owner/repo" pattern ` +
+              '(a whole segment may be "*", but a partial wildcard like "wid*" is not)',
+          );
           continue;
         }
         allow.push(entry);

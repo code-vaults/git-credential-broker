@@ -204,6 +204,10 @@ export function createGitHttpServer(options: GitHttpServerOptions): GitHttpServe
           response.end(parsed.body);
         }),
       );
+      // git http-backend can exit without reading the body (it refuses some requests before
+      // touching stdin). Writing to that closed pipe would raise an unhandled EPIPE and crash
+      // the server instead of returning a response.
+      child.stdin.on('error', () => {});
       child.stdin.end(body);
     })();
   });

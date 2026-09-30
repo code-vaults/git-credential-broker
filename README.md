@@ -135,6 +135,16 @@ node dist/cli/daemon.js --config /volume1/docker/git-cred-broker/config.json --c
 node dist/cli/daemon.js --config /volume1/docker/git-cred-broker/config.json
 ```
 
+Or let `scripts/host-setup.sh` do the mechanical part — it installs the key 0600, generates the
+configuration, refuses to put the key anywhere the container can read, and validates the
+result without binding the socket:
+
+```sh
+bash scripts/host-setup.sh \
+  --app-pem ~/Downloads/git-credential-broker.private-key.pem \
+  --allow code-vaults/git-credential-broker
+```
+
 Startup is fail-fast: a missing key or an over-broad configuration stops the broker rather
 than letting it come up and deny everything silently.
 
@@ -153,8 +163,12 @@ bash scripts/container-setup.sh
 > `core.fileMode=false` and the exec bit is not tracked. Build output and installed package
 > bins still get their exec bits at build/install time.
 
-Set both variables in the container's `environment:` rather than sourcing a file, so they
-reach every process including non-login shells. See
+`container-setup.sh` records the socket path in two places, because one of them is not enough:
+the environment (for interactive shells) and `~/.config/git-credential-broker/socket` (which
+the helper reads when the environment carries nothing — git is often spawned from a non-login
+shell that never sources a profile, and "pushes silently stopped working" is a bad failure).
+Setting `GIT_BROKER_SOCKET` and `GIT_BROKER_REQUIRE` in the container's `environment:` in
+compose remains the most explicit option; see
 [`examples/docker-compose.snippet.yml`](examples/docker-compose.snippet.yml).
 
 ## Working with the bind-mounted `~/Workspaces`
@@ -200,7 +214,7 @@ Per host, keyed exactly as git reports it (`github.com`, or `host:port` for othe
 | Key | Meaning |
 |---|---|
 | `provider` | `github-app` or `static`. |
-| `allow` | Default-deny list: `owner/repo`, or a whole-segment wildcard `owner/*`. |
+| `allow` | Default-deny list: `owner/repo`, or a whole-segment wildcard `owner/*`. A malformed entry (no slash, three segments, a partial wildcard like `wid*`) is rejected at load time rather than silently matching nothing. |
 | `allowInsecureHttp` | Default `false`. Permit a plaintext `http` remote for this host. |
 
 `github-app`: `clientId` (preferred `iss`), `appId` (fallback), `privateKeyPath`/`privateKeyPem`,
@@ -249,7 +263,7 @@ corepack yarn check         # typecheck + test
 
 ## Verified behaviour
 
-`corepack yarn check` — **67 tests, 0 failures** (58 unit, 9 end-to-end). The end-to-end suite
+`corepack yarn check` — **81 tests, 0 failures** (72 unit, 9 end-to-end). The end-to-end suite
 drives a real `git http-backend` server that demands HTTP Basic auth, with the credential
 supplied only by the shipped helper and broker:
 
@@ -281,6 +295,12 @@ The first real app this was pointed at had only `contents: write` granted while 
 configuration requested `pull_requests: write` — which GitHub would have answered with a bare
 `422` at push time. That is why the broker now pre-flights `GET /app` and names the missing
 permission instead.
+
+The suite was also intermittently failing until it was reproduced deliberately: writing to a
+child process's stdin after that process had already exited raised an unhandled `EPIPE`, which
+took down the whole test file and reported a misleading error instead of the real assertion.
+Both the process helper and the CGI server now ignore `EPIPE`, and the combined suite passes
+repeatedly (6/6 before, 0/6 failures after).
 
 ## Remaining step for a real GitHub App
 

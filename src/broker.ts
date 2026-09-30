@@ -63,14 +63,20 @@ export interface RequestHandlerOptions {
  * Make the socket path safe to bind.
  *
  * A stale socket left by a crashed broker is removed. Anything else at that path — a
- * symlink, a regular file, a directory — is refused rather than overwritten, because the
- * path may sit in a directory the agent container can write to.
+ * symlink, a regular file, a directory — is refused rather than overwritten, because the path
+ * may sit in a directory the agent container can write to. The containing directory is checked
+ * for the same reason: a symlinked directory would let the container choose where the socket
+ * gets bound.
  *
  * @param socketPath - the configured socket path.
- * @throws {Error} when the path exists and is not a stale socket.
+ * @throws {Error} when the path exists and is not a stale socket, or the directory is a symlink.
  */
 export function prepareSocketPath(socketPath: string): void {
-  fs.mkdirSync(path.dirname(socketPath), { recursive: true, mode: 0o700 });
+  const directory = path.dirname(socketPath);
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  if (fs.lstatSync(directory).isSymbolicLink()) {
+    throw new Error(`refusing to bind inside a symlinked directory: ${directory}`);
+  }
   let stats: fs.Stats;
   try {
     stats = fs.lstatSync(socketPath);

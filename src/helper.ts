@@ -28,7 +28,10 @@
  *
  * The helper is stateless: it holds no secret and knows no allowlist. The broker decides.
  */
+import { readFileSync } from 'node:fs';
 import net from 'node:net';
+import { homedir } from 'node:os';
+import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 
 import { asWireResponse, encodeMessage, parseMessage } from './socket-protocol.ts';
@@ -39,6 +42,15 @@ const MAX_INPUT_BYTES = 8 * 1024;
 
 /** How long to wait for the broker before giving up (fail closed, fast). */
 const SOCKET_TIMEOUT_MS = 10_000;
+
+/**
+ * Where to look for the socket path when no environment variable is set.
+ *
+ * A file rather than only an environment variable, because git is often spawned from a
+ * non-login shell that never sources a profile: relying on the environment alone means pushes
+ * mysteriously stop working in a fresh session. Override with `GIT_BROKER_SOCKET_FILE`.
+ */
+const DEFAULT_SOCKET_FILE = ['.config', 'git-credential-broker', 'socket'];
 
 /** Injectable streams and environment, for tests. */
 export interface HelperIO {
@@ -151,6 +163,40 @@ export function requestOverSocket(
 }
 
 /**
+ * Decide where the broker lives, in precedence order:
+ *
+ *   1. `--socket <path>` on the command line;
+ *   2. `GIT_BROKER_SOCKET`;
+ *   3. the contents of `GIT_BROKER_SOCKET_FILE`, defaulting to
+ *      `$HOME/.config/git-credential-broker/socket`.
+ *
+ * An empty or missing result means "not configured in this environment", which the caller
+ * treats as "behave as if not installed".
+ *
+ * @param explicitSocket - the `--socket` argument, if any.
+ * @param env - the environment to read.
+ * @returns the resolved socket path, or undefined when nothing is configured.
+ */
+export function resolveSocketPath(
+  explicitSocket: string | undefined,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  if (explicitSocket) return explicitSocket;
+  const fromEnv = env['GIT_BROKER_SOCKET'];
+  if (fromEnv) return fromEnv;
+
+  const file =
+    env['GIT_BROKER_SOCKET_FILE'] ?? path.join(env['HOME'] ?? homedir(), ...DEFAULT_SOCKET_FILE);
+  try {
+    const fromFile = readFileSync(file, 'utf8').trim();
+    if (fromFile) return fromFile;
+  } catch {
+    // No socket file: this environment is not configured for the broker.
+  }
+  return undefined;
+}
+
+/**
  * Parse the helper's own command line.
  *
  * @param argv - arguments after the script name.
@@ -203,7 +249,7 @@ export async function runHelper(argv: readonly string[], io: HelperIO = {}): Pro
   // Both are intentionally no-ops: nothing about a credential is ever persisted.
   if (operation !== 'get') return 0;
 
-  const socketPath = socketArgument ?? env['GIT_BROKER_SOCKET'];
+  const socketPath = resolveSocketPath(socketArgument, env);
   const strict = strictArgument || env['GIT_BROKER_REQUIRE'] === '1';
 
   const refuse = (message: string): number => {

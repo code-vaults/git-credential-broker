@@ -210,6 +210,16 @@ describe('prepareSocketPath', () => {
     assert.equal(fs.readFileSync(target, 'utf8'), 'important', 'the file must be left alone');
   });
 
+  it('refuses to bind inside a symlinked directory', () => {
+    // The recommended socket path sits in a directory the agent can write to, so a symlinked
+    // directory would let the container choose where the broker binds.
+    const real = path.join(dir, 'real-dir');
+    const link = path.join(dir, 'link-dir');
+    fs.mkdirSync(real, { recursive: true });
+    fs.symlinkSync(real, link);
+    assert.throws(() => prepareSocketPath(path.join(link, 'broker.sock')), /symlinked directory/);
+  });
+
   it('refuses a symlink instead of following it', () => {
     const real = path.join(dir, 'real.sock');
     const link = path.join(dir, 'link.sock');
