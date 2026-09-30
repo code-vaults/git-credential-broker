@@ -1,0 +1,212 @@
+# Tests. The Linux job is the authoritative one; the two Windows jobs exist because this project
+# makes claims about Windows and WSL that would otherwise never be checked.
+#
+# Only first-party actions are used. A project about supply-chain credentials should not be the one
+# pulling in an unvetted action to run its tests.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  # A newer push makes an older run pointless, and the Windows jobs are the slow ones. Cancel the
+  # older run in the same group — on every ref, not only on pull requests.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    timeout-minutes: 15
+    name: tests (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: corepack enable
+      - run: corepack yarn install --immutable
+      # typecheck + build + unit + the end-to-end push against a local git-http-backend.
+      - run: corepack yarn check
+
+  native-windows:
+    timeout-minutes: 15
+    name: native Windows is refused
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # The unit tests inject 'win32' into the guard. This runs the real thing on the real platform,
+      # which is the only way to know the refusal fires before anything else happens.
+      #
+      # Every step captures all streams to a file rather than piping: `2>&1 |` in PowerShell does not
+      # reliably put a native command's stderr into the pipeline, and the first run of this job failed
+      # with an empty captured output for exactly that reason. The exit code and the text are printed
+      # either way, so the next failure explains itself.
+      - name: the broker refuses to start here
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $log = Join-Path $env:RUNNER_TEMP 'daemon.txt'
+          node src/cli/daemon.ts --check *> $log
+          $code = $LASTEXITCODE
+          $out = Get-Content $log -Raw
+          Write-Host "exit=$code"
+          Write-Host $out
+            # An all-backtick fence inside a double-quoted string escapes the closing quote and the
+            # whole step fails to parse, so build it from its character code.
+          $fence = [string]::new([char]96, 3)
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### the broker refuses to start here"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "${fence}text"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ([string]$out)
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $fence
+          if ($code -eq 0) { throw 'the broker ran on native Windows' }
+          if ($out -notmatch 'native Windows is not supported') { throw 'the refusal did not say why' }
+
+          # The refusal exits 1 on purpose and pwsh propagates the last native exit code, so the
+          # assertions above are the verdict — not the status of the command they check.
+          exit 0
+
+      - name: setup refuses to configure git here
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $log = Join-Path $env:RUNNER_TEMP 'setup.txt'
+          node src/cli/helper.ts setup *> $log
+          $code = $LASTEXITCODE
+          $out = Get-Content $log -Raw
+          Write-Host "exit=$code"
+          Write-Host $out
+          $fence = [string]::new([char]96, 3)
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### setup refuses to configure git here"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "${fence}text"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ([string]$out)
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $fence
+          if ($code -eq 0) { throw 'setup ran on native Windows' }
+          if ($out -notmatch 'native Windows is not supported') { throw 'the refusal did not say why' }
+
+          # The refusal exits 1 on purpose and pwsh propagates the last native exit code, so the
+          # assertions above are the verdict — not the status of the command they check.
+          exit 0
+
+      - name: compose refuses to describe host paths here
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $log = Join-Path $env:RUNNER_TEMP 'compose.txt'
+          node src/cli/helper.ts compose --socket-dir C:\sock *> $log
+          $code = $LASTEXITCODE
+          $out = Get-Content $log -Raw
+          Write-Host "exit=$code"
+          Write-Host $out
+          $fence = [string]::new([char]96, 3)
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### compose refuses to describe host paths here"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "${fence}text"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ([string]$out)
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $fence
+          if ($code -eq 0) { throw 'compose rendered a file on native Windows' }
+          if ($out -notmatch 'native Windows is not supported') { throw 'the refusal did not say why' }
+
+          # The refusal exits 1 on purpose and pwsh propagates the last native exit code, so the
+          # assertions above are the verdict — not the status of the command they check.
+          exit 0
+
+      # --help must still work: the refusal is about running the broker, not about being unusable.
+
+      - name: help still works
+        shell: pwsh
+        run: node src/cli/helper.ts --help
+
+  wsl:
+    timeout-minutes: 20
+    name: tests inside WSL
+    runs-on: windows-latest
+    # Informational for now. GitHub's Windows images ship the WSL feature but not necessarily an
+    # installed distribution, and adding one needs a working kernel and a service restart; the first
+    # run of this job found no distribution and failed loudly, which is how it should fail — but a job
+    # that cannot yet run should not gate the suite.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      # Report what the runner has, install a distribution if there is none, and fail with the state
+      # rather than skipping quietly: a skipped job would be worse than none.
+      - name: ensure a WSL distribution exists
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $log = Join-Path $env:RUNNER_TEMP 'wsl.txt'
+          wsl --status *>> $log
+          wsl -l -v *>> $log
+          $out = Get-Content $log -Raw
+          Write-Host $out
+          $fence = [string]::new([char]96, 3)
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### WSL on this runner"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "${fence}text"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ([string]$out)
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $fence
+          # @(...) matters: one matching name arrives as a plain string, and `$distros[0]` on a
+          # string is its first *character*, not an element — which is how this step died on
+          # "[System.Char] does not contain a method named 'Trim'".
+          $distros = @((wsl -l -q 2>$null) -replace "`0", '' | Where-Object { $_.Trim() -ne '' })
+          if (-not $distros) {
+            Write-Host 'no distribution installed; adding one'
+            wsl --install -d Ubuntu --no-launch *>> $log
+            Start-Sleep -Seconds 30
+          $distros = @((wsl -l -q 2>$null) -replace "`0", '' | Where-Object { $_.Trim() -ne '' })
+          }
+          if (-not $distros) {
+            throw 'no WSL distribution available on this runner'
+          }
+          $distro = $distros[0].Trim()
+          "DISTRO=$distro" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "using $distro"
+          wsl -d $distro -- bash -lc 'uname -sr'
+
+      - name: install Node 24 inside the distribution
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          wsl -d $env:DISTRO -u root -- bash -lc "apt-get update -qq && apt-get install -y -qq git curl ca-certificates && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - && apt-get install -y -qq nodejs"
+          wsl -d $env:DISTRO -- bash -lc 'node --version && corepack --version'
+
+      # Copy the checkout onto the distribution's own filesystem. Running the suite from /mnt/<drive>
+      # would fail for the reason this repository documents: 9p/drvfs cannot carry a unix socket, and
+      # the end-to-end test creates one.
+      - name: archive the checkout onto the distribution's filesystem
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $source = (wsl -d $env:DISTRO -- wslpath -a "$PWD").Trim()
+          Write-Host "archiving $source (Windows-backed) into /opt/ci"
+          # drvfs is slow per file, and `cp -a` opens every one of them; packing the tree and
+          # unpacking it inside the distribution reads it in one sequential pass instead.
+          wsl -d $env:DISTRO -u root -- git config --global --add safe.directory "$source"
+          wsl -d $env:DISTRO -u root -- bash -lc "rm -rf /opt/ci && mkdir -p /opt/ci && git -C '$source' archive HEAD | tar -x -C /opt/ci"
+          Write-Host "archived into /opt/ci"
+
+      - name: run the suite
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $log = Join-Path $env:RUNNER_TEMP 'suite.txt'
+          wsl -d $env:DISTRO -u root -- bash -lc 'cd /opt/ci && corepack enable && corepack yarn install --immutable && corepack yarn check' *> $log
+          $code = $LASTEXITCODE
+          $out = Get-Content $log -Raw
+          Write-Host $out
+          $fence = [string]::new([char]96, 3)
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### the suite inside WSL"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "${fence}text"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ([string]$out)
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $fence
+          if ($code -ne 0) {
+            throw "the suite failed inside WSL (exit=$code)"
+          }
