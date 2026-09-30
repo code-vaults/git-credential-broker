@@ -12,6 +12,7 @@ import { describe, it } from 'node:test';
 
 import { createGithubAppProvider, nextLink, signAppJwt } from '../../src/providers/github-app.ts';
 import type { FetchLike, FetchResponseLike, GithubAppHostConfig } from '../../src/types.ts';
+import { ProviderConfigError } from '../../src/errors.ts';
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const PRIVATE_PEM = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
@@ -106,6 +107,7 @@ function createStubFetch(options: {
   token?: string;
   tokenStatus?: number;
   appPermissions?: Record<string, string>;
+  installationPermissions?: Record<string, string>;
 }): { calls: RecordedCall[]; fetchImpl: FetchLike } {
   const {
     installations,
@@ -113,6 +115,7 @@ function createStubFetch(options: {
     token = 'ghs_stub_token_value',
     tokenStatus = 201,
     appPermissions = { contents: 'write', pull_requests: 'write' },
+    installationPermissions = appPermissions,
   } = options;
   const calls: RecordedCall[] = [];
   const fetchImpl: FetchLike = (url, init) => {
@@ -124,6 +127,9 @@ function createStubFetch(options: {
     });
     if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
     if (url.includes('/app/installations?')) return Promise.resolve(jsonResponse(installations));
+    if (/\/app\/installations\/\d+$/.test(url)) {
+      return Promise.resolve(jsonResponse({ permissions: installationPermissions }));
+    }
     if (url.includes('/access_tokens')) {
       if (tokenStatus !== 201) return Promise.resolve(jsonResponse({ message: 'Bad credentials' }, tokenStatus));
       return Promise.resolve(
@@ -288,6 +294,9 @@ describe('createGithubAppProvider', () => {
       if (url.includes('/app/installations?')) {
         return Promise.resolve(jsonResponse([{ id: 42, account: { login: 'acme' } }]));
       }
+      if (/\/app\/installations\/\d+$/.test(url)) {
+        return Promise.resolve(jsonResponse({ permissions: appPermissions }));
+      }
       if (url.includes('/access_tokens')) {
         return Promise.resolve(
           jsonResponse({ token: 'ghs_after_fix', expires_at: new Date(nowMs + 3_600_000).toISOString() }, 201),
@@ -321,6 +330,29 @@ describe('createGithubAppProvider', () => {
       full: 'acme/widget',
     });
     assert.equal(credential.password, 'ghs_after_fix');
+  });
+
+  it('fails when the app has a permission but the installation has not approved it', async () => {
+    // /app is the app's ceiling; the installation is the actual grant. Checking only the former passes
+    // here and then fails at the token request, where the message is GitHub's and cannot be handed to
+    // the container — so the operator gets "see the broker log" instead of a permission name.
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      appPermissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
+      installationPermissions: { contents: 'write', pull_requests: 'write' },
+    });
+    const provider = providerFor(stub, { permissions: { contents: 'write', workflows: 'write' } });
+    const error = await provider
+      .getCredential({ host: 'github.com', owner: 'acme', repo: 'widget', full: 'acme/widget' })
+      .then(() => null)
+      .catch((caught: unknown) => caught as Error);
+
+    assert.ok(error, 'the call must fail');
+    assert.ok(error instanceof ProviderConfigError, 'and be marked as ours, so it can be shown');
+    assert.match(error.message, /workflows/, 'naming the permission');
+    assert.match(error.message, /installation/, 'and which grant is short of it');
+    assert.equal(stub.calls.some((call) => call.method === 'POST'), false, 'still before a token');
   });
 
   it('skips the pre-flight when the operator turns it off', async () => {

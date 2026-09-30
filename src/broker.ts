@@ -18,6 +18,7 @@
  *    already a socket, and refuses to follow a symlink.
  */
 import fs from 'node:fs';
+import { ProviderConfigError } from './errors.ts';
 import net from 'node:net';
 import path from 'node:path';
 
@@ -224,14 +225,15 @@ export function createRequestHandler(
         expires_at: new Date(credential.expiresAt).toISOString(),
       };
     } catch (error) {
-      // The caller gets a generic message: provider errors can embed API responses.
+      // The caller normally gets a generic message, because provider errors can embed API
+      // responses. A ProviderConfigError is ours — a permission name and the configuration — and
+      // passing it on is the difference between "see the broker log" and knowing what is missing.
       const reason = String((error as Error).message ?? error).slice(0, 300);
-      return deny(
-        context,
-        CODES.PROVIDER_ERROR,
-        reason,
-        'the broker could not mint a credential; see the broker log',
-      );
+      const message =
+        error instanceof ProviderConfigError
+          ? reason
+          : 'the broker could not mint a credential; see the broker log';
+      return deny(context, CODES.PROVIDER_ERROR, reason, message);
     }
   };
 }

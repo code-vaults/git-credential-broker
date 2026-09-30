@@ -18,6 +18,7 @@
  * Reference: https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app
  */
 import { createSign } from 'node:crypto';
+import { ProviderConfigError } from '../errors.ts';
 import { readFileSync } from 'node:fs';
 
 import type { Credential, FetchLike, FetchResponseLike, GithubAppHostConfig, Provider } from '../types.ts';
@@ -156,8 +157,31 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
   const installations = new Map<string, CachedInstallation>();
   /** owner/repo -> minted credential */
   const tokens = new Map<string, Credential>();
-  /** Cached result of the one-time permission pre-flight. */
-  let permissionsChecked: Promise<void> | null = null;
+  /** Cached pre-flight result, per owner: installations differ, so the answer does too. */
+  const permissionsChecked = new Map<string, Promise<void>>();
+
+  /**
+   * Name every configured permission a grant does not cover.
+   *
+   * @param granted - the permission map to check against.
+   * @param from - how to refer to that map in the message.
+   * @param absent - how to describe a permission that is missing entirely.
+   * @returns one message per problem; empty when the grant covers the configuration.
+   */
+  function missingPermissions(granted: Record<string, string>, from: string, absent: string): string[] {
+    const problems: string[] = [];
+    for (const [name, wanted] of Object.entries(permissions)) {
+      const have = granted[name];
+      if (!have) {
+        problems.push(`${name}: ${absent}`);
+        continue;
+      }
+      if ((ACCESS_LEVELS[wanted] ?? 0) > (ACCESS_LEVELS[have] ?? 0)) {
+        problems.push(`${name}: requested "${wanted}" but ${from} only has "${have}"`);
+      }
+    }
+    return problems;
+  }
 
   /**
    * Call the REST API with a freshly signed app JWT.
@@ -237,49 +261,58 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
   }
 
   /**
-   * Confirm the app is actually granted every permission the token request will ask for.
+   * Confirm both grants cover every permission the token request will ask for.
    *
-   * Requesting a permission the app was never granted makes GitHub answer 422, which would
-   * otherwise surface at push time as an opaque "could not mint a credential". GitHub App
-   * permissions are configured in the UI and easy to forget, so this turns the failure into a
-   * precise message naming the missing permission.
+   * Two checks, because there are two ceilings. The app's permissions are what the app may ask for at
+   * all; the **installation's** are what it actually has, and a permission can be granted on the app
+   * while an installation has not approved the update. Checking only the app passes in that case and
+   * then fails at the token request, where the message is GitHub's and so cannot be handed to the
+   * container — which is how a permission problem became "see the broker log".
    *
-   * Runs once per process. A failed check is not cached, so an operator who fixes the app
-   * settings does not have to restart the broker.
+   * Cached per owner, since installations differ; a failed check is not cached, so fixing the
+   * settings does not require restarting the broker.
    *
-   * @returns resolves when the configured permissions are a subset of the granted ones.
-   * @throws {Error} naming each permission that is missing or granted at a lower level.
+   * @param owner - the account whose installation will be asked for a token.
+   * @returns resolves when the configured permissions are a subset of both grants.
+   * @throws {ProviderConfigError} naming each permission that is missing or granted at a lower level.
    */
-  function ensurePermissions(): Promise<void> {
+  function ensurePermissions(owner: string): Promise<void> {
     if (!checkPermissions) return Promise.resolve();
-    if (!permissionsChecked) {
-      permissionsChecked = (async (): Promise<void> => {
-        const { json } = await call('GET', `${api}/app`);
-        const granted = (json as { permissions?: Record<string, string> } | null)?.permissions ?? {};
-        const problems: string[] = [];
-        for (const [name, wanted] of Object.entries(permissions)) {
-          const have = granted[name];
-          if (!have) {
-            problems.push(`${name}: requested "${wanted}" but the app is not granted this permission at all`);
-            continue;
-          }
-          if ((ACCESS_LEVELS[wanted] ?? 0) > (ACCESS_LEVELS[have] ?? 0)) {
-            problems.push(`${name}: requested "${wanted}" but the app only has "${have}"`);
-          }
-        }
-        if (problems.length > 0) {
-          throw new Error(
-            `the app cannot grant the configured permissions for ${host} (${problems.join('; ')}); ` +
-              'grant them in the GitHub App settings, or lower `permissions` in the broker config, ' +
-              'or set "verifyAppPermissions": false to skip this check',
-          );
-        }
-      })().catch((error: unknown) => {
-        permissionsChecked = null;
-        throw error;
-      });
-    }
-    return permissionsChecked;
+    const key = owner.toLowerCase();
+    const cached = permissionsChecked.get(key);
+    if (cached) return cached;
+
+    const pending = (async (): Promise<void> => {
+      const { json } = await call('GET', `${api}/app`);
+      const appGranted = (json as { permissions?: Record<string, string> } | null)?.permissions ?? {};
+      const problems = missingPermissions(
+        appGranted,
+        'the app',
+        'the app is not granted this permission at all',
+      );
+
+      const installationId = await resolveInstallationId(owner);
+      const { json: installation } = await call('GET', `${api}/app/installations/${installationId}`);
+      const installationGranted =
+        (installation as { permissions?: Record<string, string> } | null)?.permissions ?? {};
+      problems.push(
+        ...missingPermissions(installationGranted, 'this installation', 'this installation has not approved it'),
+      );
+
+      if (problems.length > 0) {
+        throw new ProviderConfigError(
+          `the configured permissions for ${host} are not available (${problems.join('; ')}); ` +
+            'grant them on the app, approve the update on the installation, or lower `permissions` ' +
+            'in the broker config, or set "verifyAppPermissions": false to skip this check',
+        );
+      }
+    })().catch((error: unknown) => {
+      permissionsChecked.delete(key);
+      throw error;
+    });
+
+    permissionsChecked.set(key, pending);
+    return pending;
   }
 
   return {
@@ -291,7 +324,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         return { ...cached, cached: true };
       }
 
-      await ensurePermissions();
+      await ensurePermissions(request.owner);
       const installationId = await resolveInstallationId(request.owner);
       const { json } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
         repositories: [request.repo],

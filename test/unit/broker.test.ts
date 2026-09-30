@@ -15,6 +15,7 @@ import { redact, tokenFingerprint } from '../../src/audit.ts';
 import { CODES, createRequestHandler, prepareSocketPath } from '../../src/broker.ts';
 import { createStaticProvider } from '../../src/providers/static.ts';
 import type { AuditSink, BrokerConfig, Provider, StaticHostConfig, WireResponse } from '../../src/types.ts';
+import { ProviderConfigError } from '../../src/errors.ts';
 
 const HOST = 'github.com';
 const SECRET = 'unit-secret-value';
@@ -165,6 +166,25 @@ describe('broker request handling', () => {
     const { handle } = makeHarness(['acme/widget']);
     const response = await handle({ ...REQUEST, path: 'acme/widget-evil.git' });
     assert.equal(response.code, CODES.REPO_NOT_ALLOWED);
+  });
+
+  it('shows the caller a provider error that is ours, not a provider response', async () => {
+    // The other half of the rule below: a permission problem is composed from the configuration and a
+    // permission name, so passing it on is safe — and the alternative is "see the broker log" for
+    // something the operator can fix on a settings page.
+    const misconfigured: Provider = {
+      name: 'misconfigured',
+      getCredential: () =>
+        Promise.reject(
+          new ProviderConfigError('the configured permissions are not available (workflows: this installation has not approved it)'),
+        ),
+    };
+    const { handle } = makeHarness(['acme/widget'], misconfigured);
+    const response = await handle({ ...REQUEST });
+
+    assert.equal(response.code, CODES.PROVIDER_ERROR);
+    assert.match(response.reason ?? '', /workflows/);
+    assert.match(response.reason ?? '', /this installation has not approved it/);
   });
 
   it('keeps provider failures generic for the caller and detailed in the audit', async () => {
