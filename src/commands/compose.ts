@@ -29,7 +29,16 @@ export interface ComposeInput {
   readonly packageSpec: string;
   /** Compose service and container name. */
   readonly name: string;
+  /**
+   * Host directory holding the broker's code, as `stage` exports it. When given, the sidecar runs
+   * that code with the image's Node instead of fetching the package at start: no registry access
+   * at boot, and the commit that runs is the one you reviewed.
+   */
+  readonly code?: string;
 }
+
+/** Where a code-mounted sidecar expects the broker. */
+export const CODE_DIR = '/opt/git-credential-broker';
 
 /**
  * Render the compose file.
@@ -39,6 +48,42 @@ export interface ComposeInput {
  */
 export function renderCompose(input: ComposeInput): string {
   const socketDir = input.socketDir.replace(/\/+$/, '');
+  const fromCode = input.code !== undefined;
+
+  const origin = fromCode
+    ? `# It runs the code mounted read-only from ${input.code}, which is whatever \`stage\` put there —
+# see the STAGED.json beside it for the commit. Nothing is fetched at start and nothing is built:
+# Node 24 strips TypeScript types, so src/cli/daemon.ts runs as it is.`
+    : `# The image fetches the published package at start:
+#
+#   npx --yes --package '${input.packageSpec}' git-credential-brokerd
+#
+# To avoid depending on the registry at boot, either pin a version, build a two-line image
+# (FROM ${input.image} + RUN npm install -g ${input.packageSpec}), or render this file with
+# --code <directory> to run staged code from a mount instead.`;
+
+  const environment = fromCode
+    ? ''
+    : `
+    environment:
+      # npx needs somewhere writable for its cache; /tmp is a tmpfs above.
+      - npm_config_cache=/tmp/npm-cache`;
+
+  const command = fromCode
+    ? `      - node
+      - ${CODE_DIR}/src/cli/daemon.ts
+      - --config
+      - ${SIDECAR.configPath}`
+    : `      - sh
+      - -c
+      - exec npx --yes --package '${input.packageSpec}' git-credential-brokerd --config ${SIDECAR.configPath}`;
+
+  const codeMount = fromCode
+    ? `
+      # The code, read-only, from the commit you reviewed and staged.
+      - ${input.code}:${CODE_DIR}:ro`
+    : '';
+
   return `# Docker sidecar for git-credential-broker@${packageVersion()}
 #
 # The broker holds the only long-lived secret, so it runs isolated: the key is mounted
@@ -46,6 +91,8 @@ export function renderCompose(input: ComposeInput): string {
 # read-only. The socket directory is the only thing shared with the container that pushes.
 #
 #   docker compose -f <this file> up -d
+#
+${origin}
 #
 # IMPORTANT: this file fixes where the sidecar sees things, so broker.config.json must have been
 # written for it. Create it with:
@@ -60,15 +107,6 @@ export function renderCompose(input: ComposeInput): string {
 #   auditPath      ${SIDECAR.auditPath}
 #
 # A config written with --mode host records host paths and the sidecar will not start.
-#
-# The image installs the package on start. If you would rather not depend on the registry at
-# boot, build a two-line image instead:
-#
-#   FROM ${input.image}
-#   RUN npm install -g ${input.packageSpec}
-#
-# and replace \`command\` below with:
-#   ["git-credential-brokerd", "--config", "${SIDECAR.configPath}"]
 services:
   ${input.name}:
     image: ${input.image}
@@ -81,15 +119,10 @@ services:
     cap_drop:
       - ALL
     security_opt:
-      - no-new-privileges:true
-    environment:
-      # npx needs somewhere writable for its cache; /tmp is a tmpfs above.
-      - npm_config_cache=/tmp/npm-cache
+      - no-new-privileges:true${environment}
     command:
-      - sh
-      - -c
-      - exec npx --yes --package '${input.packageSpec}' git-credential-brokerd --config ${SIDECAR.configPath}
-    volumes:
+${command}
+    volumes:${codeMount}
       - ${input.dir}/broker.config.json:${SIDECAR.configPath}:ro
       - ${input.dir}/app.pem:${SIDECAR.keyPath}:ro
       - ${input.dir}/log:${SIDECAR.auditDir}
@@ -110,6 +143,8 @@ Print a Docker sidecar definition for the broker (to stdout). Pair it with a con
   --config <path>     The sidecar's config, checked before anything is printed
                       (default: $GIT_BROKER_CONFIG, else ./broker.config.json)
   --socket-dir <path> Host directory the pushing container already mounts
+  --code <path>       Run code mounted from this host directory instead of fetching the package
+                      at start (as \`stage\` exports it); nothing is fetched or built at boot
   --user <uid:gid>    UID the sidecar runs as (default: this user)
   --image <name>      Base image (default: node:24-slim)
   --package <spec>    npm spec to run (default: git-credential-broker@<version>)
@@ -162,6 +197,7 @@ export function runCompose(argv: readonly string[]): number {
       image: args.value('image') ?? 'node:24-slim',
       packageSpec: args.value('package') ?? `git-credential-broker@${packageVersion()}`,
       name: args.value('name') ?? 'git-cred-broker',
+      code: args.value('code'),
     }),
   );
   return 0;

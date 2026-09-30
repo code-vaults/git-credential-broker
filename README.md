@@ -185,10 +185,11 @@ git-credential-brokerd
 This records `privateKeyPath: /volume1/docker/git-cred-broker/app.pem` and whatever
 `--socket-path` you gave it (default `/run/git-cred-broker/broker.sock`).
 
-### Docker sidecar (the usual NAS case: Docker present, Node absent)
+### Docker sidecar (durable on a NAS, with no publish and no build)
 
-A NAS that has Docker usually does not have Node — and the broker does not need a checkout there
-at all. `compose` prints a self-contained sidecar that fetches the published package:
+Docker is the usual way to keep the broker resident on a NAS: `restart: unless-stopped` survives a
+reboot, and the broker needs no checkout on the host at all. Point the sidecar at code you staged
+and it fetches nothing at boot:
 
 ```sh
 cd /volume1/docker/git-cred-broker
@@ -199,10 +200,20 @@ git-credential-broker init --mode sidecar \
   --client-id Iv23lifamTDN4XTLvLuk \
   --app-id 5138420
 
+# Stage the code outside every mount, then run that code in the image's Node.
+git-credential-broker stage --to /volume1/docker/git-cred-broker/app --ref <sha you reviewed>
+
 git-credential-broker compose \
+  --code /volume1/docker/git-cred-broker/app \
   --socket-dir ~/Workspaces/my-project/.dsh/git-broker > docker-compose.broker.yml
 docker compose -f docker-compose.broker.yml up -d
 ```
+
+The image is stock `node:24-slim`: Node strips the TypeScript types, so nothing is built, and the
+code is mounted read-only so a restart cannot pick up different code than the commit you staged.
+Drop `--code` to fetch the published package with `npx` at start instead — simpler, at the cost of a
+registry dependency on every boot and of running whatever that version is rather than a commit you
+looked at.
 
 `compose` reads that same `broker.config.json` and **refuses to emit a sidecar for a config written with
 `--mode host`**, because the resulting container would start and then fail to find its own key.

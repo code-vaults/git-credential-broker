@@ -562,6 +562,28 @@ describe('compose', () => {
     assert.match(rendered, new RegExp(`--config ${SIDECAR.configPath}`));
   });
 
+  it('can run staged code from a mount instead, fetching and building nothing at boot', () => {
+    const fromCode = renderCompose({
+      dir: '/volume1/docker/git-cred-broker',
+      socketDir: '/volume1/homes/u/Workspaces/h/.dsh/git-broker',
+      user: '1026:100',
+      image: 'node:24-slim',
+      packageSpec: 'git-credential-broker@0.1.0',
+      name: 'git-cred-broker',
+      code: '/volume1/docker/git-cred-broker/app',
+    });
+
+    assert.match(fromCode, /- \/volume1\/docker\/git-cred-broker\/app:\/opt\/git-credential-broker:ro/);
+    assert.match(fromCode, /- node\n\s+- \/opt\/git-credential-broker\/src\/cli\/daemon\.ts/);
+    assert.equal(/npx/.test(fromCode), false, 'no registry access at start');
+    assert.equal(/npm_config_cache/.test(fromCode), false, 'and so no cache to write');
+    assert.match(fromCode, /STAGED\.json/, 'it points at the record of which commit this is');
+    // Everything that matters for isolation is unchanged.
+    assert.match(fromCode, /cap_drop:\n\s+- ALL/);
+    assert.match(fromCode, /read_only: true/);
+    assert.equal(/^\s+ports:/m.test(fromCode), false);
+  });
+
   it('states the config paths it requires, so --mode sidecar is discoverable', () => {
     assert.match(rendered, /git-credential-broker init --mode sidecar/);
     assert.match(rendered, new RegExp(`privateKeyPath ${SIDECAR.keyPath.replace(/[/.]/g, '\\$&')}`));
