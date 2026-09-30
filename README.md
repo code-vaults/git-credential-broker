@@ -362,6 +362,34 @@ Exit codes: `0` allowed, `1` denied, `3` broker unreachable. A missing installat
 ungranted permission or an unlisted repository is diagnosed here instead of halfway through a
 push.
 
+### When the broker says only "could not mint a credential"
+
+The broker deliberately answers the container with a generic message, because provider errors
+can embed API responses. `scripts/diagnose-app.ts` asks GitHub directly and prints what the app
+can actually see:
+
+```sh
+node scripts/diagnose-app.ts --config /volume1/docker/git-cred-broker/config.json
+```
+
+```
+app            : git-credential-broker (id 5138420)
+app permissions: {"contents":"write","metadata":"read","pull_requests":"write"}
+installation 166588823
+  account            : code-vaults (Organization)
+  repository access  : all
+  repositories (2): code-vaults/example-one, code-vaults/example-two
+
+verdict:
+  code-vaults/git-credential-broker: NOT in the repositories this installation can see
+```
+
+This exists because GitHub returns the *same* `422` whether a repository was never created or
+merely was not selected for the installation, and the message names neither. Note the trap the
+script itself fell into first: `repository access: all` does **not** mean any name works — it
+means every repository that exists, so a repository that does not exist still fails. Only
+enumerating the actual repositories tells the two apart.
+
 ## Layout
 
 ```
