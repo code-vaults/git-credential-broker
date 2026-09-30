@@ -375,26 +375,61 @@ describe('init', () => {
     );
   });
 
-  it('refuses to re-point an existing config at another deployment', () => {
+  it('switches deployment only when asked by name, and never carries the other layout over', () => {
     const root = dir(`init-mode-${Math.random().toString(36).slice(2)}`);
     const cert = writeKey(path.join(root, 'downloaded.pem'));
     const target = path.join(root, 'deploy');
     performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+
+    // host -> sidecar needs nothing extra (and the host socket path must not be forced on it),
+    // and keeps the allowlist.
+    const toSidecar = performInit({
+      ...baseInput,
+      cert: undefined,
+      dir: target,
+      allow: [],
+      mode: 'sidecar',
+      hostSocketPath: undefined,
+    });
+    assert.equal(toSidecar.mode, 'sidecar');
+    assert.equal(appBlock(toSidecar.config).privateKeyPath, SIDECAR.keyPath);
+    assert.equal(toSidecar.config.socketPath, SIDECAR.socketPath);
+    assert.equal(
+      toSidecar.config.auditPath,
+      SIDECAR.auditPath,
+      'the host audit path must not follow the config into the sidecar',
+    );
+    assert.deepEqual(appBlock(toSidecar.config).allow, ['a/one']);
+
+    // sidecar -> host without a socket path is refused: the one on file belongs to the sidecar,
+    // and a host process cannot bind it.
     assert.throws(
-      () => performInit({ ...baseInput, cert: undefined, dir: target, allow: [], mode: 'sidecar' }),
-      /was written for --mode host/,
+      () =>
+        performInit({
+          ...baseInput,
+          cert: undefined,
+          dir: target,
+          allow: [],
+          mode: 'host',
+          hostSocketPath: undefined,
+        }),
+      /records the sidecar's socket path .*pass --socket-path/,
     );
-    assert.doesNotThrow(() =>
-      performInit({
-        ...baseInput,
-        cert,
-        dir: target,
-        allow: ['a/one'],
-        mode: 'sidecar',
-        hostSocketPath: undefined,
-        force: true,
-      }),
-    );
+
+    // and with one, the host layout is rebuilt rather than inherited.
+    const toHost = performInit({
+      ...baseInput,
+      cert: undefined,
+      dir: target,
+      allow: [],
+      mode: 'host',
+      hostSocketPath: '/volume1/some/dir/broker.sock',
+    });
+    assert.equal(toHost.mode, 'host');
+    assert.equal(appBlock(toHost.config).privateKeyPath, path.join(target, 'app.pem'));
+    assert.equal(toHost.config.socketPath, '/volume1/some/dir/broker.sock');
+    assert.equal(toHost.config.auditPath, path.join(target, 'log', 'audit.jsonl'), 'not the sidecar path');
+    assert.deepEqual(appBlock(toHost.config).allow, ['a/one']);
   });
 
   it('says so when the key the config points at has gone', () => {

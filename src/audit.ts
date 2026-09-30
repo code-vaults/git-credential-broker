@@ -7,7 +7,7 @@
  * created 0600 so it stays broker-owned.
  */
 import { createHash } from 'node:crypto';
-import { createWriteStream, mkdirSync } from 'node:fs';
+import { chmodSync, closeSync, createWriteStream, mkdirSync, openSync } from 'node:fs';
 import type { WriteStream } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -70,6 +70,11 @@ export function createAudit(options: AuditOptions = {}): AuditSink {
   let stream: WriteStream | null = null;
   if (path) {
     mkdirSync(dirname(path), { recursive: true });
+    // Create, restrict, then append through the stream. The mode passed to a create call is
+    // advisory on an ACL-based share, which would leave the audit trail writable by other local
+    // users — and an audit trail someone else can append to is not an audit trail.
+    closeSync(openSync(path, 'a', 0o600));
+    chmodSync(path, 0o600);
     stream = createWriteStream(path, { flags: 'a', mode: 0o600 });
     stream.on('error', (error: Error) => {
       stderr.write(`git-credential-brokerd: audit write failed: ${error.message}\n`);

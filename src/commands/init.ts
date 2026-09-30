@@ -22,6 +22,7 @@ import {
   brokerPaths,
   DEPLOYMENT_MODES,
   hostArtifacts,
+  HOST_SOCKET_PATH_DEFAULT,
   inferMode,
   requireFixedInSidecar,
   SIDECAR,
@@ -169,10 +170,14 @@ export function buildBrokerConfig(input: InitInput): BrokerConfig {
 /**
  * Merge the flags into an existing configuration, changing only what was asked for.
  *
+ * The paths come from `paths` rather than from `existing`, because the caller has already decided
+ * whether to carry them over: on a deployment switch the old ones belong to the other layout and
+ * must not survive. (Carrying the sidecar's auditPath into a host config, for instance, points the
+ * daemon at `/var/log/git-cred-broker/` on a host that has no such directory.)
+ *
  * @param existing - the configuration on disk.
  * @param input - the resolved options.
- * @param paths - the paths the broker will resolve; taken from the existing file where the flags
- *   say nothing.
+ * @param paths - the paths the broker will resolve.
  * @returns the validated configuration to write.
  * @throws {Error} when the result would be rejected by the daemon.
  */
@@ -180,7 +185,7 @@ export function mergeBrokerConfig(existing: BrokerConfig, input: InitInput, path
   const block = appBlock(existing);
   return validateConfig({
     socketPath: paths.socketPath,
-    auditPath: input.auditPath ?? existing.auditPath,
+    auditPath: paths.auditPath,
     hosts: {
       'github.com': {
         provider: 'github-app',
@@ -240,10 +245,16 @@ export function performInit(input: InitInput): InitResult {
 
   // ---------------------------------------------------------------- update in place
   if (previous) {
-    const mode = inferMode(previous);
-    if (input.mode !== undefined && input.mode !== mode) {
+    const existingMode = inferMode(previous);
+    // Switching deployment is allowed, but only when asked for by name. The recorded paths are
+    // what decide whether a broker can find its own key, so this must never happen implicitly.
+    const mode = input.mode ?? existingMode;
+    const switching = mode !== existingMode;
+
+    if (switching && mode === 'host' && input.hostSocketPath === undefined) {
       throw new Error(
-        `${configPath} was written for --mode ${mode} and its paths say so; re-running with --mode ${input.mode} would re-point them. Pass --force to regenerate it, or keep --mode ${mode}.`,
+        `${configPath} records the sidecar's socket path (${previous.socketPath}), which a host process cannot bind; ` +
+          'pass --socket-path <the path the host process binds and the pusher reaches>',
       );
     }
     requireFixedInSidecar('--socket-path', input.hostSocketPath, SIDECAR.socketPath, mode);
@@ -258,14 +269,23 @@ export function performInit(input: InitInput): InitResult {
       throw new Error(`${artifacts.keyPath} is missing; pass --cert to install the key`);
     }
 
-    const paths: BrokerPaths =
-      mode === 'sidecar'
-        ? brokerPaths('sidecar', input.dir, '')
-        : {
-            socketPath: input.hostSocketPath ?? previous.socketPath,
-            privateKeyPath: artifacts.keyPath,
-            auditPath: input.auditPath ?? previous.auditPath ?? '',
-          };
+    let paths: BrokerPaths;
+    if (mode === 'sidecar') {
+      paths = brokerPaths('sidecar', input.dir, '');
+    } else {
+      // Staying in host mode: keep whatever this deployment chose. Switching *to* host mode: the
+      // old socket and audit paths are the sidecar's container-side ones, so carrying them over
+      // would produce a config that looks fine and cannot work.
+      const carried = switching ? undefined : previous;
+      paths = brokerPaths(
+        'host',
+        input.dir,
+        input.hostSocketPath ?? carried?.socketPath ?? HOST_SOCKET_PATH_DEFAULT,
+      );
+      const carriedAudit = carried?.auditPath ?? undefined;
+      if (input.auditPath !== undefined) paths = { ...paths, auditPath: input.auditPath };
+      else if (carriedAudit !== undefined) paths = { ...paths, auditPath: carriedAudit };
+    }
 
     const config = mergeBrokerConfig(previous, input, paths);
     fs.mkdirSync(artifacts.auditDir, { recursive: true });
@@ -441,7 +461,9 @@ export async function runInit(argv: readonly string[]): Promise<number> {
     });
 
     const verb = result.previous ? 'updated' : 'created';
-    say(`mode           : ${result.mode}`);
+    const wasMode = result.previous ? inferMode(result.previous) : undefined;
+    const modeLabel = wasMode !== undefined && wasMode !== result.mode ? `${wasMode} -> ${result.mode}` : result.mode;
+    say(`mode           : ${modeLabel}`);
     say(`${verb.padEnd(15)}: ${result.configPath} (mode 600, validation passed)`);
     say(`installed key  : ${result.keyPath} (mode 600)`);
 
@@ -469,8 +491,20 @@ export async function runInit(argv: readonly string[]): Promise<number> {
     say('');
     if (result.previous) {
       say('Restart the broker to pick this up:');
-      say('  docker compose -f docker-compose.broker.yml restart    # sidecar');
-      say(`  git-credential-brokerd --config ${result.configPath}    # host process`);
+      if (result.mode === 'sidecar') {
+        say('  docker compose -f docker-compose.broker.yml up -d    # sidecar');
+      } else {
+        say(`  git-credential-brokerd --config ${result.configPath}    # host process`);
+      }
+      if (wasMode !== undefined && wasMode !== result.mode) {
+        say('');
+        say(`NOTE: the recorded paths changed from the ${wasMode} layout to the ${result.mode} layout.`);
+        say(
+          result.mode === 'host'
+            ? '      Stop the sidecar and start the host process; the socket file is the same one.'
+            : '      Stop the host process and start the sidecar; the socket file is the same one.',
+        );
+      }
     } else {
       say('Two things only you can do:');
       say('  1. Install the app on the account that owns those repositories, granting access to just them.');

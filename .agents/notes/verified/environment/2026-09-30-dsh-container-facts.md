@@ -108,7 +108,31 @@ const MAGIC = Buffer.from([0x28,0xb5,0x2f,0xfd]);   // 逐帧切分后 zstdDecom
 
 > 实际教训：一次性凭据（client secret）被贴进对话后，我据此误判"没有落盘"，其实**明文就在里面**（正对照：同一消息里的 client_id 也能搜到）。而 `.dsh` 位于 Workspaces 挂载之内 → 等于落在 NAS 共享上。**聊天里贴过的东西，要当作已落盘处理。**
 
-## 7. 快速自检清单
+## 7. 挂载带 `synoacl`：**创建时指定的权限全部失效**
+
+实测（`/home/app/Workspaces` 与 `/tmp` 各建一次同样的文件/目录）：
+
+| 调用 | 共享（`synoacl`） | tmpfs |
+|---|---|---|
+| `mkdirSync(p, { mode: 0o700 })` | **777** | 700 |
+| `writeFileSync(p, s, { mode: 0o600 })` | **777** | 600 |
+| `closeSync(openSync(p, 'w', 0o600))` | **777** | 600 |
+
+即：**在这块共享上，创建时给的 mode 只是建议，实际一律 777；只有显式 `chmod` 才生效**
+（`chmod 600` → 600，`chmod 000` → 000，都实测过）。`/tmp` 是 tmpfs，行为正常 —— 所以这类
+问题在容器里写 `/tmp` 的测试中**完全测不出来**。
+
+对本项目的后果与处置：
+
+- `app.pem`、`broker.config.json`：`writeSecretFile` 一直是「写完再 `chmod`」，所以本来就没问题。
+- **socket 目录**：原先只靠 `mkdirSync(..., { mode: 0o700 })` → 实际会是 777；而这个目录的权限是
+  **唯一**阻止同机其他用户连上 socket 向 broker 要凭据的东西。已改为创建后显式 `chmodSync(dir, 0o700)`。
+- **审计日志**：原先只靠 `createWriteStream(..., { mode: 0o600 })` → 实际会是 777；能被他人在审计日志里
+  追加内容的审计日志不算审计日志。已改为先建再 `chmodSync(path, 0o600)`。
+- 自查：`stat -c '%a %U:%G' <文件或目录>`。当前线上 `~/.dsh/git-broker` 是 `700`、`broker.sock` 是
+  `srw-rw----`（0660，由 `socketMode` 显式 chmod），符合预期。
+
+## 8. 快速自检清单
 
 ```sh
 env | grep -i proxy                                   # 不能是空串
@@ -116,4 +140,5 @@ ls /etc/ssl/certs/ca-certificates.crt                  # 必须有
 stat -c '%u:%g' /home/app/Workspaces                   # 应与 id -u 一致
 git config --get core.filemode                         # 预期 false
 node -e 'console.log(process.version)'                 # v24.x
+stat -c '%a' /home/app/.dsh/git-broker/broker.sock      # 预期 660；目录应为 700
 ```

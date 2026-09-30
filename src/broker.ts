@@ -74,6 +74,11 @@ export interface RequestHandlerOptions {
 export function prepareSocketPath(socketPath: string): void {
   const directory = path.dirname(socketPath);
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  // Explicitly, not only in the mkdir call: on an ACL-based share (Synology's `synoacl`, which is
+  // where this was measured) the mode given to a create call is advisory and the directory comes
+  // out world-accessible. These permissions are the only thing stopping another local user from
+  // connecting to the socket and asking the broker for credentials.
+  fs.chmodSync(directory, 0o700);
   if (fs.lstatSync(directory).isSymbolicLink()) {
     throw new Error(`refusing to bind inside a symlinked directory: ${directory}`);
   }

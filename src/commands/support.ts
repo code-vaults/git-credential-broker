@@ -212,6 +212,9 @@ export async function writeNodeCaBundle(target: string): Promise<number> {
 export function writeSecretFile(target: string, contents: string, mode = 0o600): void {
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, contents, { mode });
+  // Not redundant. On an ACL-based share (Synology's `synoacl`) the mode passed to a create call
+  // is advisory — the file comes out 0777 whatever you asked for — and only an explicit chmod
+  // restricts it. Measured on the share this was written for.
   fs.chmodSync(target, mode);
 }
 
