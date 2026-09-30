@@ -93,7 +93,10 @@ export function prepareSocketPath(socketPath: string): void {
     throw new Error(`refusing to use socket path that is a symlink: ${socketPath}`);
   }
   if (!stats.isSocket()) {
-    throw new Error(`refusing to replace a non-socket at ${socketPath}`);
+    throw new Error(
+      `refusing to replace ${socketPath}: something that is not a socket is in the way. ` +
+        'If it is a leftover — an interrupted start, or a stray redirect onto the path — remove it and start again.',
+    );
   }
   fs.unlinkSync(socketPath);
 }

@@ -112,6 +112,33 @@ rather than silently over-granting.
 npm install -g git-credential-broker      # or use npx git-credential-broker ...
 ```
 
+### From a checkout, with no build
+
+Node 22.6+ strips TypeScript types, so a checkout runs as it is: no compile step, no dependencies to
+install, and nothing to publish.
+
+```sh
+git clone https://github.com/code-vaults/git-credential-broker /opt/git-credential-broker
+
+node /opt/git-credential-broker/src/cli/helper.ts init \
+  --cert ~/Downloads/git-credential-broker.private-key.pem \
+  --allow code-vaults/my-repo --client-id Iv23li… --app-id 123456
+node /opt/git-credential-broker/src/cli/daemon.ts --config /volume1/docker/git-cred-broker/broker.config.json
+```
+
+Keep the checkout outside every container mount: the broker runs with the private key in reach.
+
+The credential helper can run this way too, but git needs the interpreter spelled out — and a helper
+value is only treated as a shell command when it starts with `!`:
+
+```sh
+git config --global credential.helper '!node /opt/git-credential-broker/src/cli/helper.ts'
+```
+
+Without the `!`, git reads the first word as a helper *name* and reports `'credential-node' is not a
+git command`. `setup` records the running script's own path instead, which is what an npm install or
+a built checkout wants; a `.ts` file is not executable, so that form needs the `!`.
+
 The paths inside `broker.config.json` are resolved by the **broker process**, not by whoever wrote the
 file. A host process sees the host's filesystem; a sidecar sees only what its `volumes:` mount.
 So `--mode` picks which deployment the recorded paths must suit, and it has to match how you

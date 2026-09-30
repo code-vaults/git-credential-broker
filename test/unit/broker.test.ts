@@ -203,10 +203,11 @@ describe('prepareSocketPath', () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  it('refuses a regular file instead of overwriting it', () => {
+  it('refuses a regular file instead of overwriting it, and says how to clear it', () => {
     const target = path.join(dir, 'not-a-socket');
     fs.writeFileSync(target, 'important');
-    assert.throws(() => prepareSocketPath(target), /non-socket/);
+    assert.throws(() => prepareSocketPath(target), /not a socket is in the way/);
+    assert.throws(() => prepareSocketPath(target), /remove it and start again/);
     assert.equal(fs.readFileSync(target, 'utf8'), 'important', 'the file must be left alone');
   });
 

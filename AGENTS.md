@@ -76,6 +76,15 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 - **`init` merges; it never rewrites what you did not mention.** The configuration file is the
   source of truth, so updates preserve hand edits and `--allow` *adds*. Do not turn this back
   into "regenerate from flags": `--force` replacing the allowlist silently dropped repositories.
+- **A `credential.helper` value is a shell command only when it starts with `!`.** Writing
+  `credential.helper = node /path/helper.ts` makes git look for a helper *named* `node` and fail
+  with `'credential-node' is not a git command`; it must be `!node /path/helper.ts`. A value
+  starting with `/` is executed directly and anything else resolves to `git-credential-<value>`,
+  which is why a built, executable `dist/cli/helper.js` can be recorded as a bare path and a `.ts`
+  cannot. Learned by getting it wrong.
+- **`exec 3<>file` creates the file.** Probing a unix socket for liveness that way writes an empty
+  regular file once the socket is gone, and then blocks the broker from binding — it refuses to
+  replace a non-socket — until someone removes it. Use `net.connect`, or `test -S` first.
 - **Adding a provider** is one module in `src/providers/` plus one case in
   `src/providers/index.ts`. The broker, helper, socket protocol, allowlist and audit are
   provider-agnostic.
