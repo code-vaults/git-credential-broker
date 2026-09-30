@@ -23,6 +23,16 @@ const CLIENT_REQUEST = 'protocol=https\nhost=github.com\npath=acme/widget.git\n\
 const tempDir = mkdtempSync(path.join(tmpdir(), 'gcb-helper-'));
 after(() => rmSync(tempDir, { recursive: true, force: true }));
 
+/**
+ * An environment with no broker configuration in it anywhere.
+ *
+ * `HOME` must be pinned. The helper falls back to `$HOME/.config/git-credential-broker/socket`
+ * when no variable is set, so inheriting the machine's real `HOME` would silently turn these
+ * "unconfigured" tests into "configured, broker missing" tests — which is exactly how this
+ * suite briefly went red on a machine that had the broker set up.
+ */
+const UNCONFIGURED_ENV: NodeJS.ProcessEnv = { HOME: tempDir };
+
 /** Captured streams plus their text. */
 interface Capture {
   readonly stdin: Readable;
@@ -144,7 +154,7 @@ describe('parseArgs', () => {
 describe('runHelper: not configured means invisible', () => {
   it('is a silent no-op so the host\u2019s own helper chain still runs', async () => {
     const io = capture(CLIENT_REQUEST);
-    const code = await runHelper(['get'], { ...io, env: {} });
+    const code = await runHelper(['get'], { ...io, env: UNCONFIGURED_ENV });
     assert.equal(code, 0);
     assert.equal(io.stdoutText(), '', 'must print nothing at all, not even quit=1');
     assert.equal(io.stderrText(), '', 'must not be noisy in the host\u2019s terminal');
@@ -152,7 +162,7 @@ describe('runHelper: not configured means invisible', () => {
 
   it('still refuses when GIT_BROKER_REQUIRE=1 asks for strictness', async () => {
     const io = capture(CLIENT_REQUEST);
-    const code = await runHelper(['get', '--strict'], { ...io, env: {} });
+    const code = await runHelper(['get', '--strict'], { ...io, env: UNCONFIGURED_ENV });
     assert.equal(code, 0);
     assert.equal(io.stdoutText(), 'quit=1\n');
     assert.match(io.stderrText(), /GIT_BROKER_SOCKET is not set/);
