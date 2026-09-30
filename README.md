@@ -26,10 +26,10 @@ This project is that process, plus the protocol glue that makes `git push` use i
 ┌─ HOST (outside every mount the container can see) ────────────────────────┐
 │  /volume1/docker/git-cred-broker/                                         │
 │    app.pem      0600 root   ← the only long-lived secret                  │
-│    config.json              ← allowlist, per-host policy, audit path      │
+│    broker.config.json       ← allowlist, per-host policy, audit path      │
 │    audit.jsonl              ← append-only, container-unreadable           │
 │                                                                           │
-│  git-credential-brokerd  (Node, no runtime dependencies)                   │
+│  git-credential-brokerd  (Node, no runtime dependencies)                  │
 │    · signs an RS256 app JWT (iat-60s, exp<=600s, iss=clientId)            │
 │    · resolves owner -> installation by matching account.login             │
 │    · mints ONE repository + narrowed permissions, then caches it          │
@@ -112,22 +112,28 @@ rather than silently over-granting.
 npm install -g git-credential-broker      # or use npx git-credential-broker ...
 ```
 
-The paths inside `config.json` are resolved by the **broker process**, not by whoever wrote the
+The paths inside `broker.config.json` are resolved by the **broker process**, not by whoever wrote the
 file. A host process sees the host's filesystem; a sidecar sees only what its `volumes:` mount.
 So `--mode` picks which deployment the recorded paths must suit, and it has to match how you
 start the broker.
 
+Commands find the configuration by convention — `--config`, else `$GIT_BROKER_CONFIG`, else
+`./broker.config.json` — so **run them from the deployment directory** and only the things that
+genuinely vary appear on the command line.
+
 ### Host process (the host has Node)
 
 ```sh
+cd /volume1/docker/git-cred-broker          # holds broker.config.json, app.pem and log/
+
 git-credential-broker init \
   --cert ~/Downloads/git-credential-broker.private-key.pem \
   --allow code-vaults/my-repo \
   --client-id Iv23lifamTDN4XTLvLuk \
   --app-id 5138420
 
-git-credential-brokerd --config /volume1/docker/git-cred-broker/config.json --check   # validate, bind nothing
-git-credential-brokerd --config /volume1/docker/git-cred-broker/config.json
+git-credential-brokerd --check   # validates the configuration and the key, binds nothing
+git-credential-brokerd
 ```
 
 This records `privateKeyPath: /volume1/docker/git-cred-broker/app.pem` and whatever
@@ -139,6 +145,8 @@ A NAS that has Docker usually does not have Node — and the broker does not nee
 at all. `compose` prints a self-contained sidecar that fetches the published package:
 
 ```sh
+cd /volume1/docker/git-cred-broker
+
 git-credential-broker init --mode sidecar \
   --cert ~/Downloads/git-credential-broker.private-key.pem \
   --allow code-vaults/my-repo \
@@ -146,10 +154,12 @@ git-credential-broker init --mode sidecar \
   --app-id 5138420
 
 git-credential-broker compose \
-  --dir /volume1/docker/git-cred-broker \
   --socket-dir ~/Workspaces/my-project/.dsh/git-broker > docker-compose.broker.yml
 docker compose -f docker-compose.broker.yml up -d
 ```
+
+`compose` reads that same `broker.config.json` and **refuses to emit a sidecar for a config written with
+`--mode host`**, because the resulting container would start and then fail to find its own key.
 
 `--mode sidecar` records `/etc/git-cred-broker/app.pem`, `/run/git-broker/broker.sock` and
 `/var/log/git-cred-broker/audit.jsonl` — exactly the paths `compose` mounts. Both commands read
@@ -163,9 +173,15 @@ the same code the daemon uses**, so a mistake is caught here rather than at the 
 refuses to run inside the container, refuses to put the key anywhere the container can read, and
 refuses a malformed allowlist entry.
 
+`broker.config.json` carries this machine's deployment paths and the location of the private key, and it
+contains no secrets — the key itself never leaves `app.pem`. Keep it wherever you keep host
+configuration, or in your dotfiles; **this repository ignores `/broker.config.json`** so a personal copy
+dropped in the working tree is never committed, and the tracked reference stays
+[`examples/broker.config.example.json`](examples/broker.config.example.json).
+
 #### Changing it later
 
-`config.json` is the source of truth — the daemon only ever reads it, and it is meant to be
+`broker.config.json` is the source of truth — the daemon only ever reads it, and it is meant to be
 reviewed, kept with your dotfiles, and edited by hand. `init` therefore **merges**: it changes
 only what you pass, so nothing has to be repeated and hand edits survive.
 
@@ -390,7 +406,7 @@ GitHub you still need to:
 1. Create the GitHub App, install it on the repositories in `allow`, and download the private
    key. Confirm the app is installable on the account that owns those repositories: a *private*
    app can only be installed on the account that owns it.
-2. Put the app's client ID and the key path in `config.json`.
+2. Put the app's client ID and the key path in `broker.config.json`.
 3. Grant the app `Contents: Read and write`, plus `Pull requests: Read and write` if the agent
    should open PRs. Grant in the app settings first; the broker's pre-flight will refuse
    otherwise.
@@ -428,7 +444,7 @@ can embed API responses. `diagnose` asks GitHub directly and prints what the app
 see:
 
 ```sh
-git-credential-broker diagnose --config /volume1/docker/git-cred-broker/config.json
+git-credential-broker diagnose --config /volume1/docker/git-cred-broker/broker.config.json
 ```
 
 ```

@@ -121,7 +121,7 @@ async function setupHarness(
 
   const socketPath = path.join(root, 'broker', 'broker.sock');
   const auditPath = path.join(root, 'broker', 'audit.jsonl');
-  const configPath = path.join(root, 'broker', 'config.json');
+  const configPath = path.join(root, 'broker', 'broker.config.json');
   fs.mkdirSync(path.dirname(socketPath), { recursive: true });
   fs.writeFileSync(
     configPath,

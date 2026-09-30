@@ -19,9 +19,9 @@ Type=simple
 RuntimeDirectory=git-cred-broker
 RuntimeDirectoryMode=0750
 ExecStartPre=/usr/bin/node /opt/git-credential-broker/dist/cli/daemon.js \
-  --config /volume1/docker/git-cred-broker/config.json --check
+  --config /volume1/docker/git-cred-broker/broker.config.json --check
 ExecStart=/usr/bin/node /opt/git-credential-broker/dist/cli/daemon.js \
-  --config /volume1/docker/git-cred-broker/config.json
+  --config /volume1/docker/git-cred-broker/broker.config.json
 Restart=on-failure
 # The key is 0600 root; nothing else needs read access to it.
 User=root
@@ -44,7 +44,7 @@ services:
       - node
       - /opt/git-credential-broker/dist/cli/daemon.js
       - --config
-      - /etc/git-cred-broker/config.json
+      - /etc/git-cred-broker/broker.config.json
     volumes:
       # The private key: mounted here and nowhere else.
       - /volume1/docker/git-cred-broker:/etc/git-cred-broker:ro

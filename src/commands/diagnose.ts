@@ -15,7 +15,7 @@
  */
 import { readFileSync } from 'node:fs';
 
-import { loadConfig } from '../config.ts';
+import { loadConfig, resolveConfigPath } from '../config.ts';
 import { nextLink, signAppJwt } from '../providers/github-app.ts';
 import type { GithubAppHostConfig } from '../types.ts';
 import { fail, parseArgs, say, warn } from './support.ts';
@@ -35,12 +35,12 @@ interface Repository {
 }
 
 /** Usage text for `diagnose`. */
-export const DIAGNOSE_USAGE = `Usage: git-credential-broker diagnose --config <path>
+export const DIAGNOSE_USAGE = `Usage: git-credential-broker diagnose [options]
 
 Ask GitHub what this app can actually see: identity, permissions, installations and the
 repositories each installation can reach. Never prints a key or a token.
 
-  --config <path>  The broker configuration to inspect   [required]
+  --config <path>  The broker configuration to inspect (default: $GIT_BROKER_CONFIG, else ./broker.config.json)
   --host <host>    Which host block to inspect (default: the first github-app one)
   -h, --help       Show this help
 `;
@@ -58,8 +58,7 @@ export async function runDiagnose(argv: readonly string[]): Promise<number> {
     return 0;
   }
 
-  const configPath = args.value('config');
-  if (!configPath) fail('--config is required (the broker configuration to inspect)');
+  const configPath = resolveConfigPath(args.value('config'));
 
   const config = loadConfig(configPath);
   const wanted = args.value('host');

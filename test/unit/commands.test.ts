@@ -15,6 +15,7 @@ import { after, describe, it } from 'node:test';
 
 import { renderCompose } from '../../src/commands/compose.ts';
 import { SIDECAR } from '../../src/commands/deployment.ts';
+import { resolveConfigPath, deploymentDir } from '../../src/config.ts';
 import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit } from '../../src/commands/init.ts';
 import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../src/commands/support.ts';
 import { performSetup } from '../../src/commands/setup.ts';
@@ -318,7 +319,7 @@ describe('init', () => {
     const target = path.join(root, 'deploy');
     performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
 
-    const file = path.join(target, 'config.json');
+    const file = path.join(target, 'broker.config.json');
     const edited = JSON.parse(fs.readFileSync(file, 'utf8')) as {
       hosts: Record<string, { permissions?: unknown }>;
     };
@@ -464,6 +465,41 @@ describe('mergeAllowList', () => {
   });
 });
 
+describe('config discovery', () => {
+  it('prefers --config, then GIT_BROKER_CONFIG, then ./broker.config.json', () => {
+    assert.equal(resolveConfigPath('/a/b.json', {}), '/a/b.json');
+    assert.equal(resolveConfigPath(undefined, { GIT_BROKER_CONFIG: '/c/d.json' }), '/c/d.json');
+    assert.equal(resolveConfigPath(undefined, {}), path.resolve('broker.config.json'));
+  });
+
+  it('takes the deployment directory from the config path, so --dir is not needed', () => {
+    const found = resolveConfigPath(undefined, { GIT_BROKER_CONFIG: '/volume1/docker/git-cred-broker/broker.config.json' });
+    assert.equal(deploymentDir(found), '/volume1/docker/git-cred-broker');
+  });
+
+  it('writes to an explicit --config path, creating its directory', () => {
+    const root = dir(`init-configpath-${Math.random().toString(36).slice(2)}`);
+    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    const custom = path.join(root, 'elsewhere', 'broker.json');
+
+    const result = performInit({
+      cert,
+      dir: path.join(root, 'deploy'),
+      configPath: custom,
+      allow: ['a/one'],
+      clientId: 'Iv1.example',
+      appId: 123456,
+      permissions: { contents: 'write' },
+      force: false,
+      env: { isInsideContainer: () => false, home: dir('discovery-home') },
+    });
+
+    assert.equal(result.configPath, custom);
+    assert.equal(fs.existsSync(custom), true);
+    assert.equal(fs.existsSync(path.join(root, 'deploy', 'broker.config.json')), false, 'and not in --dir as well');
+  });
+});
+
 describe('compose', () => {
   const rendered = renderCompose({
     dir: '/volume1/docker/git-cred-broker',
@@ -476,7 +512,7 @@ describe('compose', () => {
 
   it('mounts the key read-only and publishes no ports', () => {
     assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/);
-    assert.match(rendered, /config\.json:\/etc\/git-cred-broker\/config\.json:ro/);
+    assert.match(rendered, /broker\.config\.json:\/etc\/git-cred-broker\/broker\.config\.json:ro/);
     assert.equal(/^\s+ports:/m.test(rendered), false, 'the socket is the only interface');
   });
 
@@ -517,7 +553,7 @@ describe('compose', () => {
     assert.equal(appHost(config).privateKeyPath, SIDECAR.keyPath);
     assert.equal(config.auditPath, SIDECAR.auditPath);
 
-    assert.equal(rendered.includes(`${deployDir}/config.json:${SIDECAR.configPath}:ro`), true);
+    assert.equal(rendered.includes(`${deployDir}/broker.config.json:${SIDECAR.configPath}:ro`), true);
     assert.equal(rendered.includes(`${deployDir}/app.pem:${SIDECAR.keyPath}:ro`), true);
     assert.equal(rendered.includes(`${deployDir}/log:${SIDECAR.auditDir}`), true);
     assert.equal(

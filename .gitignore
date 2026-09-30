@@ -12,3 +12,8 @@ dist/
 # read, and its own directory is where someone will first drop an App private key.
 *.pem
 *.key
+# A broker configuration dropped in the repo working tree is host-specific: it carries this
+# machine's deployment paths and the path of the private key. The tracked reference is
+# examples/broker.config.example.json. Run the CLI from your deployment directory, or point
+# GIT_BROKER_CONFIG at it, so nothing here needs a personal copy.
+/broker.config.json

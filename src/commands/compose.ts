@@ -7,15 +7,18 @@
  * is no checkout to copy and nothing to build on the host.
  *
  * The mount targets are constants from `deployment.ts`, shared with `init --mode sidecar`, so
- * the paths recorded in `config.json` and the paths this file mounts cannot drift apart.
+ * the paths recorded in `broker.config.json` and the paths this file mounts cannot drift apart.
  */
+import fs from 'node:fs';
+
+import { loadConfig, resolveConfigPath, deploymentDir } from '../config.ts';
 import { packageVersion } from '../version.ts';
-import { SIDECAR } from './deployment.ts';
-import { fail, parseArgs, say } from './support.ts';
+import { inferMode, SIDECAR } from './deployment.ts';
+import { fail, parseArgs, say, warn } from './support.ts';
 
 /** Everything `compose` needs, resolved. */
 export interface ComposeInput {
-  /** Host directory holding config.json, app.pem and log/. */
+  /** Host directory holding broker.config.json, app.pem and log/. */
   readonly dir: string;
   /** Host directory the pushing container already mounts, where the socket will appear. */
   readonly socketDir: string;
@@ -45,7 +48,7 @@ export function renderCompose(input: ComposeInput): string {
 #
 #   docker compose -f <this file> up -d
 #
-# IMPORTANT: this file fixes where the sidecar sees things, so config.json must have been
+# IMPORTANT: this file fixes where the sidecar sees things, so broker.config.json must have been
 # written for it. Create it with:
 #
 #   git-credential-broker init --mode sidecar --cert <key.pem> --allow <owner/repo> \\
@@ -88,7 +91,7 @@ services:
       - -c
       - exec npx --yes --package '${input.packageSpec}' git-credential-brokerd --config ${SIDECAR.configPath}
     volumes:
-      - ${input.dir}/config.json:${SIDECAR.configPath}:ro
+      - ${input.dir}/broker.config.json:${SIDECAR.configPath}:ro
       - ${input.dir}/app.pem:${SIDECAR.keyPath}:ro
       - ${input.dir}/log:${SIDECAR.auditDir}
       - ${socketDir}:${SIDECAR.socketDir}
@@ -104,7 +107,9 @@ export const COMPOSE_USAGE = `Usage: git-credential-broker compose [options]
 Print a Docker sidecar definition for the broker (to stdout). Pair it with a config written by
 \`init --mode sidecar\`, whose paths this file fixes.
 
-  --dir <path>        Host directory holding config.json, app.pem and log/
+  --dir <path>        Host directory holding broker.config.json, app.pem and log/ (default: the config's directory)
+  --config <path>     The sidecar's config, checked before anything is printed
+                      (default: $GIT_BROKER_CONFIG, else ./broker.config.json)
   --socket-dir <path> Host directory the pushing container already mounts
   --user <uid:gid>    UID the sidecar runs as (default: this user)
   --image <name>      Base image (default: node:24-slim)
@@ -126,11 +131,25 @@ export function runCompose(argv: readonly string[]): number {
     return 0;
   }
 
-  const dir = args.value('dir');
+  const configPath = resolveConfigPath(args.value('config'));
   const socketDir = args.value('socket-dir');
-  if (!dir) fail('--dir is required (where init put config.json and app.pem)');
   if (!socketDir) {
     fail('--socket-dir is required (a host directory the pushing container already mounts, e.g. its ~/.dsh)');
+  }
+  const dir = args.value('dir') ?? deploymentDir(configPath);
+
+  // Check before emitting. A config written for the other deployment produces a sidecar that
+  // starts and then cannot find its own private key, which is a confusing way to find out.
+  if (fs.existsSync(configPath)) {
+    const mode = inferMode(loadConfig(configPath));
+    if (mode !== 'sidecar') {
+      fail(
+        `${configPath} was written with --mode host; re-run ` +
+          '`git-credential-broker init --mode sidecar --force ...` before using compose',
+      );
+    }
+  } else {
+    warn(`no configuration at ${configPath} yet; create it with \`init --mode sidecar\` first`);
   }
 
   const uid = typeof process.getuid === 'function' ? process.getuid() : undefined;

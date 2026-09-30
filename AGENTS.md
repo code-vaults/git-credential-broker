@@ -33,7 +33,7 @@ The CLI runs from source too, so there is no need to build to try a command:
 
 ```sh
 node src/cli/helper.ts --help
-node src/cli/helper.ts compose --dir /tmp/deploy --socket-dir /tmp/sock
+node src/cli/helper.ts compose --socket-dir /tmp/sock    # reads --config, $GIT_BROKER_CONFIG, else ./broker.config.json
 ```
 
 `yarn test` builds first because the end-to-end suite execs `dist/cli/helper.js` as a **real**
@@ -66,6 +66,16 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 - **Ignore `EPIPE` when writing to a child's stdin.** A command that exits before reading closes
   the pipe; an unhandled stream error there takes down the whole test file and reports a
   misleading failure. This already caused an intermittently red suite.
+- **The configuration is found by convention and its paths belong to the broker, not to you.**
+  Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.json`, and takes
+  the deployment directory from the file's own location. The paths *inside* it are resolved by
+  the process that runs the broker, so `deployment.ts` holds one definition per deployment and
+  both `init --mode` and `compose` read it; a config whose mode does not match the deployment is
+  refused rather than half-working. `/broker.config.json` is gitignored here: a personal copy is
+  host-specific, the tracked reference is `examples/broker.config.example.json`.
+- **`init` merges; it never rewrites what you did not mention.** The configuration file is the
+  source of truth, so updates preserve hand edits and `--allow` *adds*. Do not turn this back
+  into "regenerate from flags": `--force` replacing the allowlist silently dropped repositories.
 - **Adding a provider** is one module in `src/providers/` plus one case in
   `src/providers/index.ts`. The broker, helper, socket protocol, allowlist and audit are
   provider-agnostic.

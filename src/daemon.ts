@@ -11,18 +11,22 @@ import type { Writable } from 'node:stream';
 
 import { createAudit } from './audit.ts';
 import { startBroker } from './broker.ts';
-import { loadConfig } from './config.ts';
+import { loadConfig, resolveConfigPath } from './config.ts';
 import { createProvider } from './providers/index.ts';
 import type { ProviderDeps } from './providers/index.ts';
 import type { BrokerConfig, Provider } from './types.ts';
 
 /** Usage text. */
-const USAGE = 'usage: git-credential-brokerd --config <path> [--check]';
+const USAGE =
+  'usage: git-credential-brokerd [--config <path>] [--check]\n' +
+  '       --config defaults to $GIT_BROKER_CONFIG, then ./broker.config.json\n' +
+  '       --check validates the configuration and the key, then exits without binding the socket';
 
 /** The daemon's parsed command line. */
 export interface DaemonArgs {
   readonly configPath: string | undefined;
   readonly checkOnly: boolean;
+  readonly help: boolean;
 }
 
 /**
@@ -34,6 +38,7 @@ export interface DaemonArgs {
 export function parseArgs(argv: readonly string[]): DaemonArgs {
   let configPath: string | undefined;
   let checkOnly = false;
+  let help = false;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === undefined) continue;
@@ -44,9 +49,11 @@ export function parseArgs(argv: readonly string[]): DaemonArgs {
       configPath = argument.slice('--config='.length);
     } else if (argument === '--check') {
       checkOnly = true;
+    } else if (argument === '--help' || argument === '-h') {
+      help = true;
     }
   }
-  return { configPath, checkOnly };
+  return { configPath, checkOnly, help };
 }
 
 /**
@@ -77,14 +84,19 @@ export function buildProviders(config: BrokerConfig, deps: ProviderDeps = {}): M
  * @param io - injectable streams.
  * @returns the process exit code, once the daemon has shut down.
  */
-export async function runDaemon(argv: readonly string[], io: { stderr?: Writable } = {}): Promise<number> {
-  const { stderr = process.stderr } = io;
-  const { configPath, checkOnly } = parseArgs(argv);
-  const resolved = configPath ?? process.env['GIT_BROKER_CONFIG'];
-  if (!resolved) {
-    stderr.write(`${USAGE}\n`);
-    return 2;
+export async function runDaemon(
+  argv: readonly string[],
+  io: { stderr?: Writable; stdout?: Writable } = {},
+): Promise<number> {
+  const { stderr = process.stderr, stdout = process.stdout } = io;
+  const { configPath, checkOnly, help } = parseArgs(argv);
+  if (help) {
+    stdout.write(`${USAGE}\n`);
+    return 0;
   }
+  // Same convention as the management commands: --config, else GIT_BROKER_CONFIG, else
+  // ./broker.config.json. A wrong pick is loud, because it must load and validate to start at all.
+  const resolved = resolveConfigPath(configPath);
 
   let config: BrokerConfig;
   let providers: Map<string, Provider>;

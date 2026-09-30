@@ -1,7 +1,7 @@
 /**
  * Where each deployment expects its files, from the **broker's** point of view.
  *
- * This module exists because of one easily-missed fact: the paths inside `config.json` are
+ * This module exists because of one easily-missed fact: the paths inside `broker.config.json` are
  * resolved by whichever process reads the file. A broker running as a host process sees the
  * host's filesystem, and a broker running as a sidecar sees only what its `volumes:` mount.
  * The same file therefore means two different things, and one config cannot serve both.
@@ -11,6 +11,8 @@
  * paths, producing a sidecar that could not read its own key.
  */
 import path from 'node:path';
+
+import type { BrokerConfig } from '../types.ts';
 
 /** The two supported deployments. */
 export type DeploymentMode = 'host' | 'sidecar';
@@ -25,7 +27,7 @@ export const DEPLOYMENT_MODES: readonly DeploymentMode[] = ['host', 'sidecar'];
  * rather than options: a mismatch here is a broker that will not start.
  */
 export const SIDECAR = {
-  configPath: '/etc/git-cred-broker/config.json',
+  configPath: '/etc/git-cred-broker/broker.config.json',
   keyPath: '/etc/git-cred-broker/app.pem',
   auditDir: '/var/log/git-cred-broker',
   auditPath: '/var/log/git-cred-broker/audit.jsonl',
@@ -59,7 +61,7 @@ export const HOST_SOCKET_PATH_DEFAULT = '/run/git-cred-broker/broker.sock';
 export function hostArtifacts(dir: string): HostArtifacts {
   return {
     keyPath: path.join(dir, 'app.pem'),
-    configPath: path.join(dir, 'config.json'),
+    configPath: path.join(dir, 'broker.config.json'),
     auditDir: path.join(dir, 'log'),
   };
 }
@@ -89,6 +91,21 @@ export function brokerPaths(
     privateKeyPath: path.join(dir, 'app.pem'),
     auditPath: path.join(dir, 'log', 'audit.jsonl'),
   };
+}
+
+/**
+ * Which deployment a configuration was written for.
+ *
+ * Derived from its paths rather than stored, because the paths are what actually decide whether
+ * a sidecar can find its key.
+ *
+ * @param config - a validated configuration.
+ * @returns the deployment it suits.
+ */
+export function inferMode(config: BrokerConfig): DeploymentMode {
+  const block = config.hosts['github.com'];
+  const keyPath = block?.provider === 'github-app' ? block.privateKeyPath : undefined;
+  return keyPath === SIDECAR.keyPath && config.socketPath === SIDECAR.socketPath ? 'sidecar' : 'host';
 }
 
 /**

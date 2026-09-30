@@ -17,7 +17,7 @@
     docker-compose.broker.yml      sidecar 定义
     app/                           代码（挂载之外，agent 写不到）
     app.pem                        App 私钥 0600  ← 唯一长期凭据
-    config.json                    白名单/策略 0600
+    broker.config.json                    白名单/策略 0600
     log/audit.jsonl                审计（容器读不到）
   <my-project>/.dsh/git-broker/
     broker.sock                    ← 由 sidecar 绑定
@@ -44,7 +44,7 @@ DSH 容器 dsh
 
 ## 2. 与提案的偏离（每条都是实测驱动）
 
-**`init` 的 `--mode`：一个不能省的开关。** `config.json` 里的路径由**读它的那个 broker 进程**解析。
+**`init` 的 `--mode`：一个不能省的开关。** `broker.config.json` 里的路径由**读它的那个 broker 进程**解析。
 宿主进程看到的是宿主文件系统，sidecar 只看到它 `volumes:` 挂载进来的东西 —— 同一份文件在两种部署下
 含义不同，所以**一份配置服务不了两种部署**。原先两个脚本各写各的路径（host-setup.sh 写宿主路径，
 deploy-sidecar.sh 写容器内路径）就不会有这个问题；把两者合并成一个 `init` 时我漏了这件事，于是
@@ -93,7 +93,7 @@ compose 生成）、`probe`、`diagnose`。宿主不再需要 checkout 或构建
 直接 `npx` 拉取已发布的包。同一个 bin 既是 git 的 credential helper（`get|store|erase`），
 也是管理 CLI。
 
-**`init` 是"合并"而不是"重写"。** `config.json` 是唯一事实来源（daemon 只读它、可手改、可进
+**`init` 是"合并"而不是"重写"。** `broker.config.json` 是唯一事实来源（daemon 只读它、可手改、可进
 dotfiles），所以 `init` 只改你显式传的字段：`--allow` 是**追加**，`--remove-allow` 是删除，
 `--replace-allow` 才整体替换；`--cert`/`--client-id`/`--app-id`/`--permissions` 不传就保持原样。
 会打印 before/after 白名单便于复核；拒绝写出空白名单；拒绝改变已存在文件的 `--mode`（那会
@@ -108,7 +108,7 @@ git-credential-broker probe --socket /home/app/.dsh/git-broker/broker.sock \
   --host github.com --repo <owner/repo>
 
 # App 安装范围 / 权限诊断（唯一能区分 422 两种成因的工具）
-git-credential-broker diagnose --config /volume1/docker/git-cred-broker/config.json
+git-credential-broker diagnose --config /volume1/docker/git-cred-broker/broker.config.json
 
 # sidecar
 docker compose -f /volume1/docker/git-cred-broker/docker-compose.broker.yml ps|logs|restart|down
@@ -117,7 +117,7 @@ docker compose -f /volume1/docker/git-cred-broker/docker-compose.broker.yml ps|l
 tail -f /volume1/docker/git-cred-broker/log/audit.jsonl
 ```
 
-**改动后的重启顺序**：改 `config.json` → `docker compose ... restart`；换私钥 → 覆盖 `app.pem` 后 restart。
+**改动后的重启顺序**：改 `broker.config.json` → `docker compose ... restart`；换私钥 → 覆盖 `app.pem` 后 restart。
 
 ## 6. 未决 / 待确认
 

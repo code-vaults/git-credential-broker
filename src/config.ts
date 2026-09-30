@@ -5,9 +5,41 @@
  * allowing) at push time.
  */
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
 import { parseAllowEntry } from './policy.ts';
 import type { BrokerConfig, GithubAppHostConfig, HostConfig, StaticHostConfig } from './types.ts';
+
+/** The file every command looks for when no configuration path is given. */
+export const DEFAULT_CONFIG_FILE = 'broker.config.json';
+
+/**
+ * Where the configuration lives when nothing says otherwise.
+ *
+ * This convention is what makes the commands usable without repeating paths: run them from the
+ * deployment directory and `./broker.config.json` is found, or export `GIT_BROKER_CONFIG` once.
+ * An explicit `--config` always wins.
+ *
+ * @param explicit - the `--config` argument, if any.
+ * @param env - the environment to read.
+ * @returns an absolute path.
+ */
+export function resolveConfigPath(explicit?: string, env: NodeJS.ProcessEnv = process.env): string {
+  return path.resolve(explicit ?? env['GIT_BROKER_CONFIG'] ?? DEFAULT_CONFIG_FILE);
+}
+
+/**
+ * The deployment directory implied by a configuration path.
+ *
+ * The key, the configuration and the log directory are siblings, so the file's own location says
+ * where the deployment is.
+ *
+ * @param configPath - the configuration path.
+ * @returns the absolute directory.
+ */
+export function deploymentDir(configPath: string): string {
+  return path.dirname(path.resolve(configPath));
+}
 
 /** Providers this build knows how to construct. */
 export const KNOWN_PROVIDERS = ['github-app', 'static'] as const;

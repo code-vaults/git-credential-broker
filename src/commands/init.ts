@@ -15,13 +15,14 @@
  */
 import fs from 'node:fs';
 
-import { loadConfig, validateConfig } from '../config.ts';
+import { loadConfig, resolveConfigPath, validateConfig, deploymentDir } from '../config.ts';
 import { parseAllowEntry } from '../policy.ts';
 import type { BrokerConfig, GithubAppHostConfig } from '../types.ts';
 import {
   brokerPaths,
   DEPLOYMENT_MODES,
   hostArtifacts,
+  inferMode,
   requireFixedInSidecar,
   SIDECAR,
 } from './deployment.ts';
@@ -42,6 +43,8 @@ export interface InitInput {
   readonly cert?: string;
   /** Where the key, config and audit log live on the host. Must be outside every container mount. */
   readonly dir: string;
+  /** The configuration file itself. Defaults to `<dir>/broker.config.json`. */
+  readonly configPath?: string;
   /** Repositories to ensure are in the allowlist. */
   readonly allow?: readonly string[];
   /** Repositories to remove from the allowlist. */
@@ -95,21 +98,6 @@ export function appBlock(config: BrokerConfig): GithubAppHostConfig {
     throw new Error('the configuration has no github-app block for github.com');
   }
   return block;
-}
-
-/**
- * Which deployment an existing configuration was written for.
- *
- * Derived from its paths rather than stored, because the paths are what actually decide whether
- * a sidecar can find its key.
- *
- * @param config - a validated configuration.
- * @returns the deployment it suits.
- */
-export function inferMode(config: BrokerConfig): DeploymentMode {
-  const block = config.hosts['github.com'];
-  const keyPath = block?.provider === 'github-app' ? block.privateKeyPath : undefined;
-  return keyPath === SIDECAR.keyPath && config.socketPath === SIDECAR.socketPath ? 'sidecar' : 'host';
 }
 
 /**
@@ -244,14 +232,18 @@ export function performInit(input: InitInput): InitResult {
   }
 
   const artifacts = hostArtifacts(input.dir);
-  const previous = input.force ? null : readExistingConfig(artifacts.configPath);
+  const configPath = input.configPath ?? artifacts.configPath;
+  // --config may point into a directory that does not exist yet; the deployment directory is
+  // created below either way, so do it once here.
+  fs.mkdirSync(deploymentDir(configPath), { recursive: true });
+  const previous = input.force ? null : readExistingConfig(configPath);
 
   // ---------------------------------------------------------------- update in place
   if (previous) {
     const mode = inferMode(previous);
     if (input.mode !== undefined && input.mode !== mode) {
       throw new Error(
-        `${artifacts.configPath} was written for --mode ${mode} and its paths say so; re-running with --mode ${input.mode} would re-point them. Pass --force to regenerate it, or keep --mode ${mode}.`,
+        `${configPath} was written for --mode ${mode} and its paths say so; re-running with --mode ${input.mode} would re-point them. Pass --force to regenerate it, or keep --mode ${mode}.`,
       );
     }
     requireFixedInSidecar('--socket-path', input.hostSocketPath, SIDECAR.socketPath, mode);
@@ -277,8 +269,8 @@ export function performInit(input: InitInput): InitResult {
 
     const config = mergeBrokerConfig(previous, input, paths);
     fs.mkdirSync(artifacts.auditDir, { recursive: true });
-    writeSecretFile(artifacts.configPath, `${JSON.stringify(config, null, 2)}\n`);
-    return { keyPath: artifacts.keyPath, configPath: artifacts.configPath, config, mode, previous };
+    writeSecretFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    return { keyPath: artifacts.keyPath, configPath, config, mode, previous };
   }
 
   // ---------------------------------------------------------------- create (or regenerate)
@@ -316,8 +308,8 @@ export function performInit(input: InitInput): InitResult {
   const config = buildBrokerConfig({ ...input, mode, cert: certPath, clientId, appId });
   writeSecretFile(artifacts.keyPath, pem);
   fs.mkdirSync(artifacts.auditDir, { recursive: true });
-  writeSecretFile(artifacts.configPath, `${JSON.stringify(config, null, 2)}\n`);
-  return { keyPath: artifacts.keyPath, configPath: artifacts.configPath, config, mode };
+  writeSecretFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  return { keyPath: artifacts.keyPath, configPath, config, mode };
 }
 
 /**
@@ -356,7 +348,8 @@ Every run:
   --client-id <id>      Change the client ID
   --app-id <id>         Change the App ID
   --permissions <list>  name=level pairs, e.g. contents=write,pull_requests=write
-  --dir <path>          Where the key, config and audit log live (default: /volume1/docker/git-cred-broker)
+  --dir <path>          Where the key, config and audit log live (default: the config's directory)
+  --config <path>       Configuration file (default: $GIT_BROKER_CONFIG, else ./broker.config.json)
   --mode <host|sidecar> Which deployment the paths must suit (default: host; must match an
                         existing config, because it decides where the broker looks for things)
   --socket-path <path>  Socket path a host process uses (default: /run/git-cred-broker/broker.sock)
@@ -429,11 +422,12 @@ export async function runInit(argv: readonly string[]): Promise<number> {
     fail(`--mode must be one of ${DEPLOYMENT_MODES.join(', ')}`);
   }
 
-  const dir = args.value('dir') ?? '/volume1/docker/git-cred-broker';
+  const dir = args.value('dir') ?? deploymentDir(resolveConfigPath(args.value('config')));
   try {
     const result = performInit({
       cert: args.value('cert'),
       dir,
+      configPath: args.value('config'),
       allow: list(args, 'allow'),
       removeAllow: list(args, 'remove-allow'),
       replaceAllow: args.has('replace-allow'),
