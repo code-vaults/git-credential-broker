@@ -4,7 +4,7 @@
  * configuration stops the daemon at startup instead of silently denying (or silently
  * allowing) at push time.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { parseAllowEntry } from './policy.ts';
@@ -73,6 +73,35 @@ export function inferMode(config: BrokerConfig): DeploymentMode {
   const block = config.hosts['github.com'];
   const keyPath = block?.provider === 'github-app' ? block.privateKeyPath : undefined;
   return keyPath === SIDECAR.keyPath && config.socketPath === SIDECAR.socketPath ? 'sidecar' : 'host';
+}
+
+/**
+ * Check that each recorded private key is readable, before the caller tries to read it.
+ *
+ * Both the daemon and `diagnose` need this, because both read the key, and a bare
+ * `ENOENT ... /etc/git-cred-broker/app.pem` says nothing: that path exists only inside the sidecar,
+ * so the mistake is where the command was run, not that the key is missing. The layout is
+ * recoverable from the configuration itself, so name it and give the way out.
+ *
+ * @param config - the validated configuration.
+ * @throws {Error} when a key file is missing, with the remedy in the message.
+ */
+export function assertKeysReadable(config: BrokerConfig): void {
+  const mode = inferMode(config);
+  for (const [host, block] of Object.entries(config.hosts)) {
+    if (block.provider !== 'github-app' || block.privateKeyPath === undefined) continue;
+    if (existsSync(block.privateKeyPath)) continue;
+
+    const remedy =
+      mode === 'sidecar'
+        ? `${block.privateKeyPath} exists only inside the sidecar container, so this has to run there —\n` +
+          '       or against a configuration that records host paths instead:\n' +
+          '         git-credential-broker init --mode host --socket-path <the path the host process binds>'
+        : `${block.privateKeyPath} is the host's path. Install the key there (init does), or if this\n` +
+          '       deployment is a sidecar, re-run init with --mode sidecar so the configuration records\n' +
+          '       the paths the sidecar actually mounts.';
+    throw new Error(`cannot read the private key for ${host}: ${remedy}`);
+  }
 }
 
 /** Providers this build knows how to construct. */

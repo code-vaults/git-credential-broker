@@ -15,7 +15,7 @@
  */
 import { readFileSync } from 'node:fs';
 
-import { loadConfig, resolveConfigPath } from '../config.ts';
+import { assertKeysReadable, loadConfig, resolveConfigPath } from '../config.ts';
 import { nextLink, signAppJwt } from '../providers/github-app.ts';
 import type { GithubAppHostConfig } from '../types.ts';
 import { fail, parseArgs, say, warn } from './support.ts';
@@ -61,6 +61,10 @@ export async function runDiagnose(argv: readonly string[]): Promise<number> {
   const configPath = resolveConfigPath(args.value('config'));
 
   const config = loadConfig(configPath);
+  // Before reading the key: a configuration written for the sidecar records a path that exists only
+  // inside that container, and running this on the host then fails with a bare ENOENT about a path
+  // that looks like a mistake in the key rather than in where the command was run.
+  assertKeysReadable(config);
   const wanted = args.value('host');
   const entry = Object.entries(config.hosts).find(
     ([host, block]) => block.provider === 'github-app' && (wanted ? host === wanted : true),

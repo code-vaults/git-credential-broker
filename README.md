@@ -186,9 +186,19 @@ git-credential-broker diagnose --config /srv/git-cred-broker/broker.config.json
 ```
 
 `probe` prints the broker's decision with the credential reduced to a fingerprint, so its output is
-safe to share: exit `0` allowed, `1` denied, `3` broker unreachable. `diagnose` asks GitHub what the
-app can actually see — the only reliable way to tell "repository does not exist" from "not selected
-for this installation", which GitHub reports identically.
+safe to share: exit `0` allowed, `1` denied, `3` broker unreachable. `probe` talks to the socket, so
+it runs wherever the pusher runs.
+
+`diagnose` asks GitHub what the app can actually see — the only reliable way to tell "repository does
+not exist" from "not selected for this installation", which GitHub reports identically. It reads the
+app's **private key**, so run it where the key is. On a host-process deployment that is the host; for
+a sidecar it is inside the container:
+
+```sh
+docker compose -f docker-compose.broker.yml exec git-cred-broker \
+  node /opt/git-credential-broker/src/cli/helper.ts \
+  diagnose --config /etc/git-cred-broker/broker.config.json
+```
 
 ## Configuration reference
 

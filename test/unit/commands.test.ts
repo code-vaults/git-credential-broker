@@ -14,6 +14,7 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { renderCompose } from '../../src/commands/compose.ts';
+import { runDiagnose } from '../../src/commands/diagnose.ts';
 import { SIDECAR, resolveConfigPath, deploymentDir } from '../../src/config.ts';
 import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit } from '../../src/commands/init.ts';
 import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../src/commands/support.ts';
@@ -506,6 +507,37 @@ describe('mergeAllowList', () => {
     for (const bad of ['acme', 'acme/wid*', 'acme/other/extra']) {
       assert.throws(() => mergeAllowList([], { dir: '/x', allow: [bad], force: false }), /not a valid/);
     }
+  });
+});
+
+describe('diagnose', () => {
+  it('explains a sidecar configuration instead of failing to read its key', async () => {
+    // The case that produced this test: `diagnose` run on the host against a config written for the
+    // sidecar, which died with a bare ENOENT about a path it could never have had.
+    const root = dir(`diagnose-${Math.random().toString(36).slice(2)}`);
+    const configPath = path.join(root, 'broker.config.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        socketPath: SIDECAR.socketPath,
+        auditPath: SIDECAR.auditPath,
+        hosts: {
+          'github.com': {
+            provider: 'github-app',
+            allow: ['a/one'],
+            clientId: 'Iv1.example',
+            appId: 1,
+            privateKeyPath: SIDECAR.keyPath,
+            permissions: { contents: 'write' },
+          },
+        },
+      }),
+    );
+
+    await assert.rejects(
+      () => runDiagnose(['--config', configPath]),
+      /exists only inside the sidecar container/,
+    );
   });
 });
 
