@@ -18,7 +18,8 @@ Usage: git-credential-broker <command> [options]
 
 Commands
   setup      Configure this environment's git to use the broker (run inside the container)
-  init       Install an App private key and write the broker config (run on the host)
+  init       Create or update the broker config, and install the key (run on the host)
+  stage      Export the broker from a reviewed commit to where it will run (host, outside mounts)
   compose    Print a Docker sidecar definition for the broker
   probe      Ask the broker what it would do for a repository, without pushing
   diagnose   Ask GitHub what the App can actually see (installations, permissions, repositories)
@@ -40,7 +41,7 @@ Environment
 Run \`git-credential-broker <command> --help\` for the options of one command.`;
 
 /** The subcommands, in the order help lists them. */
-export const COMMANDS = ['setup', 'init', 'compose', 'probe', 'diagnose'] as const;
+export const COMMANDS = ['setup', 'init', 'stage', 'compose', 'probe', 'diagnose'] as const;
 
 /**
  * Dispatch a command line.
@@ -69,6 +70,8 @@ export async function runCli(argv: readonly string[]): Promise<number> {
       return (await import('./setup.ts')).runSetup(rest);
     case 'init':
       return (await import('./init.ts')).runInit(rest);
+    case 'stage':
+      return (await import('./stage.ts')).runStage(rest);
     case 'compose':
       return (await import('./compose.ts')).runCompose(rest);
     case 'probe':

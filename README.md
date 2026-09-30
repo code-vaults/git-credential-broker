@@ -128,6 +128,25 @@ node /opt/git-credential-broker/src/cli/daemon.ts --config /volume1/docker/git-c
 
 Keep the checkout outside every container mount: the broker runs with the private key in reach.
 
+> **Why the *code* has to be outside the mounts, and not just the key.** The broker reads the key, so
+> whatever code it executes has the key's privileges — it can mint installation tokens for anything
+> the App can see, and it can read the key file itself. A key that lives outside the container buys
+> nothing if the process holding it executes code from a directory the agent can rewrite: the agent
+> then chooses the allowlist, or simply ships the key out. The boundary is control of the code, not
+> the location of the key.
+>
+> `stage` exports from a **commit** — never from the working tree, which the agent can edit — into
+> the directory the broker will run from, and records which commit it was:
+>
+> ```sh
+> git-credential-broker stage --to /volume1/docker/git-cred-broker/app --ref <sha you reviewed>
+> ```
+>
+> It refuses a target inside a container mount, refuses the deployment directory itself (a `--to`
+> typo there would clear `app.pem`), and leaves `STAGED.json` behind so "which code is running with
+> my key?" has an answer. Check the sha it prints against your own clone or the remote first: this
+> repository is agent-writable too, so its commits are not self-authenticating.
+
 The credential helper can run this way too, but git needs the interpreter spelled out — and a helper
 value is only treated as a shell command when it starts with `!`:
 

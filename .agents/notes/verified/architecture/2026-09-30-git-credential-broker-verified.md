@@ -93,11 +93,25 @@ compose 生成）、`probe`、`diagnose`。宿主不再需要 checkout 或构建
 直接 `npx` 拉取已发布的包。同一个 bin 既是 git 的 credential helper（`get|store|erase`），
 也是管理 CLI。
 
+**新增 `stage`：把"代码在哪"变成一条命令。** 原 `deploy-sidecar.sh` 会拒绝脏工作树，合并成 CLI 时我把
+这层保护丢了，只剩"把代码拷到挂载之外"这句口头约定 —— 而 `rsync` 工作树等于把 agent 当场写的代码也一起
+搬出去。真正的边界不是**私钥在哪**，而是**谁决定 broker 执行什么**：broker 必须能读私钥，所以它执行的
+代码就拥有私钥的权限（能铸 App 可见范围内任何仓库的 token，也能直接读走私钥）。私钥在容器外，只要运行它
+的代码来自 agent 可写的目录，这层保护就等于零。
+
+`stage` 从 **commit**（不是工作树）导出到挂载之外，并留下 `STAGED.json` 记录 sha/主题，回答"现在跑的是
+哪份代码"。它拒绝：目标在容器挂载内、目标是部署目录本身（`--to` 手滑会连 `app.pem` 一起清掉）、目标非空
+且不是它上次放的。**它替代不了复核** —— 仓库本身对 agent 可写、commit 也能被改写，所以打印出来的 sha 要
+和自建的 clone 或远端对一下。
+
 **`init` 是"合并"而不是"重写"。** `broker.config.json` 是唯一事实来源（daemon 只读它、可手改、可进
 dotfiles），所以 `init` 只改你显式传的字段：`--allow` 是**追加**，`--remove-allow` 是删除，
 `--replace-allow` 才整体替换；`--cert`/`--client-id`/`--app-id`/`--permissions` 不传就保持原样。
-会打印 before/after 白名单便于复核；拒绝写出空白名单；拒绝改变已存在文件的 `--mode`（那会
-把路径指向别处）。
+会打印 before/after 白名单便于复核；拒绝写出空白名单。
+
+`--mode` 例外：**显式传它才会切换部署布局**（保留白名单与 App 身份，只重算路径），切到 host 时必须带
+`--socket-path` —— 文件里那个 socket 属于 sidecar，宿主进程绑不了。切模式时 sidecar 的 `auditPath` 绝不能
+被带过去（宿主上不存在 `/var/log/git-cred-broker/`），这条曾是真 bug。
 
 > 早先的写法既麻烦又危险：加一个仓库要重打全部参数，而 `--force` 会**静默替换**白名单 ——
 > 加 `b/two` 会把 `a/one` 悄悄丢掉。

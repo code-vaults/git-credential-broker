@@ -45,10 +45,14 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 - **Never commit key material.** `.gitignore` covers `*.pem` and `*.key`; a real App private
   key has already been dropped into this directory once. Before pushing:
   `git grep -l 'BEGIN RSA PRIVATE KEY' HEAD` must find nothing.
-- **Do not run the broker from this checkout.** It reads the App private key, and this tree is
-  agent-writable. It runs from a path outside every container mount — `git-credential-broker
-  compose` prints a sidecar that needs no checkout at all. The *helper* is fine here: it holds
-  no secret and grants nothing; the broker decides.
+- **Do not run the broker from this checkout, and understand why the *key* being elsewhere is not
+  enough.** The broker reads the key, so the code it executes has the key's privileges: it can mint
+  installation tokens for anything the App can see, and it can read the key file. A key outside the
+  container buys nothing while the process holding it runs code from an agent-writable directory —
+  the agent then owns the allowlist. The boundary is control of the code. `stage` exports a
+  **commit** (never the working tree) into a directory outside every mount and records the sha; the
+  repository is agent-writable too, so a staged sha is worth checking against a clone or the remote.
+  The *helper* is fine here: it holds no secret and grants nothing; the broker decides.
 - **Strict configuration validation is deliberate.** Top-level `_comment*` keys are ignored,
   but everything inside `hosts` is checked, and a malformed `allow` entry is rejected at load
   time. It fails closed either way, but silently — and a typo that looks like configuration is
@@ -120,7 +124,7 @@ Full detail and the measurements behind them:
 | `src/policy.ts` | the authorization decision (default deny, exact segment matching) |
 | `src/providers/github-app.ts` | RS256 JWT, installation lookup, permission pre-flight, token cache |
 | `test/e2e/push.test.ts` | a real push over authenticated smart HTTP |
-| `src/commands/` | the management CLI: `setup`, `init`, `compose`, `probe`, `diagnose` |
+| `src/commands/` | the management CLI: `setup`, `init`, `stage`, `compose`, `probe`, `diagnose` |
 | `src/cli/helper.ts` | the one command that is both the git helper and the CLI |
 | `scripts/postbuild.mjs` | build-time fixup: shebang and exec bit on the CLI entry points |
 | `.agents/notes/proposed/` | the original design and its review |
