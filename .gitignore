@@ -17,3 +17,6 @@ dist/
 # examples/broker.config.example.json. Run the CLI from your deployment directory, or point
 # GIT_BROKER_CONFIG at it, so nothing here needs a personal copy.
 /broker.config.json
+# `compose` output, which the README tells you to redirect to this name inside the repo. It
+# carries one host's deployment paths, so it is per-deployment, not source.
+/docker-compose.broker.yml

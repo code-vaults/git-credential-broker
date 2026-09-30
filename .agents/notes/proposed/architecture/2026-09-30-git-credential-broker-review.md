@@ -275,7 +275,7 @@ D. 未设置、stdin 为 /dev/null → fatal: ...: No such device or address    
 ┌─ 宿主（NAS，/home/app/{Workspaces,.dsh,.dotfiles} 之外）────────────┐
 │  /volume1/docker/git-cred-broker/                                  │
 │    app.pem     0600 root   ← 唯一长期材料                           │
-│    config.json 0600 root   ← host/仓库白名单、installation 缓存      │
+│    broker.config.json 0600 root   ← host/仓库白名单、installation 缓存 │
 │    audit.log               ← 容器不可读                             │
 │  broker（Node，零依赖，常驻）                                       │
 │    · RS256 JWT（iat-60s / exp≤600s / iss=client id）                │
