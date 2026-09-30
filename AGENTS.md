@@ -6,6 +6,12 @@ Working notes for agents in this repository.
 history and the measured environment facts. This file is about **how to work here** without
 breaking the invariants that make the thing worth having.
 
+**Keep that split.** The README is for someone who wants to run this: install, quick start,
+configuration reference, troubleshooting. Reasoning — why a unix socket, why the code and not just
+the key must sit outside the mounts, how a share's ACLs behave, which bug prompted which check —
+belongs in `.agents/notes/`, or here when it is a rule about working in this repository. The README
+had reached 549 lines mostly by accumulating rationale; it is not the place for it.
+
 ## What it is, in one paragraph
 
 A host-side broker holds a GitHub App private key and mints short-lived, single-repository
