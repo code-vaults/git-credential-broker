@@ -65,6 +65,27 @@ if [ "$REWRITE_SSH" = "1" ]; then
   git config --file "$CONFIG" url."https://github.com/".insteadOf "git@github.com:"
 fi
 
+# TLS trust. git speaks HTTPS through libcurl, which needs a CA bundle *on disk*; this image
+# installs git with --no-install-recommends and no ca-certificates, so /etc/ssl/certs does not
+# exist and every https operation dies with
+#   "server certificate verification failed. CAfile: none CRLfile: none"
+# (Node is unaffected because it bundles its own trust store, which is why `fetch` works here
+# while `git` does not.) Installing ca-certificates in the image is the right long-term fix;
+# this makes the container work now, without a rebuild.
+CA_BUNDLE="${GIT_BROKER_CA_BUNDLE:-$HOME/.config/git-credential-broker/ca-bundle.pem}"
+if [ -f /etc/ssl/certs/ca-certificates.crt ] || [ -f /etc/ssl/cert.pem ]; then
+  say "system CA bundle present; leaving git's TLS configuration alone"
+elif command -v node >/dev/null 2>&1; then
+  mkdir -p "$(dirname "$CA_BUNDLE")"
+  node -e 'const {rootCertificates} = require("node:tls"); require("node:fs").writeFileSync(process.argv[1], rootCertificates.join("\n") + "\n");' "$CA_BUNDLE"
+  chmod 644 "$CA_BUNDLE"
+  git config --file "$CONFIG" http.sslCAInfo "$CA_BUNDLE"
+  say "no system CA bundle: wrote one from Node's trust store and pointed git at it"
+  say "  ($CA_BUNDLE — add 'ca-certificates' to the image to make this unnecessary)"
+else
+  say "warning: no CA bundle and no node available; https pushes will fail TLS verification"
+fi
+
 chmod 600 "$CONFIG"
 
 # The socket path is per-process environment, not git configuration, so it is written to two

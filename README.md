@@ -171,6 +171,22 @@ Setting `GIT_BROKER_SOCKET` and `GIT_BROKER_REQUIRE` in the container's `environ
 compose remains the most explicit option; see
 [`examples/docker-compose.snippet.yml`](examples/docker-compose.snippet.yml).
 
+`container-setup.sh` also fixes TLS trust, because the image this was built for installs `git`
+with `--no-install-recommends` and never installs `ca-certificates`: there is no
+`/etc/ssl/certs` at all, so *every* https git operation fails with
+
+```
+server certificate verification failed. CAfile: none CRLfile: none
+```
+
+Node is unaffected (it bundles its own trust store, which is why `fetch` works in the same
+container while `git` does not — a genuinely confusing pair of symptoms). The script writes a
+bundle from Node's store to `~/.config/git-credential-broker/ca-bundle.pem` and points
+`http.sslCAInfo` at it, so the container works without a rebuild.
+
+> **Better fix:** add `ca-certificates` to the image's apt line, next to `git`. The generated
+> bundle is a snapshot that will age; the package gets updated with the image.
+
 ## Working with the bind-mounted `~/Workspaces`
 
 `~/Workspaces` is shared with the host, which pushes over **SSH** with its own credentials.
@@ -301,6 +317,11 @@ child process's stdin after that process had already exited raised an unhandled 
 took down the whole test file and reported a misleading error instead of the real assertion.
 Both the process helper and the CGI server now ignore `EPIPE`, and the combined suite passes
 repeatedly (6/6 before, 0/6 failures after).
+
+Finally, the first attempt to actually reach github.com over https from the container failed
+with `server certificate verification failed. CAfile: none` — not a broker problem at all, but
+a missing `ca-certificates` package in the image. See the TLS note in the install section; the
+container-side chain was verified working once trust was supplied.
 
 ## Remaining step for a real GitHub App
 
