@@ -1,0 +1,89 @@
+# Snippets to adapt, not to paste wholesale. See the README for the reasoning.
+
+## 1. Host side: run the broker outside the container
+
+The broker reads the private key and holds the only long-lived secret, so it must run where
+the container cannot reach the key. Either a host process or a sidecar container works.
+
+### a. Host process under systemd (or a DSM scheduled task)
+
+```ini
+# /etc/systemd/system/git-cred-broker.service
+[Unit]
+Description=git credential broker
+After=network-online.target
+
+[Service]
+Type=simple
+# The socket directory must be reachable by the container's uid.
+RuntimeDirectory=git-cred-broker
+RuntimeDirectoryMode=0750
+ExecStartPre=/usr/bin/node /opt/git-credential-broker/dist/cli/daemon.js \
+  --config /volume1/docker/git-cred-broker/config.json --check
+ExecStart=/usr/bin/node /opt/git-credential-broker/dist/cli/daemon.js \
+  --config /volume1/docker/git-cred-broker/config.json
+Restart=on-failure
+# The key is 0600 root; nothing else needs read access to it.
+User=root
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### b. Sidecar container
+
+If the broker runs in its own container, only that container may mount the private key. The
+socket directory is the *only* thing shared with the DSH container.
+
+```yaml
+services:
+  git-cred-broker:
+    image: node:24-slim
+    restart: unless-stopped
+    command:
+      - node
+      - /opt/git-credential-broker/dist/cli/daemon.js
+      - --config
+      - /etc/git-cred-broker/config.json
+    volumes:
+      # The private key: mounted here and nowhere else.
+      - /volume1/docker/git-cred-broker:/etc/git-cred-broker:ro
+      # The socket directory, shared with the DSH container below.
+      - git-cred-broker-run:/run/git-cred-broker
+      - /opt/git-credential-broker:/opt/git-credential-broker:ro
+
+volumes:
+  git-cred-broker-run:
+```
+
+## 2. DSH container: reach the socket and configure git
+
+Add the socket mount and the two environment variables. Setting them in `environment:` is
+better than sourcing a file, because it reaches every process including non-login shells.
+
+```yaml
+services:
+  dsh:
+    # ... existing configuration ...
+    environment:
+      # ... existing PUID/PGID/proxy entries ...
+      - GIT_BROKER_SOCKET=/run/git-cred-broker/broker.sock
+      # Fail closed: never silently fall back to another credential source.
+      - GIT_BROKER_REQUIRE=1
+    volumes:
+      # ... existing mounts ...
+      - git-cred-broker-run:/run/git-cred-broker
+
+volumes:
+  git-cred-broker-run:
+```
+
+Then, inside the container:
+
+```sh
+bash scripts/container-setup.sh
+```
+
+Do **not** put the private key or any credential in `~/Workspaces`, `~/.dsh` or `~/.dotfiles`:
+all three are mounted into the container. `~/.dsh` in particular is *inside* the
+`~/Workspaces` mount, so it is not a safe place for anything secret.

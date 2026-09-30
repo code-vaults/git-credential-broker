@@ -1,0 +1,8 @@
+node_modules/
+
+# Build output: the host compiles it with `corepack yarn build`.
+dist/
+
+*.log
+*.tmp
+.yarn/install-state.gz

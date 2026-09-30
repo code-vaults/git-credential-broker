@@ -1,0 +1,32 @@
+{
+  "name": "git-credential-broker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Host-side credential broker plus git credential helper: long-lived secrets never enter the agent container, and git receives short-lived, single-repository credentials over a unix socket.",
+  "type": "module",
+  "packageManager": "yarn@4.18.1",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "bin": {
+    "git-credential-broker": "dist/cli/helper.js",
+    "git-credential-brokerd": "dist/cli/daemon.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/postbuild.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "yarn build && node --disable-warning=ExperimentalWarning --test test/unit/*.test.ts test/e2e/*.test.ts",
+    "test:unit": "node --disable-warning=ExperimentalWarning --test test/unit/*.test.ts",
+    "test:e2e": "yarn build && node --disable-warning=ExperimentalWarning --test test/e2e/*.test.ts",
+    "check": "yarn typecheck && yarn test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.0",
+    "typescript": "^7.0.2"
+  },
+  "license": "MIT"
+}

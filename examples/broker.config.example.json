@@ -1,0 +1,58 @@
+{
+  "_comment": [
+    "Example broker configuration. This file lives on the HOST, outside every path the agent",
+    "container can see, and it is the one place that decides which repositories may receive a",
+    "credential.",
+    "Required keys: socketPath, hosts. Everything else is optional.",
+    "Only top-level '_comment*' keys are ignored. The 'hosts' object is validated strictly on",
+    "purpose: every entry must be a real host with a known provider and a non-empty allowlist,",
+    "so a typo cannot sit there looking like configuration while doing nothing.",
+    "See the README's configuration reference for every field."
+  ],
+
+  "socketPath": "/run/git-cred-broker/broker.sock",
+
+  "_comment_socketMode": "Octal, written in decimal. 432 = 0660, right when broker uid == container uid.",
+  "socketMode": 432,
+
+  "_comment_auditPath": "Append-only JSONL, deliberately unreadable from the container. Records grants and refusals, never credentials.",
+  "auditPath": "/var/log/git-cred-broker/audit.jsonl",
+
+  "_comment_tokenCacheSkewSeconds": "Re-mint a cached token this many seconds before it expires.",
+  "tokenCacheSkewSeconds": 300,
+
+  "_comment_hosts": [
+    "Each entry is keyed by the host exactly as git reports it: 'github.com' (no port) or",
+    "'host:port' for a non-default port. Provider is 'github-app' or 'static'.",
+    "'allow' is default-deny and matched per path segment: 'owner/repo', 'owner/*'. There is",
+    "no prefix matching, so 'acme/widget' can never authorize 'acme/widget-evil'.",
+    "'allowInsecureHttp' defaults to false. Set it true only for a plaintext remote you trust;",
+    "it is read here, host-side, so nothing in the container can widen it.",
+    "'permissions' must be a subset of what the app itself was granted. The broker checks this",
+    "once via GET /app and fails with a message naming the missing permission, because GitHub",
+    "answers 422 for an ungranted request and that is easy to misread as a broker fault.",
+    "Set 'verifyAppPermissions': false to skip that check (e.g. against a mocked API)."
+  ],
+  "hosts": {
+    "github.com": {
+      "provider": "github-app",
+      "_comment_identity": "clientId is preferred as the JWT `iss`; appId is the fallback. The client secret is NOT used and is not needed anywhere.",
+      "clientId": "Iv23lifamTDN4XTLvLuk",
+      "appId": 5138420,
+      "privateKeyPath": "/volume1/docker/git-cred-broker/app.pem",
+      "_comment_permissions": "Must not exceed the app's own grant. Grant 'Pull requests: Read and write' in the app settings first if you want the agent to open PRs.",
+      "permissions": {
+        "contents": "write"
+      },
+      "allow": ["code-vaults/example-repo", "code-vaults/*"]
+    },
+
+    "git.example.internal:8443": {
+      "provider": "static",
+      "allowInsecureHttp": true,
+      "username": "git",
+      "passwordPath": "/volume1/docker/git-cred-broker/gitea.token",
+      "allow": ["infra/*"]
+    }
+  }
+}
