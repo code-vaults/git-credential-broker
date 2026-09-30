@@ -15,7 +15,15 @@
  */
 import fs from 'node:fs';
 
-import { loadConfig, resolveConfigPath, validateConfig, deploymentDir } from '../config.ts';
+import {
+  deploymentDir,
+  inferMode,
+  loadConfig,
+  resolveConfigPath,
+  SIDECAR,
+  validateConfig,
+  type DeploymentMode,
+} from '../config.ts';
 import { parseAllowEntry } from '../policy.ts';
 import type { BrokerConfig, GithubAppHostConfig } from '../types.ts';
 import {
@@ -23,11 +31,9 @@ import {
   DEPLOYMENT_MODES,
   hostArtifacts,
   HOST_SOCKET_PATH_DEFAULT,
-  inferMode,
   requireFixedInSidecar,
-  SIDECAR,
 } from './deployment.ts';
-import type { BrokerPaths, DeploymentMode } from './deployment.ts';
+import type { BrokerPaths } from './deployment.ts';
 import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from './support.ts';
 
 /** The environment `init` reasons about, injectable so the guard rails can be tested. */

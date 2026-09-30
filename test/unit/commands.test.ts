@@ -14,8 +14,7 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { renderCompose } from '../../src/commands/compose.ts';
-import { SIDECAR } from '../../src/commands/deployment.ts';
-import { resolveConfigPath, deploymentDir } from '../../src/config.ts';
+import { SIDECAR, resolveConfigPath, deploymentDir } from '../../src/config.ts';
 import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit } from '../../src/commands/init.ts';
 import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../src/commands/support.ts';
 import { performSetup } from '../../src/commands/setup.ts';

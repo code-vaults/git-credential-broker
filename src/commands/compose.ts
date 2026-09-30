@@ -11,9 +11,8 @@
  */
 import fs from 'node:fs';
 
-import { loadConfig, resolveConfigPath, deploymentDir } from '../config.ts';
+import { inferMode, loadConfig, resolveConfigPath, deploymentDir, SIDECAR } from '../config.ts';
 import { packageVersion } from '../version.ts';
-import { inferMode, SIDECAR } from './deployment.ts';
 import { fail, parseArgs, say, warn } from './support.ts';
 
 /** Everything `compose` needs, resolved. */

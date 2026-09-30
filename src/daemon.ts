@@ -7,11 +7,12 @@
  * construction without binding the socket, which is what a deployment script should run
  * before restarting the service.
  */
+import { existsSync } from 'node:fs';
 import type { Writable } from 'node:stream';
 
 import { createAudit } from './audit.ts';
 import { startBroker } from './broker.ts';
-import { loadConfig, resolveConfigPath } from './config.ts';
+import { inferMode, loadConfig, resolveConfigPath } from './config.ts';
 import { createProvider } from './providers/index.ts';
 import type { ProviderDeps } from './providers/index.ts';
 import type { BrokerConfig, Provider } from './types.ts';
@@ -78,6 +79,35 @@ export function buildProviders(config: BrokerConfig, deps: ProviderDeps = {}): M
 }
 
 /**
+ * Check that each recorded private key is readable, before the providers try to read it.
+ *
+ * A bare `ENOENT ... /etc/git-cred-broker/app.pem` on a host is unhelpful: that path only exists
+ * inside the sidecar container, and nothing in the message says so. The layout is recoverable from
+ * the configuration itself, so name it and give the way out.
+ *
+ * @param config - the validated configuration.
+ * @throws {Error} when a key file is missing, with the remedy in the message.
+ */
+export function assertKeysReadable(config: BrokerConfig): void {
+  const mode = inferMode(config);
+  for (const [host, block] of Object.entries(config.hosts)) {
+    if (block.provider !== 'github-app' || block.privateKeyPath === undefined) continue;
+    if (existsSync(block.privateKeyPath)) continue;
+
+    const remedy =
+      mode === 'sidecar'
+        ? `${block.privateKeyPath} exists only inside the sidecar container.\n` +
+          '       Either start the sidecar with the key mounted there, or run the broker as a host\n' +
+          '       process, which records host paths instead:\n' +
+          '         git-credential-broker init --mode host --socket-path <the path the host process binds>'
+        : `${block.privateKeyPath} is the host's path. Install the key there (init does), or if this\n` +
+          '       deployment is a sidecar, re-run init with --mode sidecar so the config records the\n' +
+          '       paths the sidecar actually mounts.';
+    throw new Error(`cannot read the private key for ${host}: ${remedy}`);
+  }
+}
+
+/**
  * Run the daemon.
  *
  * @param argv - arguments after the script name.
@@ -102,6 +132,7 @@ export async function runDaemon(
   let providers: Map<string, Provider>;
   try {
     config = loadConfig(resolved);
+    assertKeysReadable(config);
     providers = buildProviders(config);
   } catch (error) {
     stderr.write(`git-credential-brokerd: ${(error as Error).message}\n`);

@@ -191,12 +191,19 @@ git-credential-broker init --remove-allow code-vaults/old-repo   # drop one
 git-credential-broker init --allow a/one,b/two --replace-allow   # set the list exactly
 git-credential-broker init --permissions contents=write,pull_requests=write
 git-credential-broker init --cert ~/Downloads/new-key.pem        # rotate the key
+git-credential-broker init --mode host --socket-path /run/git-cred-broker/broker.sock
 ```
 
-No `--cert`, `--client-id` or `--app-id` is needed once the file exists, and the command prints
-the before/after allowlist so the change is reviewable. It refuses to write an empty allowlist,
-refuses to change the deployment `--mode` of an existing file (that would re-point its paths),
-and `--force` is only for regenerating a file from flags. Restart the broker to pick a change up.
+No `--cert`, `--client-id` or `--app-id` is needed once the file exists, and the command prints the
+before/after allowlist so the change is reviewable. It refuses to write an empty allowlist, and
+`--force` is only for regenerating a file from flags. Restart the broker to pick a change up.
+
+The last line is how you move between deployments: `--mode` switches the *recorded paths* in place
+and keeps the allowlist and the app identity, where it once demanded `--force` and a full
+re-specification. Moving **to** host mode requires `--socket-path`, because the socket on file
+belongs to the sidecar and a host process cannot bind it. A config whose layout does not match how
+you started the broker is refused at startup with that explanation rather than an `ENOENT` for a
+path that only exists in the other deployment.
 
 > Earlier this was both awkward and dangerous: adding one repository required re-supplying every
 > flag, and `--force` then silently *replaced* the allowlist, so adding `b/two` could quietly drop

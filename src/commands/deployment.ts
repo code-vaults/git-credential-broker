@@ -12,28 +12,11 @@
  */
 import path from 'node:path';
 
-import type { BrokerConfig } from '../types.ts';
-
-/** The two supported deployments. */
-export type DeploymentMode = 'host' | 'sidecar';
+import { SIDECAR } from '../config.ts';
+import type { DeploymentMode } from '../config.ts';
 
 /** The modes, for validation and help text. */
 export const DEPLOYMENT_MODES: readonly DeploymentMode[] = ['host', 'sidecar'];
-
-/**
- * Fixed paths inside the sidecar.
- *
- * These are a contract with the compose file `compose` prints, which is why they are constants
- * rather than options: a mismatch here is a broker that will not start.
- */
-export const SIDECAR = {
-  configPath: '/etc/git-cred-broker/broker.config.json',
-  keyPath: '/etc/git-cred-broker/app.pem',
-  auditDir: '/var/log/git-cred-broker',
-  auditPath: '/var/log/git-cred-broker/audit.jsonl',
-  socketDir: '/run/git-broker',
-  socketPath: '/run/git-broker/broker.sock',
-} as const;
 
 /** Paths recorded in the configuration, as the broker process will resolve them. */
 export interface BrokerPaths {
@@ -91,21 +74,6 @@ export function brokerPaths(
     privateKeyPath: path.join(dir, 'app.pem'),
     auditPath: path.join(dir, 'log', 'audit.jsonl'),
   };
-}
-
-/**
- * Which deployment a configuration was written for.
- *
- * Derived from its paths rather than stored, because the paths are what actually decide whether
- * a sidecar can find its key.
- *
- * @param config - a validated configuration.
- * @returns the deployment it suits.
- */
-export function inferMode(config: BrokerConfig): DeploymentMode {
-  const block = config.hosts['github.com'];
-  const keyPath = block?.provider === 'github-app' ? block.privateKeyPath : undefined;
-  return keyPath === SIDECAR.keyPath && config.socketPath === SIDECAR.socketPath ? 'sidecar' : 'host';
 }
 
 /**

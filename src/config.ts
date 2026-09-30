@@ -41,6 +41,40 @@ export function deploymentDir(configPath: string): string {
   return path.dirname(path.resolve(configPath));
 }
 
+/** The two supported deployments. Which one a configuration suits is decided by its paths. */
+export type DeploymentMode = 'host' | 'sidecar';
+
+/**
+ * Fixed paths inside the sidecar.
+ *
+ * A contract with the compose file `compose` prints: it and `init --mode sidecar` both read these
+ * from here, because a mismatch is a broker that starts and then cannot find its own key.
+ */
+export const SIDECAR = {
+  configPath: '/etc/git-cred-broker/broker.config.json',
+  keyPath: '/etc/git-cred-broker/app.pem',
+  auditDir: '/var/log/git-cred-broker',
+  auditPath: '/var/log/git-cred-broker/audit.jsonl',
+  socketDir: '/run/git-broker',
+  socketPath: '/run/git-broker/broker.sock',
+} as const;
+
+/**
+ * Which deployment a configuration was written for.
+ *
+ * Derived from the paths rather than stored, because the paths are what decide whether the broker
+ * can find its key. This lives here, not with the CLI, so the daemon can use it to explain a
+ * mismatch instead of reporting a bare ENOENT about a path that only exists in the other layout.
+ *
+ * @param config - a validated configuration.
+ * @returns the deployment it suits.
+ */
+export function inferMode(config: BrokerConfig): DeploymentMode {
+  const block = config.hosts['github.com'];
+  const keyPath = block?.provider === 'github-app' ? block.privateKeyPath : undefined;
+  return keyPath === SIDECAR.keyPath && config.socketPath === SIDECAR.socketPath ? 'sidecar' : 'host';
+}
+
 /** Providers this build knows how to construct. */
 export const KNOWN_PROVIDERS = ['github-app', 'static'] as const;
 
