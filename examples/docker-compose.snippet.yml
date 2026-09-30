@@ -81,7 +81,7 @@ volumes:
 Then, inside the container:
 
 ```sh
-bash scripts/container-setup.sh
+git-credential-broker setup
 ```
 
 Do **not** put the private key or any credential in `~/Workspaces`, `~/.dsh` or `~/.dotfiles`:

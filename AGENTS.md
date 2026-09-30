@@ -26,6 +26,14 @@ corepack yarn install    # Yarn 4 via corepack; packageManager pins it
 corepack yarn typecheck  # tsc, no emit
 corepack yarn build      # to dist/, then makes the CLI entry points executable
 corepack yarn check      # typecheck + build + all tests  ← run this before claiming success
+corepack yarn pack:check # build, then show exactly what npm would publish
+```
+
+The CLI runs from source too, so there is no need to build to try a command:
+
+```sh
+node src/cli/helper.ts --help
+node src/cli/helper.ts compose --dir /tmp/deploy --socket-dir /tmp/sock
 ```
 
 `yarn test` builds first because the end-to-end suite execs `dist/cli/helper.js` as a **real**
@@ -38,9 +46,9 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   key has already been dropped into this directory once. Before pushing:
   `git grep -l 'BEGIN RSA PRIVATE KEY' HEAD` must find nothing.
 - **Do not run the broker from this checkout.** It reads the App private key, and this tree is
-  agent-writable. It runs from a path outside every container mount — see
-  `scripts/deploy-sidecar.sh`. The *helper* is fine here: it holds no secret and grants
-  nothing; the broker decides.
+  agent-writable. It runs from a path outside every container mount — `git-credential-broker
+  compose` prints a sidecar that needs no checkout at all. The *helper* is fine here: it holds
+  no secret and grants nothing; the broker decides.
 - **Strict configuration validation is deliberate.** Top-level `_comment*` keys are ignored,
   but everything inside `hosts` is checked, and a malformed `allow` entry is rejected at load
   time. It fails closed either way, but silently — and a typo that looks like configuration is
@@ -63,7 +71,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   provider-agnostic.
 - **The broker answers the container with generic errors on purpose**, because provider errors
   can embed API responses. Real reasons go to the host-side log and audit. Use
-  `scripts/diagnose-app.ts` when you need them.
+  `git-credential-broker diagnose` when you need them.
 
 ## Environment gotchas (this container)
 
@@ -78,8 +86,9 @@ Full detail and the measurements behind them:
   survive belongs in compose `environment:` or on a mounted path. `~/Workspaces`, `~/.dsh` and
   `~/.dotfiles` are mounts; `/home/app` itself is not; `/volume1` does not exist inside.
 - **Do not rely on the executable bit in commits**: this share's ACLs defeat git's exec-bit
-  detection, so every sibling repository has `core.fileMode=false`. Invoke scripts as
-  `bash script.sh` / `node script.ts`.
+  detection, so every sibling repository has `core.fileMode=false`. The exec bit for the CLI
+  entry points is applied by `scripts/postbuild.mjs` at build time, and npm sets it for the
+  installed bins, so nothing depends on it being tracked.
 - **`~/.dsh` lives *inside* the `~/Workspaces` mount**, so "put it in `~/.dsh`" means "put it on
   the shared NAS share". Never treat it as a private location for secrets.
 
@@ -92,10 +101,8 @@ Full detail and the measurements behind them:
 | `src/policy.ts` | the authorization decision (default deny, exact segment matching) |
 | `src/providers/github-app.ts` | RS256 JWT, installation lookup, permission pre-flight, token cache |
 | `test/e2e/push.test.ts` | a real push over authenticated smart HTTP |
-| `scripts/container-setup.sh` | container-side git configuration (+ TLS trust) |
-| `scripts/host-setup.sh` | host-side key install and config generation (native process) |
-| `scripts/deploy-sidecar.sh` | host-side deployment as a Docker sidecar |
-| `scripts/probe.ts` | ask the broker what it would do, without pushing |
-| `scripts/diagnose-app.ts` | why a token mint failed: installations, permissions, repositories |
+| `src/commands/` | the management CLI: `setup`, `init`, `compose`, `probe`, `diagnose` |
+| `src/cli/helper.ts` | the one command that is both the git helper and the CLI |
+| `scripts/postbuild.mjs` | build-time fixup: shebang and exec bit on the CLI entry points |
 | `.agents/notes/proposed/` | the original design and its review |
 | `.agents/notes/verified/` | what was built, and the measured environment facts |

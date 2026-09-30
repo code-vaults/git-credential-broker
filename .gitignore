@@ -6,6 +6,8 @@ dist/
 *.log
 *.tmp
 .yarn/install-state.gz
+# npm pack output, so a local `npm pack` never gets committed.
+*.tgz
 # Never commit key material. This project exists to keep secrets out of places they can be
 # read, and its own directory is where someone will first drop an App private key.
 *.pem

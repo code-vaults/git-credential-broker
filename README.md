@@ -108,106 +108,104 @@ rather than silently over-granting.
 
 ## Install
 
-### Host: the broker
-
-> **Run the broker from a path outside every container mount.** It reads the private key, so it
-> typically runs as root — and `~/Workspaces` is writable by the agent. Executing
-> agent-writable code with the broker's privileges would hand the agent exactly what this
-> design withholds. `/opt/git-credential-broker` (below) is outside the mounts; a checkout
-> under `~/Workspaces` is not, so copy it out before running it.
+### Host: install the key and write the config
 
 ```sh
-git clone <this repository> /opt/git-credential-broker
-cd /opt/git-credential-broker
-corepack yarn install
-corepack yarn build
-
-mkdir -p /volume1/docker/git-cred-broker
-cp examples/broker.config.example.json /volume1/docker/git-cred-broker/config.json
-$EDITOR /volume1/docker/git-cred-broker/config.json      # set clientId, key path, allowlist
-install -m 600 /path/to/app.pem /volume1/docker/git-cred-broker/app.pem
-chmod 600 /volume1/docker/git-cred-broker/config.json
-
-# Validate configuration and key access without binding the socket:
-node dist/cli/daemon.js --config /volume1/docker/git-cred-broker/config.json --check
-
-# Run it (see examples/docker-compose.snippet.yml for a unit file and a sidecar form):
-node dist/cli/daemon.js --config /volume1/docker/git-cred-broker/config.json
+npm install -g git-credential-broker      # or use npx git-credential-broker ...
 ```
 
-Or let `scripts/host-setup.sh` do the mechanical part — it installs the key 0600, generates the
-configuration, refuses to put the key anywhere the container can read, and validates the
-result without binding the socket:
+```sh
+git-credential-broker init \
+  --cert ~/Downloads/git-credential-broker.private-key.pem \
+  --allow code-vaults/my-repo \
+  --client-id Iv23lifamTDN4XTLvLuk \
+  --app-id 5138420
+```
+
+`init` installs the key `0600`, generates the configuration and **validates it with the same code
+the daemon uses**, so a mistake is caught here rather than at the first push. It refuses to run
+inside the container, refuses to put the key anywhere the container can read, and refuses a
+malformed allowlist entry. `--force` overwrites an existing config;
+`--permissions contents=write,pull_requests=write` changes what the token may do.
+
+Then run the daemon, or see the sidecar section below if the host has no Node:
 
 ```sh
-bash scripts/host-setup.sh \
-  --app-pem ~/Downloads/git-credential-broker.private-key.pem \
-  --allow code-vaults/git-credential-broker
+git-credential-brokerd --config /volume1/docker/git-cred-broker/config.json --check   # validate, bind nothing
+git-credential-brokerd --config /volume1/docker/git-cred-broker/config.json
 ```
 
 ### Containerised deployment (when the host has no Node)
 
-A NAS that has Docker usually does not have Node, so the broker is better run as a sidecar.
-`scripts/deploy-sidecar.sh` stages the key, config and code outside every mount, rebuilds the
-code inside a throwaway container, and starts a sidecar with the key mounted read-only, no
-ports, no capabilities and a read-only root filesystem:
+A NAS that has Docker usually does not have Node — and the broker does not need a checkout there
+at all. `compose` prints a self-contained sidecar that fetches the published package:
 
 ```sh
-bash scripts/deploy-sidecar.sh \
-  --cert /volume1/public/certificates/git-credential-broker.private-key.pem \
-  --allow code-vaults/git-credential-broker
+git-credential-broker compose \
+  --dir /volume1/docker/git-cred-broker \
+  --socket-dir ~/Workspaces/my-project/.dsh/git-broker > docker-compose.broker.yml
+docker compose -f docker-compose.broker.yml up -d
 ```
 
-It refuses to run inside the container, refuses a key that lives in a path the container can
-read, and refuses to deploy a **dirty working tree** — the code it stages will run with the
-private key, so it must be code you reviewed; a wrong `$0` that would stage some other tree
-fails too. Add `--dry-run` to see the plan, `--allow-dirty` to override, `--skip-build` to
-reuse an existing `dist/`.
+The sidecar runs with the key mounted read-only, no published ports, no capabilities and a
+read-only root filesystem. There is nothing to copy and nothing to build, which is the point of
+publishing to npm.
 
-Because the socket lands in `~/.dsh/git-broker/`, which the DSH container already mounts,
-**the container needs no change and no restart** after the sidecar starts.
+> **Run the broker from outside every container mount.** It reads the private key, so it
+> typically runs as root — and `~/Workspaces` is writable by the agent. Executing agent-writable
+> code with the broker's privileges would hand the agent exactly what this design withholds.
+
+Because the socket lands in a directory the pushing container already mounts, **that container
+needs no change and no restart** after the sidecar starts.
 
 Startup is fail-fast: a missing key or an over-broad configuration stops the broker rather
 than letting it come up and deny everything silently.
 
-### Container: the helper
-
-Reach the socket (bind mount it in), then configure this container's git:
+### Container: point git at the broker
 
 ```sh
 export GIT_BROKER_SOCKET=/run/git-cred-broker/broker.sock
-export GIT_BROKER_REQUIRE=1          # fail closed if the socket variable ever goes missing
-bash scripts/container-setup.sh
+git-credential-broker setup
 ```
 
-> Invoke the scripts with `bash` / `node` explicitly. This workspace lives on a btrfs share
-> whose ACLs defeat git's executable-bit detection, so every sibling repository on it has
-> `core.fileMode=false` and the exec bit is not tracked. Build output and installed package
-> bins still get their exec bits at build/install time.
+`setup` replaces the hand-written shell script and does four things, each for a reason that was
+measured rather than assumed:
 
-`container-setup.sh` records the socket path in two places, because one of them is not enough:
-the environment (for interactive shells) and `~/.config/git-credential-broker/socket` (which
-the helper reads when the environment carries nothing — git is often spawned from a non-login
-shell that never sources a profile, and "pushes silently stopped working" is a bad failure).
-Setting `GIT_BROKER_SOCKET` and `GIT_BROKER_REQUIRE` in the container's `environment:` in
-compose remains the most explicit option; see
-[`examples/docker-compose.snippet.yml`](examples/docker-compose.snippet.yml).
+- records `credential.helper` — using the running script's real path, so it works for a global
+  install as well as for an `npx` cache — and turns on `credential.useHttpPath`, without which
+  git sends no repository path and the broker can only authorize host-wide;
+- rewrites `git@github.com:` remotes to https **in this environment only**, because an App
+  installation token cannot be used over ssh and this is usually a container with no ssh key at
+  all;
+- writes a CA bundle when the image has none (see the TLS note below);
+- records the socket path in a file as well as in the environment, because git is often spawned
+  from a non-login shell that never sources a profile — "pushes silently stopped working" is a
+  bad failure.
 
-`container-setup.sh` also fixes TLS trust, because the image this was built for installs `git`
-with `--no-install-recommends` and never installs `ca-certificates`: there is no
-`/etc/ssl/certs` at all, so *every* https git operation fails with
+It refuses to write through a symlink, which is not hypothetical: on the host `~/.gitconfig` is
+a symlink into `~/.dotfiles`, and that directory is mounted into the container.
 
-```
-server certificate verification failed. CAfile: none CRLfile: none
-```
+> **Making it survive a container rebuild.** `setup` writes into the container's own filesystem,
+> which a rebuild wipes. To make it permanent, put the config on a mount and point git at it from
+> the container's `environment:` in compose:
+>
+> ```yaml
+> - GIT_CONFIG_GLOBAL=/home/app/.dsh/git-broker/gitconfig
+> - GIT_BROKER_SOCKET=/home/app/.dsh/git-broker/broker.sock
+> - GIT_BROKER_REQUIRE=1
+> ```
+>
+> generating that file once with
+> `git-credential-broker setup --gitconfig /home/app/.dsh/git-broker/gitconfig`. Note that
+> `GIT_CONFIG_GLOBAL` *replaces* `~/.gitconfig` rather than merging into it.
 
-Node is unaffected (it bundles its own trust store, which is why `fetch` works in the same
-container while `git` does not — a genuinely confusing pair of symptoms). The script writes a
-bundle from Node's store to `~/.config/git-credential-broker/ca-bundle.pem` and points
-`http.sslCAInfo` at it, so the container works without a rebuild.
-
-> **Better fix:** add `ca-certificates` to the image's apt line, next to `git`. The generated
-> bundle is a snapshot that will age; the package gets updated with the image.
+> **TLS.** If the image installs `git` with `--no-install-recommends` and never installs
+> `ca-certificates`, `/etc/ssl/certs` may not exist at all, and *every* https git operation fails
+> with `server certificate verification failed. CAfile: none CRLfile: none`. Node is unaffected
+> because it bundles its own trust store, which makes the symptom look like an application bug
+> rather than a missing package. `setup` detects this and writes a bundle from Node's store.
+> **Adding `ca-certificates` to the image is the better fix**, since a generated bundle is a
+> snapshot that ages.
 
 ## Working with the bind-mounted `~/Workspaces`
 
@@ -221,7 +219,7 @@ That has concrete consequences:
   (verified: only `~/Workspaces`, `~/.dsh` and `~/.dotfiles` are), so the container's
   `~/.gitconfig` does not exist on the host.
 - **Never write `~/.dotfiles/gitconfig`.** That directory *is* mounted, and on the host it is
-  the user's global git configuration. `scripts/container-setup.sh` refuses to follow a
+  the user's global git configuration. `git-credential-broker setup` refuses to follow a
   symlink into it, and fails loudly if it finds one.
 - **Credential helpers do not affect SSH.** git only consults credential helpers for
   HTTP(S) remotes; `git@github.com:...` goes to `ssh` and never touches them. So configuring a
@@ -231,7 +229,7 @@ That has concrete consequences:
   0, so git continues to the next helper (keychain, `store`, …). It only refuses with `quit=1`
   when it *is* configured, or when `GIT_BROKER_REQUIRE=1`. Both directions are covered by tests.
 - **Remote URLs stay untouched.** The container has no SSH key or agent (its `~/.ssh` holds
-  only `known_hosts`), and app tokens are HTTPS-only. `container-setup.sh` therefore sets a
+  only `known_hosts`), and app tokens are HTTPS-only. `setup` therefore sets a
   container-global `url."https://github.com/".insteadOf "git@github.com:"`, which rewrites the
   remote *inside the container only*. The repository's shared `.git/config`, and the host's SSH
   workflow, are left exactly as they were.
@@ -364,12 +362,12 @@ Nothing about the broker needs to change.
 
 ### Verifying without pushing
 
-`scripts/probe.ts` exercises the real path — JWT, installation lookup, permission pre-flight,
-token mint — and prints the broker's decision with the credential reduced to a fingerprint, so
-its output is safe to paste anywhere:
+`git-credential-broker probe` exercises the real path — JWT, installation lookup, permission
+pre-flight, token mint — and prints the broker's decision with the credential reduced to a
+fingerprint, so its output is safe to paste anywhere:
 
 ```sh
-node scripts/probe.ts --socket /run/git-cred-broker/broker.sock \
+git-credential-broker probe --socket /run/git-cred-broker/broker.sock \
   --host github.com --repo code-vaults/example-repo
 ```
 
@@ -387,11 +385,11 @@ push.
 ### When the broker says only "could not mint a credential"
 
 The broker deliberately answers the container with a generic message, because provider errors
-can embed API responses. `scripts/diagnose-app.ts` asks GitHub directly and prints what the app
-can actually see:
+can embed API responses. `diagnose` asks GitHub directly and prints what the app can actually
+see:
 
 ```sh
-node scripts/diagnose-app.ts --config /volume1/docker/git-cred-broker/config.json
+git-credential-broker diagnose --config /volume1/docker/git-cred-broker/config.json
 ```
 
 ```
@@ -408,8 +406,8 @@ verdict:
 
 This exists because GitHub returns the *same* `422` whether a repository was never created or
 merely was not selected for the installation, and the message names neither. Note the trap the
-script itself fell into first: `repository access: all` does **not** mean any name works — it
-means every repository that exists, so a repository that does not exist still fails. Only
+implementation itself fell into first: `repository access: all` does **not** mean any name works
+— it means every repository that exists, so a repository that does not exist still fails. Only
 enumerating the actual repositories tells the two apart.
 
 ## Layout
@@ -422,11 +420,11 @@ src/audit.ts              append-only JSONL with defensive redaction
 src/config.ts             strict configuration validation
 src/providers/            github-app (RS256 JWT, installation tokens) and static
 src/daemon.ts             startup, signals, --check
-src/cli/                  the two executable entry points
-test/unit/                policy, JWT, provider, helper, broker, redaction
+src/commands/             the management CLI: setup, init, compose, probe, diagnose
+src/cli/                  the two executable entry points (helper + daemon)
+test/unit/                policy, JWT, provider, helper, broker, config, commands
 test/e2e/push.test.ts     real push over authenticated smart HTTP
 test/lib/                 the git http-backend CGI server and process helpers
 examples/                 configuration and compose snippets
-scripts/container-setup.sh    container-side git configuration
-.agents/notes/            the original design document and its review
+.agents/notes/            the original design, its review, and the verified record
 ```

@@ -1,8 +1,27 @@
 {
   "name": "git-credential-broker",
   "version": "0.1.0",
-  "private": true,
-  "description": "Host-side credential broker plus git credential helper: long-lived secrets never enter the agent container, and git receives short-lived, single-repository credentials over a unix socket.",
+  "description": "Give a container short-lived, single-repository git credentials from a host-side broker, so no long-lived secret ever enters it.",
+  "keywords": [
+    "git",
+    "credential-helper",
+    "github-app",
+    "installation-token",
+    "secrets",
+    "broker",
+    "unix-socket",
+    "container"
+  ],
+  "license": "MIT",
+  "author": "JounQin <admin@1stg.me>",
+  "homepage": "https://github.com/code-vaults/git-credential-broker#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/code-vaults/git-credential-broker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/code-vaults/git-credential-broker/issues"
+  },
   "type": "module",
   "packageManager": "yarn@4.18.1",
   "engines": {
@@ -14,19 +33,26 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "src",
+    "README.md",
+    "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/postbuild.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "yarn build && node --disable-warning=ExperimentalWarning --test test/unit/*.test.ts test/e2e/*.test.ts",
     "test:unit": "node --disable-warning=ExperimentalWarning --test test/unit/*.test.ts",
     "test:e2e": "yarn build && node --disable-warning=ExperimentalWarning --test test/e2e/*.test.ts",
-    "check": "yarn typecheck && yarn test"
+    "check": "yarn typecheck && yarn test",
+    "prepublishOnly": "yarn check",
+    "pack:check": "yarn build && npm pack --dry-run"
   },
   "devDependencies": {
     "@types/node": "^24.19.0",
     "typescript": "^7.0.2"
-  },
-  "license": "MIT"
+  }
 }

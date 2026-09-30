@@ -1,18 +1,29 @@
 #!/usr/bin/env node
 /**
- * git credential helper entry point.
+ * One command, two jobs.
  *
- * git invokes this as:
- *   git-credential-broker <get|store|erase>
- * with the credential description on stdin and expects `key=value` lines on stdout.
+ * git runs `git-credential-broker <get|store|erase>` and speaks the credential protocol on
+ * stdin/stdout; a human runs `git-credential-broker <setup|init|compose|probe|diagnose>`. The
+ * protocol operations are recognised exactly and everything else goes to the CLI, so `git push`
+ * and `git-credential-broker setup` are served by the same installed command.
  *
- * Wire it up with the command name git derives from the helper id:
+ * Wire it up with the name git derives from the helper id:
  *   git config --global credential.helper broker
  *   git config --global credential.useHttpPath true
- * and export the socket path the broker listens on:
- *   export GIT_BROKER_SOCKET=/run/git-cred-broker/broker.sock
- *   export GIT_BROKER_REQUIRE=1
+ * or with the one command that does both:
+ *   git-credential-broker setup
  */
+import { runCli } from '../commands/index.ts';
 import { runHelper } from '../helper.ts';
 
-process.exitCode = await runHelper(process.argv.slice(2));
+/** The three operations of the git credential-helper protocol. */
+const HELPER_OPERATIONS = new Set(['get', 'store', 'erase']);
+
+const argv = process.argv.slice(2);
+const operation = argv[0];
+
+if (operation !== undefined && HELPER_OPERATIONS.has(operation)) {
+  process.exitCode = await runHelper(argv);
+} else {
+  process.exitCode = await runCli(argv);
+}

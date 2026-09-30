@@ -67,7 +67,7 @@ ls /etc/ssl/certs/ca-certificates.crt      # 之前 MISSING
 node -e 'console.log(require("node:tls").rootCertificates.length)'   # 121
 ```
 
-**当时的绕过**（现在不需要了）：从 Node 信任库导出 PEM 并 `git config http.sslCAInfo` 指过去 —— 见 `scripts/container-setup.sh`。
+**当时的绕过**（现在不需要了）：从 Node 信任库导出 PEM 并 `git config http.sslCAInfo` 指过去 —— 现在由 `git-credential-broker setup` 自动处理。
 **正解**：在镜像 apt 行加上 `ca-certificates`（已加，现在脚本会打印 "system CA bundle present"）。
 
 ## 4. 网络：必须走代理，直连是黑洞

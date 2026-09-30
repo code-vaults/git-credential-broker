@@ -61,7 +61,8 @@ DSH 容器 dsh
 - `permissions` 必须是 app 自身授权的**子集**，否则 422。
 - JWT：`RS256`、`iat` 往前 60s、`exp ≤ 600s`、`iss` 用 **client ID**（官方推荐，优先于 app ID）。
 - **client secret 完全不需要** —— 它属于 OAuth user-to-server 流程。本项目任何地方都不用它（曾经被误当作配置项贴出来，见环境笔记 §6）。
-- 422 `There is at least one repository that does not exist or is not accessible to the parent installation` 对**"仓库不存在"和"未被 installation 授权"完全相同**。而且 `repository access: all` ≠ "任意名字都行"，它只覆盖**已存在**的仓库。唯一可靠的区分方式：用 installation token 枚举 `/installation/repositories`（`scripts/diagnose-app.ts` 就干这个）。
+- **没有列出 App 私钥的 API** → 撤销无法程序化验证，只能人眼在 App 设置页确认。
+- 422 `There is at least one repository that does not exist or is not accessible to the parent installation` 对**"仓库不存在"和"未被 installation 授权"完全相同**。而且 `repository access: all` ≠ "任意名字都行"，它只覆盖**已存在**的仓库。唯一可靠的区分方式：用 installation token 枚举 `/installation/repositories`（`git-credential-broker diagnose` 就干这个）。
 - **没有列出 App 私钥的 API** → 撤销无法程序化验证，只能人眼在 App 设置页确认。
 
 本环境的 App：`git-credential-broker`，id `5138420`，client_id `Iv23lifamTDN4XTLvLuk`，owner 组织 `code-vaults`，installation `166588823`，权限 `contents:write` + `metadata:read` + `pull_requests:write`。
@@ -78,13 +79,19 @@ DSH 容器 dsh
 
 ## 5. 运维手册
 
+五个 shell 脚本已全部改成 CLI 子命令，并随包发布到 npm（`git-credential-broker`）：`setup`
+（原 container-setup.sh）、`init`（原 host-setup.sh）、`compose`（原 deploy-sidecar.sh 的
+compose 生成）、`probe`、`diagnose`。宿主不再需要 checkout 或构建 —— `compose` 产出的 sidecar
+直接 `npx` 拉取已发布的包。同一个 bin 既是 git 的 credential helper（`get|store|erase`），
+也是管理 CLI。
+
 ```sh
 # 自检（不 push，不打印凭据，只给指纹）
-node scripts/probe.ts --socket /home/app/.dsh/git-broker/broker.sock \
+git-credential-broker probe --socket /home/app/.dsh/git-broker/broker.sock \
   --host github.com --repo <owner/repo>
 
 # App 安装范围 / 权限诊断（唯一能区分 422 两种成因的工具）
-node scripts/diagnose-app.ts --config /volume1/docker/git-cred-broker/config.json
+git-credential-broker diagnose --config /volume1/docker/git-cred-broker/config.json
 
 # sidecar
 docker compose -f /volume1/docker/git-cred-broker/docker-compose.broker.yml ps|logs|restart|down
