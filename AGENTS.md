@@ -84,6 +84,12 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 - **A push to `main` cancels the previous run** (`concurrency` with `cancel-in-progress`). A run
   can therefore end as `cancelled` rather than red or green, and a verdict that looks missing is
   usually one a later push replaced: read the newest run for the commit, not the first.
+- **Open a pull request; the agent opens it.** Branch, commit, push the branch, then
+  `git-credential-broker pr --head <branch> --base main …` — the broker performs it without the
+  token leaving it, and prints the number and the URL. A human reviews and merges. Everything
+  before this went straight to `main`, force-pushes included, so the rule is worth stating: the
+  ability to open a pull request does not carry the ability to push to the branch it targets.
+  CI runs on `pull_request`, so the branch gets the three jobs before it merges.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
   Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.json`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by
