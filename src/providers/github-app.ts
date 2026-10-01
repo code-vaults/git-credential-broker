@@ -853,7 +853,7 @@ function describeCause(error: unknown): string {
                 const line = raw.trim();
                 if (line.startsWith('```')) { inFence = !inFence; continue; }
                 if (inFence) continue;
-                if (/^(🏁|🔎|⚙️|_?\s*[🔒📐🎯🩺🟡🟠])/u.test(line)) continue;
+                if (/^(🏁|🔎|⚙️|🌐|💡|💬|🔗|Repository:|Length of output:|Proposed fix$|---$|_?\s*[🔒📐🎯🩺🟡🟠])/u.test(line)) continue;
                 kept.push(line.replace(/<\/?[a-z][^>]*>/gi, '').trim());
               }
               const shown = kept.filter((line) => line !== '').slice(0, 14);
