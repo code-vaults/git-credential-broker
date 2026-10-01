@@ -1,6 +1,8 @@
 # Self-review of the pull-request branch
 
-**Status: reviewed; the high findings are fixed, the rest are open and listed here.**
+**Status: reviewed; the findings below are the ones still open at the time of the pre-merge review. Six of the
+ones this note first listed were fixed afterwards and are named at the end, because a list of what is left is
+only useful if it is current.**
 
 A branch that adds a channel between an agent-writable container and a host process running as a person
 deserves an adversarial reading, so one was held: eight agents each read one area of the diff in full, and
@@ -29,6 +31,11 @@ rejected — the rejection pass is what makes the rest worth reading.
    a thread id from another one would have resolved there, recorded against the approved repository.
 
 ## Open, in the order worth doing
+
+(Six items this section had — the `--status` pre-flight missing `actions: read`, the refresh-token write-back
+outside a try, `userTokens` keys not lower-cased, a `.git` directory accepted without a `HEAD`, the boot
+wrapper's `kill -0` guard, and the documentation set — were fixed in the commits after this note was
+written, along with two of the three paths that derive the refresh token. They are not repeated below.)
 
 - **The two timeout constants disagree**: `pr` waits 60 s while the broker destroys an idle connection after
   30 s, so an action that takes longer is reported `unreachable` even though it completed — for `--merge` and
