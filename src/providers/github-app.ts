@@ -623,7 +623,14 @@ function describeCause(error: unknown): string {
 
       // One variable, so every branch below holds a token without having to ask which kind it is.
       let token: string | undefined;
-      if (personToken === undefined) {
+      // A token per owner is the other way a person acts. It counts exactly as the authorized token does:
+      // whoever is acting, requiring an installation as well would refuse a repository the app was never
+      // installed on — the fork-to-upstream case the allowlist exists to permit.
+      const fileToken = request.action === 'open' ? cfg.userTokens?.[request.owner] : undefined;
+      const actingToken =
+        personToken ?? (fileToken === undefined ? undefined : readFileSync(fileToken, 'utf8').trim());
+
+      if (actingToken === undefined) {
         await ensurePermissions(request.owner, wanted);
         const installationId = await resolveInstallationId(request.owner);
         const { json: minted } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
@@ -636,7 +643,7 @@ function describeCause(error: unknown): string {
         }
         token = mintedToken;
       } else {
-        token = personToken;
+        token = actingToken;
       }
 
       const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
@@ -870,16 +877,14 @@ function describeCause(error: unknown): string {
 
       let text: string;
       try {
-        // Creating with the person's token when the deployment has one: GitHub records the pull request
-        // as theirs, which is what automated reviewers recognise. It cannot push or merge — the token
-        // has no contents write — and every other action stays on the app's installation token.
+        // as theirs, which is what automated reviewers recognise. The token itself is as wide as that person —
+        // it carries the app permissions and could push and merge — and what is narrow is this code: it is
+        // used for creating and resolving, and every other action stays on the app's installation token.
         // Creating a pull request as a person, and resolving a review thread: the two things an
         // installation token is refused for. A token per owner is the older, narrower way and is still
         // used when there is one; the authorized token answers for every owner at once.
-        const tokenPath = request.action === 'open' ? cfg.userTokens?.[request.owner] : undefined;
-        const creator =
-          personToken ?? (tokenPath === undefined ? undefined : readFileSync(tokenPath, 'utf8').trim());
-        ({ text } = await callWithToken(method, url, creator ?? token, body));
+      // Resolved above, where it also decided whether the app had to be asked at all.
+        ({ text } = await callWithToken(method, url, actingToken ?? token, body));
       } catch (error) {
         throw new ProviderConfigError(
           // The cause is where an undici failure keeps its reason ("fetch failed" on its own says

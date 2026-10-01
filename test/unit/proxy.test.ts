@@ -17,13 +17,13 @@ describe('refusing a proxy this process would ignore', () => {
 
   it('says nothing when a proxy is configured and the variable enables it', () => {
     assert.doesNotThrow(() =>
-      assertProxyEnabled({ https_proxy: 'http://proxy.invalid:7890', NODE_USE_ENV_PROXY: '1' }),
+      assertProxyEnabled({ https_proxy: 'http://proxy.invalid:7890', NODE_USE_ENV_PROXY: '1' }, []),
     );
   });
 
   it('refuses when a proxy is configured and nothing would make fetch use it', () => {
     assert.throws(
-      () => assertProxyEnabled({ http_proxy: 'http://proxy.invalid:7890' }),
+      () => assertProxyEnabled({ http_proxy: 'http://proxy.invalid:7890' }, []),
       (error: unknown) => {
         const message = String((error as Error).message);
         assert.match(message, /http_proxy is set/, 'it names the variable it found');

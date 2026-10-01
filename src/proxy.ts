@@ -23,15 +23,22 @@ const PROXY_VARS = ['http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY'] as
  * Called once from a process entry point, before any call leaves the machine.
  *
  * @param env - the environment to read, for a test.
- * @throws {Error} when a proxy variable is set and `NODE_USE_ENV_PROXY` is not `1`.
+ * @param execArgv - the process arguments, for the command-line spelling of the same switch.
+ * @throws {Error} when a proxy variable is set and nothing would make fetch use it.
  */
-export function assertProxyEnabled(env: NodeJS.ProcessEnv = process.env): void {
+export function assertProxyEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+  execArgv: readonly string[] = process.execArgv,
+): void {
   const wanted = PROXY_VARS.filter((name) => {
     const value = env[name];
     return typeof value === 'string' && value !== '';
   });
   if (wanted.length === 0) return;
+  // `--use-env-proxy` is the same switch on the command line, and NODE_OPTIONS can carry it too.
   if (env['NODE_USE_ENV_PROXY'] === '1') return;
+  if (execArgv.includes('--use-env-proxy')) return;
+  if ((env['NODE_OPTIONS'] ?? '').includes('--use-env-proxy')) return;
 
   throw new Error(
     `${wanted[0]} is set, but Node's fetch will ignore it: set NODE_USE_ENV_PROXY=1 in this process's\n` +
