@@ -1,6 +1,7 @@
 # TASK — anchor a review comment to a file and a line
 
-Status: proposed, not started
+Status: built, deployed, and verified live on #4 (`src/commands/pr.ts:239`, thread
+PRRT_kwDOU1uEcc6n4lyf). Two things it asked for are still open, recorded at the end.
 Written: 2026-10-01
 Depends on: nothing; the permission is already in place
 
@@ -137,3 +138,15 @@ host daemon). Until that happens, `pr --comment` keeps posting a body-only revie
   the broker should hold it at all.
 - Deleting or superseding an existing review. There is no action for that today, so the
   interim body-only review on `#4` has to be removed in the UI by a person.
+
+## What is still open, from this task
+
+- **GitHub's 422 says nothing, even in the host log.** `callWithToken` reports the status and not the body,
+  so a line that is not in the diff is a refusal nobody can act on. It is the criterion "surfaces GitHub's
+  422 as a caller-readable refusal" only on the generous reading: the caller gets a refusal code, and the
+  operator gets nothing. The fix belongs where the scope check learned to be honest: carry the response
+  body for a failure that is not a `ProviderConfigError`, so it reaches the host log and not the caller.
+- **No CLI-level tests.** `--file` without `--line`, the reverse, an anchor on another action and a bad
+  `--side` are all checked in the CLI, and all four were exercised by hand against the live broker —
+  including the empty-`--line` case the shell produced by accident. The recommendation asks for them in
+  `test/unit/commands.test.ts`; they need a subprocess because `fail` exits the process.
