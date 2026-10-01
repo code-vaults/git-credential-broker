@@ -139,14 +139,15 @@ export interface GithubAppHostConfig extends BaseHostConfig {
   readonly appId?: string | number;
   readonly privateKeyPath?: string;
   /**
-   * A person's fine-grained token, used for creating pull requests and nothing else.
+   * A person's fine-grained tokens, keyed by the owner whose repositories they cover.
    *
-   * It exists because a pull request authored by the app is one automated reviewers may skip. It
-   * should be scoped to the repositories the allowlist already covers, and to the pull request
-   * permission with read-only contents — no contents write means GitHub itself refuses to let it
-   * push or merge.
+   * Keyed by owner because that is GitHub's own granularity: a fine-grained token belongs to one
+   * user or organization and cannot span two. Scoped as the README says — pull requests read and
+   * write, contents read, metadata read, and only the repositories the allowlist names — GitHub
+   * itself refuses to let such a token push or merge, because neither is possible without contents
+   * write. Used for creating a pull request and nothing else; every other action stays on the app.
    */
-  readonly userTokenPath?: string;
+  readonly userTokens?: Readonly<Record<string, string>>;
   readonly privateKeyPem?: string;
   /** REST permission names, e.g. `{ contents: 'write', pull_requests: 'write' }`. */
   readonly permissions?: Readonly<Record<string, string>>;

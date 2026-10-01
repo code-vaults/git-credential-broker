@@ -41,6 +41,8 @@
       "clientId": "Iv23lifamTDN4XTLvLuk",
       "appId": 5138420,
       "privateKeyPath": "/volume1/docker/git-cred-broker/app.pem",
+      "_userTokens": "optional: fine-grained tokens keyed by owner, used only to create pull requests",
+      "userTokens": { "an-org": "/volume1/docker/git-cred-broker/an-org.token" },
       "_comment_permissions": "Must not exceed the app's own grant. Grant 'Pull requests: Read and write' in the app settings first if you want the agent to open PRs.",
       "permissions": {
         "contents": "write"

@@ -248,14 +248,16 @@ reviewers are entitled to skip those. The simplest way to have one authored by y
     "github.com": {
       "provider": "github-app",
       "privateKeyPath": "/etc/git-cred-broker/app.pem",
-      "userTokenPath": "/etc/git-cred-broker/user.token"
+      "userTokens": { "an-org": "/etc/git-cred-broker/an-org.token" }
     }
   }
 }
 ```
 
-Create it with **Pull requests: Read and write**, **Contents: Read** and **Metadata: Read**, and
-give it access to **only the repositories the allowlist already names**. No contents *write* means
+`userTokens` is keyed by owner because that is GitHub's own granularity: a fine-grained token
+belongs to one user or organization and cannot span two, so two owners need two tokens. Create each
+with **Pull requests: Read and write**, **Contents: Read** and **Metadata: Read**, and give it access
+to **only the repositories the allowlist already names**. No contents *write* means
 GitHub itself refuses to let that token push or merge, so "it may only open pull requests" is
 enforced by GitHub rather than promised here. The token is used for creating and nothing else:
 closing, merging, updating and reading a state all stay on the app's installation token. Drop the

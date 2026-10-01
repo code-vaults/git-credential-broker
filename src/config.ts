@@ -96,14 +96,15 @@ export function inferMode(config: BrokerConfig): DeploymentMode {
  */
 export function assertUserTokensReadable(config: BrokerConfig): void {
   for (const [host, block] of Object.entries(config.hosts)) {
-    if (block.provider !== 'github-app' || block.userTokenPath === undefined) continue;
-    if (existsSync(block.userTokenPath)) continue;
+    if (block.provider !== 'github-app') continue;
+    for (const [owner, path] of Object.entries(block.userTokens ?? {})) {
     throw new Error(
-      `cannot read the token for ${host}: ${block.userTokenPath} does not exist.\n` +
+      `cannot read the token for ${host}/${owner}: ${path} does not exist.\n` +
         `       Create a fine-grained token with pull requests: read and write, contents: read and\n` +
         `       metadata: read, for the repositories the allowlist names, and put it there — or drop\n` +
-        `       userTokenPath to keep opening pull requests as the app.`,
+        `       userTokens to keep opening pull requests as the app.`,
     );
+    }
   }
 }
 
@@ -359,7 +360,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           clientId: stringField(blockRaw, 'clientId', errors, at),
           appId: stringOrNumberField(blockRaw, 'appId', errors, at),
           privateKeyPath: stringField(blockRaw, 'privateKeyPath', errors, at),
-          userTokenPath: stringField(blockRaw, 'userTokenPath', errors, at),
+          userTokens: stringMapField(blockRaw['userTokens'], errors, at),
           privateKeyPem: stringField(blockRaw, 'privateKeyPem', errors, at),
           permissions: stringMapField(blockRaw['permissions'], errors, at),
           apiBaseUrl: stringField(blockRaw, 'apiBaseUrl', errors, at),

@@ -595,8 +595,6 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         repositories: [request.repo],
         permissions: PULL_REQUEST_PERMISSIONS,
       });
-      const userToken =
-      cfg.userTokenPath === undefined ? undefined : readFileSync(cfg.userTokenPath, 'utf8').trim();
     const token = (minted as { token?: unknown } | null)?.token;
       if (typeof token !== 'string' || !token) {
         throw new ProviderConfigError('GitHub returned no installation token for the pull request');
@@ -632,7 +630,8 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         // Creating with the person's token when the deployment has one: GitHub records the pull request
         // as theirs, which is what automated reviewers recognise. It cannot push or merge — the token
         // has no contents write — and every other action stays on the app's installation token.
-        const creator = request.action === 'open' ? userToken : undefined;
+        const tokenPath = request.action === 'open' ? cfg.userTokens?.[request.owner] : undefined;
+        const creator = tokenPath === undefined ? undefined : readFileSync(tokenPath, 'utf8').trim();
         ({ text } = await callWithToken(method, url, creator ?? token, body));
       } catch (error) {
         throw new ProviderConfigError(
