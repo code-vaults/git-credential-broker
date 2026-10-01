@@ -99,7 +99,17 @@ function gitDirAt(dir: string): string | undefined {
   // A worktree or submodule records its real git directory in a file.
   const match = /^gitdir:\s*(.+)$/m.exec(readFileSync(candidate, 'utf8'));
   const pointed = match?.[1]?.trim();
-  return pointed ? resolve(dir, pointed) : undefined;
+  if (pointed === undefined) return undefined;
+  const resolved = resolve(dir, pointed);
+  // A .git file is a pointer written by whoever has the checkout, which is the container. Treat it as a
+  // candidate rather than an answer: it has to look like a git directory, and nothing is created from it.
+  try {
+    if (!statSync(resolved).isDirectory()) return undefined;
+    if (!existsSync(join(resolved, 'HEAD'))) return undefined;
+  } catch {
+    return undefined;
+  }
+  return resolved;
 }
 
 /** Directory names that never hold a checkout worth serving. */

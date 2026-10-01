@@ -45,10 +45,19 @@ fi
 
 # One at a time. Two openers would race each other over the same requests and could each try to
 # create the same pull request.
-if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-  exit 0
+if [ -f "$PIDFILE" ]; then
+  old=$(cat "$PIDFILE" 2>/dev/null)
+  # /proc/<pid>/cmdline, not kill -0: a recycled pid owned by anyone makes kill -0 succeed, so the
+  # opener silently never starts, and it fails with EPERM for another user's process, so the guard
+  # does not fire and a second opener starts — the race the comment above is about.
+  if [ -n "$old" ] && [ -r "/proc/$old/cmdline" ] && grep -qa 'host-opener' "/proc/$old/cmdline"; then
+    echo "$(date) already running as pid $old" >>"$LOG"
+    exit 0
+  fi
+  echo "$(date) removing the stale pidfile (pid ${old:-unknown})" >>"$LOG"
+  rm -f "$PIDFILE"
 fi
-echo $$ >"$PIDFILE"
+echo $ >"$PIDFILE"
 
 # exec, so the pid in the file is the opener's own, and stopping it stops the opener.
 exec "$BIN" host-opener \
