@@ -6,7 +6,8 @@
 #   logs:     journalctl --user -u host-opener -f
 #
 # Adjust ExecStart to the checkout the container also sees. `%h` is this user's home, so the roots
-# cover every repository below it, including ones created later.
+# cover every repository below it, including ones created later — but if the container sees a tree
+# outside your home, name it: `--root /volume1/homes/<user>`.
 #
 # On a system without user services (a Synology NAS, for instance), the equivalent is a boot-time
 # scheduled task running the same command — the point is that it is started once and stays up.
@@ -16,7 +17,7 @@ After=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env node /volume1/homes/JounQin/Workspaces/git-credential-broker/src/cli/helper.ts host-opener --root %h
+ExecStart=/usr/bin/env node /path/to/the/checkout/src/cli/helper.ts host-opener --root %h
 Restart=always
 RestartSec=10
 
