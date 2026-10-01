@@ -146,7 +146,7 @@ export function baseBranchFor(raw: string, repo: string, cwd: string): string {
   const colon = raw.indexOf(':');
   if (colon < 0) return raw;
   const name = raw.slice(0, colon);
-  const found = remoteRepo(name, cwd, true);
+  const found = remoteRepo(name, cwd);
   if (found === undefined) {
     // Says what is wrong with the remote rather than pretending the base is the problem.
     throw new Error(`--base names ${JSON.stringify(name)}, which is not a remote this checkout can read`);

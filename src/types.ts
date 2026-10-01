@@ -164,7 +164,7 @@ export interface GithubAppHostConfig extends BaseHostConfig {
    * user or organization and cannot span two. Scoped as the README says — pull requests read and
    * write, contents read, metadata read, and only the repositories the allowlist names — GitHub
    * itself refuses to let such a token push or merge, because neither is possible without contents
-   * write. Used for creating a pull request and nothing else; every other action stays on the app.
+   * write. Used for creating and resolving a pull request, and nothing else; every other action stays on the app.
    */
   readonly userTokens?: Readonly<Record<string, string>>;
   readonly privateKeyPem?: string;

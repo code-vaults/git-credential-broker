@@ -107,6 +107,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (args.has('via-host') && action !== 'open') {
     fail('--via-host only creates a pull request, so it does not go with ' + JSON.stringify(action));
   }
+  if (args.has('method') && action !== 'merge') {
+    fail('--method chooses how to merge, so it only goes with --merge');
+  }
   const viaHost = action === 'open' && args.has('via-host');
   if (!host && !viaHost) fail('--host is required (e.g. github.com)');
   if (!repo) fail('--repo is required (e.g. owner/name), also with --via-host: the opener passes it on');
