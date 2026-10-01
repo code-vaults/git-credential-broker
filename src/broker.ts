@@ -135,11 +135,19 @@ export function createRequestHandler(
    * @param message - what the caller is told.
    * @returns the refusal.
    */
-  function deny(context: DecisionContext, code: string, reason: string, message: string): WireResponse {
-    audit.record({ event: 'credential', decision: 'deny', ...context, code, reason });
-    log(
-      `deny ${code} host=${context.host ?? '-'} repo=${context.repo ?? '-'} reason=${reason}`,
-    );
+  function deny(
+    context: DecisionContext,
+    code: string,
+    reason: string,
+    message: string,
+    // Detail for this side only: a provider's response body, which the caller must never receive. It
+    // reaches the audit record and the log line and nowhere else, because this function is what decides
+    // what the caller is told — a property on an error cannot make that decision.
+    hostDetail?: string,
+  ): WireResponse {
+    const detail = hostDetail === undefined || hostDetail === '' ? '' : ` | ${hostDetail}`;
+    audit.record({ event: 'credential', decision: 'deny', ...context, code, reason: reason + detail });
+    log(`deny ${code} host=${context.host ?? '-'} repo=${context.repo ?? '-'} reason=${reason}${detail}`);
     return { ok: false, code, reason: message };
   }
 
@@ -252,15 +260,13 @@ export function createRequestHandler(
       } catch (error) {
         // Same rule as a credential: a provider response can embed anything, so only our own
         // configuration errors are shown to the caller.
-        const hostDetail = (error as { hostDetail?: string }).hostDetail;
-      const reason =
-        String((error as Error).message ?? error).slice(0, 300) +
-        (hostDetail === undefined ? '' : ` | ${hostDetail}`);
+        const reason = String((error as Error).message ?? error).slice(0, 300);
+      const hostDetail = (error as { hostDetail?: string }).hostDetail;
         const callerMessage =
           error instanceof ProviderConfigError
             ? reason
             : 'the broker could not read that log; see the broker log';
-        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage);
+        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail);
       }
     }
 
@@ -397,15 +403,13 @@ export function createRequestHandler(
           prStatus: result.status,
         };
       } catch (error) {
-        const hostDetail = (error as { hostDetail?: string }).hostDetail;
-      const reason =
-        String((error as Error).message ?? error).slice(0, 300) +
-        (hostDetail === undefined ? '' : ` | ${hostDetail}`);
+        const reason = String((error as Error).message ?? error).slice(0, 300);
+      const hostDetail = (error as { hostDetail?: string }).hostDetail;
         const callerMessage =
           error instanceof ProviderConfigError
             ? reason
             : 'the broker could not manage that pull request; see the broker log';
-        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage);
+        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail);
       }
     }
 
@@ -435,15 +439,13 @@ export function createRequestHandler(
       // The caller normally gets a generic message, because provider errors can embed API
       // responses. A ProviderConfigError is ours — a permission name and the configuration — and
       // passing it on is the difference between "see the broker log" and knowing what is missing.
+      const reason = String((error as Error).message ?? error).slice(0, 300);
       const hostDetail = (error as { hostDetail?: string }).hostDetail;
-      const reason =
-        String((error as Error).message ?? error).slice(0, 300) +
-        (hostDetail === undefined ? '' : ` | ${hostDetail}`);
       const message =
         error instanceof ProviderConfigError
           ? reason
           : 'the broker could not mint a credential; see the broker log';
-      return deny(context, CODES.PROVIDER_ERROR, reason, message);
+      return deny(context, CODES.PROVIDER_ERROR, reason, message, hostDetail);
     }
   };
 }
