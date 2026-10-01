@@ -141,6 +141,33 @@ function createStubFetch(options: {
     });
     if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
     if (url.includes('/app/installations?')) return Promise.resolve(jsonResponse(installations));
+    if (url.endsWith('/merge')) {
+      return Promise.resolve(jsonResponse({ merged: true, message: 'Pull Request successfully merged' }));
+    }
+    if (url.includes('/actions/runs?head_sha=')) {
+      return Promise.resolve(
+        jsonResponse({
+          workflow_runs: [{ name: 'CI', status: 'completed', conclusion: 'success' }],
+        }),
+      );
+    }
+    if (/\/pulls\/\d+$/.test(url)) {
+      return Promise.resolve(
+        jsonResponse({
+          number: 42,
+          html_url: 'https://github.com/acme/widget/pull/42',
+          state: 'closed',
+          merged: true,
+          mergeable_state: 'blocked',
+          head: { sha: 'cafebabe' },
+        }),
+      );
+    }
+    if (url.endsWith('/pulls')) {
+      return Promise.resolve(
+        jsonResponse({ number: 42, html_url: 'https://github.com/acme/widget/pull/42' }, 201),
+      );
+    }
     if (url.includes('/actions/jobs/') && url.endsWith('/logs')) {
       return jobMissing
         ? Promise.resolve(jsonResponse({ message: 'Not Found' }, 404))
@@ -430,6 +457,86 @@ describe('createGithubAppProvider', () => {
       ),
       false,
       'a log must never be requested without the repository in the path',
+    );
+  });
+
+  it('opens a pull request with a token narrowed to pull_requests: write', async () => {
+    const stub = createStubFetch({
+  installations: [{ id: 42, account: { login: 'acme' } }],
+  nowMs,
+  appPermissions: { pull_requests: 'write', contents: 'read' },
+  installationPermissions: { pull_requests: 'write', contents: 'read' },
+    });
+    const pr = await providerFor(stub).pullRequest!({
+    action: 'open',
+  host: 'github.com',
+  owner: 'acme',
+  repo: 'widget',
+  head: 'feature',
+  base: 'main',
+  title: 'a title',
+  body: 'a body',
+    });
+
+    assert.equal(pr.number, 42);
+    assert.equal(pr.url, 'https://github.com/acme/widget/pull/42');
+    const mint = stub.calls.find((call) => call.url.includes('/access_tokens'));
+    assert.deepEqual(
+  mint?.body?.['permissions'],
+  { pull_requests: 'write', contents: 'read' },
+  'the token must ask for what the pull request needs',
+    );
+    const posted = stub.calls.find((call) => call.url.endsWith('/pulls'));
+    assert.equal(posted?.method, 'POST');
+    assert.equal(posted?.url, 'https://api.github.com/repos/acme/widget/pulls', 'through the repository route');
+    assert.equal(posted?.body?.['head'], 'feature');
+    assert.equal(posted?.body?.['draft'], false);
+  });
+
+  it('merges a pull request with the method it was told to use', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      appPermissions: { pull_requests: 'write', contents: 'read' },
+      installationPermissions: { pull_requests: 'write', contents: 'read' },
+    });
+    const pr = await providerFor(stub).pullRequest!({
+      action: 'merge',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 42,
+      method: 'rebase',
+    });
+
+    const put = stub.calls.find((call) => call.method === 'PUT');
+    assert.equal(put?.url, 'https://api.github.com/repos/acme/widget/pulls/42/merge');
+    assert.deepEqual(put?.body, { merge_method: 'rebase' });
+    assert.equal(pr.url, 'https://github.com/acme/widget/pull/42');
+    assert.equal(pr.merged, true, 'and the state comes from reading the pull request back');
+  });
+
+  it('reports a pull request, and how its commit is doing', async () => {
+    const stub = createStubFetch({
+  installations: [{ id: 42, account: { login: 'acme' } }],
+  nowMs,
+  appPermissions: { pull_requests: 'write', contents: 'read' },
+  installationPermissions: { pull_requests: 'write', contents: 'read' },
+    });
+    const pr = await providerFor(stub).pullRequest!({
+  action: 'status',
+  host: 'github.com',
+  owner: 'acme',
+  repo: 'widget',
+  number: 42,
+    });
+
+    assert.equal(pr.state, 'closed');
+    assert.match(pr.status ?? '', /mergeable: blocked/);
+    assert.match(pr.status ?? '', /run CI: success/, 'and the runs for that exact commit');
+    assert.ok(
+  stub.calls.some((call) => call.url.includes('/actions/runs?head_sha=cafebabe')),
+  'read through the repository route, pinned to the head commit',
     );
   });
 

@@ -44,6 +44,13 @@ export interface Provider {
    * minting a credential. The broker refuses the operation when a provider does not implement it.
    */
   getJobLog?(request: JobLogRequest): Promise<JobLog>;
+  /**
+   * Open one pull request, when this provider can.
+   *
+   * Separate from {@link Provider.getCredential} for the same reason as {@link Provider.getJobLog}:
+   * the token this mints asks for what a pull request needs, and nothing that a push needs.
+   */
+  pullRequest?(request: PullRequestRequest): Promise<PullRequest>;
 }
 
 /** What a provider is asked to read a log for. */
@@ -53,6 +60,42 @@ export interface JobLogRequest {
   readonly repo: string;
   /** The workflow job id, which is also the check run id. */
   readonly jobId: number;
+}
+
+/** What can be done to a pull request. */
+export type PullRequestAction = 'open' | 'close' | 'merge' | 'update' | 'status';
+
+/** How a merge should be recorded. */
+export type MergeMethod = 'merge' | 'squash' | 'rebase';
+
+/** What a provider is asked to do to a pull request. */
+export interface PullRequestRequest {
+  readonly host: string;
+  readonly owner: string;
+  readonly repo: string;
+  readonly action: PullRequestAction;
+  /** The pull request number. Not needed to open one, required for the rest. */
+  readonly number?: number;
+  /** The branch holding the change, when opening. */
+  readonly head?: string;
+  /** The branch it merges into. */
+  readonly base?: string;
+  readonly title?: string;
+  readonly body?: string;
+  readonly draft?: boolean;
+  readonly method?: MergeMethod;
+}
+
+/** One pull request, as GitHub describes it after an action. */
+export interface PullRequest {
+  readonly number: number;
+  readonly url: string;
+  /** `open` or `closed`, when GitHub said. */
+  readonly state?: string;
+  /** Whether the action merged it. */
+  readonly merged?: boolean;
+  /** A short report, when the action was to look. */
+  readonly status?: string;
 }
 
 /** One job log, as returned to the caller. */
@@ -131,6 +174,15 @@ export interface WireRequest {
   readonly pid?: number;
   /** Workflow job id, for `op: "logs"`. */
   readonly jobId?: number;
+  /** For `op: "pull-request"`. */
+  readonly action?: string;
+  readonly number?: number;
+  readonly method?: string;
+  readonly head?: string;
+  readonly base?: string;
+  readonly title?: string;
+  readonly body?: string;
+  readonly draft?: boolean;
 }
 
 /** One response line on the broker socket. */
@@ -146,6 +198,13 @@ export interface WireResponse {
   /** The job log, for `op: "logs"`. */
   readonly log?: string;
   readonly truncated?: boolean;
+  /** The opened pull request, for `op: "pull-request"`. */
+  readonly prUrl?: string;
+  readonly prNumber?: number;
+  readonly prState?: string;
+  readonly prMerged?: boolean;
+  /** The report, for `action: "status"`. */
+  readonly prStatus?: string;
 }
 
 /** Where audit records go. */

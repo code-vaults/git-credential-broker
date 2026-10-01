@@ -26,7 +26,7 @@ import { tokenFingerprint } from './audit.ts';
 import { socketPathRefusal } from './platform.ts';
 import { hostConfig, normalizeRepoPath, repoAllowed } from './policy.ts';
 import { createLineReader, encodeMessage, parseMessage } from './socket-protocol.ts';
-import type { AuditSink, BrokerConfig, Provider, WireResponse } from './types.ts';
+import type { MergeMethod, AuditSink, BrokerConfig, Provider, WireResponse } from './types.ts';
 
 /** Reported by the `ping` operation so the container side can prove what it reached. */
 export const BROKER_VERSION = '0.1.0';
@@ -150,7 +150,11 @@ export function createRequestHandler(
     if (message['op'] === 'ping') {
       return { ok: true, version: BROKER_VERSION, hosts: [...providers.keys()] };
     }
-    if (message['op'] !== 'credential' && message['op'] !== 'logs') {
+    if (
+      message['op'] !== 'credential' &&
+      message['op'] !== 'logs' &&
+      message['op'] !== 'pull-request'
+    ) {
       return deny(
         context,
         CODES.BAD_REQUEST,
@@ -248,6 +252,99 @@ export function createRequestHandler(
           error instanceof ProviderConfigError
             ? reason
             : 'the broker could not read that log; see the broker log';
+        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage);
+      }
+    }
+
+    if (message['op'] === 'pull-request') {
+      const action = message['action'] ?? 'open';
+      if (
+        action !== 'open' &&
+        action !== 'close' &&
+        action !== 'merge' &&
+        action !== 'update' &&
+        action !== 'status'
+      ) {
+        return deny(context, CODES.BAD_REQUEST, `bad action ${JSON.stringify(action)}`, 'unknown pull request action');
+      }
+      const number = message['number'];
+      const head = message['head'];
+      const base = message['base'];
+      const title = message['title'];
+      const body = message['body'];
+      const method = message['method'] ?? 'squash';
+      const branch = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
+      const usable = (value: unknown): value is string =>
+        typeof value === 'string' && branch.test(value) && !value.includes('..');
+
+      if (action === 'open' && !usable(head)) {
+        return deny(context, CODES.BAD_REQUEST, `bad head ${JSON.stringify(head)}`, 'the head branch name is not usable');
+      }
+      if ((action === 'open' || action === 'update') && base !== undefined && !usable(base)) {
+        return deny(context, CODES.BAD_REQUEST, `bad base ${JSON.stringify(base)}`, 'the base branch name is not usable');
+      }
+      if (action === 'open' && (typeof title !== 'string' || title.trim() === '' || title.length > 256)) {
+        return deny(context, CODES.BAD_REQUEST, 'bad title', 'a pull request needs a title of at most 256 characters');
+      }
+      if (body !== undefined && (typeof body !== 'string' || body.length > 65_536)) {
+        return deny(context, CODES.BAD_REQUEST, 'bad body', 'the body must be text of at most 65536 characters');
+      }
+      if (action === 'update' && title === undefined && body === undefined && base === undefined) {
+        return deny(context, CODES.BAD_REQUEST, 'empty update', 'an update has to change a title, a body or a base');
+      }
+      if (action !== 'open' && (typeof number !== 'number' || !Number.isInteger(number) || number <= 0)) {
+        return deny(context, CODES.BAD_REQUEST, `bad number ${JSON.stringify(number)}`, 'this action needs a pull request number');
+      }
+      if (action === 'merge' && method !== 'merge' && method !== 'squash' && method !== 'rebase') {
+        return deny(context, CODES.BAD_REQUEST, `bad method ${JSON.stringify(method)}`, 'the merge method must be merge, squash or rebase');
+      }
+      if (typeof provider.pullRequest !== 'function') {
+        return deny(
+          context,
+          CODES.PROVIDER_ERROR,
+          `provider ${provider.name} cannot manage pull requests`,
+          "this host's provider cannot manage pull requests",
+        );
+      }
+      try {
+        const result = await provider.pullRequest({
+          host: block.host,
+          owner: repo.owner,
+          repo: repo.repo,
+          action,
+          ...(typeof number === 'number' ? { number } : {}),
+          ...(typeof head === 'string' ? { head } : {}),
+          ...(typeof base === 'string' ? { base } : {}),
+          ...(typeof title === 'string' ? { title } : {}),
+          ...(typeof body === 'string' ? { body } : {}),
+          ...(action === 'merge' ? { method: method as MergeMethod } : {}),
+          draft: message['draft'] === true,
+        });
+        audit.record({
+          event: 'pull-request',
+          decision: 'allow',
+          ...context,
+          action,
+          ...(typeof number === 'number' ? { number } : {}),
+          ...(typeof head === 'string' ? { head } : {}),
+          ...(typeof base === 'string' ? { base } : {}),
+          pr_number: result.number,
+          pr_url: result.url,
+        });
+        return {
+          ok: true,
+          prNumber: result.number,
+          prUrl: result.url,
+          prState: result.state,
+          prMerged: result.merged === true,
+          prStatus: result.status,
+        };
+      } catch (error) {
+        const reason = String((error as Error).message ?? error).slice(0, 300);
+        const callerMessage =
+          error instanceof ProviderConfigError
+            ? reason
+            : 'the broker could not manage that pull request; see the broker log';
         return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage);
       }
     }

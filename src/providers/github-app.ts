@@ -23,6 +23,7 @@ import { readFileSync } from 'node:fs';
 
 import type { Credential, FetchLike, FetchResponseLike, GithubAppHostConfig, Provider } from '../types.ts';
 import type { JobLog, JobLogRequest } from '../types.ts';
+import type { PullRequest, PullRequestRequest } from '../types.ts';
 
 /** REST API origin. Overridable for GitHub Enterprise. */
 const DEFAULT_API = 'https://api.github.com';
@@ -167,6 +168,13 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
   /** How much of one log to return: enough to diagnose, bounded so one response stays sane. */
   const LOG_LIMIT_CHARS = 200_000;
 
+  /**
+   * What opening a pull request asks for: the permission the operation needs, plus read access to
+   * the branches it names. Not the configured `permissions`, for the same reason a log read is not:
+   * a token minted for git should not also be able to open a pull request.
+   */
+  const PULL_REQUEST_PERMISSIONS: Record<string, string> = { pull_requests: 'write', contents: 'read' };
+
   /** owner login (lowercased) -> installation */
   const installations = new Map<string, CachedInstallation>();
   /** owner/repo -> minted credential */
@@ -261,15 +269,24 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
    * @returns the status and the body text.
    * @throws {Error} for a non-2xx response.
    */
-  async function callWithToken(method: string, url: string, token: string): Promise<{ status: number; text: string }> {
+  async function callWithToken(
+    method: string,
+    url: string,
+    token: string,
+    body?: Record<string, unknown>,
+  ): Promise<{ status: number; text: string }> {
+    const headers: Record<string, string> = {
+      accept: 'application/vnd.github+json',
+      authorization: `Bearer ${token}`,
+      'x-github-api-version': apiVersion,
+      'user-agent': 'git-credential-broker',
+    };
+    if (body) headers['content-type'] = 'application/json';
+
     const response = await fetchImpl(url, {
       method,
-      headers: {
-        accept: 'application/vnd.github+json',
-        authorization: `Bearer ${token}`,
-        'x-github-api-version': apiVersion,
-        'user-agent': 'git-credential-broker',
-      },
+      headers,
+      ...(body ? { body: JSON.stringify(body) } : {}),
     });
     const text = await response.text();
     if (!response.ok) {
@@ -277,7 +294,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       // this message carries only the endpoint and the status. It is marked as ours, which is what
       // lets the pusher see it instead of "see the broker log".
       throw new ProviderConfigError(
-        `GitHub API ${method} ${url.replace(api, '')} answered ${response.status} for the log request`,
+        `GitHub API ${method} ${url.replace(api, '')} answered ${response.status} for that request`,
       );
     }
     return { status: response.status, text };
@@ -381,6 +398,110 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     return pending;
   }
 
+    /**
+     * Read a pull request that another call has already fetched.
+     *
+     * @param text - the JSON body.
+     * @param fallbackNumber - the number the caller asked about.
+     * @returns the number, URL and state.
+     */
+    function readPullRequest(text: string): PullRequest {
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = null;
+      }
+      const payload = (parsed ?? {}) as { number?: unknown; html_url?: unknown; state?: unknown; merged?: unknown };
+      if (typeof payload.number !== 'number' || typeof payload.html_url !== 'string') {
+        throw new ProviderConfigError('GitHub did not answer with a pull request');
+      }
+      return {
+        number: payload.number,
+        url: payload.html_url,
+        state: typeof payload.state === 'string' ? payload.state : undefined,
+        merged: payload.merged === true,
+      };
+    }
+
+  /**
+   * Report what a pull request is, and how its commit is doing.
+   *
+   * Two reads: the pull request itself, which carries `mergeable_state`, and the workflow runs for
+   * its head commit — the second is what separates "the checks are red" from "the ruleset wants a
+   * review", which `mergeable_state: blocked` alone cannot. Both are repository-scoped, so the
+   * allowlist binds them.
+   *
+   * @param request - which pull request.
+   * @param token - the installation token.
+   * @param collection - the repository's pull request route.
+   * @returns the number, URL, state and a short report.
+   */
+  async function readPullRequestStatus(
+    request: PullRequestRequest,
+    token: string,
+    collection: string,
+  ): Promise<PullRequest> {
+    const { text } = await callWithToken('GET', `${collection}/${request.number}`, token);
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
+    }
+    const payload = (parsed ?? {}) as {
+      number?: unknown;
+      html_url?: unknown;
+      state?: unknown;
+      merged?: unknown;
+      mergeable_state?: unknown;
+      draft?: unknown;
+      head?: { sha?: unknown };
+    };
+    if (typeof payload.number !== 'number' || typeof payload.html_url !== 'string') {
+      throw new ProviderConfigError('GitHub did not answer with a pull request');
+    }
+
+    const lines = [
+      `#${payload.number} ${String(payload.state ?? '?')}${payload.merged === true ? ' (merged)' : ''}${payload.draft === true ? ' (draft)' : ''}`,
+      payload.html_url,
+    ];
+    if (typeof payload.mergeable_state === 'string') {
+      lines.push(`mergeable: ${payload.mergeable_state}`);
+    }
+
+    const sha = (payload.head ?? {}).sha;
+    if (typeof sha === 'string' && sha !== '') {
+      const { text: listed } = await callWithToken(
+        'GET',
+        `${api}/repos/${request.owner}/${request.repo}/actions/runs?head_sha=${sha}&per_page=20`,
+        token,
+      );
+      let runs: unknown = null;
+      try {
+        runs = JSON.parse(listed);
+      } catch {
+        runs = null;
+      }
+      const batch = ((runs ?? {}) as { workflow_runs?: unknown }).workflow_runs;
+      if (Array.isArray(batch) && batch.length > 0) {
+        for (const run of batch as Array<{ name?: unknown; status?: unknown; conclusion?: unknown }>) {
+          lines.push(`run ${String(run.name ?? '?')}: ${String(run.conclusion ?? run.status ?? '?')}`);
+        }
+      } else {
+        lines.push('no workflow run for that commit yet');
+      }
+    }
+
+    return {
+      number: payload.number,
+      url: payload.html_url,
+      state: typeof payload.state === 'string' ? payload.state : undefined,
+      merged: payload.merged === true,
+      status: lines.join('\n'),
+    };
+  }
+
   return {
     name: 'github-app',
 
@@ -457,5 +578,90 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         truncated: true,
       };
     },
+
+    /**
+     * Open one pull request.
+     *
+     * The same shape as a log read: its own token, narrowed to what the operation needs, and the
+     * repository-scoped route, so the allowlist binds it by construction.
+     *
+     * @param request - the branches and the text.
+     * @returns the number and the URL GitHub answered with.
+     */
+    async pullRequest(request: PullRequestRequest): Promise<PullRequest> {
+      await ensurePermissions(request.owner, PULL_REQUEST_PERMISSIONS);
+      const installationId = await resolveInstallationId(request.owner);
+      const { json: minted } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
+        repositories: [request.repo],
+        permissions: PULL_REQUEST_PERMISSIONS,
+      });
+      const token = (minted as { token?: unknown } | null)?.token;
+      if (typeof token !== 'string' || !token) {
+        throw new ProviderConfigError('GitHub returned no installation token for the pull request');
+      }
+
+      const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
+
+      if (request.action === 'status') {
+        return readPullRequestStatus(request, token, collection);
+      }
+      let method = 'POST';
+      let url = collection;
+      let body: Record<string, unknown> = { title: request.title, body: request.body, head: request.head, base: request.base, draft: request.draft === true };
+      if (request.action === 'close') {
+        method = 'PATCH';
+        url = `${collection}/${request.number}`;
+        body = { state: 'closed' };
+      } else if (request.action === 'update') {
+        method = 'PATCH';
+        url = `${collection}/${request.number}`;
+        body = { title: request.title, body: request.body, base: request.base };
+        for (const [key, value] of Object.entries(body)) {
+          if (value === undefined) delete body[key];
+        }
+      } else if (request.action === 'merge') {
+        method = 'PUT';
+        url = `${collection}/${request.number}/merge`;
+        body = { merge_method: request.method ?? 'squash' };
+      }
+
+      let text: string;
+      try {
+        ({ text } = await callWithToken(method, url, token, body));
+      } catch (error) {
+        throw new ProviderConfigError(
+          `${(error as Error).message}; this needs the pull_requests: write permission on both the app and this installation`,
+        );
+      }
+
+      if (request.action === 'merge') {
+        // The merge answers with a sha and a message, not the pull request, so read it back for the
+        // canonical URL — and to report whether GitHub actually merged it.
+        const merged = JSON.parse(text) as { merged?: unknown };
+        if (merged.merged !== true) {
+          throw new ProviderConfigError('GitHub did not merge the pull request');
+        }
+        const { text: after } = await callWithToken('GET', `${collection}/${request.number}`, token);
+        return readPullRequest(after);
+      }
+
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = null;
+      }
+      const payload = (parsed ?? {}) as { number?: unknown; html_url?: unknown; state?: unknown; merged?: unknown };
+      if (typeof payload.number !== 'number' || typeof payload.html_url !== 'string') {
+        throw new ProviderConfigError('GitHub did not answer with a pull request');
+      }
+      return {
+        number: payload.number,
+        url: payload.html_url,
+        state: typeof payload.state === 'string' ? payload.state : undefined,
+        merged: payload.merged === true,
+      };
+    },
+
   };
 }
