@@ -233,7 +233,7 @@ describe('broker request handling', () => {
     const opened: Provider = {
   name: 'with-prs',
   getCredential: () => Promise.reject(new Error('not used here')),
-  openPullRequest: (request) => {
+  pullRequest: (request) => {
     assert.equal(request.head, 'feature');
     assert.equal(request.base, 'main');
     return Promise.resolve({ number: 7, url: 'https://github.com/acme/widget/pull/7' });
@@ -248,11 +248,11 @@ describe('broker request handling', () => {
     assert.equal(events.at(-1)?.['pr_number'], 7);
   });
 
-  it('refuses an unusable branch, and a provider that cannot open pull requests', async () => {
+  it('refuses an unusable branch, and a provider that cannot manage pull requests', async () => {
     const opened: Provider = {
   name: 'with-prs',
   getCredential: () => Promise.reject(new Error('not used here')),
-  openPullRequest: () => Promise.resolve({ number: 1, url: 'u' }),
+  pullRequest: () => Promise.resolve({ number: 1, url: 'u' }),
     };
     const traversal = await makeHarness(['acme/widget'], opened).handle({
   ...REQUEST,
@@ -275,7 +275,36 @@ describe('broker request handling', () => {
   title: 'a title',
     });
     assert.equal(unsupported.code, CODES.PROVIDER_ERROR);
-    assert.match(unsupported.reason ?? '', /cannot open pull requests/);
+    assert.match(unsupported.reason ?? '', /cannot manage pull requests/);
+  });
+
+  it('closes a pull request, and refuses a merge method it does not know', async () => {
+    const seen: string[] = [];
+    const managed: Provider = {
+      name: 'with-prs',
+      getCredential: () => Promise.reject(new Error('not used here')),
+      pullRequest: (request) => {
+        seen.push(request.action);
+        return Promise.resolve({ number: request.number ?? 0, url: 'u', state: 'closed' });
+      },
+    };
+    const { handle, events } = makeHarness(['acme/widget'], managed);
+    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'close', number: 7 });
+
+    assert.equal(response.ok, true);
+    assert.deepEqual(seen, ['close']);
+    assert.equal(response.prState, 'closed');
+    assert.equal(events.at(-1)?.['action'], 'close');
+
+    const badMethod = await makeHarness(['acme/widget'], managed).handle({
+      ...REQUEST,
+      op: 'pull-request',
+      action: 'merge',
+      number: 7,
+      method: 'fast-forward',
+    });
+    assert.equal(badMethod.code, CODES.BAD_REQUEST);
+    assert.deepEqual(seen, ['close'], 'and the provider was never asked to do it');
   });
 
   it('keeps provider failures generic for the caller and detailed in the audit', async () => {

@@ -398,6 +398,32 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     return pending;
   }
 
+    /**
+     * Read a pull request that another call has already fetched.
+     *
+     * @param text - the JSON body.
+     * @param fallbackNumber - the number the caller asked about.
+     * @returns the number, URL and state.
+     */
+    function readPullRequest(text: string): PullRequest {
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = null;
+      }
+      const payload = (parsed ?? {}) as { number?: unknown; html_url?: unknown; state?: unknown; merged?: unknown };
+      if (typeof payload.number !== 'number' || typeof payload.html_url !== 'string') {
+        throw new ProviderConfigError('GitHub did not answer with a pull request');
+      }
+      return {
+        number: payload.number,
+        url: payload.html_url,
+        state: typeof payload.state === 'string' ? payload.state : undefined,
+        merged: payload.merged === true,
+      };
+    }
+
   return {
     name: 'github-app',
 
@@ -484,7 +510,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
      * @param request - the branches and the text.
      * @returns the number and the URL GitHub answered with.
      */
-    async openPullRequest(request: PullRequestRequest): Promise<PullRequest> {
+    async pullRequest(request: PullRequestRequest): Promise<PullRequest> {
       await ensurePermissions(request.owner, PULL_REQUEST_PERMISSIONS);
       const installationId = await resolveInstallationId(request.owner);
       const { json: minted } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
@@ -496,37 +522,64 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         throw new ProviderConfigError('GitHub returned no installation token for the pull request');
       }
 
+      const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
+      let method = 'POST';
+      let url = collection;
+      let body: Record<string, unknown> = { title: request.title, body: request.body, head: request.head, base: request.base, draft: request.draft === true };
+      if (request.action === 'close') {
+        method = 'PATCH';
+        url = `${collection}/${request.number}`;
+        body = { state: 'closed' };
+      } else if (request.action === 'update') {
+        method = 'PATCH';
+        url = `${collection}/${request.number}`;
+        body = { title: request.title, body: request.body, base: request.base };
+        for (const [key, value] of Object.entries(body)) {
+          if (value === undefined) delete body[key];
+        }
+      } else if (request.action === 'merge') {
+        method = 'PUT';
+        url = `${collection}/${request.number}/merge`;
+        body = { merge_method: request.method ?? 'squash' };
+      }
+
       let text: string;
       try {
-        ({ text } = await callWithToken(
-          'POST',
-          `${api}/repos/${request.owner}/${request.repo}/pulls`,
-          token,
-          {
-            title: request.title,
-            body: request.body,
-            head: request.head,
-            base: request.base,
-            draft: request.draft === true,
-          },
-        ));
+        ({ text } = await callWithToken(method, url, token, body));
       } catch (error) {
         throw new ProviderConfigError(
-          `${(error as Error).message}; opening a pull request needs the pull_requests: write permission on both the app and this installation`,
+          `${(error as Error).message}; this needs the pull_requests: write permission on both the app and this installation`,
         );
       }
 
-      let created: unknown = null;
-      try {
-        created = JSON.parse(text);
-      } catch {
-        created = null;
+      if (request.action === 'merge') {
+        // The merge answers with a sha and a message, not the pull request, so read it back for the
+        // canonical URL — and to report whether GitHub actually merged it.
+        const merged = JSON.parse(text) as { merged?: unknown };
+        if (merged.merged !== true) {
+          throw new ProviderConfigError('GitHub did not merge the pull request');
+        }
+        const { text: after } = await callWithToken('GET', `${collection}/${request.number}`, token);
+        return readPullRequest(after);
       }
-      const payload = (created ?? {}) as { number?: unknown; html_url?: unknown };
+
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = null;
+      }
+      const payload = (parsed ?? {}) as { number?: unknown; html_url?: unknown; state?: unknown; merged?: unknown };
       if (typeof payload.number !== 'number' || typeof payload.html_url !== 'string') {
         throw new ProviderConfigError('GitHub did not answer with a pull request');
       }
-      return { number: payload.number, url: payload.html_url };
+      return {
+        number: payload.number,
+        url: payload.html_url,
+        state: typeof payload.state === 'string' ? payload.state : undefined,
+        merged: payload.merged === true,
+      };
     },
+
   };
 }

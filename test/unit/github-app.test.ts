@@ -141,6 +141,14 @@ function createStubFetch(options: {
     });
     if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
     if (url.includes('/app/installations?')) return Promise.resolve(jsonResponse(installations));
+    if (url.endsWith('/merge')) {
+      return Promise.resolve(jsonResponse({ merged: true, message: 'Pull Request successfully merged' }));
+    }
+    if (/\/pulls\/\d+$/.test(url)) {
+      return Promise.resolve(
+        jsonResponse({ number: 42, html_url: 'https://github.com/acme/widget/pull/42', state: 'closed', merged: true }),
+      );
+    }
     if (url.endsWith('/pulls')) {
       return Promise.resolve(
         jsonResponse({ number: 42, html_url: 'https://github.com/acme/widget/pull/42' }, 201),
@@ -445,7 +453,8 @@ describe('createGithubAppProvider', () => {
   appPermissions: { pull_requests: 'write', contents: 'read' },
   installationPermissions: { pull_requests: 'write', contents: 'read' },
     });
-    const pr = await providerFor(stub).openPullRequest!({
+    const pr = await providerFor(stub).pullRequest!({
+    action: 'open',
   host: 'github.com',
   owner: 'acme',
   repo: 'widget',
@@ -468,6 +477,29 @@ describe('createGithubAppProvider', () => {
     assert.equal(posted?.url, 'https://api.github.com/repos/acme/widget/pulls', 'through the repository route');
     assert.equal(posted?.body?.['head'], 'feature');
     assert.equal(posted?.body?.['draft'], false);
+  });
+
+  it('merges a pull request with the method it was told to use', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      appPermissions: { pull_requests: 'write', contents: 'read' },
+      installationPermissions: { pull_requests: 'write', contents: 'read' },
+    });
+    const pr = await providerFor(stub).pullRequest!({
+      action: 'merge',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 42,
+      method: 'rebase',
+    });
+
+    const put = stub.calls.find((call) => call.method === 'PUT');
+    assert.equal(put?.url, 'https://api.github.com/repos/acme/widget/pulls/42/merge');
+    assert.deepEqual(put?.body, { merge_method: 'rebase' });
+    assert.equal(pr.url, 'https://github.com/acme/widget/pull/42');
+    assert.equal(pr.merged, true, 'and the state comes from reading the pull request back');
   });
 
   it('skips the pre-flight when the operator turns it off', async () => {

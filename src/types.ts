@@ -50,7 +50,7 @@ export interface Provider {
    * Separate from {@link Provider.getCredential} for the same reason as {@link Provider.getJobLog}:
    * the token this mints asks for what a pull request needs, and nothing that a push needs.
    */
-  openPullRequest?(request: PullRequestRequest): Promise<PullRequest>;
+  pullRequest?(request: PullRequestRequest): Promise<PullRequest>;
 }
 
 /** What a provider is asked to read a log for. */
@@ -62,24 +62,38 @@ export interface JobLogRequest {
   readonly jobId: number;
 }
 
-/** What a provider is asked to open a pull request for. */
+/** What can be done to a pull request. */
+export type PullRequestAction = 'open' | 'close' | 'merge' | 'update';
+
+/** How a merge should be recorded. */
+export type MergeMethod = 'merge' | 'squash' | 'rebase';
+
+/** What a provider is asked to do to a pull request. */
 export interface PullRequestRequest {
   readonly host: string;
   readonly owner: string;
   readonly repo: string;
-  /** The branch holding the change. */
-  readonly head: string;
-  /** The branch it should merge into. */
-  readonly base: string;
-  readonly title: string;
-  readonly body: string;
+  readonly action: PullRequestAction;
+  /** The pull request number. Not needed to open one, required for the rest. */
+  readonly number?: number;
+  /** The branch holding the change, when opening. */
+  readonly head?: string;
+  /** The branch it merges into. */
+  readonly base?: string;
+  readonly title?: string;
+  readonly body?: string;
   readonly draft?: boolean;
+  readonly method?: MergeMethod;
 }
 
-/** One opened pull request. */
+/** One pull request, as GitHub describes it after an action. */
 export interface PullRequest {
   readonly number: number;
   readonly url: string;
+  /** `open` or `closed`, when GitHub said. */
+  readonly state?: string;
+  /** Whether the action merged it. */
+  readonly merged?: boolean;
 }
 
 /** One job log, as returned to the caller. */
@@ -159,6 +173,9 @@ export interface WireRequest {
   /** Workflow job id, for `op: "logs"`. */
   readonly jobId?: number;
   /** For `op: "pull-request"`. */
+  readonly action?: string;
+  readonly number?: number;
+  readonly method?: string;
   readonly head?: string;
   readonly base?: string;
   readonly title?: string;
@@ -182,6 +199,8 @@ export interface WireResponse {
   /** The opened pull request, for `op: "pull-request"`. */
   readonly prUrl?: string;
   readonly prNumber?: number;
+  readonly prState?: string;
+  readonly prMerged?: boolean;
 }
 
 /** Where audit records go. */

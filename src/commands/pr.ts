@@ -1,45 +1,71 @@
 /**
- * `pr` — open one pull request through the broker.
+ * `pr` — open, close, merge or update one pull request through the broker.
  *
  * The credential never leaves the broker. The broker mints a token narrowed to `pull_requests: write`
- * plus read access to the branches it names, posts the request itself, and answers with the number
- * and the URL: the agent gets a pull request without ever holding something that could push.
+ * plus read access to the branches it names, performs the action itself, and answers with the number,
+ * the URL and the state: the agent gets the lifecycle of a pull request without ever holding
+ * something that could push to it.
  *
- * Exit codes: 0 opened, 1 refused, 3 broker unreachable.
+ * Exit codes: 0 done, 1 refused, 3 broker unreachable.
  */
 import { readFileSync } from 'node:fs';
 
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { fail, parseArgs, say } from './support.ts';
 
-/** Longer than a credential request: a token is minted, then the request is posted. */
+/** Longer than a credential request: a token is minted, then the action is performed. */
 const PR_TIMEOUT_MS = 60_000;
 
 /** Usage text for `pr`. */
 export const PR_USAGE = `Usage: git-credential-broker pr [options]
 
-Open a pull request through the broker, without the credential ever reaching this side.
+Open, close, merge or update a pull request through the broker, without the credential ever
+reaching this side.
 
-  --socket <path>      Broker socket (default: $GIT_BROKER_SOCKET or the socket file)
-  --host <host>        Host as configured, e.g. github.com           [required]
-  --repo <owner/name>  Repository the branches belong to             [required]
+Opening (the default)
   --head <branch>      The branch holding the change                 [required]
   --base <branch>      The branch to merge into (default: main)
   --title <text>       The title                                     [required]
   --body <text>        The body, inline
   --body-file <path>   The body, read from a file — a pull request body is usually long
   --draft              Open it as a draft
+
+Acting on one
+  --number <n>         The pull request number                       [required]
+  --close              Close it
+  --merge              Merge it (branch protection still applies)
+  --method <m>         merge, squash (default) or rebase
+  With --number and none of the above, the title, body or base is updated.
+
+Common
+  --socket <path>      Broker socket (default: $GIT_BROKER_SOCKET or the socket file)
+  --host <host>        Host as configured, e.g. github.com           [required]
+  --repo <owner/name>  Repository the pull request belongs to        [required]
   -h, --help           Show this help
 `;
+
+
+/**
+ * Read the action out of the flags.
+ *
+ * @param args - the parsed arguments.
+ * @returns `close`, `merge`, `update` or `open`.
+ */
+function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
+  if (args.has('close')) return 'close' as const;
+  if (args.has('merge')) return 'merge' as const;
+  if (args.value('number') !== undefined) return 'update' as const;
+  return 'open' as const;
+}
 
 /**
  * Run the `pr` command.
  *
  * @param argv - arguments after the command name.
- * @returns the process exit code: 0 opened, 1 refused, 3 unreachable.
+ * @returns the process exit code: 0 done, 1 refused, 3 unreachable.
  */
 export async function runPr(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help', 'draft'] });
+  const args = parseArgs(argv, { booleans: ['help', 'draft', 'close', 'merge'] });
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
     return 0;
@@ -48,24 +74,37 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const host = args.value('host');
   const repo = args.value('repo');
-  const head = args.value('head');
-  const title = args.value('title');
   if (!socketPath) {
     fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `git-credential-broker setup`');
   }
   if (!host) fail('--host is required (e.g. github.com)');
   if (!repo) fail('--repo is required (e.g. owner/name)');
-  if (!head) fail('--head is required (the branch holding the change)');
-  if (!title) fail('--title is required');
 
+  const action = actionOf(args);
+  const number = args.value('number');
+  const head = args.value('head');
+  const base = args.value('base');
+  const title = args.value('title');
   const bodyFile = args.value('body-file');
-  let body = args.value('body') ?? '';
+  let body = args.value('body');
   if (bodyFile !== undefined) {
     try {
       body = readFileSync(bodyFile, 'utf8');
     } catch (error) {
       fail(`cannot read ${bodyFile}: ${(error as Error).message}`);
     }
+  }
+
+  if (action === 'open') {
+    if (!head) fail('--head is required to open a pull request');
+    if (!title) fail('--title is required to open a pull request');
+  } else if (number === undefined) {
+    fail(`--number is required to ${action} a pull request`);
+  } else if (!Number.isInteger(Number(number)) || Number(number) <= 0) {
+    fail(`--number must be a positive integer, got ${JSON.stringify(number)}`);
+  }
+  if (action === 'update' && title === undefined && body === undefined && base === undefined) {
+    fail('an update has to change something: pass --title, --body/--body-file or --base');
   }
 
   let response;
@@ -77,10 +116,13 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         op: 'pull-request',
         host,
         path: repo,
-        head,
-        base: args.value('base') ?? 'main',
-        title,
-        body,
+        action,
+        ...(number === undefined ? {} : { number: Number(number) }),
+        ...(head === undefined ? {} : { head }),
+        ...(base === undefined ? {} : { base }),
+        ...(title === undefined ? {} : { title }),
+        ...(body === undefined ? {} : { body }),
+        ...(action === 'merge' ? { method: args.value('method') ?? 'squash' } : {}),
         draft: args.has('draft'),
         session: 'pr',
         pid: process.pid,
@@ -97,6 +139,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     return 1;
   }
 
-  say(`opened #${response.prNumber ?? '?'}: ${response.prUrl ?? '(no url)'}`);
+  const done =
+    action === 'open' ? 'opened' : action === 'close' ? 'closed' : action === 'merge' ? 'merged' : 'updated';
+  const state = response.prState === undefined ? '' : ` (${response.prState})`;
+  say(`${done} #${response.prNumber ?? '?'}${state}: ${response.prUrl ?? '(no url)'}`);
   return 0;
 }
