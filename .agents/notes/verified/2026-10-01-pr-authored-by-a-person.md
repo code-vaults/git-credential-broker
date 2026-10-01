@@ -17,7 +17,7 @@ chore nobody keeps up.
 
 ## The decision
 
-Enable **Enable Device Flow (and leave Expire user authorization tokens selected, which is what produces the refresh token)** on the *existing* App, and use the
+Enable **Device Flow**, and leave *Expire user authorization tokens* selected, which is what produces the refresh token the broker renews with, on the *existing* App, and use the
 **user access token** it yields — the user-to-server flow. GitHub issues that token for the app *and*
 the person, so it covers however many owners the person can reach, and it renews itself.
 
