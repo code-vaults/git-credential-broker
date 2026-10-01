@@ -507,6 +507,20 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
 
       let cachedPersonToken: { token: string; until: number } | undefined;
 
+/**
+ * One more sentence about a failure, when there is one worth having.
+ *
+ * `fetch failed` is the whole message undici gives for a connection problem and it names nothing useful;
+ * the reason is on `cause`. This is for the host log, so it is allowed to carry detail.
+ *
+ * @param error - whatever was thrown.
+ * @returns an empty string, or ` (the reason)`.
+ */
+function describeCause(error: unknown): string {
+  const cause = (error as { cause?: { message?: unknown } } | null)?.cause?.message;
+  return typeof cause === 'string' && cause !== '' ? ` (${cause})` : '';
+}
+
   return {
     name: 'github-app',
 
@@ -796,7 +810,10 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         ({ text } = await callWithToken(method, url, creator ?? token, body));
       } catch (error) {
         throw new ProviderConfigError(
-          `${(error as Error).message}; this needs the pull_requests: write permission on both the app and this installation`,
+          // The cause is where an undici failure keeps its reason ("fetch failed" on its own says
+          // nothing). It reaches the host log, not the container: this is a ProviderConfigError, and
+          // the broker answers the pusher with whatever it carries.
+          `${(error as Error).message}${describeCause(error)}; this needs the pull_requests: write permission on both the app and this installation`,
         );
       }
 
