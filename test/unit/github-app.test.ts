@@ -550,8 +550,8 @@ describe('createGithubAppProvider', () => {
     const stub = createStubFetch({
   installations: [{ id: 42, account: { login: 'acme' } }],
   nowMs,
-  appPermissions: { pull_requests: 'write', contents: 'read' },
-  installationPermissions: { pull_requests: 'write', contents: 'read' },
+  appPermissions: { actions: 'read', pull_requests: 'write', contents: 'read' },
+  installationPermissions: { actions: 'read', pull_requests: 'write', contents: 'read' },
     });
     const pr = await providerFor(stub).pullRequest!({
   action: 'status',

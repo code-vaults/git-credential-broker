@@ -608,11 +608,16 @@ function describeCause(error: unknown): string {
      * @returns the number and the URL GitHub answered with.
      */
     async pullRequest(request: PullRequestRequest): Promise<PullRequest> {
-      await ensurePermissions(request.owner, PULL_REQUEST_PERMISSIONS);
+      // `--status` also reads /actions/runs, which is checked against actions: read. Pre-flighting
+      // pull_requests alone passed a grant that could not make that call, which is the opposite of what a
+      // pre-flight is for.
+      const wanted =
+        request.action === 'status' ? { ...PULL_REQUEST_PERMISSIONS, actions: 'read' } : PULL_REQUEST_PERMISSIONS;
+      await ensurePermissions(request.owner, wanted);
       const installationId = await resolveInstallationId(request.owner);
       const { json: minted } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
         repositories: [request.repo],
-        permissions: PULL_REQUEST_PERMISSIONS,
+        permissions: wanted,
       });
     const token = (minted as { token?: unknown } | null)?.token;
       if (typeof token !== 'string' || !token) {
@@ -656,7 +661,18 @@ function describeCause(error: unknown): string {
             `could not renew the authorized token from ${path}: ${(error as Error).message}${describeCause(error)}`,
           );
         }
-        if (next.refreshToken !== undefined) writeFileSync(path, `${next.refreshToken}\n`, { mode: 0o600 });
+        if (next.refreshToken !== undefined) {
+          try {
+            writeFileSync(path, `${next.refreshToken}\n`, { mode: 0o600 });
+          } catch (error) {
+            // GitHub invalidated the token on disk the moment it answered, so this is not transient and not
+            // recoverable: the next renewal reads a dead token. Nothing else in the log would say so.
+            throw new Error(
+              `could not store the new refresh token in ${path}: ${(error as Error).message}; the previous ` +
+                'one is no longer valid, so run authorize again',
+            );
+          }
+        }
         cachedPersonToken = { token: next.token, until: now + (next.expiresInSeconds ?? 28_800) * 1_000 };
         return cachedPersonToken.token;
       }

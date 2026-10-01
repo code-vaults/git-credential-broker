@@ -32,7 +32,11 @@ import type { MergeMethod, AuditSink, BrokerConfig, Provider, WireResponse } fro
 export const BROKER_VERSION = '0.1.0';
 
 /** How long one socket connection may stay idle before it is dropped. */
-const REQUEST_TIMEOUT_MS = 30_000;
+// How long a connection may stay silent before it is dropped. It has to outlast the longest wait a client
+// makes on it: `pr` waits PR_TIMEOUT_MS (60s) for an answer that arrives only when the handler finishes, and
+// the handler is silent on the socket the whole time. At 30s the timer won every long action, and the client
+// reported "unreachable" for a merge or a close that had already happened.
+const REQUEST_TIMEOUT_MS = 120_000;
 
 /** Response codes returned to the helper. */
 export const CODES = {
