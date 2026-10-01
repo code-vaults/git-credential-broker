@@ -1,7 +1,7 @@
 # Self-review of the pull-request branch
 
 **Status: reviewed; the findings below are the ones still open at the time of the pre-merge review. Six of the
-ones this note first listed were fixed afterwards and are named at the end, because a list of what is left is
+ones this note first listed were fixed afterwards and are named under "Open" below, because a list of what is left is
 only useful if it is current.**
 
 A branch that adds a channel between an agent-writable container and a host process running as a person
