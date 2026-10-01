@@ -122,7 +122,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   } else if (action !== 'resolve' && number === undefined) {
     const verb = action === 'status' ? 'inspect' : action;
     fail(`--number is required to ${verb} a pull request`);
-  } else if (!Number.isInteger(Number(number)) || Number(number) <= 0) {
+  } else if (action !== 'resolve' && (!Number.isInteger(Number(number)) || Number(number) <= 0)) {
     fail(`--number must be a positive integer, got ${JSON.stringify(number)}`);
   }
   if (action === 'update' && title === undefined && body === undefined && base === undefined) {
