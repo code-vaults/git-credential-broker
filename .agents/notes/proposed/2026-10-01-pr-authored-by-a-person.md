@@ -16,21 +16,21 @@ chore nobody keeps up.
 
 ## The decision
 
-A **second GitHub App**, holding only what creating a pull request needs, and a **user access token**
-for it — the OAuth user-to-server flow. GitHub issues that token for the app *and* the person, so it
-covers however many owners the person can reach, and it renews itself.
+Enable **Request user authorization (OAuth) during installation** on the *existing* App, and use the
+**user access token** it yields — the user-to-server flow. GitHub issues that token for the app *and*
+the person, so it covers however many owners the person can reach, and it renews itself.
 
-Permissions: **Pull requests: Read and write**, **Contents: Read-only**, **Metadata: Read-only**.
-Nothing else — and in particular no contents write, so GitHub itself refuses to let the token push or
-merge. That is the property worth having, and it is why this is a second App rather than user
-authorization on the existing one: the existing app needs contents write to push branches, and a user
-token carries the app's permissions, so it would carry that too.
+This began as a second App, holding only pull requests read and write plus contents read, so that the
+token could not push or merge. That narrowing is real, and it is not free to give up: a user token
+carries the app's permissions, so on the existing app — which needs contents write to push branches —
+it can also push, submit a review and merge as that person, where an installation token cannot
+approve at all. The second App traded convenience for that boundary; this trades the boundary for
+convenience, on the judgement that one App is easier to live with.
 
-Enable **Request user authorization (OAuth) during installation**, and leave **Expire user
-authorization tokens** on: that is what produces a refresh token.
-
-A deployment that does not want any of this configures nothing and behaves exactly as it does today.
-Nothing is installed for a user who does not need it.
+Accepted knowingly, and "split it later" has a condition rather than a feeling: split when it stops
+being acceptable that the broker can act as the person completely — several people sharing a
+deployment, or handing the deployment to somebody else, are the obvious triggers. The code would not
+change; only which client id and secret are configured.
 
 ## Shape
 
