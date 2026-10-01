@@ -64,7 +64,7 @@ if [ -f "$PIDFILE" ]; then
   echo "$(date) removing the stale pidfile (pid ${old:-unknown})" >>"$LOG"
   rm -f "$PIDFILE"
 fi
-echo $ >"$PIDFILE"
+echo $$ >"$PIDFILE"
 
 # exec, so the pid in the file is the opener's own, and stopping it stops the opener.
 exec "$BIN" host-opener \
