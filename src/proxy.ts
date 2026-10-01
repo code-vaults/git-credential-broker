@@ -1,23 +1,17 @@
 /**
- * A fetch that honours the proxy the process was started with.
- *
- * The environment arrives with the process — a systemd unit, a compose file, a shell — and Node's own
- * `fetch` does not read it: measured on 24.21 three ways, plain `http_proxy`/`https_proxy`,
- * `NODE_USE_ENV_PROXY=1` and `--use-env-proxy`, the proxy was never contacted and the connection went
- * straight at the target. Behind a proxy that means every call fails by timeout, which is how this was
- * found: the OAuth exchange needs github.com, api.github.com answered, and nothing said which.
- *
- * `node-fetch-native`'s proxy module reads those variables itself, `no_proxy` included, and hands back both
- * halves of the answer: a `dispatcher` for `fetch` and an `agent` for the clients built on the `http`
- * module. This process only makes `fetch` calls, so it takes the dispatcher, bound to a fetch of its own so
- * nothing else in the process has to know.
- */
-import { createFetch } from 'node-fetch-native/proxy';
-
-/**
  * The fetch every GitHub call in this process should use.
  *
- * With no proxy variable set it behaves as `fetch` does, so a deployment that talks to GitHub directly is
- * unaffected.
+ * `node-fetch-native`'s proxy module reads `https_proxy` / `http_proxy` / `HTTPS_PROXY` / `HTTP_PROXY` and
+ * `no_proxy` at import time and binds a fetch to the resulting dispatcher, so importing it is the whole
+ * bootstrap. With none of those set it behaves exactly as `fetch` does, which is why nothing here has to
+ * check whether a proxy is in use.
+ *
+ * Worth keeping in one place, with this note: Node's own `fetch` does not read those variables. Measured on
+ * 24.21, plain variables and `--use-env-proxy` both went straight at the target — and where the container
+ * sets `NODE_USE_ENV_PROXY=1` and `all_proxy`, the same URL that answers 200 through this fetch answers 404
+ * through the built-in one. "It connected" and "it was right" are not the same thing.
+ *
+ * The module exports `fetch` as `createFetch({})`, so this is the same object under a name that says which
+ * one it is.
  */
-export const proxyFetch: typeof globalThis.fetch = createFetch();
+export { fetch as proxyFetch } from 'node-fetch-native/proxy';
