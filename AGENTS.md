@@ -55,6 +55,14 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   (install after staging, or build something self-contained) **before** the first one is taken. The
   attempt that found it was a fetch wrapper for the proxy; the same ground is covered today by Node 24
   and `NODE_USE_ENV_PROXY`, which is why that floor moved.
+- **After writing a fix, read the file back — and never trust a check the shell can rewrite.** Three
+  commits in one session described changes the tree did not have: an edit applied after a commit whose
+  message claimed it and then discarded by a restore, and a `String.replace` whose replacement contained
+  `$`, which JavaScript reads as one literal dollar, so it wrote the line it was trying to change and
+  reported success. The checks that missed it were a `grep -c` output read as success when it printed
+  zero, and an ssh command whose remote shell expanded `$` into its own pid. `split`/`join` instead of a
+  replacement string, `sed -n`/`od -c` instead of a pattern a shell touches, and the file read back after
+  the commit: a message is not evidence.
 - **Never commit key material.** `.gitignore` covers `*.pem` and `*.key`; a real App private
   key has already been dropped into this directory once. Before pushing:
   `git grep -l -- '-----BEGIN.*PRIVATE KEY-----' HEAD -- ':!AGENTS.md' ':!.agents/notes'` must find
