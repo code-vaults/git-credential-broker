@@ -11,15 +11,17 @@
  */
 import { execFile } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 import {
   channelDir,
   clearOpener,
+  discoverCheckouts,
   findGitDir,
   listRequests,
+  readOpener,
   readRequest,
   removeRequest,
   requestProblems,
@@ -38,11 +40,14 @@ const CREATE_TIMEOUT_MS = 120_000;
 /** Usage text for `host-opener`. */
 export const HOST_OPENER_USAGE = `Usage: git-credential-broker host-opener [options]
 
-Run on the host, beside the checkout the container also sees. It watches for requests to open a pull
-request and fulfils them with the credentials of whoever runs it, so the pull request is authored by a
-person rather than by the app's bot. It does nothing else: it cannot push, merge or close anything.
+Run on the host, once, beside the trees the container also sees. It finds the checkouts under the
+roots it is given — ones created later included — and fulfils their requests to open a pull request
+with the credentials of whoever runs it, so the pull request is authored by a person rather than by
+the app's bot. It does nothing else: it cannot push, merge or close anything.
 
-  --repo <path>         The checkout to serve (default: the working directory)
+  --root <dir>          A tree to serve, repeatable (default: $HOME)
+  --depth <n>           How far below a root to look for checkouts (default: 4)
+  --repo <path>         Serve this one checkout instead of discovering any
   --command <path>      The program that creates a pull request
                         (default: $GIT_BROKER_PR_COMMAND, else gh)
   --arg <token>         An extra argument for that program, before the subcommand (repeatable)
@@ -51,7 +56,9 @@ person rather than by the app's bot. It does nothing else: it cannot push, merge
   -h, --help            Show this help
 
 The container asks for this by passing --via-host to \`pr\`. Requests are files under
-<git dir>/git-credential-broker/pr-requests, which is shared with the container and untracked by git.
+<git dir>/git-credential-broker/pr-requests, which is shared with the container and untracked by git
+— so the paths on the two sides never have to match: each writes and reads its own view of the same
+directory, and only the roots this process scans are host-side paths.
 `;
 
 /**
@@ -83,38 +90,61 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
     return 0;
   }
 
-  const repo = resolve(args.value('repo') ?? process.cwd());
+  const explicit = args.value('repo');
+  const single = explicit === undefined ? undefined : resolve(explicit);
+  const roots = listFlag(args, 'root');
+  const scanned = roots.length > 0 ? roots.map((root) => resolve(root)) : [homedir()];
+  const depth = Number(args.value('depth') ?? '4');
   const command = args.value('command') ?? process.env['GIT_BROKER_PR_COMMAND'] ?? 'gh';
   const extra = listFlag(args, 'arg');
   const interval = Number(args.value('interval') ?? '5');
   if (!Number.isFinite(interval) || interval < 0) {
     fail(`--interval must be a number of seconds, got ${JSON.stringify(args.value('interval'))}`);
   }
+  if (!Number.isInteger(depth) || depth < 0) {
+    fail(`--depth must be a whole number of levels, got ${JSON.stringify(args.value('depth'))}`);
+  }
 
-  const gitDir = findGitDir(repo);
-  if (gitDir === undefined) fail(`no git repository at or above ${repo}`);
-  const dir = channelDir(gitDir);
+  /** The checkouts to serve: one named checkout, or everything under the roots. */
+  const targets = (): { repo: string; dir: string }[] => {
+    if (single === undefined) return scanned.flatMap((root) => discoverCheckouts(root, depth));
+    const gitDir = findGitDir(single);
+    if (gitDir === undefined) fail(`no git repository at or above ${single}`);
+    return [{ repo: single, dir: channelDir(gitDir) }];
+  };
 
-  writeOpener(dir, { pid: process.pid, command, startedAt: new Date().toISOString() });
-  // However this process ends — a signal, --once, an exception — the marker goes with it. A stale
+  const advertised = new Set<string>();
+  /** Advertise a channel, without rewriting the marker on every sweep. */
+  const advertise = (dir: string): void => {
+    advertised.add(dir);
+    if (readOpener(dir)?.pid !== process.pid) {
+      writeOpener(dir, { pid: process.pid, command, startedAt: new Date().toISOString() });
+    }
+  };
+  // However this process ends — a signal, --once, an exception — its markers go with it. A stale
   // marker would tell the container an opener is there and make it wait for an answer that is not
   // coming.
   process.on('exit', () => {
-    try {
-      clearOpener(dir);
-    } catch {
-      // Nothing useful is left to do while exiting.
+    for (const dir of advertised) {
+      try {
+        if (readOpener(dir)?.pid === process.pid) clearOpener(dir);
+      } catch {
+        // Nothing useful is left to do while exiting.
+      }
     }
   });
   const stop = () => process.exit(0);
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
 
-  say(`watching ${dir}`);
+  say(single === undefined ? `serving the checkouts under ${scanned.join(', ')}` : `serving ${single}`);
   say(`creating pull requests with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as ${process.env['USER'] ?? 'this user'}`);
 
   for (;;) {
-    await sweep(dir, repo, command, extra);
+    for (const { repo, dir } of targets()) {
+      advertise(dir);
+      await sweep(dir, repo, command, extra);
+    }
     if (args.has('once')) return 0;
     await new Promise((done) => setTimeout(done, Math.max(interval, 0) * 1000));
   }

@@ -15,6 +15,7 @@ import { pullRequestUrl } from '../../src/commands/host-opener.ts';
 import {
   channelDir,
   clearOpener,
+  discoverCheckouts,
   findGitDir,
   listRequests,
   newId,
@@ -151,5 +152,34 @@ describe('reading a pull request URL out of a program', () => {
   it('reports nothing rather than guessing', () => {
     assert.equal(pullRequestUrl(''), undefined);
     assert.equal(pullRequestUrl('a pull request for acme/widget'), undefined);
+  });
+});
+
+describe('finding the checkouts to serve', () => {
+  it('finds every checkout under a root, at any depth, dotfiles included', () => {
+    const root = mkdtempSync(join(tmpdir(), 'discover-test-'));
+    for (const repo of ['.dotfiles', 'Workspaces/one', 'Workspaces/two/deep', 'plain']) {
+      mkdirSync(join(root, repo, '.git'), { recursive: true });
+    }
+    // never descended into, and never enough on its own
+    mkdirSync(join(root, 'Workspaces/one/node_modules/decoy/.git'), { recursive: true });
+    mkdirSync(join(root, 'Workspaces/three/four/five/six/seven/.git'), { recursive: true });
+
+    const repos = discoverCheckouts(root, 4)
+      .map((found) => found.repo.slice(root.length + 1))
+      .sort();
+    assert.deepEqual(repos, ['.dotfiles', 'Workspaces/one', 'Workspaces/two/deep', 'plain']);
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('returns a channel directory per checkout', () => {
+    const root = mkdtempSync(join(tmpdir(), 'discover-test-'));
+    mkdirSync(join(root, 'a', '.git'), { recursive: true });
+
+    const [only] = discoverCheckouts(root, 1);
+    assert.equal(only?.dir, channelDir(join(root, 'a', '.git')));
+
+    rmSync(root, { recursive: true, force: true });
   });
 });

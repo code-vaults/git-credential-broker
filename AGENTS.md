@@ -108,6 +108,12 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   merge, close or read. Everything else stays on the socket, where the app is the only actor. Default
   is still the broker — `--via-host` is asked for, never assumed.
 
+  The opener is started once per machine, not once per repository: it discovers the checkouts under
+  its `--root`s (default `$HOME`, so `~/Workspaces`, `~/.dotfiles` and anything added later are
+  served). The paths on the two sides never have to match — each side reads and writes its own view
+  of the same `.git` directory — so only the roots it scans are host-side paths. A request is served
+  in the checkout it was written in, which is what keeps the agent from pointing it at another one.
+
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
   Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.json`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by

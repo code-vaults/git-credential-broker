@@ -20,6 +20,7 @@ import {
   rmSync,
   statSync,
   writeFileSync,
+  type Dirent,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
@@ -74,18 +75,67 @@ export interface OpenerInfo {
 export function findGitDir(from: string): string | undefined {
   let current = resolve(from);
   for (;;) {
-    const candidate = join(current, '.git');
-    if (existsSync(candidate)) {
-      if (statSync(candidate).isDirectory()) return candidate;
-      // A worktree or submodule records its real git directory in a file.
-      const match = /^gitdir:\s*(.+)$/m.exec(readFileSync(candidate, 'utf8'));
-      const pointed = match?.[1]?.trim();
-      return pointed ? resolve(current, pointed) : undefined;
-    }
+    const found = gitDirAt(current);
+    if (found !== undefined) return found;
     const parent = dirname(current);
     if (parent === current) return undefined;
     current = parent;
   }
+}
+
+/**
+ * The git directory directly inside a directory, if there is one.
+ *
+ * @param dir - the directory to look in, and not above.
+ * @returns the git directory, or `undefined`.
+ */
+function gitDirAt(dir: string): string | undefined {
+  const candidate = join(dir, '.git');
+  if (!existsSync(candidate)) return undefined;
+  if (statSync(candidate).isDirectory()) return candidate;
+  // A worktree or submodule records its real git directory in a file.
+  const match = /^gitdir:\s*(.+)$/m.exec(readFileSync(candidate, 'utf8'));
+  const pointed = match?.[1]?.trim();
+  return pointed ? resolve(dir, pointed) : undefined;
+}
+
+/** Directory names that never hold a checkout worth serving. */
+const SKIP = new Set(['.git', 'node_modules', '@eaDir', '#recycle', '$RECYCLE.BIN', 'Library', '.Trash', '.cache']);
+
+/**
+ * Find the checkouts under a root.
+ *
+ * The opener is meant to be started once for a machine, so it is given roots rather than one
+ * repository: every checkout below them is served, including ones created later. Dotted
+ * directories are *not* skipped — a dotfiles repository is one, and it is a checkout like any
+ * other. A directory holding a checkout is not descended into, which keeps the walk cheap.
+ *
+ * @param root - where to start.
+ * @param maxDepth - how many levels below the root to look.
+ * @returns each checkout, with the channel directory that belongs to it.
+ */
+export function discoverCheckouts(root: string, maxDepth = 4): { repo: string; dir: string }[] {
+  const found: { repo: string; dir: string }[] = [];
+  const walk = (current: string, depth: number): void => {
+    const gitDir = gitDirAt(current);
+    if (gitDir !== undefined) {
+      found.push({ repo: current, dir: channelDir(gitDir) });
+      return;
+    }
+    if (depth >= maxDepth) return;
+    let entries: Dirent[] = [];
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || SKIP.has(entry.name)) continue;
+      walk(join(current, entry.name), depth + 1);
+    }
+  };
+  walk(resolve(root), 0);
+  return found;
 }
 
 /**
