@@ -119,7 +119,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (action === 'open') {
     if (!head) fail('--head is required to open a pull request');
     if (!title) fail('--title is required to open a pull request');
-  } else if (number === undefined) {
+  } else if (action !== 'resolve' && number === undefined) {
     const verb = action === 'status' ? 'inspect' : action;
     fail(`--number is required to ${verb} a pull request`);
   } else if (!Number.isInteger(Number(number)) || Number(number) <= 0) {
