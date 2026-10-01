@@ -69,9 +69,9 @@ export function renderCompose(input: ComposeInput): string {
   // would carry no proxy variables at all, so the daemon would go direct and hang rather than refuse.
   const egress = `
       # Egress. The socket needs no proxy; the broker's calls to api.github.com and github.com do.
-      - http_proxy=\${http_proxy:-}
-      - https_proxy=\${https_proxy:-}
-      - no_proxy=\${no_proxy:-}
+      - http_proxy=\${http_proxy:-\${HTTP_PROXY:-}}
+      - https_proxy=\${https_proxy:-\${HTTPS_PROXY:-}}
+      - no_proxy=\${no_proxy:-\${NO_PROXY:-}}
       # The daemon refuses to start with a proxy variable and without this one.
       - NODE_USE_ENV_PROXY=1`;
 

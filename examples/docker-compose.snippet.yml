@@ -68,9 +68,9 @@ services:
       # npx needs somewhere writable for its cache; /tmp is a tmpfs above.
       - npm_config_cache=/tmp/npm-cache
       # Egress: the socket needs no proxy, the broker's own calls to github.com do.
-      - http_proxy=${http_proxy:-}
-      - https_proxy=${https_proxy:-}
-      - no_proxy=${no_proxy:-}
+      - http_proxy=${http_proxy:-${HTTP_PROXY:-}}
+      - https_proxy=${https_proxy:-${HTTPS_PROXY:-}}
+      - no_proxy=${no_proxy:-${NO_PROXY:-}}
       - NODE_USE_ENV_PROXY=1
     command:
       - sh

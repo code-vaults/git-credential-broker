@@ -22,6 +22,7 @@ import {
   writeFileSync,
   type Dirent,
 } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { lstatSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
@@ -119,7 +120,15 @@ function gitDirAt(dir: string): string | undefined {
   const match = /^gitdir:\s*(.+)$/m.exec(text);
   const pointed = match?.[1]?.trim();
   if (pointed === undefined) return undefined;
-  const resolved = resolve(dir, pointed);
+  // resolve() is lexical: a symlink inside the checkout satisfies a prefix check while pointing at a
+  // directory outside it, and the container can make one. The real path is what the containment check
+  // downstream has to compare, so it is resolved here, where the pointer is still known.
+  let resolved: string;
+  try {
+    resolved = realpathSync(resolve(dir, pointed));
+  } catch {
+    return undefined;
+  }
   // A .git file is a pointer written by whoever has the checkout, which is the container. Treat it as a
   // candidate rather than an answer: it has to look like a git directory, and nothing is created from it.
   try {

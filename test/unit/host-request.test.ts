@@ -220,3 +220,22 @@ describe('finding the checkouts to serve', () => {
     rmSync(root, { recursive: true, force: true });
   });
 });
+
+describe('a checkout the container has aimed elsewhere', () => {
+  it('does not follow a symlink out of the root to find a git directory', () => {
+    const root = mkdtempSync(join(tmpdir(), 'symlink-root-'));
+    const outside = mkdtempSync(join(tmpdir(), 'symlink-outside-'));
+    writeFileSync(join(outside, 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+
+    // The reported attack: a link inside the checkout, and a pointer at the link. The lexical path is under
+    // the root, so only the real path can tell that the directory is not.
+    const repo = join(root, 'checkout');
+    mkdirSync(repo, { recursive: true });
+    symlinkSync(outside, join(repo, 'x'));
+    writeFileSync(join(repo, '.git'), 'gitdir: x\n', 'utf8');
+
+    assert.deepEqual(discoverCheckouts(root), [], 'nothing under the root may point outside it');
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+});
