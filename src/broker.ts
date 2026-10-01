@@ -265,11 +265,13 @@ export function createRequestHandler(
         action !== 'update' &&
         action !== 'status' &&
         action !== 'comment' &&
-        action !== 'threads'
+        action !== 'threads' &&
+        action !== 'reply'
       ) {
         return deny(context, CODES.BAD_REQUEST, `bad action ${JSON.stringify(action)}`, 'unknown pull request action');
       }
       const number = message['number'];
+      const commentId = message['commentId'];
       const head = message['head'];
       const base = message['base'];
       const title = message['title'];
@@ -294,8 +296,11 @@ export function createRequestHandler(
       if (action === 'update' && title === undefined && body === undefined && base === undefined) {
         return deny(context, CODES.BAD_REQUEST, 'empty update', 'an update has to change a title, a body or a base');
       }
-      if (action === 'comment' && (typeof body !== 'string' || body.trim() === '')) {
+      if ((action === 'comment' || action === 'reply') && (typeof body !== 'string' || body.trim() === '')) {
         return deny(context, CODES.BAD_REQUEST, 'empty comment', 'a comment has to say something');
+      }
+      if (action === 'reply' && (typeof commentId !== 'number' || !Number.isInteger(commentId) || commentId <= 0)) {
+        return deny(context, CODES.BAD_REQUEST, 'bad commentId', 'a reply needs the id of the comment it answers');
       }
       if (action !== 'open' && (typeof number !== 'number' || !Number.isInteger(number) || number <= 0)) {
         return deny(context, CODES.BAD_REQUEST, `bad number ${JSON.stringify(number)}`, 'this action needs a pull request number');
@@ -318,6 +323,7 @@ export function createRequestHandler(
           repo: repo.repo,
           action,
           ...(typeof number === 'number' ? { number } : {}),
+          ...(typeof commentId === 'number' ? { commentId } : {}),
           ...(typeof head === 'string' ? { head } : {}),
           ...(typeof base === 'string' ? { base } : {}),
           ...(typeof title === 'string' ? { title } : {}),

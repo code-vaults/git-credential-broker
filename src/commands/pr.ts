@@ -46,6 +46,7 @@ Acting on one
   --status             Report its state, mergeability and the runs for its commit
   --comment            Post the body as a comment on it (needs only --number and --body/--body-file)
   --threads            List its review threads: their ids, whether they are resolved, and the comments
+  --reply-to <id>      Reply inside the thread that comment id belongs to, with --body/--body-file
   --close              Close it
   --merge              Merge it (branch protection still applies)
   --method <m>         merge, squash (default) or rebase
@@ -66,6 +67,7 @@ Common
  * @returns `close`, `merge`, `update` or `open`.
  */
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
+  if (args.value('reply-to') !== undefined) return 'reply' as const;
   if (args.has('threads')) return 'threads' as const;
   if (args.has('comment')) return 'comment' as const;
   if (args.has('status')) return 'status' as const;
@@ -124,8 +126,12 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (action === 'update' && title === undefined && body === undefined && base === undefined) {
     fail('an update has to change something: pass --title, --body/--body-file or --base');
   }
-  if (action === 'comment' && (body === undefined || body.trim() === '')) {
+  if ((action === 'comment' || action === 'reply') && (body === undefined || body.trim() === '')) {
     fail('a comment has to say something: pass --body or --body-file');
+  }
+  const replyTo = args.value('reply-to');
+  if (action === 'reply' && (replyTo === undefined || !Number.isInteger(Number(replyTo)) || Number(replyTo) <= 0)) {
+    fail(`--reply-to needs the id of the comment being answered, got ${JSON.stringify(replyTo)}`);
   }
 
   if (viaHost) {
@@ -175,6 +181,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         path: repo,
         action,
         ...(number === undefined ? {} : { number: Number(number) }),
+        ...(action === 'reply' ? { commentId: Number(replyTo) } : {}),
         ...(head === undefined ? {} : { head }),
         ...(base === undefined ? {} : { base }),
         ...(title === undefined ? {} : { title }),
@@ -210,7 +217,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
           ? 'merged'
           : action === 'comment'
             ? 'commented on'
-            : 'updated';
+            : action === 'reply'
+              ? 'replied in'
+              : 'updated';
   const state = response.prState === undefined ? '' : ` (${response.prState})`;
   say(`${done} #${response.prNumber ?? '?'}${state}: ${response.prUrl ?? '(no url)'}`);
   return 0;

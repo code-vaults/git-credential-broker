@@ -602,6 +602,18 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
 
       const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
 
+      if (request.action === 'reply') {
+        // A reply belongs in the thread it answers. The issues API would need `issues: write` and
+        // would start a new conversation instead of joining one.
+        await callWithToken(
+          'POST',
+          `${collection}/${request.number}/comments/${String(request.commentId ?? 0)}/replies`,
+          token,
+          { body: request.body ?? '' },
+        );
+        return { number: request.number ?? 0, url: '' };
+      }
+
       if (request.action === 'threads') {
         // GraphQL, because review threads have no REST list. The repository and the number are
         // named here, so the allowlist still decides what can be reached.
