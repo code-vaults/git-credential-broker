@@ -20,3 +20,7 @@ dist/
 # `compose` output, which the README tells you to redirect to this name inside the repo. It
 # carries one host's deployment paths, so it is per-deployment, not source.
 /docker-compose.broker.yml
+
+# The person's refresh token, if anyone keeps one here by mistake.
+user.refresh
+user.token

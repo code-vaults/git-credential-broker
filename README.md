@@ -284,6 +284,10 @@ broker looks for it, and the broker renews it from then on — nothing else need
 The user token is used for exactly the two things an installation token cannot do: authoring a pull
 request as that person, and resolving a review thread, which GraphQL refuses for an app outright.
 
+The file needs to be **writable by the broker**, unlike the key: GitHub rotates the refresh token on
+every exchange, so mount it read-write (`./user.refresh:/etc/git-cred-broker/user.refresh:rw` in the
+sidecar). A read-only mount works until the first renewal, which is the worst moment to find out.
+
 Two things the app needs: its **client id** in the configuration (the App ID will not do), and
 **Enable Device Flow** selected in its settings. No client secret: the device flow does not use one,
 so no second long-lived secret joins the key.

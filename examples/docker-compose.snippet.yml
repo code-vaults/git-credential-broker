@@ -14,6 +14,9 @@
 The broker reads the private key and holds the only long-lived secret, so it must run where the
 container cannot reach the key. Either a host process or a sidecar container works.
 
+Relative paths below are relative to this file, which is what `compose` does with them: the only
+absolute one is the socket directory, because it lives outside the deployment directory on purpose.
+
 ### a. Host process under systemd (or a DSM scheduled task)
 
 This path needs Node on the host: `npm install -g git-credential-broker` first.
@@ -69,10 +72,14 @@ services:
       - exec npx --yes --package 'git-credential-broker' git-credential-brokerd --config /etc/git-cred-broker/broker.config.json
     volumes:
       # The configuration and the key: read-only, mounted here and nowhere else.
-      - /volume1/docker/git-cred-broker/broker.config.json:/etc/git-cred-broker/broker.config.json:ro
-      - /volume1/docker/git-cred-broker/app.pem:/etc/git-cred-broker/app.pem:ro
+      - ./broker.config.json:/etc/git-cred-broker/broker.config.json:ro
+      - ./app.pem:/etc/git-cred-broker/app.pem:ro
+      # Writable, and the only secret that is: GitHub rotates the refresh token on every exchange,
+      # so the broker has to write the new one back. It sits beside the key on the host and is
+      # created by `git-credential-broker authorize` — see the README.
+      - ./user.refresh:/etc/git-cred-broker/user.refresh:rw
       # Writable: the audit log is appended to, and it must stay outside the DSH container.
-      - /volume1/docker/git-cred-broker/log:/var/log/git-cred-broker
+      - ./log:/var/log/git-cred-broker
       # The socket directory, shared with the DSH container below. This is the only interface
       # between the two: no ports are published, and none should be added.
       - /volume1/homes/<you>/Workspaces/<project>/.dsh/git-broker:/run/git-broker
