@@ -610,6 +610,8 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
 
       const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
 
+      let cachedPersonToken: { token: string; until: number } | undefined;
+
       /**
        * The token of the person this deployment authorized, when there is one.
 
@@ -635,7 +637,6 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         return cachedPersonToken.token;
       }
 
-      let cachedPersonToken: { token: string; until: number } | undefined;
       if (request.action === 'resolve') {
         // Resolving has no REST endpoint either. The thread id is the one `--threads` prints.
         const { text: raw } = await callWithToken('POST', `${api}/graphql`, personToken ?? token, {
