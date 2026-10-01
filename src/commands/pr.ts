@@ -44,6 +44,7 @@ Opening (the default)
 Acting on one
   --number <n>         The pull request number                       [required]
   --status             Report its state, mergeability and the runs for its commit
+  --comment            Post the body as a comment on it (needs only --number and --body/--body-file)
   --close              Close it
   --merge              Merge it (branch protection still applies)
   --method <m>         merge, squash (default) or rebase
@@ -64,6 +65,7 @@ Common
  * @returns `close`, `merge`, `update` or `open`.
  */
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
+  if (args.has('comment')) return 'comment' as const;
   if (args.has('status')) return 'status' as const;
   if (args.has('close')) return 'close' as const;
   if (args.has('merge')) return 'merge' as const;
@@ -78,7 +80,9 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
  * @returns the process exit code: 0 done, 1 refused, 3 unreachable.
  */
 export async function runPr(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help', 'draft', 'close', 'merge', 'status', 'via-host'] });
+  const args = parseArgs(argv, {
+    booleans: ['help', 'draft', 'close', 'merge', 'status', 'comment', 'via-host'],
+  });
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
     return 0;
@@ -120,6 +124,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   }
   if (action === 'update' && title === undefined && body === undefined && base === undefined) {
     fail('an update has to change something: pass --title, --body/--body-file or --base');
+  }
+  if (action === 'comment' && (body === undefined || body.trim() === '')) {
+    fail('a comment has to say something: pass --body or --body-file');
   }
 
   if (viaHost) {
@@ -191,7 +198,15 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   }
 
   const done =
-    action === 'open' ? 'opened' : action === 'close' ? 'closed' : action === 'merge' ? 'merged' : 'updated';
+    action === 'open'
+      ? 'opened'
+      : action === 'close'
+        ? 'closed'
+        : action === 'merge'
+          ? 'merged'
+          : action === 'comment'
+            ? 'commented on'
+            : 'updated';
   const state = response.prState === undefined ? '' : ` (${response.prState})`;
   say(`${done} #${response.prNumber ?? '?'}${state}: ${response.prUrl ?? '(no url)'}`);
   return 0;

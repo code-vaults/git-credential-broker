@@ -602,6 +602,28 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
 
       const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
 
+      if (request.action === 'comment') {
+        // A review with no verdict: GitHub shows it as a comment on the pull request, and it needs
+        // only the pull request permission the app already has. A *conversation* comment would be the
+        // issues API, which needs `issues: write` — see the README.
+        await callWithToken('POST', `${collection}/${request.number}/reviews`, token, {
+          body: request.body ?? '',
+          event: 'COMMENT',
+        });
+        const { text: after } = await callWithToken('GET', `${collection}/${request.number}`, token);
+        let read: unknown = null;
+        try {
+          read = JSON.parse(after);
+        } catch {
+          read = null;
+        }
+        const html = (read ?? {}) as { html_url?: unknown };
+        return {
+          number: request.number ?? 0,
+          url: typeof html.html_url === 'string' ? html.html_url : '',
+        };
+      }
+
       if (request.action === 'status') {
         return readPullRequestStatus(request, token, collection);
       }

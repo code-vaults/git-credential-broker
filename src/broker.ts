@@ -263,7 +263,8 @@ export function createRequestHandler(
         action !== 'close' &&
         action !== 'merge' &&
         action !== 'update' &&
-        action !== 'status'
+        action !== 'status' &&
+        action !== 'comment'
       ) {
         return deny(context, CODES.BAD_REQUEST, `bad action ${JSON.stringify(action)}`, 'unknown pull request action');
       }
@@ -291,6 +292,9 @@ export function createRequestHandler(
       }
       if (action === 'update' && title === undefined && body === undefined && base === undefined) {
         return deny(context, CODES.BAD_REQUEST, 'empty update', 'an update has to change a title, a body or a base');
+      }
+      if (action === 'comment' && (typeof body !== 'string' || body.trim() === '')) {
+        return deny(context, CODES.BAD_REQUEST, 'empty comment', 'a comment has to say something');
       }
       if (action !== 'open' && (typeof number !== 'number' || !Number.isInteger(number) || number <= 0)) {
         return deny(context, CODES.BAD_REQUEST, `bad number ${JSON.stringify(number)}`, 'this action needs a pull request number');
