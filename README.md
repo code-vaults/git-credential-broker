@@ -247,10 +247,41 @@ permission instead of failing at GitHub. `--draft` opens it as a draft.
 
 ### Opening one as yourself
 
-There is more than one way to have a pull request authored by a person, and they stay alternatives:
-this one needs no long-lived secret anywhere and costs a process you keep running; `userTokens`
-below needs no second process and costs a token per owner. Neither is replaced by the other, or by
-the OAuth app still on the drawing board — a deployment picks the trade it prefers.
+There are three ways to have a pull request authored by a person, and they stay alternatives: the **host
+opener** below needs no long-lived secret anywhere and costs a process you keep running; **`userTokens`**
+needs no second process and costs a token per owner; and **authorizing the app** needs neither, at the cost
+of a token as wide as your own access to GitHub. A deployment picks the trade it prefers, and none of them
+replaces another.
+
+A pull request opened through the broker is authored by the app, and automated reviewers are
+entitled to skip those. To have one authored by you instead, run the opener on the host, beside the
+same checkout, and ask for it from the container:
+
+```sh
+# on the host, once — it serves every checkout below $HOME and does nothing else
+git-credential-broker host-opener          # --root <dir> to narrow it, repeatable
+# or, at boot and for good: examples/host-opener-boot.sh (see below)
+```
+
+**Copy that file outside the mounts before a task runs it.** It runs as you, so leaving it in the
+checkout would let anything that can write the checkout decide what your credentials do at boot.
+
+```sh
+# in the container
+git-credential-broker pr --via-host --repo owner/repo --head feature --base main \
+  --title "a title" --body-file pr.md
+```
+
+The opener creates pull requests with the credentials of whoever started it, which is the point;
+it never runs a shell, and the program it calls is configuration rather than a hard-coded `gh`:
+`--command /path/to/gh`, or `$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
+anything. `--root` may be repeated and defaults to `$HOME`, so `~/Workspaces`, `~/.dotfiles` and
+checkouts created later are all served with no further setup. To start it once and keep it,
+`examples/host-opener.service` is a systemd user unit; on a system without user services,
+`examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
+instance at a time, and its output in a log file. Without `--via-host`, or with no opener running, `pr` behaves
+exactly as before.
+
 
 A pull request opened with the app's installation token is authored by the app, and automated
 reviewers are entitled to skip those. The simplest way to have one authored by you is a
@@ -278,6 +309,11 @@ closing, merging, updating and reading a state all stay on the app's installatio
 field to go back to app-authored pull requests; `--via-host` still works either way.
 
 #### Authorizing as a person instead
+Two things the app needs: its **client id** in the configuration (the App ID will not do), and
+**Enable Device Flow** selected in its settings, and **Expire user authorization tokens** left on — the
+broker renews with the refresh token, and GitHub only issues one while that is selected. No client secret: the device flow does not use one,
+so no second long-lived secret joins the key.
+
 
 A token per owner is one way to be the author; authorizing the app once is another, and it needs no
 token per owner, because GitHub issues it for the app *and* the person together. Run this on the host:
@@ -324,40 +360,8 @@ The broker, `authorize` and `diagnose` **refuse to start** when a proxy variable
 not `1`, instead of reaching GitHub directly by a route nobody chose. `gh`, which the host opener runs,
 reads those variables itself (it is Go), so it only needs them to arrive.
 
-Two things the app needs: its **client id** in the configuration (the App ID will not do), and
-**Enable Device Flow** selected in its settings, and **Expire user authorization tokens** left on — the
-broker renews with the refresh token, and GitHub only issues one while that is selected. No client secret: the device flow does not use one,
-so no second long-lived secret joins the key.
 
 
-A pull request opened through the broker is authored by the app, and automated reviewers are
-entitled to skip those. To have one authored by you instead, run the opener on the host, beside the
-same checkout, and ask for it from the container:
-
-```sh
-# on the host, once — it serves every checkout below $HOME and does nothing else
-git-credential-broker host-opener          # --root <dir> to narrow it, repeatable
-# or, at boot and for good: examples/host-opener-boot.sh (see below)
-```
-
-**Copy that file outside the mounts before a task runs it.** It runs as you, so leaving it in the
-checkout would let anything that can write the checkout decide what your credentials do at boot.
-
-```sh
-# in the container
-git-credential-broker pr --via-host --repo owner/repo --head feature --base main \
-  --title "a title" --body-file pr.md
-```
-
-The opener creates pull requests with the credentials of whoever started it, which is the point;
-it never runs a shell, and the program it calls is configuration rather than a hard-coded `gh`:
-`--command /path/to/gh`, or `$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
-anything. `--root` may be repeated and defaults to `$HOME`, so `~/Workspaces`, `~/.dotfiles` and
-checkouts created later are all served with no further setup. To start it once and keep it,
-`examples/host-opener.service` is a systemd user unit; on a system without user services,
-`examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
-instance at a time, and its output in a log file. Without `--via-host`, or with no opener running, `pr` behaves
-exactly as before.
 
 #### Keeping it running
 
