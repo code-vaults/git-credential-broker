@@ -1,4 +1,4 @@
-# A second App, so a person can be the author of the pull request
+# A user token on the existing App, so a person can be the author of the pull request
 
 Status: decided, not built.
 
