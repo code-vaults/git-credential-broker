@@ -565,6 +565,32 @@ describe('createGithubAppProvider', () => {
   appPermissions: { actions: 'read', pull_requests: 'write', contents: 'read' },
   installationPermissions: { actions: 'read', pull_requests: 'write', contents: 'read' },
     });
+
+  it('refuses to report the runs when the grant for them is missing', async () => {
+    // The pre-flight exists to name the permission that is missing, and status reads /actions/runs as
+    // well as the pull request. Without this case the pre-flight could be reverted to asking for
+    // pull_requests alone and every test would still pass, which is how the gap was found.
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      appPermissions: { pull_requests: 'write', contents: 'read' },
+      installationPermissions: { pull_requests: 'write', contents: 'read' },
+    });
+
+    await assert.rejects(
+      providerFor(stub).pullRequest!({
+        action: 'status',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        number: 42,
+      }),
+      (error: unknown) => {
+        assert.match(String((error as Error).message), /actions/, 'and it names the permission that is missing');
+        return true;
+      },
+    );
+  });
     const pr = await providerFor(stub).pullRequest!({
   action: 'status',
   host: 'github.com',
