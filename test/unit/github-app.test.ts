@@ -141,6 +141,11 @@ function createStubFetch(options: {
     });
     if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
     if (url.includes('/app/installations?')) return Promise.resolve(jsonResponse(installations));
+    if (url.endsWith('/pulls')) {
+      return Promise.resolve(
+        jsonResponse({ number: 42, html_url: 'https://github.com/acme/widget/pull/42' }, 201),
+      );
+    }
     if (url.includes('/actions/jobs/') && url.endsWith('/logs')) {
       return jobMissing
         ? Promise.resolve(jsonResponse({ message: 'Not Found' }, 404))
@@ -431,6 +436,38 @@ describe('createGithubAppProvider', () => {
       false,
       'a log must never be requested without the repository in the path',
     );
+  });
+
+  it('opens a pull request with a token narrowed to pull_requests: write', async () => {
+    const stub = createStubFetch({
+  installations: [{ id: 42, account: { login: 'acme' } }],
+  nowMs,
+  appPermissions: { pull_requests: 'write', contents: 'read' },
+  installationPermissions: { pull_requests: 'write', contents: 'read' },
+    });
+    const pr = await providerFor(stub).openPullRequest!({
+  host: 'github.com',
+  owner: 'acme',
+  repo: 'widget',
+  head: 'feature',
+  base: 'main',
+  title: 'a title',
+  body: 'a body',
+    });
+
+    assert.equal(pr.number, 42);
+    assert.equal(pr.url, 'https://github.com/acme/widget/pull/42');
+    const mint = stub.calls.find((call) => call.url.includes('/access_tokens'));
+    assert.deepEqual(
+  mint?.body?.['permissions'],
+  { pull_requests: 'write', contents: 'read' },
+  'the token must ask for what the pull request needs',
+    );
+    const posted = stub.calls.find((call) => call.url.endsWith('/pulls'));
+    assert.equal(posted?.method, 'POST');
+    assert.equal(posted?.url, 'https://api.github.com/repos/acme/widget/pulls', 'through the repository route');
+    assert.equal(posted?.body?.['head'], 'feature');
+    assert.equal(posted?.body?.['draft'], false);
   });
 
   it('skips the pre-flight when the operator turns it off', async () => {

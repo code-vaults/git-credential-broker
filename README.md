@@ -221,6 +221,21 @@ node /srv/git-cred-broker/src/cli/helper.ts logs \
   --host github.com --repo owner/repo --job 1234567890
 ```
 
+### Opening a pull request
+
+`pr` opens one through the broker, the same way `logs` reads one: it mints a token narrowed to
+`pull_requests: write` plus read access to the branches it names, posts the request itself, and
+prints the number and the URL. No credential reaches this side, so the agent can propose a change
+without being able to push to the branch it targets.
+
+```sh
+git-credential-broker pr --host github.com --repo owner/repo \
+  --head feature --base main --title "a title" --body-file pr.md
+```
+
+Both the app and the installation need `pull_requests: write`; without it the error names the
+permission instead of failing at GitHub. `--draft` opens it as a draft.
+
 ## Configuration reference
 
 The broker only ever reads this file; it contains no secrets.

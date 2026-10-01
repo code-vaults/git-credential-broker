@@ -44,6 +44,13 @@ export interface Provider {
    * minting a credential. The broker refuses the operation when a provider does not implement it.
    */
   getJobLog?(request: JobLogRequest): Promise<JobLog>;
+  /**
+   * Open one pull request, when this provider can.
+   *
+   * Separate from {@link Provider.getCredential} for the same reason as {@link Provider.getJobLog}:
+   * the token this mints asks for what a pull request needs, and nothing that a push needs.
+   */
+  openPullRequest?(request: PullRequestRequest): Promise<PullRequest>;
 }
 
 /** What a provider is asked to read a log for. */
@@ -53,6 +60,26 @@ export interface JobLogRequest {
   readonly repo: string;
   /** The workflow job id, which is also the check run id. */
   readonly jobId: number;
+}
+
+/** What a provider is asked to open a pull request for. */
+export interface PullRequestRequest {
+  readonly host: string;
+  readonly owner: string;
+  readonly repo: string;
+  /** The branch holding the change. */
+  readonly head: string;
+  /** The branch it should merge into. */
+  readonly base: string;
+  readonly title: string;
+  readonly body: string;
+  readonly draft?: boolean;
+}
+
+/** One opened pull request. */
+export interface PullRequest {
+  readonly number: number;
+  readonly url: string;
 }
 
 /** One job log, as returned to the caller. */
@@ -131,6 +158,12 @@ export interface WireRequest {
   readonly pid?: number;
   /** Workflow job id, for `op: "logs"`. */
   readonly jobId?: number;
+  /** For `op: "pull-request"`. */
+  readonly head?: string;
+  readonly base?: string;
+  readonly title?: string;
+  readonly body?: string;
+  readonly draft?: boolean;
 }
 
 /** One response line on the broker socket. */
@@ -146,6 +179,9 @@ export interface WireResponse {
   /** The job log, for `op: "logs"`. */
   readonly log?: string;
   readonly truncated?: boolean;
+  /** The opened pull request, for `op: "pull-request"`. */
+  readonly prUrl?: string;
+  readonly prNumber?: number;
 }
 
 /** Where audit records go. */

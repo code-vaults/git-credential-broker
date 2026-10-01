@@ -141,7 +141,7 @@ Full detail and the measurements behind them:
 | `src/policy.ts` | the authorization decision (default deny, exact segment matching) |
 | `src/providers/github-app.ts` | RS256 JWT, installation lookup, permission pre-flight, token cache |
 | `test/e2e/push.test.ts` | a real push over authenticated smart HTTP |
-| `src/commands/` | the management CLI: `setup`, `init`, `stage`, `compose`, `probe`, `logs`, `diagnose` |
+| `src/commands/` | the management CLI: `setup`, `init`, `stage`, `compose`, `probe`, `logs`, `pr`, `diagnose` |
 | `src/cli/helper.ts` | the one command that is both the git helper and the CLI |
 | `scripts/postbuild.mjs` | build-time fixup: shebang and exec bit on the CLI entry points |
 | `.agents/notes/proposed/` | the original design and its review |

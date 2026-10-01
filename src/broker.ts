@@ -150,7 +150,11 @@ export function createRequestHandler(
     if (message['op'] === 'ping') {
       return { ok: true, version: BROKER_VERSION, hosts: [...providers.keys()] };
     }
-    if (message['op'] !== 'credential' && message['op'] !== 'logs') {
+    if (
+      message['op'] !== 'credential' &&
+      message['op'] !== 'logs' &&
+      message['op'] !== 'pull-request'
+    ) {
       return deny(
         context,
         CODES.BAD_REQUEST,
@@ -248,6 +252,63 @@ export function createRequestHandler(
           error instanceof ProviderConfigError
             ? reason
             : 'the broker could not read that log; see the broker log';
+        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage);
+      }
+    }
+
+    if (message['op'] === 'pull-request') {
+      const branch = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
+      const head = message['head'];
+      const base = message['base'];
+      const title = message['title'];
+      const body = message['body'];
+      if (typeof head !== 'string' || !branch.test(head) || head.includes('..')) {
+        return deny(context, CODES.BAD_REQUEST, `bad head ${JSON.stringify(head)}`, 'the head branch name is not usable');
+      }
+      if (typeof base !== 'string' || !branch.test(base) || base.includes('..')) {
+        return deny(context, CODES.BAD_REQUEST, `bad base ${JSON.stringify(base)}`, 'the base branch name is not usable');
+      }
+      if (typeof title !== 'string' || title.trim() === '' || title.length > 256) {
+        return deny(context, CODES.BAD_REQUEST, 'bad title', 'a pull request needs a title of at most 256 characters');
+      }
+      if (body !== undefined && (typeof body !== 'string' || body.length > 65_536)) {
+        return deny(context, CODES.BAD_REQUEST, 'bad body', 'the body must be text of at most 65536 characters');
+      }
+      if (typeof provider.openPullRequest !== 'function') {
+        return deny(
+          context,
+          CODES.PROVIDER_ERROR,
+          `provider ${provider.name} cannot open pull requests`,
+          "this host's provider cannot open pull requests",
+        );
+      }
+      try {
+        const created = await provider.openPullRequest({
+          host: block.host,
+          owner: repo.owner,
+          repo: repo.repo,
+          head,
+          base,
+          title,
+          body: typeof body === 'string' ? body : '',
+          draft: message['draft'] === true,
+        });
+        audit.record({
+          event: 'pull-request',
+          decision: 'allow',
+          ...context,
+          head,
+          base,
+          pr_number: created.number,
+          pr_url: created.url,
+        });
+        return { ok: true, prNumber: created.number, prUrl: created.url };
+      } catch (error) {
+        const reason = String((error as Error).message ?? error).slice(0, 300);
+        const callerMessage =
+          error instanceof ProviderConfigError
+            ? reason
+            : 'the broker could not open that pull request; see the broker log';
         return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage);
       }
     }

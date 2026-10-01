@@ -23,6 +23,7 @@ import { readFileSync } from 'node:fs';
 
 import type { Credential, FetchLike, FetchResponseLike, GithubAppHostConfig, Provider } from '../types.ts';
 import type { JobLog, JobLogRequest } from '../types.ts';
+import type { PullRequest, PullRequestRequest } from '../types.ts';
 
 /** REST API origin. Overridable for GitHub Enterprise. */
 const DEFAULT_API = 'https://api.github.com';
@@ -167,6 +168,13 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
   /** How much of one log to return: enough to diagnose, bounded so one response stays sane. */
   const LOG_LIMIT_CHARS = 200_000;
 
+  /**
+   * What opening a pull request asks for: the permission the operation needs, plus read access to
+   * the branches it names. Not the configured `permissions`, for the same reason a log read is not:
+   * a token minted for git should not also be able to open a pull request.
+   */
+  const PULL_REQUEST_PERMISSIONS: Record<string, string> = { pull_requests: 'write', contents: 'read' };
+
   /** owner login (lowercased) -> installation */
   const installations = new Map<string, CachedInstallation>();
   /** owner/repo -> minted credential */
@@ -261,15 +269,24 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
    * @returns the status and the body text.
    * @throws {Error} for a non-2xx response.
    */
-  async function callWithToken(method: string, url: string, token: string): Promise<{ status: number; text: string }> {
+  async function callWithToken(
+    method: string,
+    url: string,
+    token: string,
+    body?: Record<string, unknown>,
+  ): Promise<{ status: number; text: string }> {
+    const headers: Record<string, string> = {
+      accept: 'application/vnd.github+json',
+      authorization: `Bearer ${token}`,
+      'x-github-api-version': apiVersion,
+      'user-agent': 'git-credential-broker',
+    };
+    if (body) headers['content-type'] = 'application/json';
+
     const response = await fetchImpl(url, {
       method,
-      headers: {
-        accept: 'application/vnd.github+json',
-        authorization: `Bearer ${token}`,
-        'x-github-api-version': apiVersion,
-        'user-agent': 'git-credential-broker',
-      },
+      headers,
+      ...(body ? { body: JSON.stringify(body) } : {}),
     });
     const text = await response.text();
     if (!response.ok) {
@@ -277,7 +294,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       // this message carries only the endpoint and the status. It is marked as ours, which is what
       // lets the pusher see it instead of "see the broker log".
       throw new ProviderConfigError(
-        `GitHub API ${method} ${url.replace(api, '')} answered ${response.status} for the log request`,
+        `GitHub API ${method} ${url.replace(api, '')} answered ${response.status} for that request`,
       );
     }
     return { status: response.status, text };
@@ -456,6 +473,60 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         text: `${text.slice(0, LOG_LIMIT_CHARS)}\n… log truncated at ${LOG_LIMIT_CHARS} characters\n`,
         truncated: true,
       };
+    },
+
+    /**
+     * Open one pull request.
+     *
+     * The same shape as a log read: its own token, narrowed to what the operation needs, and the
+     * repository-scoped route, so the allowlist binds it by construction.
+     *
+     * @param request - the branches and the text.
+     * @returns the number and the URL GitHub answered with.
+     */
+    async openPullRequest(request: PullRequestRequest): Promise<PullRequest> {
+      await ensurePermissions(request.owner, PULL_REQUEST_PERMISSIONS);
+      const installationId = await resolveInstallationId(request.owner);
+      const { json: minted } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
+        repositories: [request.repo],
+        permissions: PULL_REQUEST_PERMISSIONS,
+      });
+      const token = (minted as { token?: unknown } | null)?.token;
+      if (typeof token !== 'string' || !token) {
+        throw new ProviderConfigError('GitHub returned no installation token for the pull request');
+      }
+
+      let text: string;
+      try {
+        ({ text } = await callWithToken(
+          'POST',
+          `${api}/repos/${request.owner}/${request.repo}/pulls`,
+          token,
+          {
+            title: request.title,
+            body: request.body,
+            head: request.head,
+            base: request.base,
+            draft: request.draft === true,
+          },
+        ));
+      } catch (error) {
+        throw new ProviderConfigError(
+          `${(error as Error).message}; opening a pull request needs the pull_requests: write permission on both the app and this installation`,
+        );
+      }
+
+      let created: unknown = null;
+      try {
+        created = JSON.parse(text);
+      } catch {
+        created = null;
+      }
+      const payload = (created ?? {}) as { number?: unknown; html_url?: unknown };
+      if (typeof payload.number !== 'number' || typeof payload.html_url !== 'string') {
+        throw new ProviderConfigError('GitHub did not answer with a pull request');
+      }
+      return { number: payload.number, url: payload.html_url };
     },
   };
 }
