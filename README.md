@@ -236,6 +236,8 @@ without being able to push to the branch it targets.
 ```sh
 git-credential-broker pr --host github.com --repo owner/repo \
   --head feature --base main --title "a title" --body-file pr.md
+  # say it about one line rather than about the pull request
+  # --number 7 --comment --file Dockerfile --line 4 --side right --body "why this marker exists"
   # from your fork into an upstream: a remote name instead of a repository typed by hand
   --head origin:feature --base upstream:main --title "a title" --body-file pr.md
 ```
