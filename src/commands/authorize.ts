@@ -37,15 +37,18 @@ which is its default and what this wants.
 /**
  * Where the refresh token is kept.
  *
- * Beside the configuration, and therefore beside whatever else that deployment keeps — the same place
- * the private key lives, and for the same reason: the process that runs the broker is the one that
- * reads it, and it is not a directory the container can see.
+ * Beside the private key, because that is where the broker will look for it: one rule, so a
+ * deployment that keeps its key and its configuration together needs to configure nothing. Falling
+ * back to the configuration directory covers the deployment that keeps its key inline as a PEM
+ * rather than as a file.
  *
+ * @param privateKeyPath - where the key is, when it is a file.
  * @param configPath - the resolved configuration path.
  * @returns the path to write the refresh token to.
  */
-export function refreshTokenPath(configPath: string): string {
-  return join(dirname(resolvePath(configPath)), 'user.refresh');
+export function refreshTokenPath(privateKeyPath: string | undefined, configPath: string): string {
+  const beside = privateKeyPath === undefined ? dirname(resolvePath(configPath)) : dirname(resolvePath(privateKeyPath));
+  return join(beside, 'user.refresh');
 }
 
 /**
@@ -89,9 +92,10 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
     );
   }
 
-  const target = refreshTokenPath(configPath);
+  const target = refreshTokenPath(block.privateKeyPath, configPath);
   writeSecretFile(target, `${token.refreshToken}\n`);
   say(`stored the refresh token in ${target} (mode 600)`);
+  say(`that is beside the private key${block.privateKeyPath === undefined ? " (or the configuration)" : ""}, which is where the broker looks for it`);
   say('the broker will use it for pull requests authored by that person; nothing else needs running');
   return 0;
 }
