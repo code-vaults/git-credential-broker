@@ -535,10 +535,23 @@ describe('diagnose', () => {
       }),
     );
 
-    await assert.rejects(
-      () => runDiagnose(['--config', configPath]),
-      /exists only inside the sidecar container/,
-    );
+    // runDiagnose refuses to start when a proxy is configured without the switch, and it reads the real
+    // environment, so the variables are taken away for the call: the assertion is about the sidecar message,
+    // not about the machine this runs on.
+    const proxyVars = ['http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY', 'NODE_USE_ENV_PROXY'];
+    const savedProxy = proxyVars.map((name) => [name, process.env[name]] as const);
+    try {
+      for (const name of proxyVars) delete process.env[name];
+      await assert.rejects(
+        () => runDiagnose(['--config', configPath]),
+        /exists only inside the sidecar container/,
+      );
+    } finally {
+      for (const [name, value] of savedProxy) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
   });
 });
 

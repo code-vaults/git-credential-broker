@@ -7,6 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, it } from 'node:test';
@@ -33,6 +34,31 @@ import {
 
 /** A good request, which each test varies one field of. */
 const GOOD = { head: 'feat/thing', base: 'main', title: 'a title', body: 'a body' };
+
+describe('what the channel refuses to read', () => {
+  it('does not read a marker that is not a regular file, which is what a FIFO would be', () => {
+    const root = mkdtempSync(join(tmpdir(), 'channel-kind-'));
+    const dir = channelDir(join(root, '.git'));
+    mkdirSync(dir, { recursive: true });
+    // A directory is the non-regular file a test can make without blocking; the guard is the same lstat
+    // check that a FIFO needs, and a FIFO would block open(2) before any assertion ran.
+    mkdirSync(join(dir, 'opener.json'), { recursive: true });
+    assert.equal(readOpener(dir), undefined, 'a directory is not a marker');
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('does not treat a symlinked .git as a checkout, because the container can make one', () => {
+    const root = mkdtempSync(join(tmpdir(), 'channel-link-'));
+    const target = mkdtempSync(join(tmpdir(), 'channel-target-'));
+    writeFileSync(join(target, 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const repo = join(root, 'checkout');
+    mkdirSync(repo, { recursive: true });
+    symlinkSync(target, join(repo, '.git'));
+    assert.equal(findGitDir(repo), undefined, 'a link names a path the container chose');
+    rmSync(root, { recursive: true, force: true });
+    rmSync(target, { recursive: true, force: true });
+  });
+});
 
 describe('the host request channel', () => {
   let root = '';

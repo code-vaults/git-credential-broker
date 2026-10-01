@@ -48,7 +48,8 @@ export const BRANCH = /^([A-Za-z0-9][A-Za-z0-9._-]{0,38}:)?[A-Za-z0-9][A-Za-z0-9
 
 /** One request to open a pull request. */
 export interface HostOpenRequest {
-  /** `owner/name`, when the caller knows it, so the opener need not infer it. */
+  /** `owner/name` as the caller believed it. Recorded, and deliberately never used: the checkout a
+   *  request was written in decides which repository it means. */
   readonly repo?: string;
   readonly head: string;
   readonly base: string;
