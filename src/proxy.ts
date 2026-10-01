@@ -30,6 +30,15 @@ export function assertProxyEnabled(
   env: NodeJS.ProcessEnv = process.env,
   execArgv: readonly string[] = process.execArgv,
 ): void {
+  // The proxy support this file stands in for arrived in Node 24, and the package asks for it. A host on an
+  // older interpreter would read a switch that does nothing there, so this is checked rather than assumed.
+  const major = Number((process.versions.node ?? '0').split('.')[0]);
+  if (major < 24) {
+    throw new Error(
+      `Node ${process.versions.node} is older than this needs: install Node 24 or newer, or every GitHub\n` +
+        '  call will ignore the proxy environment variables this refuses over.',
+    );
+  }
   const wanted = PROXY_VARS.filter((name) => {
     const value = env[name];
     return typeof value === 'string' && value !== '';

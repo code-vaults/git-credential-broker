@@ -505,7 +505,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     };
   }
 
-      let cachedPersonToken: { token: string; until: number } | undefined;
+      let cachedPersonToken: { token: string; until: number; source: string } | undefined;
 
 /**
  * One more sentence about a failure, when there is one worth having.
@@ -626,7 +626,10 @@ function describeCause(error: unknown): string {
       // A token per owner is the other way a person acts. It counts exactly as the authorized token does:
       // whoever is acting, requiring an installation as well would refuse a repository the app was never
       // installed on — the fork-to-upstream case the allowlist exists to permit.
-      const fileToken = request.action === 'open' ? cfg.userTokens?.[request.owner] : undefined;
+      const fileToken =
+        request.action === 'open' || request.action === 'resolve'
+          ? cfg.userTokens?.[request.owner]
+          : undefined;
       const actingToken =
         personToken ?? (fileToken === undefined ? undefined : readFileSync(fileToken, 'utf8').trim());
 
@@ -690,7 +693,11 @@ function describeCause(error: unknown): string {
             );
           }
         }
-        cachedPersonToken = { token: next.token, until: now + (next.expiresInSeconds ?? 28_800) * 1_000 };
+        cachedPersonToken = {
+          token: next.token,
+          until: now + (next.expiresInSeconds ?? 28_800) * 1_000,
+          source: next.refreshToken ?? held,
+        };
         return cachedPersonToken.token;
       }
 

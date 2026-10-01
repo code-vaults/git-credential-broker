@@ -32,7 +32,9 @@ export const CHANNEL_PATH = 'git-credential-broker/pr-requests';
 export const OPENER_FILE = 'opener.json';
 
 /** How long a caller waits for an answer. */
-export const ANSWER_TIMEOUT_MS = 120_000;
+// Longer than the opener's own program timeout (CREATE_TIMEOUT_MS, 120s) plus the interval at which it
+// notices a request, because the caller is waiting for an answer to work that has not started yet.
+export const ANSWER_TIMEOUT_MS = 180_000;
 
 /** The same bounds the broker applies, so a request is refused here rather than there. */
 export const MAX_TITLE_CHARS = 256;
