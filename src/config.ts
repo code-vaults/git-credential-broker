@@ -6,6 +6,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { posix } from 'node:path';
 
 import { parseAllowEntry } from './policy.ts';
 import type { BrokerConfig, GithubAppHostConfig, HostConfig, StaticHostConfig } from './types.ts';
@@ -50,11 +51,33 @@ export type DeploymentMode = 'host' | 'sidecar';
  * A contract with the compose file `compose` prints: it and `init --mode sidecar` both read these
  * from here, because a mismatch is a broker that starts and then cannot find its own key.
  */
+/**
+ * The file name the authorized person's refresh token is kept under.
+ *
+ * It sits beside the private key, because the broker reads the key and can find the token without being
+ * told anything else — one rule, used by the writer, the reader and the mount, so they cannot drift.
+ */
+export const USER_TOKEN_FILE = 'user.refresh';
+
+/**
+ * Where the authorized person's refresh token is, given the key it sits beside.
+ *
+ * posix, not path: these are paths inside the deployment, and the process reading them need not be the
+ * platform they belong to.
+ *
+ * @param privateKeyPath - the key, as the process that reads it sees the path.
+ * @returns the refresh token path.
+ */
+export function userTokenPath(privateKeyPath: string): string {
+  return posix.join(posix.dirname(privateKeyPath), USER_TOKEN_FILE);
+}
+
 export const SIDECAR = {
   configPath: '/etc/git-cred-broker/broker.config.json',
   keyPath: '/etc/git-cred-broker/app.pem',
   // Beside the key, because that is how the provider derives it without being told.
-  userTokenPath: '/etc/git-cred-broker/user.refresh',
+  // Derived from the key rather than written again: the mount target and the reader's path at once.
+  userTokenPath: posix.join(posix.dirname('/etc/git-cred-broker/app.pem'), USER_TOKEN_FILE),
   auditDir: '/var/log/git-cred-broker',
   auditPath: '/var/log/git-cred-broker/audit.jsonl',
   socketDir: '/run/git-broker',

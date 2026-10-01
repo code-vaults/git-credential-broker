@@ -17,10 +17,10 @@
  *
  * Reference: https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app
  */
+import { userTokenPath } from '../config.ts';
 import { createSign } from 'node:crypto';
 import { ProviderConfigError } from '../errors.ts';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 
 import { refreshUserToken } from '../device-flow.ts';
 
@@ -644,7 +644,7 @@ function describeCause(error: unknown): string {
        */
       async function personalToken(): Promise<string | undefined> {
         if (cfg.clientId === undefined || cfg.privateKeyPath === undefined) return undefined;
-        const path = join(dirname(cfg.privateKeyPath), 'user.refresh');
+        const path = userTokenPath(cfg.privateKeyPath);
         if (!existsSync(path)) return undefined;
         const now = Date.now();
         if (cachedPersonToken !== undefined && cachedPersonToken.until > now + 60_000) {

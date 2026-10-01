@@ -14,7 +14,7 @@
  */
 import { dirname, join, resolve as resolvePath } from 'node:path';
 
-import { loadConfig, resolveConfigPath } from '../config.ts';
+import { userTokenPath, loadConfig, resolveConfigPath } from '../config.ts';
 import { collectUserToken, startDeviceFlow, type Fetcher } from '../device-flow.ts';
 import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from './support.ts';
 
@@ -58,7 +58,7 @@ export function refreshTokenPath(configPath: string): string {
  * @returns the path the broker reads, or `undefined` when the key is not a file.
  */
 export function brokerReadsPath(privateKeyPath: string | undefined): string | undefined {
-  return privateKeyPath === undefined ? undefined : join(dirname(privateKeyPath), 'user.refresh');
+  return privateKeyPath === undefined ? undefined : userTokenPath(privateKeyPath);
 }
 
 /**
