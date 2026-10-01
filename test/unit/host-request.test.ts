@@ -54,6 +54,7 @@ describe('the host request channel', () => {
   it('finds the git directory from a subdirectory', () => {
     mkdirSync(join(root, '.git'), { recursive: true });
     writeFileSync(join(root, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    writeFileSync(join(root, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     const nested = join(root, 'src', 'deep');
     mkdirSync(nested, { recursive: true });
 
@@ -163,11 +164,14 @@ describe('finding the checkouts to serve', () => {
     for (const repo of ['.dotfiles', 'Workspaces/one', 'Workspaces/two/deep', 'plain']) {
       mkdirSync(join(root, repo, '.git'), { recursive: true });
       writeFileSync(join(root, repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+      writeFileSync(join(root, repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     }
     // never descended into, and never enough on its own
     mkdirSync(join(root, 'Workspaces/one/node_modules/decoy/.git'), { recursive: true });
     writeFileSync(join(root, 'Workspaces/one/node_modules/decoy/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    writeFileSync(join(root, 'Workspaces/one/node_modules/decoy/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     mkdirSync(join(root, 'Workspaces/three/four/five/six/seven/.git'), { recursive: true });
+    writeFileSync(join(root, 'Workspaces/three/four/five/six/seven/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     writeFileSync(join(root, 'Workspaces/three/four/five/six/seven/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
 
     const repos = discoverCheckouts(root, 4)
@@ -181,6 +185,7 @@ describe('finding the checkouts to serve', () => {
   it('returns a channel directory per checkout', () => {
     const root = mkdtempSync(join(tmpdir(), 'discover-test-'));
     mkdirSync(join(root, 'a', '.git'), { recursive: true });
+    writeFileSync(join(root, 'a', '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     writeFileSync(join(root, 'a', '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
 
     const [only] = discoverCheckouts(root, 1);

@@ -7,7 +7,7 @@
  * checkout the request was written in rather than anything the request asked for.
  */
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -26,6 +26,7 @@ describe('the opener, once', () => {
     root = mkdtempSync(join(tmpdir(), 'host-opener-test-'));
     repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     dir = channelDir(join(repo, '.git'));
     // A program that records what it was called with, and answers the way gh does.
@@ -83,5 +84,32 @@ describe('the opener, once', () => {
     assert.equal(code, 0);
     assert.match(readResult(dir, id)?.error ?? '', /head branch/);
     assert.deepEqual(listRequests(dir), [], 'and it is dropped rather than retried forever');
+  });
+});
+
+describe('a claim that someone else holds', () => {
+  it('does not act on the request, does not answer it, and does not remove the claim', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'opener-claim-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(join(repo, '.git'));
+    const argvFile = join(root, 'argv');
+    const command = join(root, 'not-gh');
+    writeFileSync(command, `#!/bin/sh\nprintf '%s\\n' "$@" > ${argvFile}\necho "https://github.com/acme/widget/pull/7"\n`, 'utf8');
+    chmodSync(command, 0o755);
+
+    const id = writeRequest(dir, { head: 'feat/thing', base: 'main', title: 'a title', body: '' });
+    // One mkdir, which is all the container needs to make the rename fail: the claim is not taken.
+    const claim = join(dir, `${id}.json.working`);
+    mkdirSync(claim, { recursive: true });
+
+    const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+    assert.equal(code, 0);
+    assert.equal(existsSync(argvFile), false, 'the program must not run: that request is not ours to fulfil');
+    assert.equal(readResult(dir, id), undefined, 'and no answer is written for it');
+    assert.ok(existsSync(claim), 'nor is a claim removed that this process does not hold');
+    rmSync(root, { recursive: true, force: true });
   });
 });

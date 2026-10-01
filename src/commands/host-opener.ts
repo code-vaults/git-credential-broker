@@ -23,7 +23,6 @@ import {
   listRequests,
   readOpener,
   claimRequest,
-  readRequest,
   removeRequest,
   requestProblems,
   writeOpener,
@@ -165,10 +164,11 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
   for (const id of listRequests(dir)) {
     // Claimed, not read: two openers — a service and a hand-run --once — would otherwise both act on the
     // same request and each create the pull request, under the person's name.
-    const request = claimRequest(dir, id) ?? readRequest(dir, id);
+    const request = claimRequest(dir, id);
     if (!request) {
-      removeRequest(dir, id);
-      warn(`dropped the unreadable request ${id}`);
+      // Either unreadable or already claimed, and the two are not worth telling apart here: removing
+        // anything now would delete another opener's claim, which is the claim's whole purpose.
+        warn(`skipped ${id}: unreadable, or another opener has it`);
       continue;
     }
 

@@ -98,9 +98,20 @@ export function findGitDir(from: string): string | undefined {
 function gitDirAt(dir: string): string | undefined {
   const candidate = join(dir, '.git');
   if (!existsSync(candidate)) return undefined;
-  if (statSync(candidate).isDirectory()) return candidate;
+  if (statSync(candidate).isDirectory()) {
+    // Followed by statSync on purpose, and then checked: a symlink to any directory was a way to publish
+    // a container-chosen path as a channel. A git directory has a HEAD; anything else is not one.
+    return existsSync(join(candidate, 'HEAD')) ? candidate : undefined;
+  }
   // A worktree or submodule records its real git directory in a file.
-  const match = /^gitdir:\s*(.+)$/m.exec(readFileSync(candidate, 'utf8'));
+  let text: string;
+  try {
+    // Written by the container, so it can be unreadable, or gone between the check above and here.
+    text = readFileSync(candidate, 'utf8');
+  } catch {
+    return undefined;
+  }
+  const match = /^gitdir:\s*(.+)$/m.exec(text);
   const pointed = match?.[1]?.trim();
   if (pointed === undefined) return undefined;
   const resolved = resolve(dir, pointed);

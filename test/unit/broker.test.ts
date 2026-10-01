@@ -340,6 +340,35 @@ describe('broker request handling', () => {
   });
 });
 
+
+  it('accepts an owner-qualified head, and hands it on unchanged', async () => {
+    const seen: Array<string | undefined> = [];
+    const opened: Provider = {
+      name: 'with-forks',
+      getCredential: () => Promise.reject(new Error('not used here')),
+      pullRequest: (request) => {
+        seen.push(request.head);
+        return Promise.resolve({ number: 7, url: 'https://github.com/me/widget/pull/7' });
+      },
+    };
+    const { handle } = makeHarness(['acme/widget'], opened);
+    const response = await handle({ ...REQUEST, op: 'pull-request', head: 'me:feature', base: 'main', title: 'a', body: 'b' });
+
+    assert.equal(response.ok, true, 'the fork form is a branch name the socket may carry');
+    assert.deepEqual(seen, ['me:feature'], 'and it reaches the provider exactly as written');
+  });
+
+  it('still refuses a head that tries to leave the request', async () => {
+    const opened: Provider = {
+      name: 'unused',
+      getCredential: () => Promise.reject(new Error('not used here')),
+      pullRequest: () => Promise.resolve({ number: 7, url: '' }),
+    };
+    const { handle } = makeHarness(['acme/widget'], opened);
+    const response = await handle({ ...REQUEST, op: 'pull-request', head: '../escape', base: 'main', title: 'a', body: 'b' });
+    assert.equal(response.code, 'bad-request');
+  });
+
 describe('prepareSocketPath', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-sock-'));
   after(() => fs.rmSync(dir, { recursive: true, force: true }));
