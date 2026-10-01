@@ -48,6 +48,9 @@ Acting on one
   --number <n>         The pull request number                       [required]
   --status             Report its state, mergeability and the runs for its commit
   --comment            Post the body as a comment on it (needs only --number and --body/--body-file)
+  --file <path>        Anchor that comment to a line of this file, repository-relative
+  --line <n>           The line to anchor to, in the new file unless --side says otherwise
+  --side <left|right>  Which side of the diff --line counts on (default: right)
   --threads            List its review threads: their ids, whether they are resolved, and the comments
   --reply-to <id>      Reply inside the thread that comment id belongs to, with --body/--body-file
   --resolve <thread>   Mark that review thread resolved (the id --threads prints)
