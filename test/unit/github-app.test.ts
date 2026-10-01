@@ -644,4 +644,26 @@ describe('createGithubAppProvider', () => {
     });
   });
 
+
+  it("creates the pull request without an installation when a person has authorized one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'no-installation-'));
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+
+    // An upstream the app was never installed on: the installation lookup finds nothing at all.
+    const stub = createStubFetch({ installations: [], nowMs });
+
+    const pr = await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
+      action: 'open', host: 'github.com', owner: 'upstream', repo: 'upstream',
+      head: 'feat/thing', base: 'main', title: 'a title', body: 'a body',
+    });
+
+    assert.equal(pr.number, 42);
+    assert.ok(
+      !stub.calls.some((call) => call.url.includes('/access_tokens')),
+      'and never mints an installation token it does not have',
+    );
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
 });

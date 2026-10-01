@@ -608,26 +608,36 @@ function describeCause(error: unknown): string {
      * @returns the number and the URL GitHub answered with.
      */
     async pullRequest(request: PullRequestRequest): Promise<PullRequest> {
+      // The two actions a person may perform are decided first: when somebody has authorized this
+      // deployment, their token is the whole authority for them, and requiring an installation as well
+      // would refuse a repository the app was never installed on — the fork-to-upstream case the allowlist
+      // exists to permit. Everything else still acts as the app, and only ever could.
+      const personalForThis = request.action === 'open' || request.action === 'resolve';
+      const personToken = personalForThis ? await personalToken() : undefined;
+
       // `--status` also reads /actions/runs, which is checked against actions: read. Pre-flighting
       // pull_requests alone passed a grant that could not make that call, which is the opposite of what a
       // pre-flight is for.
       const wanted =
         request.action === 'status' ? { ...PULL_REQUEST_PERMISSIONS, actions: 'read' } : PULL_REQUEST_PERMISSIONS;
-      await ensurePermissions(request.owner, wanted);
-      const installationId = await resolveInstallationId(request.owner);
-      const { json: minted } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
-        repositories: [request.repo],
-        permissions: wanted,
-      });
-    const token = (minted as { token?: unknown } | null)?.token;
-      if (typeof token !== 'string' || !token) {
-        throw new ProviderConfigError('GitHub returned no installation token for the pull request');
-      }
 
-      // Resolved before the branches: by the time the creating and resolving paths run, the action
-      // has been narrowed, and asking here is what keeps this call where it is needed.
-      const personToken =
-        request.action === 'open' || request.action === 'resolve' ? await personalToken() : undefined;
+      // One variable, so every branch below holds a token without having to ask which kind it is.
+      let token: string | undefined;
+      if (personToken === undefined) {
+        await ensurePermissions(request.owner, wanted);
+        const installationId = await resolveInstallationId(request.owner);
+        const { json: minted } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
+          repositories: [request.repo],
+          permissions: wanted,
+        });
+        const mintedToken = (minted as { token?: unknown } | null)?.token;
+        if (typeof mintedToken !== 'string' || !mintedToken) {
+          throw new ProviderConfigError('GitHub returned no installation token for the pull request');
+        }
+        token = mintedToken;
+      } else {
+        token = personToken;
+      }
 
       const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
 
