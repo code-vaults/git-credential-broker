@@ -506,6 +506,11 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
   }
 
       let cachedPersonToken: { token: string; until: number; source: string } | undefined;
+      // One renewal at a time. GitHub invalidates the previous refresh token the moment it answers, so two
+      // renewals at once mean the second exchanges a token that is already dead — and if that exchange fails,
+      // the write-back leaves the dead token on disk and nothing renews again. Concurrent callers await the
+      // one that is running and take its result.
+      let renewingPersonToken: Promise<string | undefined> | undefined;
 
 /**
  * One more sentence about a failure, when there is one worth having.
@@ -663,6 +668,16 @@ function describeCause(error: unknown): string {
        * @returns the user token, or `undefined` when nobody has authorized one.
        */
       async function personalToken(): Promise<string | undefined> {
+        if (renewingPersonToken !== undefined) return renewingPersonToken;
+        renewingPersonToken = renewPersonToken();
+        try {
+          return await renewingPersonToken;
+        } finally {
+          renewingPersonToken = undefined;
+        }
+      }
+
+      async function renewPersonToken(): Promise<string | undefined> {
         if (cfg.clientId === undefined || cfg.privateKeyPath === undefined) return undefined;
         const path = userTokenPath(cfg.privateKeyPath);
         if (!existsSync(path)) return undefined;
