@@ -245,6 +245,7 @@ same checkout, and ask for it from the container:
 ```sh
 # on the host, once — it serves every checkout below $HOME and does nothing else
 git-credential-broker host-opener          # --root <dir> to narrow it, repeatable
+# or, at boot and for good: examples/host-opener-boot.sh (see below)
 
 # in the container
 git-credential-broker pr --via-host --head feature --base main --title "a title" --body-file pr.md
@@ -255,8 +256,9 @@ it never runs a shell, and the program it calls is configuration rather than a h
 `--command /path/to/gh`, or `$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
 anything. `--root` may be repeated and defaults to `$HOME`, so `~/Workspaces`, `~/.dotfiles` and
 checkouts created later are all served with no further setup. To start it once and keep it,
-`examples/host-opener.service` is a systemd user unit; on a system without user services the same
-command belongs in a boot-time task. Without `--via-host`, or with no opener running, `pr` behaves
+`examples/host-opener.service` is a systemd user unit; on a system without user services,
+`examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
+instance at a time, and its output in a log file. Without `--via-host`, or with no opener running, `pr` behaves
 exactly as before.
 
 ## Configuration reference
