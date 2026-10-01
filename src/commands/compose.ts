@@ -65,12 +65,9 @@ export function renderCompose(input: ComposeInput): string {
 # package installed, and change \`command\` to the binary in it:
 #   ["git-credential-brokerd", "--config", "${SIDECAR.configPath}"]`;
 
-  const environment = fromCode
-    ? ''
-    : `
-    environment:
-      # npx needs somewhere writable for its cache; /tmp is a tmpfs above.
-      - npm_config_cache=/tmp/npm-cache
+  // The egress lines belong to both renders: a --code deployment is a sidecar too, and without them it
+  // would carry no proxy variables at all, so the daemon would go direct and hang rather than refuse.
+  const egress = `
       # Egress. The socket needs no proxy; the broker's calls to api.github.com and github.com do.
       - http_proxy=\${http_proxy:-}
       - https_proxy=\${https_proxy:-}
@@ -78,6 +75,21 @@ export function renderCompose(input: ComposeInput): string {
       # The daemon refuses to start with a proxy variable and without this one.
       - NODE_USE_ENV_PROXY=1`;
 
+  const environment = fromCode
+    ? `
+    environment:${egress}`
+    : `
+    environment:
+      # npx needs somewhere writable for its cache; /tmp is a tmpfs above.
+      - npm_config_cache=/tmp/npm-cache${egress}`;
+
+  // A bind mount for a path that does not exist becomes a directory, and the broker would then read a
+  // directory instead of a token — for every action, not only the personal ones. Emit it once `authorize`
+  // has written the file, and say what to run until then.
+  const userRefreshMount = fs.existsSync(`${input.dir}/${USER_TOKEN_FILE}`)
+    ? `\n      # The authorized person's refresh token: the only secret mounted writable, because GitHub\n      # rotates it on every exchange.\n      - ${input.dir}/${USER_TOKEN_FILE}:${SIDECAR.userTokenPath}:rw`
+    : '\n      # No user.refresh yet: run `git-credential-broker authorize` and render this again. A mount' +
+      '\n      # for a path that does not exist would become a directory, and the broker would read that.';
   const command = fromCode
     ? `      - node
       - ${CODE_DIR}/src/cli/daemon.ts
@@ -134,10 +146,7 @@ ${command}
     volumes:${codeMount}
       - ${input.dir}/broker.config.json:${SIDECAR.configPath}:ro
       - ${input.dir}/app.pem:${SIDECAR.keyPath}:ro
-      # The authorized person's refresh token: the only secret mounted writable, because GitHub
-      # rotates it on every exchange. The authorize command creates it; create it before the first
-      # up, since a bind mount for a path that does not exist becomes a directory.
-      - ${input.dir}/${USER_TOKEN_FILE}:${SIDECAR.userTokenPath}:rw
+${userRefreshMount}
       - ${input.dir}/log:${SIDECAR.auditDir}
       - ${socketDir}:${SIDECAR.socketDir}
 # The socket appears at ${socketDir}${SIDECAR.socketPath.slice(SIDECAR.socketDir.length)} on the host. Point the pushing
