@@ -19,7 +19,10 @@
  */
 import { createSign } from 'node:crypto';
 import { ProviderConfigError } from '../errors.ts';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+import { refreshUserToken } from '../device-flow.ts';
 
 import type { Credential, FetchLike, FetchResponseLike, GithubAppHostConfig, Provider } from '../types.ts';
 import type { JobLog, JobLogRequest } from '../types.ts';
@@ -600,11 +603,42 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         throw new ProviderConfigError('GitHub returned no installation token for the pull request');
       }
 
+      // Resolved before the branches: by the time the creating and resolving paths run, the action
+      // has been narrowed, and asking here is what keeps this call where it is needed.
+      const personToken =
+        request.action === 'open' || request.action === 'resolve' ? await personalToken() : undefined;
+
       const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
 
+      /**
+       * The token of the person this deployment authorized, when there is one.
+
+       * Only two actions may use it, and both because an installation token cannot: GitHub will not
+       * author a pull request as a person for an app, and refuses to resolve a review thread for one.
+       * The refresh token lives beside the private key, and GitHub rotates it on every use, so the new
+       * one is written back — keeping the old would work once and then stop.
+       *
+       * @returns the user token, or `undefined` when nobody has authorized one.
+       */
+      async function personalToken(): Promise<string | undefined> {
+        if (cfg.clientId === undefined || cfg.privateKeyPath === undefined) return undefined;
+        const path = join(dirname(cfg.privateKeyPath), 'user.refresh');
+        if (!existsSync(path)) return undefined;
+        const now = Date.now();
+        if (cachedPersonToken !== undefined && cachedPersonToken.until > now + 60_000) {
+          return cachedPersonToken.token;
+        }
+        const held = readFileSync(path, 'utf8').trim();
+        const next = await refreshUserToken(cfg.clientId, held, (url, init) => fetchImpl(url, init));
+        if (next.refreshToken !== undefined) writeFileSync(path, `${next.refreshToken}\n`, { mode: 0o600 });
+        cachedPersonToken = { token: next.token, until: now + (next.expiresInSeconds ?? 28_800) * 1_000 };
+        return cachedPersonToken.token;
+      }
+
+      let cachedPersonToken: { token: string; until: number } | undefined;
       if (request.action === 'resolve') {
         // Resolving has no REST endpoint either. The thread id is the one `--threads` prints.
-        const { text: raw } = await callWithToken('POST', `${api}/graphql`, token, {
+        const { text: raw } = await callWithToken('POST', `${api}/graphql`, personToken ?? token, {
           query:
             'mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}',
           variables: { threadId: request.threadId ?? '' },
@@ -751,8 +785,12 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         // Creating with the person's token when the deployment has one: GitHub records the pull request
         // as theirs, which is what automated reviewers recognise. It cannot push or merge — the token
         // has no contents write — and every other action stays on the app's installation token.
+        // Creating a pull request as a person, and resolving a review thread: the two things an
+        // installation token is refused for. A token per owner is the older, narrower way and is still
+        // used when there is one; the authorized token answers for every owner at once.
         const tokenPath = request.action === 'open' ? cfg.userTokens?.[request.owner] : undefined;
-        const creator = tokenPath === undefined ? undefined : readFileSync(tokenPath, 'utf8').trim();
+        const creator =
+          personToken ?? (tokenPath === undefined ? undefined : readFileSync(tokenPath, 'utf8').trim());
         ({ text } = await callWithToken(method, url, creator ?? token, body));
       } catch (error) {
         throw new ProviderConfigError(
