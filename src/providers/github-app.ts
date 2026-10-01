@@ -505,6 +505,8 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     };
   }
 
+      let cachedPersonToken: { token: string; until: number } | undefined;
+
   return {
     name: 'github-app',
 
@@ -610,7 +612,6 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
 
       const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
 
-      let cachedPersonToken: { token: string; until: number } | undefined;
 
       /**
        * The token of the person this deployment authorized, when there is one.
