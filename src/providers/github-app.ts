@@ -845,7 +845,8 @@ function describeCause(error: unknown): string {
                   {
                     path: request.filePath,
                     line: request.line,
-                    side: request.side ?? 'right',
+                    // GitHub spells the side in capitals on this endpoint; ours is the readable one.
+                    side: (request.side ?? 'right').toUpperCase(),
                     body: request.body ?? '',
                   },
                 ],

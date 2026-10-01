@@ -686,7 +686,7 @@ describe('createGithubAppProvider', () => {
     assert.ok(review, 'the review endpoint is the one used');
     assert.deepEqual(
       (review?.body as Record<string, unknown>)?.['comments'],
-      [{ path: 'Dockerfile', line: 4, side: 'right', body: 'why this marker exists' }],
+      [{ path: 'Dockerfile', line: 4, side: 'RIGHT', body: 'why this marker exists' }],
     );
     assert.equal((review?.body as Record<string, unknown>)?.['event'], 'COMMENT');
   });
