@@ -127,6 +127,10 @@ ${command}
     volumes:${codeMount}
       - ${input.dir}/broker.config.json:${SIDECAR.configPath}:ro
       - ${input.dir}/app.pem:${SIDECAR.keyPath}:ro
+      # The authorized person's refresh token: the only secret mounted writable, because GitHub
+      # rotates it on every exchange. The authorize command creates it; create it before the first
+      # up, since a bind mount for a path that does not exist becomes a directory.
+      - ${input.dir}/user.refresh:${SIDECAR.userTokenPath}:rw
       - ${input.dir}/log:${SIDECAR.auditDir}
       - ${socketDir}:${SIDECAR.socketDir}
 # The socket appears at ${socketDir}${SIDECAR.socketPath.slice(SIDECAR.socketDir.length)} on the host. Point the pushing

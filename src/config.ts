@@ -53,6 +53,8 @@ export type DeploymentMode = 'host' | 'sidecar';
 export const SIDECAR = {
   configPath: '/etc/git-cred-broker/broker.config.json',
   keyPath: '/etc/git-cred-broker/app.pem',
+  // Beside the key, because that is how the provider derives it without being told.
+  userTokenPath: '/etc/git-cred-broker/user.refresh',
   auditDir: '/var/log/git-cred-broker',
   auditPath: '/var/log/git-cred-broker/audit.jsonl',
   socketDir: '/run/git-broker',
@@ -76,17 +78,6 @@ export function inferMode(config: BrokerConfig): DeploymentMode {
 }
 
 /**
- * Check that each recorded private key is readable, before the caller tries to read it.
- *
- * Both the daemon and `diagnose` need this, because both read the key, and a bare
- * `ENOENT ... /etc/git-cred-broker/app.pem` says nothing: that path exists only inside the sidecar,
- * so the mistake is where the command was run, not that the key is missing. The layout is
- * recoverable from the configuration itself, so name it and give the way out.
- *
- * @param config - the validated configuration.
- * @throws {Error} when a key file is missing, with the remedy in the message.
- */
-/**
  * Refuse to start when a person's token is named but not there.
  *
  * Same reasoning as the key: a path that does not resolve is a deployment mistake, and the process
@@ -98,6 +89,7 @@ export function assertUserTokensReadable(config: BrokerConfig): void {
   for (const [host, block] of Object.entries(config.hosts)) {
     if (block.provider !== 'github-app') continue;
     for (const [owner, path] of Object.entries(block.userTokens ?? {})) {
+      if (existsSync(path)) continue;
     throw new Error(
       `cannot read the token for ${host}/${owner}: ${path} does not exist.\n` +
         `       Create a fine-grained token with pull requests: read and write, contents: read and\n` +
@@ -107,6 +99,18 @@ export function assertUserTokensReadable(config: BrokerConfig): void {
     }
   }
 }
+
+/**
+ * Check that each recorded private key is readable, before the caller tries to read it.
+ *
+ * Both the daemon and `diagnose` need this, because both read the key, and a bare
+ * `ENOENT ... /etc/git-cred-broker/app.pem` says nothing: that path exists only inside the sidecar,
+ * so the mistake is where the command was run, not that the key is missing. The layout is
+ * recoverable from the configuration itself, so name it and give the way out.
+ *
+ * @param config - the validated configuration.
+ * @throws {Error} when a key file is missing, with the remedy in the message.
+ */
 
 export function assertKeysReadable(config: BrokerConfig): void {
   const mode = inferMode(config);
