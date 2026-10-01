@@ -66,6 +66,12 @@ services:
       - no-new-privileges:true
     environment:
       - npm_config_cache=/tmp/npm-cache
+    # Egress. The socket between the container and this sidecar needs no proxy; the broker's own calls to
+    # api.github.com and github.com do. Node's fetch ignores http_proxy, so pass them here if you need one.
+    environment:
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - no_proxy=${no_proxy:-}
     command:
       - sh
       - -c

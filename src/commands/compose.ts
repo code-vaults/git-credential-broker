@@ -122,6 +122,12 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true${environment}
+    # Egress. The socket needs no proxy; the broker's calls to api.github.com and github.com do. Node's
+    # fetch ignores http_proxy, so a deployment behind one has to pass them here.
+    environment:
+      - http_proxy=\${http_proxy:-}
+      - https_proxy=\${https_proxy:-}
+      - no_proxy=\${no_proxy:-}
     command:
 ${command}
     volumes:${codeMount}

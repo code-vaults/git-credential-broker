@@ -17,6 +17,9 @@ Description=Fulfil container requests to open pull requests, as this user
 After=network-online.target
 
 [Service]
+# A systemd unit inherits nothing from your shell, and gh (Go) honours these while it runs. Put
+# http_proxy / https_proxy / no_proxy in this file if this host needs a proxy to reach github.com.
+EnvironmentFile=-/etc/git-cred-broker/proxy.env
 Type=simple
 ExecStart=/usr/bin/env git-credential-broker host-opener --root %h
 Restart=always

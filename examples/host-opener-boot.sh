@@ -1,4 +1,11 @@
 #!/bin/sh
+# A boot task inherits nothing from your shell. If this host needs a proxy to reach github.com, put
+# http_proxy / https_proxy / no_proxy in this file; gh (Go) reads them, Node does not (see the README).
+if [ -f /etc/git-cred-broker/proxy.env ]; then
+  set -a
+  . /etc/git-cred-broker/proxy.env
+  set +a
+fi
 # Start the host-side opener at boot, on a host without user services (a Synology NAS, for instance).
 #
 # COPY THIS FILE SOMEWHERE OUTSIDE THE MOUNTS BEFORE A TASK RUNS IT. It runs as you, so leaving it in
