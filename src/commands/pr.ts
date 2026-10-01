@@ -90,12 +90,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
 
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const host = args.value('host');
-  const repo = args.value('repo');
+  const repo = args.value('repo') ?? fail('--repo is required (e.g. owner/name)');
   const action = actionOf(args);
   const viaHost = action === 'open' && args.has('via-host');
-  if (!socketPath) {
-    fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `git-credential-broker setup`');
-  }
   if (!host && !viaHost) fail('--host is required (e.g. github.com)');
   if (!repo) fail('--repo is required (e.g. owner/name), also with --via-host: the opener passes it on');
 
@@ -147,6 +144,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
       base: base ?? 'main',
       title,
       body: body ?? '',
+      draft: args.has('draft'),
       session: 'pr',
       pid: process.pid,
     });
@@ -158,6 +156,10 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     if (answer.error !== undefined) fail(`the host opener could not open it: ${answer.error}`);
     say(`opened #${answer.number ?? '?'} (as you, through the host opener): ${answer.url ?? '(no url)'}`);
     return 0;
+  }
+
+  if (socketPath === undefined) {
+    fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `git-credential-broker setup`');
   }
 
   let response;

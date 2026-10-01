@@ -98,8 +98,8 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
   const command = args.value('command') ?? process.env['GIT_BROKER_PR_COMMAND'] ?? 'gh';
   const extra = listFlag(args, 'arg');
   const interval = Number(args.value('interval') ?? '5');
-  if (!Number.isFinite(interval) || interval < 0) {
-    fail(`--interval must be a number of seconds, got ${JSON.stringify(args.value('interval'))}`);
+  if (!Number.isFinite(interval) || interval < 1) {
+    fail(`--interval must be at least one second, got ${JSON.stringify(args.value('interval'))}`);
   }
   if (!Number.isInteger(depth) || depth < 0) {
     fail(`--depth must be a whole number of levels, got ${JSON.stringify(args.value('depth'))}`);
@@ -217,7 +217,9 @@ async function openOne(
         ...extra,
         'pr',
         'create',
-        ...(request.repo === undefined ? [] : ['--repo', request.repo]),
+        // No `--repo`: the checkout this request was written in decides which repository is opened
+        // against, so a request cannot aim the opener at another one.
+        ...(request.draft === true ? ['--draft'] : []),
         '--base',
         request.base,
         '--head',

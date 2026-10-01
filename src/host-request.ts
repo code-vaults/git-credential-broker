@@ -48,6 +48,8 @@ export interface HostOpenRequest {
   readonly base: string;
   readonly title: string;
   readonly body: string;
+  /** Open it as a draft. */
+  readonly draft?: boolean;
   readonly session?: string;
   readonly pid?: number;
 }
@@ -258,6 +260,7 @@ export function readRequest(dir: string, id: string): HostOpenRequest | undefine
     base: parsed.base,
     title: parsed.title,
     body: typeof parsed.body === 'string' ? parsed.body : '',
+    draft: parsed.draft === true,
     session: parsed.session,
     pid: parsed.pid,
   };

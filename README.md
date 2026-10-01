@@ -279,7 +279,8 @@ git-credential-broker host-opener          # --root <dir> to narrow it, repeatab
 # or, at boot and for good: examples/host-opener-boot.sh (see below)
 
 # in the container
-git-credential-broker pr --via-host --head feature --base main --title "a title" --body-file pr.md
+git-credential-broker pr --via-host --repo owner/repo --head feature --base main \
+  --title "a title" --body-file pr.md
 ```
 
 The opener creates pull requests with the credentials of whoever started it, which is the point;

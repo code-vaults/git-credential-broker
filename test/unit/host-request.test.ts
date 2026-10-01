@@ -76,6 +76,7 @@ describe('the host request channel', () => {
     assert.deepEqual(listRequests(dir), [id], 'and it is the only thing waiting');
     assert.deepEqual(readRequest(dir, id), {
       repo: undefined,
+      draft: false,
       ...GOOD,
       session: undefined,
       pid: undefined,
