@@ -10,12 +10,17 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A pull request in the merge queue is tested on its own temporary ref
+  # (`gh-readonly-queue/...`), and the queue waits for the required checks to report *there*. Without
+  # this trigger nothing ever starts for that ref, and the queue has nothing to recognise.
+  merge_group:
 
 concurrency:
   # A newer push makes an older run pointless, and the Windows jobs are the slow ones. Cancel the
-  # older run in the same group — on every ref, not only on pull requests.
+  # older run in the same group — on every ref, not only on pull requests, and never a queue run:
+  # the queue already decided that this exact tree should be tested, and cancelling it strands the entry.
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'merge_group' }}
 
 permissions:
   contents: read
