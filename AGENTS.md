@@ -68,6 +68,36 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   zero, and an ssh command whose remote shell expanded `$$` into its own pid. `split`/`join` instead of a
   replacement string, `sed -n`/`od -c` instead of a pattern a shell touches, and the file read back after
   the commit: a message is not evidence.
+
+- **Look the behaviour up; do not reason about another system from memory.** Two of the four findings a
+  free review bot raised on this branch were things it had gone and read: the precedence of Node's
+  `--no-use-env-proxy` over `NODE_OPTIONS` and `NODE_USE_ENV_PROXY`, and GitHub's documentation on refresh
+  token reuse. Both were answered from memory here, and the memory was wrong in both cases — the first
+  version of the fix had the semantics backwards. The rule above says a message is not evidence; neither is
+  recall. Check the docs, or run the thing. `web_fetch` and a live invocation are both cheap; being
+  confidently wrong about a flag is not.
+- **A containment check on a path is not a string prefix.** `resolve()` is lexical, so a symlink inside a
+  checkout satisfies a `startsWith` on the served root while pointing at a directory outside it, and the
+  container can create one. Compare real paths (`realpathSync`), and ask what else can make a path point
+  elsewhere: the first fix for this was a prefix check, and the bypass was found by a review bot asking the
+  question the fix had not.
+- **The process that owns a boundary decides what crosses it, not the error class.** A response body put
+  into the message of a `ProviderConfigError` reached the container, because a caller that wraps that error
+  to name a missing permission wraps it in the same class and so passes the whole message through. Detail
+  that is only for the host log travels beside the message and is appended by the broker, which is the only
+  place that knows which side it is writing to.
+- **After a fix, read what the other side received — not just that the suite is green.** The leak above was
+  found by running the failed merge again and looking at what the container was told; the JSON was in it.
+  In the same way the FIFO, the symlinked `gitdir:` and the symlinked `.git` were each confirmed by
+  reproducing the attack, and a fix is not confirmed until the failing case is run again and now passes.
+- **When the tree breaks, restore the last green state before doing anything else.** An edit that inserted a
+  line into the middle of a call left the broker unable to start, and the next minutes were spent editing a
+  file that was already invalid. `git checkout --` back to the commit whose typecheck passed, then fix from
+  a read of the real text. Roll back first; a broken tree gets worse with attention, not better.
+- **A review round is not finished until every claim has been read, fixed, or answered.** Resolve the ones
+  that no longer hold, reply to the ones that are fixed, and say plainly which are left. A thread left open
+  is a claim nobody checked, and a bot whose report cannot be read — because the tool truncates it, or
+  because its finding is below a preamble — is a gap in the tool worth fixing before the review.
 - **Never commit key material.** `.gitignore` covers `*.pem` and `*.key`; a real App private
   key has already been dropped into this directory once. Before pushing:
   `git grep -l -- '-----BEGIN.*PRIVATE KEY-----' HEAD -- ':!AGENTS.md' ':!.agents/notes'` must find
