@@ -667,10 +667,17 @@ function describeCause(error: unknown): string {
         const path = userTokenPath(cfg.privateKeyPath);
         if (!existsSync(path)) return undefined;
         const now = Date.now();
-        if (cachedPersonToken !== undefined && cachedPersonToken.until > now + 60_000) {
+        // The file is the only thing that says who the broker may act as, so it is read before the cache is
+        // trusted: running `authorize` again — the documented way to change that person, and the only one —
+        // has to take effect now rather than when the cached token happens to expire.
+        const held = readFileSync(path, 'utf8').trim();
+        if (
+          cachedPersonToken !== undefined &&
+          cachedPersonToken.until > now + 60_000 &&
+          cachedPersonToken.source === held
+        ) {
           return cachedPersonToken.token;
         }
-        const held = readFileSync(path, 'utf8').trim();
         let next;
         try {
           next = await refreshUserToken(cfg.clientId, held, (url, init) => fetchImpl(url, init));
