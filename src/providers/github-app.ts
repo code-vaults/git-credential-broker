@@ -646,7 +646,16 @@ function describeCause(error: unknown): string {
           return cachedPersonToken.token;
         }
         const held = readFileSync(path, 'utf8').trim();
-        const next = await refreshUserToken(cfg.clientId, held, (url, init) => fetchImpl(url, init));
+        let next;
+        try {
+          next = await refreshUserToken(cfg.clientId, held, (url, init) => fetchImpl(url, init));
+        } catch (error) {
+          // This is the one place a renewal failure is explained: the caller is an action that failed,
+          // and "fetch failed" on its own names neither the host nor the reason.
+          throw new Error(
+            `could not renew the authorized token from ${path}: ${(error as Error).message}${describeCause(error)}`,
+          );
+        }
         if (next.refreshToken !== undefined) writeFileSync(path, `${next.refreshToken}\n`, { mode: 0o600 });
         cachedPersonToken = { token: next.token, until: now + (next.expiresInSeconds ?? 28_800) * 1_000 };
         return cachedPersonToken.token;
