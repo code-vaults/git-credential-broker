@@ -48,6 +48,11 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 
 ## Rules that are not obvious from the code
 
+- **A deployment runs no install step, and that is a design property.** `stage` exports a **commit**, and
+  the container-side helper and the host-side broker run straight from it, so a runtime dependency means
+  an install that every deployment has to remember — and one that, when forgotten, is a crash loop rather
+  than an error. This was learned the expensive way; the fix was to keep the code dependency-free and move
+  the Node floor to 24 for the proxy support that used to need a wrapper.
 - **Never commit key material.** `.gitignore` covers `*.pem` and `*.key`; a real App private
   key has already been dropped into this directory once. Before pushing:
   `git grep -l -- '-----BEGIN.*PRIVATE KEY-----' HEAD -- ':!AGENTS.md' ':!.agents/notes'` must find

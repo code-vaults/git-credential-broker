@@ -71,6 +71,10 @@ CI runs the suite on Linux and inside WSL, and checks both refusals on native Wi
 npm install -g git-credential-broker
 ```
 
+This package has no runtime dependencies, and that is load-bearing: `stage` exports a **commit** and
+nothing else, so a deployment never runs an install. A dependency would add a step to every deployment
+and a way for one to fail silently — which is exactly what happened the first time this project had one.
+
 Or run it from a checkout. Node 24 strips TypeScript types, so there is nothing to build and no
 dependencies to install:
 
@@ -287,6 +291,27 @@ request as that person, and resolving a review thread, which GraphQL refuses for
 The file needs to be **writable by the broker**, unlike the key: GitHub rotates the refresh token on
 every exchange, so mount it read-write (`./user.refresh:/etc/git-cred-broker/user.refresh:rw` in the
 sidecar). A read-only mount works until the first renewal, which is the worst moment to find out.
+
+#### Set up a proxy
+
+If this host reaches GitHub through a proxy, the process needs two things: the usual variables, and
+`NODE_USE_ENV_PROXY=1`. Node's own `fetch` reads `http_proxy` / `https_proxy` / `all_proxy` only when that
+variable is set, and it arrived in Node 24 — which is why the floor moved there.
+
+```sh
+http_proxy=http://proxy.example:7890
+https_proxy=http://proxy.example:7890
+no_proxy=localhost,127.0.0.1
+NODE_USE_ENV_PROXY=1
+```
+
+For a sidecar, pass them in its `environment:` (compose only forwards what the file names); for the host
+process, `EnvironmentFile=` in the unit and the boot wrapper, both of which already read
+`/etc/git-cred-broker/proxy.env` if it exists.
+
+The broker and `authorize` **refuse to start** when a proxy variable is set and `NODE_USE_ENV_PROXY` is
+not `1`, instead of reaching GitHub directly by a route nobody chose. `gh`, which the host opener runs,
+reads those variables itself (it is Go), so it only needs them to arrive.
 
 Two things the app needs: its **client id** in the configuration (the App ID will not do), and
 **Enable Device Flow** selected in its settings. No client secret: the device flow does not use one,
