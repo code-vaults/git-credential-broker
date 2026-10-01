@@ -1,8 +1,9 @@
 # Tests. The Linux job is the authoritative one; the two Windows jobs exist because this project
 # makes claims about Windows and WSL that would otherwise never be checked.
 #
-# Only first-party actions are used. A project about supply-chain credentials should not be the one
-# pulling in an unvetted action to run its tests.
+# Only first-party actions are used, and they are pinned to a commit sha with the release in a
+# comment: a tag is a mutable reference, and this repository exists to argue about exactly that.
+# Updating one means changing the sha and the comment together.
 name: CI
 
 on:
@@ -25,8 +26,8 @@ jobs:
     name: tests (linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
       - run: corepack enable
@@ -39,8 +40,8 @@ jobs:
     name: native Windows is refused
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
 
@@ -118,7 +119,7 @@ jobs:
     # that cannot yet run should not gate the suite.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Report what the runner has, install a distribution if there is none, and fail with the state
       # rather than skipping quietly: a skipped job would be worse than none.
