@@ -827,11 +827,24 @@ function describeCause(error: unknown): string {
               // in the lines below the header, and a report that drops them sends the reader to the web UI for the
               // one thing this command exists to show.
               const body = String(comment.body ?? '');
+              // The prose, not the first twelve lines of the comment: a review bot prefixes its finding with the
+              // commands it ran and a fence of their output, so counting raw lines reads the preamble and never
+              // reaches the claim. Fences and the bot's own metadata lines are dropped, and the cap then applies to
+              // what is left, which is what the reader wants and what the writer meant.
               const bodyLines = body.split('\n');
-              const shown = bodyLines.slice(0, 12).map((line) => line.replace(/<\/?[a-z][^>]*>/gi, '').trim());
-              const more = bodyLines.length > shown.length ? ` (+${bodyLines.length - shown.length} more lines)` : '';
+              const kept: string[] = [];
+              let inFence = false;
+              for (const raw of bodyLines) {
+                const line = raw.trim();
+                if (line.startsWith('```')) { inFence = !inFence; continue; }
+                if (inFence) continue;
+                if (/^(🏁|🔎|⚙️|_?\s*[🔒📐🎯🩺🟡🟠])/u.test(line)) continue;
+                kept.push(line.replace(/<\/?[a-z][^>]*>/gi, '').trim());
+              }
+              const shown = kept.filter((line) => line !== '').slice(0, 14);
+              const more = kept.length > shown.length ? ` (+${kept.length - shown.length} more lines)` : '';
               report.push(`    ${String(comment.databaseId ?? '')} @${String(comment.author?.login ?? '?')}:${more}`);
-              for (const line of shown) if (line !== '') report.push(`      ${line.slice(0, 300)}`);
+              for (const line of shown) report.push(`      ${line.slice(0, 300)}`);
             }
           }
         }
