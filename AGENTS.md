@@ -140,6 +140,12 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   in the configuration and **Enable Device Flow** in the app settings, and no client secret at all. The
   refresh token is rotated on every exchange and written back; not writing it back would work once.
 
+- **The allowlist says what may be used, not what is installed.** An entry for a repository the app was
+  never installed on is meaningful: `authorize` and the host opener act as a person, and a person needs no
+  permission on an upstream to open a pull request from their fork into it. For those two routes the
+  allowlist matters more than it does for the app, not less — a person's token reaches everything that
+  person reaches. The installation is a separate question, and the code asks it only when there is nobody
+  else to act as.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
   Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.json`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by

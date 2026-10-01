@@ -293,6 +293,12 @@ The file needs to be **writable by the broker**, unlike the key: GitHub rotates 
 every exchange, so mount it read-write (`./user.refresh:/etc/git-cred-broker/user.refresh:rw` in the
 sidecar). A read-only mount works until the first renewal, which is the worst moment to find out.
 
+The allowlist says what this channel **may be used for**, not what the app is installed on: an entry for a
+repository the app was never installed on is meaningful, because `authorize` and the host opener act as a
+person, who needs no permission there at all — that is how a pull request from your fork to an upstream
+works. It matters more for those two routes than for the app, not less: a person's token reaches
+everything that person reaches.
+
 #### Set up a proxy
 
 If this host reaches GitHub through a proxy, the process needs two things: the usual variables, and
