@@ -709,7 +709,7 @@ function describeCause(error: unknown): string {
         // named here, so the allowlist still decides what can be reached.
         const { text: raw } = await callWithToken('POST', `${api}/graphql`, token, {
           query:
-            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:50){nodes{id isResolved path line comments(first:10){nodes{databaseId author{login} body}}}}}}}',
+            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:50){totalCount nodes{id isResolved path line comments(first:10){nodes{databaseId author{login} body}}}}}}}',
           variables: { owner: request.owner, name: request.repo, number: request.number },
         });
         let listed: unknown = null;
@@ -753,6 +753,15 @@ function describeCause(error: unknown): string {
             }
           }
         }
+        // A page is not the whole list. Saying which it is is the difference between a report and a guess.
+        const shown = Array.isArray(nodes) ? nodes.length : 0;
+        const counted = (data.data?.repository?.pullRequest?.reviewThreads as { totalCount?: unknown } | undefined)
+          ?.totalCount;
+        const total = typeof counted === 'number' ? counted : shown;
+        if (total > shown) {
+          report.push(`... and ${total - shown} more: this asks for the first 50 threads, and the first 10 comments of each`);
+        }
+
         return {
           number: request.number ?? 0,
           url: '',
