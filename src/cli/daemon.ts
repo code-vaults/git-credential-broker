@@ -9,5 +9,8 @@
 
 
 import { runDaemon } from '../daemon.ts';
+import { assertProxyEnabled } from '../proxy.ts';
+
+assertProxyEnabled();
 
 process.exitCode = await runDaemon(process.argv.slice(2));

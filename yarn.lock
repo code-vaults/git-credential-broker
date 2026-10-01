@@ -159,21 +159,12 @@ __metadata:
   resolution: "git-credential-broker@workspace:."
   dependencies:
     "@types/node": "npm:^24.19.0"
-    node-fetch-native: "npm:^1.6.7"
     typescript: "npm:^7.0.2"
-    undici: "npm:^8.11.2"
   bin:
     git-credential-broker: dist/cli/helper.js
     git-credential-brokerd: dist/cli/daemon.js
   languageName: unknown
   linkType: soft
-
-"node-fetch-native@npm:^1.6.7":
-  version: 1.6.7
-  resolution: "node-fetch-native@npm:1.6.7"
-  checksum: 10c0/8b748300fb053d21ca4d3db9c3ff52593d5e8f8a2d9fe90cbfad159676e324b954fdaefab46aeca007b5b9edab3d150021c4846444e4e8ab1f4e44cd3807be87
-  languageName: node
-  linkType: hard
 
 "typescript@npm:^7.0.2":
   version: 7.0.2
@@ -321,12 +312,5 @@ __metadata:
   version: 7.24.6
   resolution: "undici-types@npm:7.24.6"
   checksum: 10c0/d9cd8befb643ac904615c280a095ba4240531f6bb4a5e75a22a7483630ca8d3f1016d2ab6ace6ceda1f63b3a2db2fe037fafe121d6917a0187573aa548ff78ca
-  languageName: node
-  linkType: hard
-
-"undici@npm:^8.11.2":
-  version: 8.11.2
-  resolution: "undici@npm:8.11.2"
-  checksum: 10c0/106f6991178fb7562fd90cdec7993c5f807a9428682306091f0c4b27fc474ec291f868e29972c6252988bf061ad193df943b3b99e775be157a28d92bbb95699d
   languageName: node
   linkType: hard

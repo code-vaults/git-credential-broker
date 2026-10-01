@@ -19,7 +19,6 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 import { userTokenPath, loadConfig, resolveConfigPath } from '../config.ts';
 import { collectUserToken, startDeviceFlow, type Fetcher } from '../device-flow.ts';
 import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from './support.ts';
-import { proxyFetch } from '../proxy.ts';
 
 /** Usage text for `authorize`. */
 export const AUTHORIZE_USAGE = `Usage: git-credential-broker authorize [options]
@@ -70,6 +69,8 @@ export function brokerReadsPath(privateKeyPath: string | undefined): string | un
  * @param argv - arguments after the command name.
  * @returns the process exit code: 0 stored, 1 refused.
  */
+import { assertProxyEnabled } from '../proxy.ts';
+
 export async function runAuthorize(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, { booleans: ['help'] });
   if (args.has('help') || args.has('h')) {
@@ -77,6 +78,7 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
     return 0;
   }
 
+  assertProxyEnabled();
   const configPath = resolveConfigPath(args.value('config'));
   const host = args.value('host') ?? 'github.com';
   const config = loadConfig(configPath);
@@ -87,7 +89,7 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
     fail(`${host} has no clientId — a device flow needs the app's client id, and the App ID will not do`);
   }
 
-  const fetcher: Fetcher = (url, init) => proxyFetch(url, init);
+  const fetcher: Fetcher = (url, init) => fetch(url, init);
   const code = await startDeviceFlow(block.clientId, fetcher);
   say(`Open ${code.verificationUri} and enter: ${code.userCode}`);
   say(`Waiting up to ${Math.round(code.expiresIn / 60)} minutes for that to be authorized…`);

@@ -71,7 +71,7 @@ CI runs the suite on Linux and inside WSL, and checks both refusals on native Wi
 npm install -g git-credential-broker
 ```
 
-Or run it from a checkout. Node 22.6+ strips TypeScript types, so there is nothing to build and no
+Or run it from a checkout. Node 24 strips TypeScript types, so there is nothing to build and no
 dependencies to install:
 
 ```sh
@@ -118,7 +118,7 @@ Drop `--code` to get a sidecar that fetches the published package with `npx` at 
 
 ## Quick start: host process
 
-Use this when the host has Node 22.6+.
+Use this when the host has Node 24 or newer.
 
 ```sh
 cd /srv/git-cred-broker
