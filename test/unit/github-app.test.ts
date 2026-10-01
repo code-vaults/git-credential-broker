@@ -25,6 +25,9 @@ function recordedBody(body: string | undefined): Record<string, unknown> | null 
 }
 
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createVerify, generateKeyPairSync } from 'node:crypto';
 import { describe, it } from 'node:test';
 
@@ -55,6 +58,8 @@ function jsonResponse(body: unknown, status = 200, headers: Record<string, strin
 
 /** One recorded call to the stubbed transport. */
 interface RecordedCall {
+  /** The body as sent, since the OAuth endpoints take a form rather than JSON. */
+  raw?: string;
   readonly url: string;
   readonly method: string;
   readonly body: Record<string, unknown> | null;
@@ -156,7 +161,13 @@ function createStubFetch(options: {
       method: init.method,
       body: recordedBody(init.body),
       authorization: init.headers['authorization'],
+        raw: init.body ?? '',
     });
+    if (url.includes('/login/oauth/access_token')) {
+      return Promise.resolve(
+        jsonResponse({ access_token: 'person-token', refresh_token: 'rotated', expires_in: 28800 }),
+      );
+    }
     if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
     if (url.includes('/app/installations?')) return Promise.resolve(jsonResponse(installations));
     if (url.endsWith('/merge')) {
@@ -358,6 +369,7 @@ describe('createGithubAppProvider', () => {
         method: init.method,
         body: recordedBody(init.body),
         authorization: init.headers['authorization'],
+        raw: init.body ?? '',
       });
       if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
       if (url.includes('/app/installations?')) {
@@ -587,4 +599,49 @@ describe('createGithubAppProvider', () => {
     assert.doesNotMatch(error.message, /PRIVATE KEY/);
     assert.doesNotMatch(error.message, /clientid/);
   });
+
+  describe("the authorized person's token", () => {
+    it('is renewed from beside the key, used for the pull request, and rotated back to disk', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'personal-token-'));
+      const refreshPath = join(dir, 'user.refresh');
+      writeFileSync(refreshPath, 'refresh-from-authorize\n', 'utf8');
+
+      const stub = createStubFetch({
+        installations: [{ id: 42, account: { login: 'acme' } }],
+        nowMs,
+        appPermissions: { pull_requests: 'write', contents: 'read' },
+        installationPermissions: { pull_requests: 'write', contents: 'read' },
+      });
+
+      const pr = await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
+        action: 'open',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        head: 'feat/thing',
+        base: 'main',
+        title: 'a title',
+        body: 'a body',
+      });
+
+      assert.equal(pr.number, 42);
+
+      const exchange = stub.calls.find((call) => call.url.includes('/login/oauth/access_token'));
+      assert.ok(exchange, 'the refresh token was exchanged');
+      assert.match(String(exchange?.raw), /grant_type=refresh_token/);
+      assert.match(String(exchange?.raw), /refresh_token=refresh-from-authorize/);
+
+      const created = stub.calls.find((call) => call.url.endsWith('/pulls'));
+      assert.equal(created?.authorization, 'Bearer person-token', 'and it was created as them');
+
+      assert.equal(
+        readFileSync(refreshPath, 'utf8').trim(),
+        'rotated',
+        'the rotated refresh token is written back: keeping the old one would work exactly once',
+      );
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+  });
+
 });
