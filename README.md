@@ -239,7 +239,8 @@ git-credential-broker pr --host github.com --repo owner/repo \
   # say it about one line rather than about the pull request
   # --number 7 --comment --file Dockerfile --line 4 --side right --body "why this marker exists"
   # from your fork into an upstream: a remote name instead of a repository typed by hand
-  --head origin:feature --base upstream:main --title "a title" --body-file pr.md
+  git-credential-broker pr --repo code-vaults/repo --head origin:feature --base upstream:main --title "a title" \
+    --body-file pr.md
 ```
 
 Both the app and the installation need `pull_requests: write`; without it the error names the

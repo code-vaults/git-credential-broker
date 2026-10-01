@@ -30,44 +30,9 @@ rejected — the rejection pass is what makes the rest worth reading.
    token is not narrowed to a repository the way an installation token is, so an allowlisted repository plus
    a thread id from another one would have resolved there, recorded against the approved repository.
 
-## Open, in the order worth doing
+## Open
 
-(Six items this section had — the `--status` pre-flight missing `actions: read`, the refresh-token write-back
-outside a try, `userTokens` keys not lower-cased, a `.git` directory accepted without a `HEAD`, the boot
-wrapper's `kill -0` guard, and the documentation set — were fixed in the commits after this note was
-written, along with two of the three paths that derive the refresh token. They are not repeated below.)
-
-- **The two timeout constants disagree**: `pr` waits 60 s while the broker destroys an idle connection after
-  30 s, so an action that takes longer is reported `unreachable` even though it completed — for `--merge` and
-  `--close`, the operator is told a finished mutation failed. Same shape as the `fetch failed` message that
-  cost an hour: the report and the fact differ.
-- **`status` pre-flights `pull_requests` and then reads `/actions/runs`**, which needs `actions: read`. The
-  pre-flight exists to name a missing permission; here it passes a grant that cannot make the second call.
-- **A lost refresh token says nothing.** The write-back sits outside the try, so a read-only mount (the exact
-  hazard the README names) throws a bare `EACCES` after GitHub has already invalidated the old token. It
-  should say that re-authorizing is the only recovery.
-- **`userTokens` keys are matched case-sensitively** while every other owner comparison is not, so a key
-  spelled `An-Org` validates and then silently never matches — the pull request is created as the app, which
-  is the outcome the option exists to prevent.
-- **A `.git` file is trusted as a pointer.** `discoverCheckouts` publishes `channelDir` for any path such a
-  file names, so the container can choose where the opener creates its channel (and, with `rmSync`, what it
-  deletes there). It should be a candidate: a directory that looks like a git directory, nothing created.
-- **The opener's identity comes from a checkout the container can write.** `gh` resolves the repository from
-  the remote of `cwd`, and the container can rewrite `.git/config`. The comment says the checkout decides
-  "so a request cannot aim the opener at another one", which is stronger than what is true. Either take the
-  repository from operator configuration, or say what the checkout actually guarantees.
-- **The boot wrapper's guard is `kill -0` on a pidfile it never removes**, wrong in both directions: a
-  recycled pid of another user's process starts a second opener (the race the file's own comment describes),
-  and a recycled pid of a live process makes the opener silently never start.
-- **Documentation that is now wrong**: `compose` advises `init --mode sidecar --force`, which discards the
-  file and demands the allowlist again, while a plain `init --mode sidecar` switches layout in place;
-  `examples/docker-compose.snippet.yml` names `/run/git-cred-broker` where the sidecar records
-  `/run/git-broker`; the README's host-side `authorize` example passes the sidecar's container path; a
-  security warning in the README sits inside a ```sh fence; `AGENTS.md` says everything inside `hosts` is
-  checked, but unknown keys there are dropped silently; the boot wrapper's own Command points at the copy
-  inside the checkout while its header says to move it out.
-- **Smaller, from the same pass**: `COMMANDS` is exported and unused, so the help text and the dispatch list
-  are two lists; `test/unit/daemon.test.ts` deliberately passes no `--config`, which makes its outcome depend
-  on the machine's `$HOME`; the `user.refresh` path is derived in four places, so the write side, the read
-  side and the mount can drift; and the rule that checks for key material matches its own text in
-  `AGENTS.md`, so it can never pass as written.
+Everything this note listed has since been fixed, in the commits that followed it; the dispositions it
+described are no longer what the branch does, so the list is gone rather than corrected line by line. The
+pre-merge review that replaced it found the blockers in the compose render, the `gitdir:` pointer and the
+marker reader, and those are fixed too.

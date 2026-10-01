@@ -136,8 +136,9 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   The opener is started once per machine, not once per repository: it discovers the checkouts under
   its `--root`s (default `$HOME`, so `~/Workspaces`, `~/.dotfiles` and anything added later are
   served). The paths on the two sides never have to match — each side reads and writes its own view
-  of the same `.git` directory — so only the roots it scans are host-side paths. A request is served
-  in the checkout it was written in, which is what keeps the agent from pointing it at another one.
+  of the same `.git` directory — so only the roots it scans are host-side paths. A request is served in the
+  checkout it was written in. That is a mechanism, not a boundary: the container can edit any checkout it can
+  write, its remote included, so what a deployment controls is which roots are served and which program runs.
 
   **More than one way to be the author exists, and none of them replaces another.** The opener (no
   long-lived secret, one process), `userTokens` (one process, a token per owner), and authorization on
