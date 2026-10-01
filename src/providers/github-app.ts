@@ -506,10 +506,10 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
   }
 
       let cachedPersonToken: { token: string; until: number; source: string } | undefined;
-      // One renewal at a time. GitHub invalidates the previous refresh token the moment it answers, so two
-      // renewals at once mean the second exchanges a token that is already dead — and if that exchange fails,
-      // the write-back leaves the dead token on disk and nothing renews again. Concurrent callers await the
-      // one that is running and take its result.
+      // One renewal at a time. GitHub documents neither what happens to a refresh token used twice nor a
+      // grace period for it, so the honest reason is the failure that is certain rather than the one that is
+      // documented: two exchanges racing means one of them renews from a token the other has already
+      // replaced, and whichever write-back runs last decides what is on disk for the next renewal.
       let renewingPersonToken: Promise<string | undefined> | undefined;
 
 /**

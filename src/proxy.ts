@@ -45,9 +45,17 @@ export function assertProxyEnabled(
   });
   if (wanted.length === 0) return;
   // `--use-env-proxy` is the same switch on the command line, and NODE_OPTIONS can carry it too.
-  if (env['NODE_USE_ENV_PROXY'] === '1') return;
-  if (execArgv.includes('--use-env-proxy')) return;
-  if ((env['NODE_OPTIONS'] ?? '').includes('--use-env-proxy')) return;
+  // `--no-use-env-proxy` is not another way to allow this: it switches the feature off, which leaves the
+  // proxy variables set and unread — the state this refuses, because the broker then goes direct and times
+  // out. Node 24.5 gives it precedence over both NODE_OPTIONS and NODE_USE_ENV_PROXY. Both are compared as
+  // whole tokens, so `--use-env-proxy` cannot be found inside another word.
+  const options = `${env['NODE_OPTIONS'] ?? ''}`.split(/\s+/).filter((token) => token !== '');
+  const off = execArgv.includes('--no-use-env-proxy') || options.includes('--no-use-env-proxy');
+  const on =
+    env['NODE_USE_ENV_PROXY'] === '1' ||
+    execArgv.includes('--use-env-proxy') ||
+    options.includes('--use-env-proxy');
+  if (on && !off) return;
 
   throw new Error(
     `${wanted[0]} is set, but Node's fetch will ignore it: set NODE_USE_ENV_PROXY=1 in this process's\n` +
