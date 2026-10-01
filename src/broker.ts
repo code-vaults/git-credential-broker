@@ -283,6 +283,9 @@ export function createRequestHandler(
       const base = message['base'];
       const title = message['title'];
       const body = message['body'];
+      const filePath = message['filePath'];
+      const line = message['line'];
+      const side = message['side'] ?? 'right';
       const method = message['method'] ?? 'squash';
       const branch = BRANCH;
       const usable = (value: unknown): value is string =>
@@ -299,6 +302,32 @@ export function createRequestHandler(
       }
       if (body !== undefined && (typeof body !== 'string' || body.length > 65_536)) {
         return deny(context, CODES.BAD_REQUEST, 'bad body', 'the body must be text of at most 65536 characters');
+      }
+
+      // An anchored comment: both halves or neither, only on a comment, and never outside the repository.
+      const anchored = filePath !== undefined || line !== undefined;
+      if (anchored && action !== 'comment') {
+        return deny(context, CODES.BAD_REQUEST, `anchor fields with ${action}`, 'only a comment can be anchored to a file and a line');
+      }
+      if (anchored && (filePath === undefined || line === undefined)) {
+        return deny(context, CODES.BAD_REQUEST, 'half an anchor', 'an anchored comment needs a file and a line, or neither');
+      }
+      if (filePath !== undefined) {
+        if (
+          typeof filePath !== 'string' ||
+          filePath === '' ||
+          filePath.startsWith('/') ||
+          filePath.length > 1024 ||
+          filePath.split('/').includes('..')
+        ) {
+          return deny(context, CODES.BAD_REQUEST, `bad file path ${JSON.stringify(filePath)}`, 'the file path is not usable');
+        }
+      }
+      if (line !== undefined && (!Number.isInteger(line) || Number(line) <= 0)) {
+        return deny(context, CODES.BAD_REQUEST, `bad line ${JSON.stringify(line)}`, 'the line has to be a positive number');
+      }
+      if (side !== 'left' && side !== 'right') {
+        return deny(context, CODES.BAD_REQUEST, `bad side ${JSON.stringify(side)}`, 'the side has to be left or right');
       }
       if (action === 'update' && title === undefined && body === undefined && base === undefined) {
         return deny(context, CODES.BAD_REQUEST, 'empty update', 'an update has to change a title, a body or a base');
@@ -335,6 +364,9 @@ export function createRequestHandler(
           ...(typeof number === 'number' ? { number } : {}),
           ...(typeof commentId === 'number' ? { commentId } : {}),
           ...(typeof threadId === 'string' ? { threadId } : {}),
+        ...(typeof filePath === 'string' ? { filePath } : {}),
+        ...(typeof line === 'number' ? { line } : {}),
+        ...(typeof filePath === 'string' && typeof line === 'number' ? { side } : {}),
           ...(typeof head === 'string' ? { head } : {}),
           ...(typeof base === 'string' ? { base } : {}),
           ...(typeof title === 'string' ? { title } : {}),

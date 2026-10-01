@@ -192,6 +192,8 @@ function createStubFetch(options: {
         }),
       );
     }
+    // A review: what the comment path posts, with or without inline comments on it.
+    if (url.endsWith('/reviews')) return Promise.resolve(jsonResponse({}));
     if (url.endsWith('/pulls')) {
       return Promise.resolve(
         jsonResponse({ number: 42, html_url: 'https://github.com/acme/widget/pull/42' }, 201),
@@ -664,6 +666,39 @@ describe('createGithubAppProvider', () => {
     );
 
     rmSync(dir, { recursive: true, force: true });
+  });
+
+
+  it('posts an anchored comment on the line it was given, on the same review it already posts', async () => {
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    await providerFor(stub).pullRequest!({
+      action: 'comment',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 7,
+      body: 'why this marker exists',
+      filePath: 'Dockerfile',
+      line: 4,
+    });
+
+    const review = stub.calls.find((call) => call.url.endsWith('/reviews'));
+    assert.ok(review, 'the review endpoint is the one used');
+    assert.deepEqual(
+      (review?.body as Record<string, unknown>)?.['comments'],
+      [{ path: 'Dockerfile', line: 4, side: 'right', body: 'why this marker exists' }],
+    );
+    assert.equal((review?.body as Record<string, unknown>)?.['event'], 'COMMENT');
+  });
+
+  it('posts a body-only comment the way it always has', async () => {
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    await providerFor(stub).pullRequest!({
+      action: 'comment', host: 'github.com', owner: 'acme', repo: 'widget', number: 7, body: 'a general remark',
+    });
+
+    const review = stub.calls.find((call) => call.url.endsWith('/reviews'));
+    assert.deepEqual(review?.body, { body: 'a general remark', event: 'COMMENT' }, 'nothing new in the payload');
   });
 
 });

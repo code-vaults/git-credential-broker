@@ -95,6 +95,12 @@ export interface PullRequestRequest {
   readonly base?: string;
   readonly title?: string;
   readonly body?: string;
+  /** The file a review comment is anchored to, repository-relative, without a leading slash. */
+  readonly filePath?: string;
+  /** The line in that file: in the new file for `side: "right"`, in the old one for `"left"`. */
+  readonly line?: number;
+  /** Which side of the diff the line counts on. The new file, unless told otherwise. */
+  readonly side?: 'left' | 'right';
   readonly draft?: boolean;
   readonly method?: MergeMethod;
 }

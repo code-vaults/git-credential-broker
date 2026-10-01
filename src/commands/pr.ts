@@ -155,6 +155,22 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if ((action === 'comment' || action === 'reply') && (body === undefined || body.trim() === '')) {
     fail('a comment has to say something: pass --body or --body-file');
   }
+
+  const filePath = args.value('file');
+  const lineArg = args.value('line');
+  const side = (args.value('side') ?? 'right').toLowerCase();
+  if ((filePath === undefined) !== (lineArg === undefined)) {
+    fail('an anchored comment needs both --file and --line, or neither');
+  }
+  if (filePath !== undefined) {
+    if (action !== 'comment') fail('--file and --line anchor a comment, so they only go with --comment');
+    if (!Number.isInteger(Number(lineArg)) || Number(lineArg) <= 0) {
+      fail(`--line must be a positive integer, got ${JSON.stringify(lineArg)}`);
+    }
+    if (side !== 'left' && side !== 'right') {
+      fail(`--side must be left or right, got ${JSON.stringify(args.value('side'))}`);
+    }
+  }
   const replyTo = args.value('reply-to');
   if (action === 'reply' && (replyTo === undefined || !Number.isInteger(Number(replyTo)) || Number(replyTo) <= 0)) {
     fail(`--reply-to needs the id of the comment being answered, got ${JSON.stringify(replyTo)}`);
@@ -217,6 +233,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         ...(base === undefined ? {} : { base }),
         ...(title === undefined ? {} : { title }),
         ...(body === undefined ? {} : { body }),
+        ...(filePath === undefined ? {} : { filePath, line: Number(lineArg), side }),
         ...(action === 'merge' ? { method: args.value('method') ?? 'squash' } : {}),
         draft: args.has('draft'),
         session: 'pr',

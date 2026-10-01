@@ -837,6 +837,19 @@ function describeCause(error: unknown): string {
         await callWithToken('POST', `${collection}/${request.number}/reviews`, token, {
           body: request.body ?? '',
           event: 'COMMENT',
+          // An inline comment rides on the same review, so a body-only comment stays one code path.
+          ...(request.filePath === undefined || request.line === undefined
+            ? {}
+            : {
+                comments: [
+                  {
+                    path: request.filePath,
+                    line: request.line,
+                    side: request.side ?? 'right',
+                    body: request.body ?? '',
+                  },
+                ],
+              }),
         });
         const { text: after } = await callWithToken('GET', `${collection}/${request.number}`, token);
         let read: unknown = null;
