@@ -296,8 +296,16 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       // The URL is safe to name — the token is a header, not part of it — but the body is not, so
       // this message carries only the endpoint and the status. It is marked as ours, which is what
       // lets the pusher see it instead of "see the broker log".
-      throw new ProviderConfigError(
-        `GitHub API ${method} ${url.replace(api, '')} answered ${response.status} for that request`,
+      // The URL is safe to name — the token is a header, not part of it — but the body is not: it can quote
+      // the request, and it must never reach the container. It travels on a plain error instead, which the
+      // broker logs host-side and answers generically, so a 403 that is branch protection rather than a
+      // missing permission can be read where the operator can see it. The permission pre-flight in
+      // ensurePermissions stays a ProviderConfigError: that one names the permission, which is worth passing
+      // through and contains nothing from a response.
+      const detail = text.replace(/\s+/g, ' ').trim().slice(0, 400);
+      throw new Error(
+        `GitHub API ${method} ${url.replace(api, '')} answered ${response.status} for that request` +
+          (detail === '' ? '' : `: ${detail}`),
       );
     }
     return { status: response.status, text };
