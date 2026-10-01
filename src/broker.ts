@@ -266,12 +266,14 @@ export function createRequestHandler(
         action !== 'status' &&
         action !== 'comment' &&
         action !== 'threads' &&
-        action !== 'reply'
+        action !== 'reply' &&
+        action !== 'resolve'
       ) {
         return deny(context, CODES.BAD_REQUEST, `bad action ${JSON.stringify(action)}`, 'unknown pull request action');
       }
       const number = message['number'];
       const commentId = message['commentId'];
+      const threadId = message['threadId'];
       const head = message['head'];
       const base = message['base'];
       const title = message['title'];
@@ -302,7 +304,10 @@ export function createRequestHandler(
       if (action === 'reply' && (typeof commentId !== 'number' || !Number.isInteger(commentId) || commentId <= 0)) {
         return deny(context, CODES.BAD_REQUEST, 'bad commentId', 'a reply needs the id of the comment it answers');
       }
-      if (action !== 'open' && (typeof number !== 'number' || !Number.isInteger(number) || number <= 0)) {
+      if (action === 'resolve' && (typeof threadId !== 'string' || threadId === '')) {
+        return deny(context, CODES.BAD_REQUEST, 'bad threadId', 'resolving needs the id of the thread, which --threads prints');
+      }
+      if (action !== 'open' && action !== 'resolve' && (typeof number !== 'number' || !Number.isInteger(number) || number <= 0)) {
         return deny(context, CODES.BAD_REQUEST, `bad number ${JSON.stringify(number)}`, 'this action needs a pull request number');
       }
       if (action === 'merge' && method !== 'merge' && method !== 'squash' && method !== 'rebase') {
@@ -324,6 +329,7 @@ export function createRequestHandler(
           action,
           ...(typeof number === 'number' ? { number } : {}),
           ...(typeof commentId === 'number' ? { commentId } : {}),
+          ...(typeof threadId === 'string' ? { threadId } : {}),
           ...(typeof head === 'string' ? { head } : {}),
           ...(typeof base === 'string' ? { base } : {}),
           ...(typeof title === 'string' ? { title } : {}),

@@ -71,7 +71,8 @@ export type PullRequestAction =
   | 'status'
   | 'comment'
   | 'threads'
-  | 'reply';
+  | 'reply'
+  | 'resolve';
 
 /** How a merge should be recorded. */
 export type MergeMethod = 'merge' | 'squash' | 'rebase';
@@ -86,6 +87,8 @@ export interface PullRequestRequest {
   readonly number?: number;
   /** The review comment being answered, for `action: "reply"`. */
   readonly commentId?: number;
+  /** The review thread being resolved, for `action: "resolve"`. */
+  readonly threadId?: string;
   /** The branch holding the change, when opening. */
   readonly head?: string;
   /** The branch it merges into. */
@@ -198,6 +201,7 @@ export interface WireRequest {
   readonly action?: string;
   readonly number?: number;
   readonly commentId?: number;
+  readonly threadId?: string;
   readonly method?: string;
   readonly head?: string;
   readonly base?: string;

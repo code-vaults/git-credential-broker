@@ -602,6 +602,35 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
 
       const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
 
+      if (request.action === 'resolve') {
+        // Resolving has no REST endpoint either. The thread id is the one `--threads` prints.
+        const { text: raw } = await callWithToken('POST', `${api}/graphql`, token, {
+          query:
+            'mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}',
+          variables: { threadId: request.threadId ?? '' },
+        });
+        let answer: unknown = null;
+        try {
+          answer = JSON.parse(raw);
+        } catch {
+          answer = null;
+        }
+        const state = (answer ?? {}) as {
+          data?: { resolveReviewThread?: { thread?: { isResolved?: unknown } } };
+          errors?: unknown;
+        };
+        // A plain Error, not a ProviderConfigError: GraphQL answers in a response body, and those
+        // are not passed to the container.
+        if (Array.isArray(state.errors) && state.errors.length > 0) {
+          throw new Error('GitHub refused to resolve that review thread');
+        }
+        return {
+          number: request.number ?? 0,
+          url: '',
+          status: state.data?.resolveReviewThread?.thread?.isResolved === true ? 'resolved' : 'still open',
+        };
+      }
+
       if (request.action === 'reply') {
         // A reply belongs in the thread it answers. The issues API would need `issues: write` and
         // would start a new conversation instead of joining one.

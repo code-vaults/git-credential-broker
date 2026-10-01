@@ -47,6 +47,7 @@ Acting on one
   --comment            Post the body as a comment on it (needs only --number and --body/--body-file)
   --threads            List its review threads: their ids, whether they are resolved, and the comments
   --reply-to <id>      Reply inside the thread that comment id belongs to, with --body/--body-file
+  --resolve <thread>   Mark that review thread resolved (the id --threads prints)
   --close              Close it
   --merge              Merge it (branch protection still applies)
   --method <m>         merge, squash (default) or rebase
@@ -67,6 +68,7 @@ Common
  * @returns `close`, `merge`, `update` or `open`.
  */
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
+  if (args.value('resolve') !== undefined) return 'resolve' as const;
   if (args.value('reply-to') !== undefined) return 'reply' as const;
   if (args.has('threads')) return 'threads' as const;
   if (args.has('comment')) return 'comment' as const;
@@ -182,6 +184,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         action,
         ...(number === undefined ? {} : { number: Number(number) }),
         ...(action === 'reply' ? { commentId: Number(replyTo) } : {}),
+        ...(action === 'resolve' ? { threadId: args.value('resolve') } : {}),
         ...(head === undefined ? {} : { head }),
         ...(base === undefined ? {} : { base }),
         ...(title === undefined ? {} : { title }),
@@ -203,7 +206,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     return 1;
   }
 
-  if (action === 'status' || action === 'threads') {
+  if (action === 'status' || action === 'threads' || action === 'resolve') {
     say(response.prStatus ?? 'no report');
     return 0;
   }
