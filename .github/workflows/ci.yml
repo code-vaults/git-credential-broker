@@ -164,8 +164,14 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          $source = (wsl -d $env:DISTRO -- wslpath -a "$PWD").Trim()
-          Write-Host "archiving $source (Windows-backed) into /opt/ci"
+          # Ask the distribution where it thinks it is, rather than converting a Windows path
+          # here: wsl.exe eats the backslashes on the way in, so `wslpath -a "$PWD"` printed an
+          # error and returned nothing — and an empty $source made `git -C ""` fall back to the
+          # interop working directory, which happened to be the checkout. That is luck, not a
+          # mechanism, and the check below refuses to rely on it.
+          $source = (wsl -d $env:DISTRO -- bash -c pwd).Trim()
+          if (-not $source) { throw 'could not work out where the checkout lives inside the distribution' }
+          Write-Host "archiving $source into /opt/ci"
           # drvfs is slow per file, and `cp -a` opens every one of them; packing the tree and
           # unpacking it inside the distribution reads it in one sequential pass instead.
           wsl -d $env:DISTRO -u root -- git config --global --add safe.directory "$source"
