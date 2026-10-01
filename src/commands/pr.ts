@@ -197,16 +197,23 @@ export async function runPr(argv: readonly string[]): Promise<number> {
           '  or drop --via-host to open it as the app instead',
       );
     }
-    const id = writeRequest(dir, {
-      repo,
-      head,
-      base: base ?? 'main',
-      title,
-      body: body ?? '',
-      draft: args.has('draft'),
-      session: 'pr',
-      pid: process.pid,
-    });
+    // writeRequest refuses a request the opener would have to refuse: a title past its limit, a body past
+    // its limit, a head equal to its base. It throws, and a stack trace tells the caller none of that.
+    let id: string;
+    try {
+      id = writeRequest(dir, {
+        repo,
+        head,
+        base: base ?? 'main',
+        title,
+        body: body ?? '',
+        draft: args.has('draft'),
+        session: 'pr',
+        pid: process.pid,
+      });
+    } catch (error) {
+      fail((error as Error).message);
+    }
     const answer = await waitForResult(dir, id, ANSWER_TIMEOUT_MS);
     removeResult(dir, id);
     if (answer === undefined) {
