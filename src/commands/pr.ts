@@ -107,7 +107,8 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (args.has('via-host') && action !== 'open') {
     fail('--via-host only creates a pull request, so it does not go with ' + JSON.stringify(action));
   }
-  if (args.has('method') && action !== 'merge') {
+  // `--method` takes a value, so `has` — which is about boolean flags — is false for it however it is given.
+  if (args.value('method') !== undefined && action !== 'merge') {
     fail('--method chooses how to merge, so it only goes with --merge');
   }
   const viaHost = action === 'open' && args.has('via-host');

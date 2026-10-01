@@ -706,3 +706,60 @@ describe('compose', () => {
     assert.match(rendered, /NODE_USE_ENV_PROXY=1/, 'and the switch has to be there with the proxy variables');
   });
 });
+
+describe('the anchor flags, at the CLI boundary', () => {
+  /**
+   * Run the real command as a process.
+   *
+   * Every case here is refused by `fail`, which exits, so it cannot be a call into the module — and that is
+   * the point of testing it here: the checks are the CLI's, and the unit tests under them never see them.
+   */
+  const cli = (args: readonly string[]): { status: number; stderr: string } => {
+    try {
+      execFileSync('node', ['src/cli/helper.ts', 'pr', ...args], {
+        cwd: path.resolve('.'),
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      return { status: 0, stderr: '' };
+    } catch (error) {
+      const failed = error as { status?: number | null; stderr?: string };
+      return { status: failed.status ?? -1, stderr: String(failed.stderr ?? '') };
+    }
+  };
+
+  const base = ['--host', 'github.com', '--repo', 'acme/widget', '--number', '7'];
+
+  it('refuses half an anchor, in both directions', () => {
+    const fileOnly = cli([...base, '--comment', '--file', 'Dockerfile', '--body', 'x']);
+    assert.equal(fileOnly.status, 1, 'a file with no line is refused');
+    assert.match(fileOnly.stderr, /both --file and --line/);
+
+    const lineOnly = cli([...base, '--comment', '--line', '4', '--body', 'x']);
+    assert.equal(lineOnly.status, 1, 'and a line with no file');
+    assert.match(lineOnly.stderr, /both --file and --line/);
+  });
+
+  it('refuses an anchor on an action that is not a comment', () => {
+    const closed = cli([...base, '--close', '--file', 'Dockerfile', '--line', '4', '--body', 'x']);
+    assert.equal(closed.status, 1);
+    assert.match(closed.stderr, /only go with --comment/);
+  });
+
+  it('refuses a side that is neither, and a line that is not a line', () => {
+    const side = cli([...base, '--comment', '--file', 'Dockerfile', '--line', '4', '--side', 'middle', '--body', 'x']);
+    assert.match(side.stderr, /--side must be left or right/);
+
+    for (const line of ['0', 'x', '-1']) {
+      const bad = cli([...base, '--comment', '--file', 'Dockerfile', '--line', line, '--body', 'x']);
+      assert.equal(bad.status, 1, `--line ${line} is refused`);
+      assert.match(bad.stderr, /--line must be a positive integer/);
+    }
+  });
+
+  it('refuses --method unless the action merges', () => {
+    const updated = cli([...base, '--method', 'squash', '--title', 'a title']);
+    assert.equal(updated.status, 1);
+    assert.match(updated.stderr, /only goes with --merge/);
+  });
+});
