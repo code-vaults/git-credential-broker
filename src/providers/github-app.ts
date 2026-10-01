@@ -622,7 +622,9 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         // A plain Error, not a ProviderConfigError: GraphQL answers in a response body, and those
         // are not passed to the container.
         if (Array.isArray(state.errors) && state.errors.length > 0) {
-          throw new Error('GitHub refused to resolve that review thread');
+          // The reason belongs in the host log, which is where a plain Error goes: the broker answers
+          // the container generically for one, so nothing from a response body crosses the socket.
+          throw new Error(`GitHub refused to resolve that review thread: ${JSON.stringify(state.errors).slice(0, 300)}`);
         }
         return {
           number: request.number ?? 0,
