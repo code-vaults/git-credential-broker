@@ -238,6 +238,11 @@ permission instead of failing at GitHub. `--draft` opens it as a draft.
 
 ### Opening one as yourself
 
+There is more than one way to have a pull request authored by a person, and they stay alternatives:
+this one needs no long-lived secret anywhere and costs a process you keep running; `userTokens`
+below needs no second process and costs a token per owner. Neither is replaced by the other, or by
+the OAuth app still on the drawing board — a deployment picks the trade it prefers.
+
 A pull request opened with the app's installation token is authored by the app, and automated
 reviewers are entitled to skip those. The simplest way to have one authored by you is a
 **fine-grained personal access token** in the configuration:
@@ -286,6 +291,27 @@ checkouts created later are all served with no further setup. To start it once a
 `examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
 instance at a time, and its output in a log file. Without `--via-host`, or with no opener running, `pr` behaves
 exactly as before.
+
+#### Keeping it running
+
+On a host with user services, `examples/host-opener.service` is a unit for it:
+
+```sh
+npm i -g git-credential-broker                          # the unit calls the installed CLI
+cp examples/host-opener.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now host-opener
+loginctl enable-linger "$USER"                          # so it survives logout and starts at boot
+journalctl --user -u host-opener -f                     # its output
+```
+
+`loginctl enable-linger` is the part that is easy to miss: without it a user service stops when
+your last session ends and does not come back at boot. `Restart=always` is already in the unit, so
+a crash is a ten-second gap rather than a silent stop.
+
+On a host without user services — a Synology NAS, for instance — `examples/host-opener-boot.sh` is
+the same thing for a boot-time task: absolute paths, one instance at a time, its output in a log
+file.
 
 ## Configuration reference
 

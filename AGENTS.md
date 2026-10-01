@@ -114,6 +114,12 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   of the same `.git` directory — so only the roots it scans are host-side paths. A request is served
   in the checkout it was written in, which is what keeps the agent from pointing it at another one.
 
+  **More than one way to be the author exists, and none of them replaces another.** The opener (no
+  long-lived secret, one process), `userTokens` (one process, a token per owner) and the OAuth app on
+  the drawing board (one process, no manual rotation, a wider token) answer the same question with
+  different trades. Adding one is not a reason to remove another: a deployment chooses. When you add
+  the next one, document it beside the others rather than rewriting them.
+
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
   Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.json`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by
