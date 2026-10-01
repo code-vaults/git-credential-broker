@@ -1,9 +1,11 @@
 # TASK — anchor a review comment to a file and a line
 
-Status: built, deployed, and verified live on #4 (`src/commands/pr.ts:239`, thread
-PRRT_kwDOU1uEcc6n4lyf). Two things it asked for are still open, recorded at the end.
+Status: built, deployed, and verified live on #4.
 Written: 2026-10-01
+Built: 2026-10-01
 Depends on: nothing; the permission is already in place
+Touches: `src/commands/pr.ts`, `src/broker.ts`, `src/providers/github-app.ts`, `src/types.ts`
+Open: two things this task asked for, at the end of this file
 
 ## Why now
 
@@ -138,6 +140,24 @@ host daemon). Until that happens, `pr --comment` keeps posting a body-only revie
   the broker should hold it at all.
 - Deleting or superseding an existing review. There is no action for that today, so the
   interim body-only review on `#4` has to be removed in the UI by a person.
+
+## Result
+
+`pr --comment --file <path> --line <n> [--side left|right]` posts an inline review comment, on the same
+reviews call the body-only path already makes. Nothing about the permission changed, which was the point.
+
+Verified live rather than only in tests: a comment anchored to `src/commands/pr.ts:239` — a line this pull
+request adds — appears as an open thread, and `--threads` prints its path and line (thread
+`PRRT_kwDOU1uEcc6n4lyf`, comment `4153903065`). Body-only comments are unchanged, and every refusal was
+exercised against the running broker.
+
+Two defects were found by doing that, neither of which any unit test could have caught, and both of which
+had a test agreeing with them or a multi-line edit that silently did not apply:
+
+- the review went out as `side: "right"` where this endpoint wants `RIGHT`, so the anchor was a 422 until
+  the provider mapped the spelling at the edge; the provider test had asserted the lower-case value.
+- the three new usage lines never made it into `PR_USAGE`, because a multi-line replacement matched
+  nothing and reported nothing. The behaviour was there and the help text was quiet about it.
 
 ## What is still open, from this task
 
