@@ -1,5 +1,10 @@
 #!/bin/sh
 # Start the host-side opener at boot, on a host without user services (a Synology NAS, for instance).
+#
+# COPY THIS FILE SOMEWHERE OUTSIDE THE MOUNTS BEFORE A TASK RUNS IT. It runs as you, so leaving it in
+# the checkout means anything that can write the checkout — an agent with this repository mounted —
+# decides what your credentials do at boot. /usr/local/bin is a fine place; the file below it is the
+# one that matters.
 # The CLI is assumed to be installed globally: npm i -g git-credential-broker
 #
 # DSM: Control Panel → Task Scheduler → Create → Triggered Task → Boot-up

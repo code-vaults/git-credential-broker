@@ -302,6 +302,9 @@ same checkout, and ask for it from the container:
 git-credential-broker host-opener          # --root <dir> to narrow it, repeatable
 # or, at boot and for good: examples/host-opener-boot.sh (see below)
 
+**Copy that file outside the mounts before a task runs it.** It runs as you, so leaving it in the
+checkout would let anything that can write the checkout decide what your credentials do at boot.
+
 # in the container
 git-credential-broker pr --via-host --repo owner/repo --head feature --base main \
   --title "a title" --body-file pr.md

@@ -161,7 +161,11 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     const answer = await waitForResult(dir, id, ANSWER_TIMEOUT_MS);
     removeResult(dir, id);
     if (answer === undefined) {
-      fail(`the host opener did not answer ${id} within ${Math.round(ANSWER_TIMEOUT_MS / 1000)}s`);
+      fail(
+        `the host opener did not answer ${id} within ${Math.round(ANSWER_TIMEOUT_MS / 1000)}s\n` +
+          '  it may still be working: the request is not cancelled, and the opener removes it only once\n' +
+          '  it has created the pull request or failed. Check the pull request list before asking again.',
+      );
     }
     if (answer.error !== undefined) fail(`the host opener could not open it: ${answer.error}`);
     say(`opened #${answer.number ?? '?'} (as you, through the host opener): ${answer.url ?? '(no url)'}`);
