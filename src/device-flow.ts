@@ -46,6 +46,23 @@ export const TOKEN_URL = 'https://github.com/login/oauth/access_token';
 export const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 
 /**
+ * Read a JSON body, without pretending a non-JSON one is a mystery.
+ *
+ * A refused request can answer with a page rather than with JSON. Letting `JSON.parse` throw there
+ * replaces "GitHub answered 500" with an error about a token, which is the wrong story entirely.
+ *
+ * @param text - the response body.
+ * @returns the parsed object, or an empty one when it is not JSON.
+ */
+function parseJson(text: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+/**
  * Ask for a code to show a person.
  *
  * @param clientId - the app's client id, which a device flow needs and a secret it does not.
@@ -64,7 +81,7 @@ export async function startDeviceFlow(clientId: string, fetcher: Fetcher): Promi
   if (!response.ok) {
     throw new Error(`GitHub answered ${response.status} to the device code request: ${text.slice(0, 200)}`);
   }
-  const parsed = JSON.parse(text) as {
+  const parsed = parseJson(text) as {
     device_code?: string;
     user_code?: string;
     verification_uri?: string;
@@ -118,7 +135,7 @@ export async function collectUserToken(
       }).toString(),
     });
     const text = await response.text();
-    const parsed = JSON.parse(text) as {
+    const parsed = parseJson(text) as {
       access_token?: string;
       refresh_token?: string;
       expires_in?: number;
@@ -167,7 +184,7 @@ export async function refreshUserToken(
     }).toString(),
   });
   const text = await response.text();
-  const parsed = JSON.parse(text) as {
+  const parsed = parseJson(text) as {
     access_token?: string;
     refresh_token?: string;
     expires_in?: number;
