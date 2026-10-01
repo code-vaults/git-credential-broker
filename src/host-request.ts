@@ -381,8 +381,11 @@ export function claimRequest(dir: string, id: string): HostOpenRequest | undefin
 
 export function removeRequest(dir: string, id: string): void {
   // Recursive: a directory here is not a request, and it must not be able to make this throw. The claimed
-  // copy is not touched: it belongs to whoever claimed it, and deleting it here would take a request out
+  // copy goes too: only the opener holding it reaches a removal, and only after answering or refusing, so
+  // this is the release — without it every request left a copy of itself, body and all, in the git
+  // directory, and nothing ever removed it.
   rmSync(join(dir, `${id}.json`), { force: true, recursive: true });
+  rmSync(join(dir, `${id}.json.working`), { force: true, recursive: true });
 }
 
 /**

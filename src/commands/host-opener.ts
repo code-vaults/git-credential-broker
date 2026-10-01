@@ -142,8 +142,14 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
 
   for (;;) {
     for (const { repo, dir } of targets()) {
-      advertise(dir);
-      await sweep(dir, repo, command, extra);
+      // One checkout the container has made hostile — its channel directory replaced by a file, say —
+      // must not stop the opener serving every other root, under Restart=always least of all.
+      try {
+        advertise(dir);
+        await sweep(dir, repo, command, extra);
+      } catch (error) {
+        warn(`could not serve ${repo}: ${(error as Error).message}`);
+      }
     }
     if (args.has('once')) return 0;
     await new Promise((done) => setTimeout(done, Math.max(interval, 0) * 1000));
