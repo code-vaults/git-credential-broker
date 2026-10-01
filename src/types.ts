@@ -63,7 +63,14 @@ export interface JobLogRequest {
 }
 
 /** What can be done to a pull request. */
-export type PullRequestAction = 'open' | 'close' | 'merge' | 'update' | 'status' | 'comment';
+export type PullRequestAction =
+  | 'open'
+  | 'close'
+  | 'merge'
+  | 'update'
+  | 'status'
+  | 'comment'
+  | 'threads';
 
 /** How a merge should be recorded. */
 export type MergeMethod = 'merge' | 'squash' | 'rebase';

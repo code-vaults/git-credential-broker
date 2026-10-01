@@ -264,7 +264,8 @@ export function createRequestHandler(
         action !== 'merge' &&
         action !== 'update' &&
         action !== 'status' &&
-        action !== 'comment'
+        action !== 'comment' &&
+        action !== 'threads'
       ) {
         return deny(context, CODES.BAD_REQUEST, `bad action ${JSON.stringify(action)}`, 'unknown pull request action');
       }

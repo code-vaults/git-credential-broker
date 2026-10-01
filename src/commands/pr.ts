@@ -45,6 +45,7 @@ Acting on one
   --number <n>         The pull request number                       [required]
   --status             Report its state, mergeability and the runs for its commit
   --comment            Post the body as a comment on it (needs only --number and --body/--body-file)
+  --threads            List its review threads: their ids, whether they are resolved, and the comments
   --close              Close it
   --merge              Merge it (branch protection still applies)
   --method <m>         merge, squash (default) or rebase
@@ -65,6 +66,7 @@ Common
  * @returns `close`, `merge`, `update` or `open`.
  */
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
+  if (args.has('threads')) return 'threads' as const;
   if (args.has('comment')) return 'comment' as const;
   if (args.has('status')) return 'status' as const;
   if (args.has('close')) return 'close' as const;
@@ -81,7 +83,7 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
  */
 export async function runPr(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, {
-    booleans: ['help', 'draft', 'close', 'merge', 'status', 'comment', 'via-host'],
+    booleans: ['help', 'draft', 'close', 'merge', 'status', 'comment', 'threads', 'via-host'],
   });
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
@@ -194,7 +196,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     return 1;
   }
 
-  if (action === 'status') {
+  if (action === 'status' || action === 'threads') {
     say(response.prStatus ?? 'no report');
     return 0;
   }

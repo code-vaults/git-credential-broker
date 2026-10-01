@@ -602,6 +602,57 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
 
       const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
 
+      if (request.action === 'threads') {
+        // GraphQL, because review threads have no REST list. The repository and the number are
+        // named here, so the allowlist still decides what can be reached.
+        const { text: raw } = await callWithToken('POST', `${api}/graphql`, token, {
+          query:
+            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){' +
+            'pullRequest(number:$number){reviewThreads(first:50){nodes{id isResolved path line ' +
+            'comments(first:10){nodes{databaseId author{login} body}}}}}}}}}',
+          variables: { owner: request.owner, name: request.repo, number: request.number },
+        });
+        let listed: unknown = null;
+        try {
+          listed = JSON.parse(raw);
+        } catch {
+          listed = null;
+        }
+        const data = (listed ?? {}) as {
+          data?: { repository?: { pullRequest?: { reviewThreads?: { nodes?: unknown } } } };
+        };
+        const nodes = data.data?.repository?.pullRequest?.reviewThreads?.nodes;
+        const report: string[] = [];
+        if (Array.isArray(nodes)) {
+          for (const node of nodes as Array<{
+            id?: unknown;
+            isResolved?: unknown;
+            path?: unknown;
+            line?: unknown;
+            comments?: { nodes?: unknown };
+          }>) {
+            report.push(
+              `${node.isResolved === true ? 'resolved' : 'open    '} ${String(node.id ?? '')}  ${String(node.path ?? '')}:${String(node.line ?? '')}`,
+            );
+            const comments = node.comments?.nodes;
+            if (!Array.isArray(comments)) continue;
+            for (const comment of comments as Array<{
+              databaseId?: unknown;
+              author?: { login?: unknown };
+              body?: unknown;
+            }>) {
+              const first = String(comment.body ?? '').split('\n')[0] ?? '';
+              report.push(`    ${String(comment.databaseId ?? '')} @${String(comment.author?.login ?? '?')}: ${first.slice(0, 120)}`);
+            }
+          }
+        }
+        return {
+          number: request.number ?? 0,
+          url: '',
+          status: report.length > 0 ? report.join('\n') : 'no review threads on this pull request',
+        };
+      }
+
       if (request.action === 'comment') {
         // A review with no verdict: GitHub shows it as a comment on the pull request, and it needs
         // only the pull request permission the app already has. A *conversation* comment would be the
