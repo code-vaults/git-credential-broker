@@ -27,6 +27,7 @@ import { refreshUserToken } from '../device-flow.ts';
 import type { Credential, FetchLike, FetchResponseLike, GithubAppHostConfig, Provider } from '../types.ts';
 import type { JobLog, JobLogRequest } from '../types.ts';
 import type { PullRequest, PullRequestRequest } from '../types.ts';
+import { proxyFetch } from '../proxy.ts';
 
 /** REST API origin. Overridable for GitHub Enterprise. */
 const DEFAULT_API = 'https://api.github.com';
@@ -131,7 +132,7 @@ export function nextLink(linkHeader: string | null): string | null {
  * @throws {Error} when the private key or app identity is missing (fail fast).
  */
 export function createGithubAppProvider(options: GithubAppProviderOptions): Provider {
-  const { host, cfg, skewSeconds = 300, fetchImpl = globalThis.fetch, now = () => Date.now() } = options;
+  const { host, cfg, skewSeconds = 300, fetchImpl = proxyFetch, now = () => Date.now() } = options;
 
   const privateKeyPem = cfg.privateKeyPem
     ? cfg.privateKeyPem

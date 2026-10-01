@@ -159,6 +159,7 @@ __metadata:
   resolution: "git-credential-broker@workspace:."
   dependencies:
     "@types/node": "npm:^24.19.0"
+    node-fetch-native: "npm:^1.6.7"
     typescript: "npm:^7.0.2"
     undici: "npm:^8.11.2"
   bin:
@@ -166,6 +167,13 @@ __metadata:
     git-credential-brokerd: dist/cli/daemon.js
   languageName: unknown
   linkType: soft
+
+"node-fetch-native@npm:^1.6.7":
+  version: 1.6.7
+  resolution: "node-fetch-native@npm:1.6.7"
+  checksum: 10c0/8b748300fb053d21ca4d3db9c3ff52593d5e8f8a2d9fe90cbfad159676e324b954fdaefab46aeca007b5b9edab3d150021c4846444e4e8ab1f4e44cd3807be87
+  languageName: node
+  linkType: hard
 
 "typescript@npm:^7.0.2":
   version: 7.0.2

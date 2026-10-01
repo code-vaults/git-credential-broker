@@ -1,36 +1,23 @@
 /**
- * Make the process honour the proxy the deployment was started with.
+ * A fetch that honours the proxy the process was started with.
  *
- * Node's `fetch` does not read `http_proxy` at all — measured on 24.21 three ways: plain environment
- * variables, `NODE_USE_ENV_PROXY=1`, and `--use-env-proxy`; in every case the proxy was never contacted and
- * the connection went straight at the target. `global-agent`, which is the usual answer for this, sets
- * `http.globalAgent` and so helps the clients that use the `http` module — axios, got, octokit — and none
- * of the calls here, because every one of them is `fetch`.
+ * The environment arrives with the process — a systemd unit, a compose file, a shell — and Node's own
+ * `fetch` does not read it: measured on 24.21 three ways, plain `http_proxy`/`https_proxy`,
+ * `NODE_USE_ENV_PROXY=1` and `--use-env-proxy`, the proxy was never contacted and the connection went
+ * straight at the target. Behind a proxy that means every call fails by timeout, which is how this was
+ * found: the OAuth exchange needs github.com, api.github.com answered, and nothing said which.
  *
- * undici's `EnvHttpProxyAgent` is the same idea for `fetch`: it reads the variables itself, honours
- * `no_proxy`, and takes over the global dispatcher.
+ * `node-fetch-native`'s proxy module reads those variables itself, `no_proxy` included, and hands back both
+ * halves of the answer: a `dispatcher` for `fetch` and an `agent` for the clients built on the `http`
+ * module. This process only makes `fetch` calls, so it takes the dispatcher, bound to a fetch of its own so
+ * nothing else in the process has to know.
  */
-import { EnvHttpProxyAgent, setGlobalDispatcher } from 'undici';
-
-/** Whether this process has already decided. Late calls are no-ops, not re-decisions. */
-let decided = false;
+import { createFetch } from 'node-fetch-native/proxy';
 
 /**
- * Install a proxy dispatcher when the environment asks for one.
+ * The fetch every GitHub call in this process should use.
  *
- * Called once from a process entry point, because the variables arrive with the process: whatever starts
- * this — a systemd unit, a compose file, a shell — passes them in.
- *
- * @param env - the environment to read, for a test.
- * @returns true when a proxy was installed, false when the deployment has none.
+ * With no proxy variable set it behaves as `fetch` does, so a deployment that talks to GitHub directly is
+ * unaffected.
  */
-export function bootstrapProxy(env: NodeJS.ProcessEnv = process.env): boolean {
-  if (decided) return false;
-  decided = true;
-
-  const wanted = [env['http_proxy'], env['HTTP_PROXY'], env['https_proxy'], env['HTTPS_PROXY']];
-  if (!wanted.some((value) => typeof value === 'string' && value !== '')) return false;
-
-  setGlobalDispatcher(new EnvHttpProxyAgent());
-  return true;
-}
+export const proxyFetch: typeof globalThis.fetch = createFetch();

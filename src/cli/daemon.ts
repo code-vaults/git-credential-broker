@@ -6,9 +6,7 @@
  *   git-credential-brokerd --config /volume1/docker/git-cred-broker/broker.config.json
  *   git-credential-brokerd --config ... --check    # validate and exit
  */
-import { bootstrapProxy } from '../proxy.ts';
 
-bootstrapProxy();
 
 import { runDaemon } from '../daemon.ts';
 

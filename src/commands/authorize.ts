@@ -12,15 +12,14 @@
  *
  * Exit codes: 0 stored, 1 refused.
  */
-import { bootstrapProxy } from '../proxy.ts';
 
-bootstrapProxy();
 
 import { dirname, join, resolve as resolvePath } from 'node:path';
 
 import { userTokenPath, loadConfig, resolveConfigPath } from '../config.ts';
 import { collectUserToken, startDeviceFlow, type Fetcher } from '../device-flow.ts';
 import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from './support.ts';
+import { proxyFetch } from '../proxy.ts';
 
 /** Usage text for `authorize`. */
 export const AUTHORIZE_USAGE = `Usage: git-credential-broker authorize [options]
@@ -88,7 +87,7 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
     fail(`${host} has no clientId — a device flow needs the app's client id, and the App ID will not do`);
   }
 
-  const fetcher: Fetcher = (url, init) => fetch(url, init);
+  const fetcher: Fetcher = (url, init) => proxyFetch(url, init);
   const code = await startDeviceFlow(block.clientId, fetcher);
   say(`Open ${code.verificationUri} and enter: ${code.userCode}`);
   say(`Waiting up to ${Math.round(code.expiresIn / 60)} minutes for that to be authorized…`);
