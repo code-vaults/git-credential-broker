@@ -22,6 +22,7 @@ import {
   writeFileSync,
   type Dirent,
 } from 'node:fs';
+import { lstatSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 /** The directory under the git directory that carries requests and answers. */
@@ -274,9 +275,17 @@ export function readRequest(dir: string, id: string): HostOpenRequest | undefine
  */
 export function listRequests(dir: string): string[] {
   if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((name) => name.endsWith('.json') && !name.endsWith('.result.json') && name !== OPENER_FILE)
-    .map((name) => name.slice(0, -'.json'.length))
+  return readdirSync(dir, { withFileTypes: true })
+    // Only regular files. The container writes this directory, so anything else here — a directory, a FIFO,
+    // a symlink to a host file — is aimed at the opener rather than written by it.
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        entry.name.endsWith('.json') &&
+        !entry.name.endsWith('.result.json') &&
+        entry.name !== OPENER_FILE,
+    )
+    .map((entry) => entry.name.slice(0, -'.json'.length))
     .sort();
 }
 
@@ -310,7 +319,8 @@ export function writeResult(dir: string, id: string, result: HostOpenResult): vo
  * @param id - the identifier.
  */
 export function removeRequest(dir: string, id: string): void {
-  rmSync(join(dir, `${id}.json`), { force: true });
+  // Recursive: a directory here is not a request, and it must not be able to make this throw.
+  rmSync(join(dir, `${id}.json`), { force: true, recursive: true });
 }
 
 /**
@@ -354,8 +364,11 @@ export async function waitForResult(
  * @returns the parsed value, or `undefined`.
  */
 function readJson(file: string): unknown {
-  if (!existsSync(file)) return undefined;
   try {
+    const stat = lstatSync(file);
+    // lstat on purpose: a symlink is not a request, and following one would read a file outside the
+    // channel. A FIFO would block here forever, with no error and no log line to explain it.
+    if (!stat.isFile() || stat.size > MAX_BODY_CHARS * 4) return undefined;
     return JSON.parse(readFileSync(file, 'utf8'));
   } catch {
     return undefined;
@@ -370,7 +383,23 @@ function readJson(file: string): unknown {
  */
 function writeJsonAtomic(file: string, value: unknown): void {
   mkdirSync(dirname(file), { recursive: true });
+  const payload = `${JSON.stringify(value, null, 2)}\n`;
   const temp = `${file}.${process.pid}.tmp`;
-  writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+  const exclusive = (path: string) => writeFileSync(path, payload, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  try {
+    // wx is the whole protection: the name is predictable and the container can write this directory, so
+    // without O_EXCL a symlink here would choose which host file the opener — running as a person — writes.
+    exclusive(temp);
+  } catch (error) {
+    if ((error as { code?: string }).code !== 'EEXIST') throw error;
+    rmSync(temp, { force: true, recursive: true });
+    exclusive(temp);
+  }
+  // A directory where the destination belongs would make the rename throw and take the opener with it.
+  try {
+    if (!lstatSync(file).isFile()) rmSync(file, { force: true, recursive: true });
+  } catch {
+    // Not there at all, which is the usual case.
+  }
   renameSync(temp, file);
 }
