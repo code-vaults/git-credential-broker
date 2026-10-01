@@ -16,7 +16,7 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 
 import { loadConfig, resolveConfigPath } from '../config.ts';
 import { collectUserToken, startDeviceFlow, type Fetcher } from '../device-flow.ts';
-import { fail, parseArgs, say, writeSecretFile } from './support.ts';
+import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from './support.ts';
 
 /** Usage text for `authorize`. */
 export const AUTHORIZE_USAGE = `Usage: git-credential-broker authorize [options]
@@ -103,10 +103,27 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
   }
 
   const target = args.value('to') ?? refreshTokenPath(configPath);
+  // The same two checks init and stage apply, for the same reason: this is a credential of a person, and
+  // the container that pushes must not be able to read it. It is written outside every mount or not at all.
+  if (isInsideContainer()) {
+    fail('run this on the host, not inside the container: the token must not land anywhere the container can read');
+  }
+  const mounted = insideMountedPath(target);
+  if (mounted !== null) {
+    fail(
+      `${target} is inside ${mounted}, which is mounted into the container; the refresh token must live\n` +
+        '  outside every mount — the deployment directory beside the configuration is the usual place',
+    );
+  }
   writeSecretFile(target, `${token.refreshToken}\n`);
   say(`stored the refresh token in ${target} (mode 600)`);
   const readByBroker = brokerReadsPath(block.privateKeyPath);
-  if (readByBroker !== undefined && resolvePath(readByBroker) !== resolvePath(target)) {
+  if (readByBroker === undefined) {
+    // An inline privateKeyPem deployment: the broker has no directory to derive a path from, so it never
+    // looks for this file. Saying otherwise would be a promise the broker does not keep.
+    say('note: this host block keeps its key inline, so the broker has nowhere to look for this file:');
+    say('      pull requests will stay app-authored until the key is a file (privateKeyPath)');
+  } else if (resolvePath(readByBroker) !== resolvePath(target)) {
     say(`note: the broker will look in ${readByBroker} — make sure that is this file, and that it is`);
     say('      writable, because GitHub rotates the token on every exchange');
   } else {
