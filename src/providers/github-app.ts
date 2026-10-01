@@ -663,6 +663,34 @@ function describeCause(error: unknown): string {
 
       if (request.action === 'resolve') {
         // Resolving has no REST endpoint either. The thread id is the one `--threads` prints.
+        // The thread id is a global node id, and the person token is not narrowed to a repository the way
+        // an installation token is. Ask whose thread it is before changing it: the allowlist decided which
+        // repositories this broker may touch, and a mutation is the wrong place to discover it did not.
+        const { text: scoped } = await callWithToken('POST', `${api}/graphql`, personToken ?? token, {
+          query:
+            'query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{pullRequest{repository{nameWithOwner}}}}}',
+          variables: { threadId: request.threadId },
+        });
+        let belongsTo: unknown;
+        try {
+          const parsed = JSON.parse(scoped) as {
+            data?: { node?: { pullRequest?: { repository?: { nameWithOwner?: unknown } } } };
+          };
+          belongsTo = parsed.data?.node?.pullRequest?.repository?.nameWithOwner;
+        } catch {
+          belongsTo = undefined;
+        }
+        if (
+          typeof belongsTo !== 'string' ||
+          belongsTo.toLowerCase() !== `${request.owner}/${request.repo}`.toLowerCase()
+        ) {
+          // A plain Error on purpose: this is the host log's business, not the container's.
+          throw new Error(
+            `refusing to resolve ${request.threadId}: it is not a review thread of ${request.owner}/${request.repo}` +
+              (typeof belongsTo === 'string' ? ` (it belongs to ${belongsTo})` : ' (or it could not be read)'),
+          );
+        }
+
         const { text: raw } = await callWithToken('POST', `${api}/graphql`, personToken ?? token, {
           query:
             'mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}',
