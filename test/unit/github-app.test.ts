@@ -6,6 +6,24 @@
  * scoping, permission narrowing and token reuse — with a stubbed transport, so they run
  * offline and never touch a real credential.
  */
+/**
+ * The body of a recorded call, as an object when it is JSON.
+ *
+ * The OAuth endpoints take a form, and a form is not JSON. Swallowing the failure is the point: a stub
+ * that throws while recording is a stub that fails the test it was meant to explain.
+ *
+ * @param body - the raw body, if the call had one.
+ * @returns the parsed object, or null.
+ */
+function recordedBody(body: string | undefined): Record<string, unknown> | null {
+  if (!body) return null;
+  try {
+    return JSON.parse(body) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 import assert from 'node:assert/strict';
 import { createVerify, generateKeyPairSync } from 'node:crypto';
 import { describe, it } from 'node:test';
@@ -136,7 +154,7 @@ function createStubFetch(options: {
     calls.push({
       url,
       method: init.method,
-      body: init.body ? (JSON.parse(init.body) as Record<string, unknown>) : null,
+      body: recordedBody(init.body),
       authorization: init.headers['authorization'],
     });
     if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
@@ -338,7 +356,7 @@ describe('createGithubAppProvider', () => {
       calls.push({
         url,
         method: init.method,
-        body: init.body ? (JSON.parse(init.body) as Record<string, unknown>) : null,
+        body: recordedBody(init.body),
         authorization: init.headers['authorization'],
       });
       if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
