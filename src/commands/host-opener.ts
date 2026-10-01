@@ -22,6 +22,7 @@ import {
   findGitDir,
   listRequests,
   readOpener,
+  claimRequest,
   readRequest,
   removeRequest,
   requestProblems,
@@ -162,7 +163,9 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
 async function sweep(dir: string, repo: string, command: string, extra: readonly string[]): Promise<number> {
   let answered = 0;
   for (const id of listRequests(dir)) {
-    const request = readRequest(dir, id);
+    // Claimed, not read: two openers — a service and a hand-run --once — would otherwise both act on the
+    // same request and each create the pull request, under the person's name.
+    const request = claimRequest(dir, id) ?? readRequest(dir, id);
     if (!request) {
       removeRequest(dir, id);
       warn(`dropped the unreadable request ${id}`);

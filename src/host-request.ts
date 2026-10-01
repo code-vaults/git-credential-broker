@@ -318,9 +318,37 @@ export function writeResult(dir: string, id: string, result: HostOpenResult): vo
  * @param dir - the channel directory.
  * @param id - the identifier.
  */
+/**
+ * Take a request, so that nobody else can act on it.
+ *
+ * Acting first and removing it afterwards is not enough: opening a pull request is not idempotent, and the
+ * window between the two is as long as the program takes. The rename is atomic, so exactly one caller wins,
+ * and a claimed name is not a request id, so a sweep in another process does not see it again.
+ *
+ * @param dir - the channel directory.
+ * @param id - the request id.
+ * @returns the request, or undefined when it was gone or is already claimed.
+ */
+export function claimRequest(dir: string, id: string): HostOpenRequest | undefined {
+  const claimed = join(dir, `${id}.json.working`);
+  try {
+    renameSync(join(dir, `${id}.json`), claimed);
+  } catch {
+    return undefined;
+  }
+  const request = readJson(claimed) as HostOpenRequest | undefined;
+  if (request === undefined) {
+    rmSync(claimed, { force: true, recursive: true });
+    return undefined;
+  }
+  return request;
+}
+
 export function removeRequest(dir: string, id: string): void {
-  // Recursive: a directory here is not a request, and it must not be able to make this throw.
+  // Recursive: a directory here is not a request, and it must not be able to make this throw. The claimed
+  // copy goes too, in case the caller claimed it and then failed before answering.
   rmSync(join(dir, `${id}.json`), { force: true, recursive: true });
+  rmSync(join(dir, `${id}.json.working`), { force: true, recursive: true });
 }
 
 /**
