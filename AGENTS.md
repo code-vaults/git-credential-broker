@@ -55,6 +55,11 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   (install after staging, or build something self-contained) **before** the first one is taken. The
   attempt that found it was a fetch wrapper for the proxy; the same ground is covered today by Node 24
   and `NODE_USE_ENV_PROXY`, which is why that floor moved.
+
+  The floor is checked at runtime, in both entry points, because `engines` is only a declaration here:
+  measured, `yarn install` succeeds with `"node": ">=99"`, and `.npmrc` is not read by Yarn 4 at all — so
+  neither would catch a host on an older interpreter. A deployment runs from a checkout with no install
+  step, which is exactly the case a runtime check covers and an install-time one does not.
 - **After writing a fix, read the file back — and never trust a check the shell can rewrite.** Three
   commits in one session described changes the tree did not have: an edit applied after a commit whose
   message claimed it and then discarded by a restore, and a `String.replace` whose replacement contained
