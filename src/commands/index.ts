@@ -44,19 +44,6 @@ Environment
 
 Run \`git-credential-broker <command> --help\` for the options of one command.`;
 
-/** The subcommands, in the order help lists them. */
-export const COMMANDS = [
-  'setup',
-  'init',
-  'stage',
-  'compose',
-  'probe',
-  'logs',
-  'pr',
-  'host-opener',
-  'authorize',
-  'diagnose',
-] as const;
 
 /**
  * Dispatch a command line.

@@ -50,8 +50,10 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 
 - **Never commit key material.** `.gitignore` covers `*.pem` and `*.key`; a real App private
   key has already been dropped into this directory once. Before pushing:
-  `git grep -l 'BEGIN [A-Z ]*PRIVATE KEY' HEAD -- ':!AGENTS.md'` must find nothing (the file is
-  excluded because this line matches the pattern it tells you to run).
+  `git grep -l -- '-----BEGIN.*PRIVATE KEY-----' HEAD -- ':!AGENTS.md' ':!.agents/notes'` must find
+  nothing. Both exclusions are needed and neither is a loophole: this line contains the pattern, and the
+  notes quote a directory listing of a key that is readable on this machine — the evidence for why the
+  key belongs outside the mounts, not key material.
 - **Do not run the broker from this checkout, and understand why the *key* being elsewhere is not
   enough.** The broker reads the key, so the code it executes has the key's privileges: it can mint
   installation tokens for anything the App can see, and it can read the key file. A key outside the
