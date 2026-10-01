@@ -126,3 +126,33 @@ export function qualifiedBranch(value: string, cwd: string): string {
   }
   return `${found.owner}:${branch}`;
 }
+
+/**
+ * The branch a `--base` means, given the repository the pull request lands in.
+ *
+ * `--base upstream:main` names the remote for the check and the branch for the wire: a base is a branch of
+ * `--repo`, and `owner:branch` is not a branch name anywhere. A remote pointing at a different repository
+ * is a mistake worth catching here rather than letting GitHub answer confusingly.
+ *
+ * @param raw - what the operator wrote.
+ * @param repo - the repository `--repo` names, as `owner/name`.
+ * @param cwd - the directory to resolve remotes in.
+ * @returns the branch to send.
+ * @throws {Error} when the remote points at a repository other than `repo`.
+ */
+export function baseBranchFor(raw: string, repo: string, cwd: string): string {
+  const colon = raw.indexOf(':');
+  if (colon < 0) return raw;
+  const name = raw.slice(0, colon);
+  const found = remoteRepo(name, cwd);
+  if (found === undefined) {
+    // Says what is wrong with the remote rather than pretending the base is the problem.
+    throw new Error(`--base names ${JSON.stringify(name)}, which is not a remote this checkout can read`);
+  }
+  if (`${found.owner}/${found.repo}`.toLowerCase() !== repo.toLowerCase()) {
+    throw new Error(
+      `--base names a remote pointing at ${found.owner}/${found.repo}, but --repo is ${repo}: the base is a branch of the repository the pull request lands in`,
+    );
+  }
+  return raw.slice(colon + 1);
+}

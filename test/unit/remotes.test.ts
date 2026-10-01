@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { listRemotes, qualifiedBranch, remoteRepo } from '../../src/commands/remotes.ts';
+import { baseBranchFor, listRemotes, qualifiedBranch, remoteRepo } from '../../src/commands/remotes.ts';
 
 describe('resolving a branch that names a remote', () => {
   let dir = '';
@@ -93,6 +93,41 @@ describe('what a remote URL is allowed to look like', () => {
       () => qualifiedBranch('prefixed:main', dir),
       /remote "prefixed" points at .*gitlab\/group\/thing\.git/,
       'the operator is told the URL, not that the remote does not exist',
+    );
+  });
+});
+
+describe('the branch a --base means', () => {
+  let dir = '';
+
+  before(() => {
+    dir = mkdtempSync(join(tmpdir(), 'remotes-base-'));
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
+    git('init', '-q');
+    git('remote', 'add', 'upstream', 'https://github.com/code-vaults/git-credential-broker.git');
+    git('remote', 'add', 'origin', 'git@github.com:me/git-credential-broker.git');
+    // The same owner, a different repository: the case an owner-only comparison lets through.
+    git('remote', 'add', 'other', 'https://github.com/me/other-thing.git');
+  });
+
+  after(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('sends the branch and not the owner, because a base is a branch of --repo', () => {
+    assert.equal(baseBranchFor('upstream:main', 'code-vaults/git-credential-broker', dir), 'main');
+    assert.equal(baseBranchFor('main', 'anything/at-all', dir), 'main', 'a plain branch is left alone');
+  });
+
+  it('refuses a remote that points at another repository, even under the same owner', () => {
+    assert.throws(
+      () => baseBranchFor('other:main', 'me/git-credential-broker', dir),
+      (error: unknown) => {
+        const message = String((error as Error).message);
+        assert.match(message, /me\/other-thing/, 'it names the repository the remote points at');
+        assert.match(message, /me\/git-credential-broker/, 'and the one it should have been');
+        return true;
+      },
     );
   });
 });

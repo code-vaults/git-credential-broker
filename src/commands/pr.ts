@@ -20,7 +20,7 @@ import {
   writeRequest,
 } from '../host-request.ts';
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
-import { qualifiedBranch } from './remotes.ts';
+import { baseBranchFor, qualifiedBranch } from './remotes.ts';
 import { fail, parseArgs, say } from './support.ts';
 
 /** Longer than a credential request: a token is minted, then the action is performed. */
@@ -113,14 +113,11 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const baseBranch = (): string | undefined => {
     const raw = args.value('base');
     if (raw === undefined) return undefined;
-    const colon = raw.indexOf(':');
-    if (colon < 0) return raw;
-    const resolved = qualifiedBranch(raw, process.cwd());
-    const owner = resolved.slice(0, resolved.indexOf(':'));
-    if (`${owner}/${repo.split('/')[1] ?? ''}`.toLowerCase() !== repo.toLowerCase()) {
-      fail(`--base names a remote pointing at ${owner}/…, but --repo is ${repo}: the base is a branch of the repository the pull request lands in`);
+    try {
+      return baseBranchFor(raw, repo, process.cwd());
+    } catch (error) {
+      fail((error as Error).message);
     }
-    return raw.slice(colon + 1);
   };
   const qualified = (value: string | undefined): string | undefined => {
     if (value === undefined) return undefined;

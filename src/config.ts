@@ -261,14 +261,6 @@ function stringOrNumberField(
 }
 
 /**
- * Read an optional map of strings, for REST permission names.
- *
- * @param value - the raw value.
- * @param errors - the error accumulator.
- * @param at - the human-readable location, for messages.
- * @returns the map, or undefined when absent or invalid.
- */
-/**
  * The same map with its keys lower-cased.
  *
  * These keys are owners, and owners are case-insensitive on GitHub while every comparison in this
@@ -284,6 +276,15 @@ function lowerCasedKeys(value: Record<string, string> | undefined): Record<strin
   for (const [key, entry] of Object.entries(value)) out[key.toLowerCase()] = entry;
   return out;
 }
+
+/**
+ * Read an optional map of strings, for REST permission names.
+ *
+ * @param value - the raw value.
+ * @param errors - the error accumulator.
+ * @param at - the human-readable location, for messages.
+ * @returns the map, or undefined when absent or invalid.
+ */
 
 function stringMapField(
   value: unknown,
