@@ -60,8 +60,10 @@ export function listRemotes(cwd: string): string[] {
  * @param cwd - the directory to ask.
  * @returns the owner and repository, or undefined when there is no such remote or the URL is not one.
  */
-export function remoteRepo(name: string, cwd: string): RemoteRepo | undefined {
-  const url = remoteUrl(name, cwd);
+export function remoteRepo(name: string, cwd: string, push = false): RemoteRepo | undefined {
+  // `--push` for a head: git lets a remote fetch from one place and push to another, and the branch a
+  // pull request comes from lives where it was pushed. The base asks the other question.
+  const url = git(['remote', 'get-url', ...(push ? ['--push'] : []), name], cwd);
   if (url === undefined) return undefined;
 
   // A URL has an authority and then a path; the scp form has a host and then one. Anything else — a local
@@ -110,7 +112,7 @@ export function qualifiedBranch(value: string, cwd: string): string {
   if (colon < 0) return value;
   const name = value.slice(0, colon);
   const branch = value.slice(colon + 1);
-  const found = remoteRepo(name, cwd);
+  const found = remoteRepo(name, cwd, true);
   if (found === undefined) {
     const known = listRemotes(cwd);
     const url = remoteUrl(name, cwd);
@@ -144,7 +146,7 @@ export function baseBranchFor(raw: string, repo: string, cwd: string): string {
   const colon = raw.indexOf(':');
   if (colon < 0) return raw;
   const name = raw.slice(0, colon);
-  const found = remoteRepo(name, cwd);
+  const found = remoteRepo(name, cwd, true);
   if (found === undefined) {
     // Says what is wrong with the remote rather than pretending the base is the problem.
     throw new Error(`--base names ${JSON.stringify(name)}, which is not a remote this checkout can read`);

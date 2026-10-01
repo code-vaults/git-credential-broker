@@ -364,7 +364,15 @@ export function claimRequest(dir: string, id: string): HostOpenRequest | undefin
     return undefined;
   }
   const request = readJson(claimed) as HostOpenRequest | undefined;
-  if (request === undefined) {
+  // The channel is written by the container, so the shape is not a given: the opener's own checks run on
+  // this next, and a request missing a string field would make them index undefined and take it down.
+  const shaped =
+    request !== undefined &&
+    typeof request.head === 'string' &&
+    typeof request.base === 'string' &&
+    typeof request.title === 'string' &&
+    typeof request.body === 'string';
+  if (!shaped) {
     rmSync(claimed, { force: true, recursive: true });
     return undefined;
   }
