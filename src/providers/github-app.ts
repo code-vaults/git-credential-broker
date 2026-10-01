@@ -823,8 +823,15 @@ function describeCause(error: unknown): string {
               author?: { login?: unknown };
               body?: unknown;
             }>) {
-              const first = String(comment.body ?? '').split('\n')[0] ?? '';
-              report.push(`    ${String(comment.databaseId ?? '')} @${String(comment.author?.login ?? '?')}: ${first.slice(0, 120)}`);
+              // The whole comment, not its first line and not 120 characters of it: a review bot puts the finding
+              // in the lines below the header, and a report that drops them sends the reader to the web UI for the
+              // one thing this command exists to show.
+              const body = String(comment.body ?? '');
+              const bodyLines = body.split('\n');
+              const shown = bodyLines.slice(0, 12).map((line) => line.replace(/<\/?[a-z][^>]*>/gi, '').trim());
+              const more = bodyLines.length > shown.length ? ` (+${bodyLines.length - shown.length} more lines)` : '';
+              report.push(`    ${String(comment.databaseId ?? '')} @${String(comment.author?.login ?? '?')}:${more}`);
+              for (const line of shown) if (line !== '') report.push(`      ${line.slice(0, 300)}`);
             }
           }
         }
