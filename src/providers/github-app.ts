@@ -648,7 +648,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         // named here, so the allowlist still decides what can be reached.
         const { text: raw } = await callWithToken('POST', `${api}/graphql`, token, {
           query:
-            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:50){nodes{id isResolved path line comments(first:10){nodes{databaseId author{login} body}}}}}}}}',
+            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:50){nodes{id isResolved path line comments(first:10){nodes{databaseId author{login} body}}}}}}}',
           variables: { owner: request.owner, name: request.repo, number: request.number },
         });
         let listed: unknown = null;
