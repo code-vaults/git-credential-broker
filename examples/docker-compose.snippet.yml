@@ -99,12 +99,12 @@ services:
     # ... existing configuration ...
     environment:
       # ... existing PUID/PGID/proxy entries ...
-      - GIT_BROKER_SOCKET=/run/git-cred-broker/broker.sock
+      - GIT_BROKER_SOCKET=/run/git-broker/broker.sock
       # Fail closed: never silently fall back to another credential source.
       - GIT_BROKER_REQUIRE=1
     volumes:
       # ... existing mounts ...
-      - git-cred-broker-run:/run/git-cred-broker
+      - git-cred-broker-run:/run/git-broker
 
 volumes:
   git-cred-broker-run:

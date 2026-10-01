@@ -245,6 +245,23 @@ function stringOrNumberField(
  * @param at - the human-readable location, for messages.
  * @returns the map, or undefined when absent or invalid.
  */
+/**
+ * The same map with its keys lower-cased.
+ *
+ * These keys are owners, and owners are case-insensitive on GitHub while every comparison in this
+ * codebase is made against a lower-cased one. Normalising at the edge is what keeps a configuration that
+ * looks right from silently doing nothing.
+ *
+ * @param value - the map, as written, or nothing when the field is absent.
+ * @returns the map with lower-cased keys, or nothing.
+ */
+function lowerCasedKeys(value: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (value === undefined) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) out[key.toLowerCase()] = entry;
+  return out;
+}
+
 function stringMapField(
   value: unknown,
   errors: string[],
@@ -364,7 +381,10 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           clientId: stringField(blockRaw, 'clientId', errors, at),
           appId: stringOrNumberField(blockRaw, 'appId', errors, at),
           privateKeyPath: stringField(blockRaw, 'privateKeyPath', errors, at),
-          userTokens: stringMapField(blockRaw['userTokens'], errors, at),
+          // Keys are owners, and every other owner in this codebase is compared lower-cased. A key spelled
+      // `An-Org` used to validate and then never match, which meant the pull request was created as the app
+      // while the operator believed a person would author it.
+      userTokens: lowerCasedKeys(stringMapField(blockRaw['userTokens'], errors, at)),
           privateKeyPem: stringField(blockRaw, 'privateKeyPem', errors, at),
           permissions: stringMapField(blockRaw['permissions'], errors, at),
           apiBaseUrl: stringField(blockRaw, 'apiBaseUrl', errors, at),

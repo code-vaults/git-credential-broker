@@ -191,7 +191,7 @@ export function runCompose(argv: readonly string[]): number {
     if (mode !== 'sidecar') {
       fail(
         `${configPath} was written with --mode host; re-run ` +
-          '`git-credential-broker init --mode sidecar --force ...` before using compose',
+          '`git-credential-broker init --mode sidecar ...` before using compose',
       );
     }
   } else {
