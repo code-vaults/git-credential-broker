@@ -98,6 +98,8 @@ export function findGitDir(from: string): string | undefined {
 function gitDirAt(dir: string): string | undefined {
   const candidate = join(dir, '.git');
   if (!existsSync(candidate)) return undefined;
+  // A symlinked .git is not a thing git makes: a submodule and a worktree use a file.
+  if (lstatSync(candidate).isSymbolicLink()) return undefined;
   if (statSync(candidate).isDirectory()) {
     // Followed by statSync on purpose, and then checked: a symlink to any directory was a way to publish
     // a container-chosen path as a channel. A git directory has a HEAD; anything else is not one.
@@ -146,7 +148,12 @@ export function discoverCheckouts(root: string, maxDepth = 4): { repo: string; d
   const walk = (current: string, depth: number): void => {
     const gitDir = gitDirAt(current);
     if (gitDir !== undefined) {
-      found.push({ repo: current, dir: channelDir(gitDir) });
+      // A `gitdir:` pointer is written by whoever has the checkout, which is the container. Serving a channel
+  // at a path it names would let it choose where the opener creates files, and running `gh` there would let
+  // it choose which repository that checkout means. A worktree's pointer stays under the same root.
+  if (gitDir.startsWith(`${root.replace(/[/\\]+$/, '')}/`)) {
+    found.push({ repo: current, dir: channelDir(gitDir) });
+  }
       return;
     }
     if (depth >= maxDepth) return;
@@ -182,14 +189,10 @@ export function channelDir(gitDir: string): string {
  * @returns what the opener said about itself, or `undefined` when none is running.
  */
 export function readOpener(dir: string): OpenerInfo | undefined {
-  const file = join(dir, OPENER_FILE);
-  if (!existsSync(file)) return undefined;
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
-    return typeof parsed === 'object' && parsed !== null ? (parsed as OpenerInfo) : undefined;
-  } catch {
-    return undefined;
-  }
+  // Through readJson, which takes lstat and a size: a FIFO here would block open(2) forever, and it would
+  // block synchronously, so one such file stops the opener serving every root with nothing in the log.
+  const parsed = readJson(join(dir, OPENER_FILE));
+  return typeof parsed === 'object' && parsed !== null ? (parsed as OpenerInfo) : undefined;
 }
 
 /**
