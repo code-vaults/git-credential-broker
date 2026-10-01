@@ -115,12 +115,12 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   in the checkout it was written in, which is what keeps the agent from pointing it at another one.
 
   **More than one way to be the author exists, and none of them replaces another.** The opener (no
-  long-lived secret, one process), `userTokens` (one process, a token per owner) and the OAuth app on
-  the drawing board (one process, no manual rotation, a wider token) answer the same question with
-  different trades. Adding one is not a reason to remove another: a deployment chooses. When you add
+  long-lived secret, one process), `userTokens` (one process, a token per owner), and authorization on
+  the existing app (one process, no manual rotation, a token that can do anything that person can)
+  answer the same question with different trades. Adding one is not a reason to remove another: a deployment chooses. When you add
   the next one, document it beside the others rather than rewriting them.
 
-  A fourth way is authorization rather than a token: `authorize` runs the device flow once from a
+  Authorization is the fourth, and it is not a token to place: `authorize` runs the device flow once from a
   browser somewhere else and leaves a refresh token beside the key, and the broker renews it and uses
   the user token for exactly the two things an installation token cannot do — authoring a pull request
   as a person, and resolving a review thread, which GraphQL refuses for an app. It needs the client id
@@ -185,7 +185,8 @@ Full detail and the measurements behind them:
 | `src/providers/github-app.ts` | RS256 JWT, installation lookup, permission pre-flight, token cache |
 | `src/host-request.ts` | the request channel between the container and a host-side opener |
 | `test/e2e/push.test.ts` | a real push over authenticated smart HTTP |
-| `src/commands/` | the management CLI: `setup`, `init`, `stage`, `compose`, `probe`, `logs`, `pr`, `host-opener`, `diagnose` |
+| `src/commands/` | the management CLI: `setup`, `init`, `stage`, `compose`, `probe`, `logs`, `pr`, `host-opener`, `authorize`, `diagnose` |
+| `src/device-flow.ts` | the device flow: the three exchanges that turn an authorization into a token |
 | `src/cli/helper.ts` | the one command that is both the git helper and the CLI |
 | `scripts/postbuild.mjs` | build-time fixup: shebang and exec bit on the CLI entry points |
 | `.agents/notes/proposed/` | the original design and its review |
