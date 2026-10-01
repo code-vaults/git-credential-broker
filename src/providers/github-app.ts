@@ -648,9 +648,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         // named here, so the allowlist still decides what can be reached.
         const { text: raw } = await callWithToken('POST', `${api}/graphql`, token, {
           query:
-            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){' +
-            'pullRequest(number:$number){reviewThreads(first:50){nodes{id isResolved path line ' +
-            'comments(first:10){nodes{databaseId author{login} body}}}}}}}}}',
+            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:50){nodes{id isResolved path line comments(first:10){nodes{databaseId author{login} body}}}}}}}}',
           variables: { owner: request.owner, name: request.repo, number: request.number },
         });
         let listed: unknown = null;
@@ -658,6 +656,13 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
           listed = JSON.parse(raw);
         } catch {
           listed = null;
+        }
+        // Nothing from a response body reaches the container — the broker answers with a generic
+        // message for an ordinary Error — but the host log is where a reason belongs, and a refusal
+        // that reads as "no threads" is worse than one that reads as a refusal.
+        const refused = (listed ?? {}) as { errors?: unknown };
+        if (Array.isArray(refused.errors) && refused.errors.length > 0) {
+          throw new Error(`GitHub refused to list the review threads: ${JSON.stringify(refused.errors).slice(0, 300)}`);
         }
         const data = (listed ?? {}) as {
           data?: { repository?: { pullRequest?: { reviewThreads?: { nodes?: unknown } } } };
