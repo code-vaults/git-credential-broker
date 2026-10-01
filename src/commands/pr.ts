@@ -19,8 +19,8 @@ const PR_TIMEOUT_MS = 60_000;
 /** Usage text for `pr`. */
 export const PR_USAGE = `Usage: git-credential-broker pr [options]
 
-Open, close, merge or update a pull request through the broker, without the credential ever
-reaching this side.
+Open, close, merge, update or inspect a pull request through the broker, without the credential
+ever reaching this side.
 
 Opening (the default)
   --head <branch>      The branch holding the change                 [required]
@@ -32,6 +32,7 @@ Opening (the default)
 
 Acting on one
   --number <n>         The pull request number                       [required]
+  --status             Report its state, mergeability and the runs for its commit
   --close              Close it
   --merge              Merge it (branch protection still applies)
   --method <m>         merge, squash (default) or rebase
@@ -52,6 +53,7 @@ Common
  * @returns `close`, `merge`, `update` or `open`.
  */
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
+  if (args.has('status')) return 'status' as const;
   if (args.has('close')) return 'close' as const;
   if (args.has('merge')) return 'merge' as const;
   if (args.value('number') !== undefined) return 'update' as const;
@@ -65,7 +67,7 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
  * @returns the process exit code: 0 done, 1 refused, 3 unreachable.
  */
 export async function runPr(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help', 'draft', 'close', 'merge'] });
+  const args = parseArgs(argv, { booleans: ['help', 'draft', 'close', 'merge', 'status'] });
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
     return 0;
@@ -99,7 +101,8 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     if (!head) fail('--head is required to open a pull request');
     if (!title) fail('--title is required to open a pull request');
   } else if (number === undefined) {
-    fail(`--number is required to ${action} a pull request`);
+    const verb = action === 'status' ? 'inspect' : action;
+    fail(`--number is required to ${verb} a pull request`);
   } else if (!Number.isInteger(Number(number)) || Number(number) <= 0) {
     fail(`--number must be a positive integer, got ${JSON.stringify(number)}`);
   }
@@ -137,6 +140,11 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (!response.ok) {
     process.stderr.write(`refused [${response.code ?? 'unknown'}]: ${response.reason ?? 'no reason given'}\n`);
     return 1;
+  }
+
+  if (action === 'status') {
+    say(response.prStatus ?? 'no report');
+    return 0;
   }
 
   const done =

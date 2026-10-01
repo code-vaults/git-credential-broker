@@ -258,7 +258,13 @@ export function createRequestHandler(
 
     if (message['op'] === 'pull-request') {
       const action = message['action'] ?? 'open';
-      if (action !== 'open' && action !== 'close' && action !== 'merge' && action !== 'update') {
+      if (
+        action !== 'open' &&
+        action !== 'close' &&
+        action !== 'merge' &&
+        action !== 'update' &&
+        action !== 'status'
+      ) {
         return deny(context, CODES.BAD_REQUEST, `bad action ${JSON.stringify(action)}`, 'unknown pull request action');
       }
       const number = message['number'];
@@ -331,6 +337,7 @@ export function createRequestHandler(
           prUrl: result.url,
           prState: result.state,
           prMerged: result.merged === true,
+          prStatus: result.status,
         };
       } catch (error) {
         const reason = String((error as Error).message ?? error).slice(0, 300);

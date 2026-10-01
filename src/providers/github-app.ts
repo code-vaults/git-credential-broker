@@ -424,6 +424,84 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       };
     }
 
+  /**
+   * Report what a pull request is, and how its commit is doing.
+   *
+   * Two reads: the pull request itself, which carries `mergeable_state`, and the workflow runs for
+   * its head commit — the second is what separates "the checks are red" from "the ruleset wants a
+   * review", which `mergeable_state: blocked` alone cannot. Both are repository-scoped, so the
+   * allowlist binds them.
+   *
+   * @param request - which pull request.
+   * @param token - the installation token.
+   * @param collection - the repository's pull request route.
+   * @returns the number, URL, state and a short report.
+   */
+  async function readPullRequestStatus(
+    request: PullRequestRequest,
+    token: string,
+    collection: string,
+  ): Promise<PullRequest> {
+    const { text } = await callWithToken('GET', `${collection}/${request.number}`, token);
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
+    }
+    const payload = (parsed ?? {}) as {
+      number?: unknown;
+      html_url?: unknown;
+      state?: unknown;
+      merged?: unknown;
+      mergeable_state?: unknown;
+      draft?: unknown;
+      head?: { sha?: unknown };
+    };
+    if (typeof payload.number !== 'number' || typeof payload.html_url !== 'string') {
+      throw new ProviderConfigError('GitHub did not answer with a pull request');
+    }
+
+    const lines = [
+      `#${payload.number} ${String(payload.state ?? '?')}${payload.merged === true ? ' (merged)' : ''}${payload.draft === true ? ' (draft)' : ''}`,
+      payload.html_url,
+    ];
+    if (typeof payload.mergeable_state === 'string') {
+      lines.push(`mergeable: ${payload.mergeable_state}`);
+    }
+
+    const sha = (payload.head ?? {}).sha;
+    if (typeof sha === 'string' && sha !== '') {
+      const { text: listed } = await callWithToken(
+        'GET',
+        `${api}/repos/${request.owner}/${request.repo}/actions/runs?head_sha=${sha}&per_page=20`,
+        token,
+      );
+      let runs: unknown = null;
+      try {
+        runs = JSON.parse(listed);
+      } catch {
+        runs = null;
+      }
+      const batch = ((runs ?? {}) as { workflow_runs?: unknown }).workflow_runs;
+      if (Array.isArray(batch) && batch.length > 0) {
+        for (const run of batch as Array<{ name?: unknown; status?: unknown; conclusion?: unknown }>) {
+          lines.push(`run ${String(run.name ?? '?')}: ${String(run.conclusion ?? run.status ?? '?')}`);
+        }
+      } else {
+        lines.push('no workflow run for that commit yet');
+      }
+    }
+
+    return {
+      number: payload.number,
+      url: payload.html_url,
+      state: typeof payload.state === 'string' ? payload.state : undefined,
+      merged: payload.merged === true,
+      status: lines.join('\n'),
+    };
+  }
+
   return {
     name: 'github-app',
 
@@ -523,6 +601,10 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       }
 
       const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
+
+      if (request.action === 'status') {
+        return readPullRequestStatus(request, token, collection);
+      }
       let method = 'POST';
       let url = collection;
       let body: Record<string, unknown> = { title: request.title, body: request.body, head: request.head, base: request.base, draft: request.draft === true };

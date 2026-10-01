@@ -307,6 +307,25 @@ describe('broker request handling', () => {
     assert.deepEqual(seen, ['close'], 'and the provider was never asked to do it');
   });
 
+  it('reports a pull request without changing it', async () => {
+    const asked: string[] = [];
+    const reader: Provider = {
+  name: 'with-prs',
+  getCredential: () => Promise.reject(new Error('not used here')),
+  pullRequest: (request) => {
+    asked.push(request.action);
+    return Promise.resolve({ number: 42, url: 'u', state: 'open', status: '#42 open' });
+  },
+    };
+    const { handle, events } = makeHarness(['acme/widget'], reader);
+    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'status', number: 42 });
+
+    assert.equal(response.ok, true);
+    assert.deepEqual(asked, ['status']);
+    assert.equal(response.prStatus, '#42 open');
+    assert.equal(events.at(-1)?.['action'], 'status');
+  });
+
   it('keeps provider failures generic for the caller and detailed in the audit', async () => {
     const exploding: Provider = {
       name: 'exploding',

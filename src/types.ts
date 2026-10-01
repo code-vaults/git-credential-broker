@@ -63,7 +63,7 @@ export interface JobLogRequest {
 }
 
 /** What can be done to a pull request. */
-export type PullRequestAction = 'open' | 'close' | 'merge' | 'update';
+export type PullRequestAction = 'open' | 'close' | 'merge' | 'update' | 'status';
 
 /** How a merge should be recorded. */
 export type MergeMethod = 'merge' | 'squash' | 'rebase';
@@ -94,6 +94,8 @@ export interface PullRequest {
   readonly state?: string;
   /** Whether the action merged it. */
   readonly merged?: boolean;
+  /** A short report, when the action was to look. */
+  readonly status?: string;
 }
 
 /** One job log, as returned to the caller. */
@@ -201,6 +203,8 @@ export interface WireResponse {
   readonly prNumber?: number;
   readonly prState?: string;
   readonly prMerged?: boolean;
+  /** The report, for `action: "status"`. */
+  readonly prStatus?: string;
 }
 
 /** Where audit records go. */

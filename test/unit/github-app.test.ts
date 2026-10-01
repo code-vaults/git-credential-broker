@@ -144,9 +144,23 @@ function createStubFetch(options: {
     if (url.endsWith('/merge')) {
       return Promise.resolve(jsonResponse({ merged: true, message: 'Pull Request successfully merged' }));
     }
+    if (url.includes('/actions/runs?head_sha=')) {
+      return Promise.resolve(
+        jsonResponse({
+          workflow_runs: [{ name: 'CI', status: 'completed', conclusion: 'success' }],
+        }),
+      );
+    }
     if (/\/pulls\/\d+$/.test(url)) {
       return Promise.resolve(
-        jsonResponse({ number: 42, html_url: 'https://github.com/acme/widget/pull/42', state: 'closed', merged: true }),
+        jsonResponse({
+          number: 42,
+          html_url: 'https://github.com/acme/widget/pull/42',
+          state: 'closed',
+          merged: true,
+          mergeable_state: 'blocked',
+          head: { sha: 'cafebabe' },
+        }),
       );
     }
     if (url.endsWith('/pulls')) {
@@ -500,6 +514,30 @@ describe('createGithubAppProvider', () => {
     assert.deepEqual(put?.body, { merge_method: 'rebase' });
     assert.equal(pr.url, 'https://github.com/acme/widget/pull/42');
     assert.equal(pr.merged, true, 'and the state comes from reading the pull request back');
+  });
+
+  it('reports a pull request, and how its commit is doing', async () => {
+    const stub = createStubFetch({
+  installations: [{ id: 42, account: { login: 'acme' } }],
+  nowMs,
+  appPermissions: { pull_requests: 'write', contents: 'read' },
+  installationPermissions: { pull_requests: 'write', contents: 'read' },
+    });
+    const pr = await providerFor(stub).pullRequest!({
+  action: 'status',
+  host: 'github.com',
+  owner: 'acme',
+  repo: 'widget',
+  number: 42,
+    });
+
+    assert.equal(pr.state, 'closed');
+    assert.match(pr.status ?? '', /mergeable: blocked/);
+    assert.match(pr.status ?? '', /run CI: success/, 'and the runs for that exact commit');
+    assert.ok(
+  stub.calls.some((call) => call.url.includes('/actions/runs?head_sha=cafebabe')),
+  'read through the repository route, pinned to the head commit',
+    );
   });
 
   it('skips the pre-flight when the operator turns it off', async () => {
