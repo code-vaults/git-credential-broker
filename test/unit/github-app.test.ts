@@ -136,6 +136,8 @@ function textResponse(body: string, status = 200) {
 
 function createStubFetch(options: {
   installations: unknown;
+  /** What the GraphQL scope check is told the thread belongs to. */
+  threadRepo?: string;
   nowMs: number;
   token?: string;
   tokenStatus?: number;
@@ -193,6 +195,14 @@ function createStubFetch(options: {
       );
     }
     // A review: what the comment path posts, with or without inline comments on it.
+    // GraphQL: the scope check asks whose thread it is before resolving it, so both shapes answer.
+    if (url.endsWith('/graphql')) {
+      const body = init.body ?? '';
+      if (body.includes('resolveReviewThread')) return Promise.resolve(jsonResponse({ data: { resolveReviewThread: { thread: { isResolved: true } } } }));
+      return Promise.resolve(
+        jsonResponse({ data: { node: { pullRequest: { repository: { nameWithOwner: options.threadRepo ?? 'acme/widget' } } } } }),
+      );
+    }
     if (url.endsWith('/reviews')) return Promise.resolve(jsonResponse({}));
     if (url.endsWith('/pulls')) {
       return Promise.resolve(
@@ -699,6 +709,47 @@ describe('createGithubAppProvider', () => {
 
     const review = stub.calls.find((call) => call.url.endsWith('/reviews'));
     assert.deepEqual(review?.body, { body: 'a general remark', event: 'COMMENT' }, 'nothing new in the payload');
+  });
+
+
+  it("resolves a thread with a token per owner, which is a person acting too", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'resolve-owner-'));
+    const tokenPath = join(dir, 'upstream.token');
+    writeFileSync(tokenPath, 'github_pat_x\n', 'utf8');
+
+    // No installation: the repository the app was never installed on, resolved as a person.
+    const stub = createStubFetch({ installations: [], nowMs, threadRepo: 'upstream/upstream' });
+    const answered = await providerFor(stub, { userTokens: { upstream: tokenPath } }).pullRequest!({
+      action: 'resolve', host: 'github.com', owner: 'upstream', repo: 'upstream', number: 4, threadId: 'PRRT_x',
+    });
+    assert.ok(answered, 'the resolve went through');
+
+    const mutation = stub.calls.find((call) => typeof call.raw === 'string' && call.raw.includes('resolveReviewThread'));
+    assert.ok(mutation, 'the mutation was sent');
+    assert.equal(mutation?.authorization, 'Bearer github_pat_x', 'and a token per owner is what sent it');
+    assert.equal(
+      stub.calls.some((call) => call.url.includes('/access_tokens')),
+      false,
+      'without asking for an installation, which GraphQL refuses for this',
+    );
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('refuses to resolve a thread that belongs to another repository', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'resolve-scope-'));
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-1\n', 'utf8');
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      threadRepo: 'someone/else',
+    });
+    await assert.rejects(
+      providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
+        action: 'resolve', host: 'github.com', owner: 'acme', repo: 'widget', number: 4, threadId: 'PRRT_elsewhere',
+      }),
+      /not a review thread of acme\/widget/,
+    );
+    rmSync(dir, { recursive: true, force: true });
   });
 
 });

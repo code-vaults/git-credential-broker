@@ -399,7 +399,9 @@ describe('broker request handling', () => {
       ['an unknown side', { side: 'middle' }],
       ['half an anchor', { line: undefined }],
     ] as const) {
-      const response = await handle({ ...comments, ...patch, ...(patch.line === undefined ? { line: undefined } : {}) });
+      // Spreading an own property whose value is undefined does set the key, so the explicit
+      // "half an anchor" case still removes it and every other case keeps the line it named.
+      const response = await handle({ ...comments, ...patch });
       assert.equal(response.code, 'bad-request', label + ' has to be refused by the broker');
     }
 

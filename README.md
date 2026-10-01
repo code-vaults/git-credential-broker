@@ -320,12 +320,13 @@ For a sidecar, pass them in its `environment:` (compose only forwards what the f
 process, `EnvironmentFile=` in the unit and the boot wrapper, both of which already read
 `/etc/git-cred-broker/proxy.env` if it exists.
 
-The broker and `authorize` **refuse to start** when a proxy variable is set and `NODE_USE_ENV_PROXY` is
+The broker, `authorize` and `diagnose` **refuse to start** when a proxy variable is set and `NODE_USE_ENV_PROXY` is
 not `1`, instead of reaching GitHub directly by a route nobody chose. `gh`, which the host opener runs,
 reads those variables itself (it is Go), so it only needs them to arrive.
 
 Two things the app needs: its **client id** in the configuration (the App ID will not do), and
-**Enable Device Flow** selected in its settings. No client secret: the device flow does not use one,
+**Enable Device Flow** selected in its settings, and **Expire user authorization tokens** left on — the
+broker renews with the refresh token, and GitHub only issues one while that is selected. No client secret: the device flow does not use one,
 so no second long-lived secret joins the key.
 
 
