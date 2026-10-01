@@ -684,4 +684,12 @@ describe('compose', () => {
       true,
     );
   });
+
+  it('emits one environment block, with the proxy switch the daemon insists on', () => {
+    // Not a regex on a fragment: the failure this guards is a second `environment:` key, which is not valid
+    // YAML and which docker rejects — and `docker compose config` cannot run here.
+    const keys = rendered.split('environment:').length - 1;
+    assert.equal(keys, 1, 'a service with two environment keys is not a valid compose file');
+    assert.match(rendered, /NODE_USE_ENV_PROXY=1/, 'and the switch has to be there with the proxy variables');
+  });
 });

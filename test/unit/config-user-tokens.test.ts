@@ -12,7 +12,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
-import { assertUserTokensReadable, loadConfig } from '../../src/config.ts';
+import { refreshTokenPath } from '../../src/commands/authorize.ts';
+import { assertUserTokensReadable, loadConfig, userTokenPath } from '../../src/config.ts';
 
 /**
  * A configuration with one host and one token for an owner.
@@ -45,6 +46,13 @@ function configWith(dir: string, tokenPath: string): ReturnType<typeof loadConfi
 }
 
 describe('the configured user tokens', () => {
+  it('writes the token where the broker will read it, in the layout the deployment uses', () => {
+    // The sidecar keeps the configuration and the key in one directory, which is why the writer (beside the
+    // configuration) and the reader (beside the key) have to land on the same file.
+    const dir = '/etc/git-cred-broker';
+    assert.equal(refreshTokenPath(`${dir}/broker.config.json`), userTokenPath(`${dir}/app.pem`));
+  });
+
   it('accepts one whose file is there', () => {
     const dir = mkdtempSync(join(tmpdir(), 'user-tokens-'));
     const token = join(dir, 'acme.token');
@@ -62,6 +70,39 @@ describe('the configured user tokens', () => {
         const message = String((error as Error).message);
         assert.match(message, /github\.com\/acme/, 'the block and the owner are named');
         assert.match(message, /not-there\.token/, 'and the path that could not be read');
+        return true;
+      },
+    );
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('blames the field it is checking, not permissions', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'user-tokens-'));
+    const path = join(dir, 'broker.config.json');
+    writeFileSync(
+      path,
+      JSON.stringify({
+        socketPath: join(dir, 'broker.sock'),
+        auditPath: join(dir, 'audit.jsonl'),
+        hosts: {
+          'github.com': {
+            provider: 'github-app',
+            appId: 1,
+            clientId: 'Iv1.clientid',
+            privateKeyPath: join(dir, 'app.pem'),
+            allow: ['acme/widget'],
+            userTokens: { acme: 7 },
+          },
+        },
+      }),
+      'utf8',
+    );
+    assert.throws(
+      () => loadConfig(path),
+      (error: unknown) => {
+        const message = String((error as Error).message);
+        assert.match(message, /userTokens/, 'the field the operator wrote is the field named');
+        assert.doesNotMatch(message, /permissions/, 'not a field they did not');
         return true;
       },
     );

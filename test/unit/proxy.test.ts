@@ -33,6 +33,12 @@ describe('refusing a proxy this process would ignore', () => {
     );
   });
 
+  it('does not refuse over all_proxy, which Node does not read: the remedy would change nothing', () => {
+    // Measured on 24.21: with all_proxy set and NODE_USE_ENV_PROXY=1, fetch still goes direct. Naming it in
+    // the refusal would send an operator to set a variable that does not help.
+    assert.doesNotThrow(() => assertProxyEnabled({ all_proxy: 'http://proxy.invalid:7890' }, []));
+  });
+
   it('treats a variable set to nothing as unset', () => {
     assert.doesNotThrow(() => assertProxyEnabled({ https_proxy: '' }));
   });
