@@ -25,6 +25,7 @@ Commands
   logs       Read a workflow job's log through the broker (the token stays in the broker)
   pr         Open a pull request through the broker (the token stays in the broker)
   host-opener  Watch for the container's requests to open pull requests, and create them (run on the host)
+  authorize  Authorize this app once, so pull requests can be authored by a person (run on the host)
   diagnose   Ask GitHub what the App can actually see (installations, permissions, repositories)
 
 Options
@@ -53,6 +54,7 @@ export const COMMANDS = [
   'logs',
   'pr',
   'host-opener',
+  'authorize',
   'diagnose',
 ] as const;
 
@@ -93,6 +95,8 @@ export async function runCli(argv: readonly string[]): Promise<number> {
       return (await import('./logs.ts')).runLogs(rest);
     case 'pr':
       return (await import('./pr.ts')).runPr(rest);
+    case 'authorize':
+      return (await import('./authorize.ts')).runAuthorize(rest);
     case 'host-opener':
       return (await import('./host-opener.ts')).runHostOpener(rest);
     case 'diagnose':
