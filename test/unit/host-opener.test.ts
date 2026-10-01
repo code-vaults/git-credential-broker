@@ -26,6 +26,7 @@ describe('the opener, once', () => {
     root = mkdtempSync(join(tmpdir(), 'host-opener-test-'));
     repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     dir = channelDir(join(repo, '.git'));
     // A program that records what it was called with, and answers the way gh does.
     command = join(root, 'not-gh');
