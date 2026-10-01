@@ -236,6 +236,25 @@ git-credential-broker pr --host github.com --repo owner/repo \
 Both the app and the installation need `pull_requests: write`; without it the error names the
 permission instead of failing at GitHub. `--draft` opens it as a draft.
 
+### Opening one as yourself
+
+A pull request opened through the broker is authored by the app, and automated reviewers are
+entitled to skip those. To have one authored by you instead, run the opener on the host, beside the
+same checkout, and ask for it from the container:
+
+```sh
+# on the host, once — it watches quietly and does nothing else
+git-credential-broker host-opener --repo /path/to/the/checkout
+
+# in the container
+git-credential-broker pr --via-host --head feature --base main --title "a title" --body-file pr.md
+```
+
+The opener creates pull requests with the credentials of whoever started it, which is the point;
+it never runs a shell, and the program it calls is configuration rather than a hard-coded `gh`:
+`--command /path/to/gh`, or `$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
+anything. Without `--via-host`, or with no opener running, `pr` behaves exactly as before.
+
 ## Configuration reference
 
 The broker only ever reads this file; it contains no secrets.

@@ -99,6 +99,15 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   to the branch it targets — the token is narrowed to `pull_requests: write`. CI runs on
   `pull_request`, so the branch gets the three jobs before anyone merges.
 
+- **A pull request authored by the app is one automated reviewers may skip, so a person can be the
+  author instead — through the host opener, and only for creating.** `pr --via-host` writes a request
+  under `<git dir>/git-credential-broker/pr-requests` (shared with the host, and untracked, so it
+  dirties nothing) and waits for the answer; `git-credential-broker host-opener` on the host turns it
+  into a pull request with the credentials of whoever runs it. That process is deliberately the only
+  thing that acts as a person: it runs no shell, its program is configuration, and it cannot push,
+  merge, close or read. Everything else stays on the socket, where the app is the only actor. Default
+  is still the broker — `--via-host` is asked for, never assumed.
+
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
   Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.json`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by
@@ -155,8 +164,9 @@ Full detail and the measurements behind them:
 | `src/helper.ts` | the container-side credential helper |
 | `src/policy.ts` | the authorization decision (default deny, exact segment matching) |
 | `src/providers/github-app.ts` | RS256 JWT, installation lookup, permission pre-flight, token cache |
+| `src/host-request.ts` | the request channel between the container and a host-side opener |
 | `test/e2e/push.test.ts` | a real push over authenticated smart HTTP |
-| `src/commands/` | the management CLI: `setup`, `init`, `stage`, `compose`, `probe`, `logs`, `pr`, `diagnose` |
+| `src/commands/` | the management CLI: `setup`, `init`, `stage`, `compose`, `probe`, `logs`, `pr`, `host-opener`, `diagnose` |
 | `src/cli/helper.ts` | the one command that is both the git helper and the CLI |
 | `scripts/postbuild.mjs` | build-time fixup: shebang and exec bit on the CLI entry points |
 | `.agents/notes/proposed/` | the original design and its review |

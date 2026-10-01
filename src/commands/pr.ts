@@ -10,6 +10,15 @@
  */
 import { readFileSync } from 'node:fs';
 
+import {
+  ANSWER_TIMEOUT_MS,
+  channelDir,
+  findGitDir,
+  readOpener,
+  removeResult,
+  waitForResult,
+  writeRequest,
+} from '../host-request.ts';
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { fail, parseArgs, say } from './support.ts';
 
@@ -29,6 +38,8 @@ Opening (the default)
   --body <text>        The body, inline
   --body-file <path>   The body, read from a file — a pull request body is usually long
   --draft              Open it as a draft
+  --via-host           Ask a host-side opener to create it, as you, instead of as the app
+                       (run 'git-credential-broker host-opener' on the host to provide one)
 
 Acting on one
   --number <n>         The pull request number                       [required]
@@ -67,7 +78,7 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
  * @returns the process exit code: 0 done, 1 refused, 3 unreachable.
  */
 export async function runPr(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help', 'draft', 'close', 'merge', 'status'] });
+  const args = parseArgs(argv, { booleans: ['help', 'draft', 'close', 'merge', 'status', 'via-host'] });
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
     return 0;
@@ -76,13 +87,14 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const host = args.value('host');
   const repo = args.value('repo');
+  const action = actionOf(args);
+  const viaHost = action === 'open' && args.has('via-host');
   if (!socketPath) {
     fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `git-credential-broker setup`');
   }
-  if (!host) fail('--host is required (e.g. github.com)');
-  if (!repo) fail('--repo is required (e.g. owner/name)');
+  if (!host && !viaHost) fail('--host is required (e.g. github.com)');
+  if (!repo) fail('--repo is required (e.g. owner/name), also with --via-host: the opener passes it on');
 
-  const action = actionOf(args);
   const number = args.value('number');
   const head = args.value('head');
   const base = args.value('base');
@@ -108,6 +120,37 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   }
   if (action === 'update' && title === undefined && body === undefined && base === undefined) {
     fail('an update has to change something: pass --title, --body/--body-file or --base');
+  }
+
+  if (viaHost) {
+    if (head === undefined || title === undefined) fail('--via-host needs --head and --title');
+    const gitDir = findGitDir(process.cwd());
+    if (gitDir === undefined) fail('--via-host needs a git repository: run it from the checkout');
+    const dir = channelDir(gitDir);
+    if (readOpener(dir) === undefined) {
+      fail(
+        `no host opener is watching ${dir}\n` +
+          '  start one on the host: git-credential-broker host-opener --repo <that checkout>\n' +
+          '  or drop --via-host to open it as the app instead',
+      );
+    }
+    const id = writeRequest(dir, {
+      repo,
+      head,
+      base: base ?? 'main',
+      title,
+      body: body ?? '',
+      session: 'pr',
+      pid: process.pid,
+    });
+    const answer = await waitForResult(dir, id, ANSWER_TIMEOUT_MS);
+    removeResult(dir, id);
+    if (answer === undefined) {
+      fail(`the host opener did not answer ${id} within ${Math.round(ANSWER_TIMEOUT_MS / 1000)}s`);
+    }
+    if (answer.error !== undefined) fail(`the host opener could not open it: ${answer.error}`);
+    say(`opened #${answer.number ?? '?'} (as you, through the host opener): ${answer.url ?? '(no url)'}`);
+    return 0;
   }
 
   let response;
