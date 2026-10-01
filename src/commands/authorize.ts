@@ -12,6 +12,10 @@
  *
  * Exit codes: 0 stored, 1 refused.
  */
+import { bootstrapProxy } from '../proxy.ts';
+
+bootstrapProxy();
+
 import { dirname, join, resolve as resolvePath } from 'node:path';
 
 import { userTokenPath, loadConfig, resolveConfigPath } from '../config.ts';

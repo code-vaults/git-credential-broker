@@ -54,5 +54,8 @@
   "devDependencies": {
     "@types/node": "^24.19.0",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "undici": "^8.11.2"
   }
 }
