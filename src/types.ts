@@ -138,6 +138,15 @@ export interface GithubAppHostConfig extends BaseHostConfig {
   /** Fallback `iss` claim when no client ID is configured. */
   readonly appId?: string | number;
   readonly privateKeyPath?: string;
+  /**
+   * A person's fine-grained token, used for creating pull requests and nothing else.
+   *
+   * It exists because a pull request authored by the app is one automated reviewers may skip. It
+   * should be scoped to the repositories the allowlist already covers, and to the pull request
+   * permission with read-only contents — no contents write means GitHub itself refuses to let it
+   * push or merge.
+   */
+  readonly userTokenPath?: string;
   readonly privateKeyPem?: string;
   /** REST permission names, e.g. `{ contents: 'write', pull_requests: 'write' }`. */
   readonly permissions?: Readonly<Record<string, string>>;

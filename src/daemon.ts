@@ -11,7 +11,7 @@ import type { Writable } from 'node:stream';
 
 import { createAudit } from './audit.ts';
 import { startBroker } from './broker.ts';
-import { assertKeysReadable, loadConfig, resolveConfigPath } from './config.ts';
+import { assertKeysReadable, assertUserTokensReadable, loadConfig, resolveConfigPath } from './config.ts';
 import { platformRefusal } from './platform.ts';
 import { createProvider } from './providers/index.ts';
 import type { ProviderDeps } from './providers/index.ts';
@@ -112,6 +112,7 @@ export async function runDaemon(
   try {
     config = loadConfig(resolved);
     assertKeysReadable(config);
+    assertUserTokensReadable(config);
     providers = buildProviders(config);
   } catch (error) {
     stderr.write(`git-credential-brokerd: ${(error as Error).message}\n`);

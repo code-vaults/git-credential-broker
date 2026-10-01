@@ -86,6 +86,27 @@ export function inferMode(config: BrokerConfig): DeploymentMode {
  * @param config - the validated configuration.
  * @throws {Error} when a key file is missing, with the remedy in the message.
  */
+/**
+ * Refuse to start when a person's token is named but not there.
+ *
+ * Same reasoning as the key: a path that does not resolve is a deployment mistake, and the process
+ * that runs the broker is the one whose paths count.
+ *
+ * @param config - the loaded configuration.
+ */
+export function assertUserTokensReadable(config: BrokerConfig): void {
+  for (const [host, block] of Object.entries(config.hosts)) {
+    if (block.provider !== 'github-app' || block.userTokenPath === undefined) continue;
+    if (existsSync(block.userTokenPath)) continue;
+    throw new Error(
+      `cannot read the token for ${host}: ${block.userTokenPath} does not exist.\n` +
+        `       Create a fine-grained token with pull requests: read and write, contents: read and\n` +
+        `       metadata: read, for the repositories the allowlist names, and put it there — or drop\n` +
+        `       userTokenPath to keep opening pull requests as the app.`,
+    );
+  }
+}
+
 export function assertKeysReadable(config: BrokerConfig): void {
   const mode = inferMode(config);
   for (const [host, block] of Object.entries(config.hosts)) {
@@ -338,6 +359,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           clientId: stringField(blockRaw, 'clientId', errors, at),
           appId: stringOrNumberField(blockRaw, 'appId', errors, at),
           privateKeyPath: stringField(blockRaw, 'privateKeyPath', errors, at),
+          userTokenPath: stringField(blockRaw, 'userTokenPath', errors, at),
           privateKeyPem: stringField(blockRaw, 'privateKeyPem', errors, at),
           permissions: stringMapField(blockRaw['permissions'], errors, at),
           apiBaseUrl: stringField(blockRaw, 'apiBaseUrl', errors, at),

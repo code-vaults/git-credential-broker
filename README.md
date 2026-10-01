@@ -238,6 +238,30 @@ permission instead of failing at GitHub. `--draft` opens it as a draft.
 
 ### Opening one as yourself
 
+A pull request opened with the app's installation token is authored by the app, and automated
+reviewers are entitled to skip those. The simplest way to have one authored by you is a
+**fine-grained personal access token** in the configuration:
+
+```jsonc
+{
+  "hosts": {
+    "github.com": {
+      "provider": "github-app",
+      "privateKeyPath": "/etc/git-cred-broker/app.pem",
+      "userTokenPath": "/etc/git-cred-broker/user.token"
+    }
+  }
+}
+```
+
+Create it with **Pull requests: Read and write**, **Contents: Read** and **Metadata: Read**, and
+give it access to **only the repositories the allowlist already names**. No contents *write* means
+GitHub itself refuses to let that token push or merge, so "it may only open pull requests" is
+enforced by GitHub rather than promised here. The token is used for creating and nothing else:
+closing, merging, updating and reading a state all stay on the app's installation token. Drop the
+field to go back to app-authored pull requests; `--via-host` still works either way.
+
+
 A pull request opened through the broker is authored by the app, and automated reviewers are
 entitled to skip those. To have one authored by you instead, run the opener on the host, beside the
 same checkout, and ask for it from the container:
