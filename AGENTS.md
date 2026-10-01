@@ -48,11 +48,13 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 
 ## Rules that are not obvious from the code
 
-- **A deployment runs no install step, and that is a design property.** `stage` exports a **commit**, and
-  the container-side helper and the host-side broker run straight from it, so a runtime dependency means
-  an install that every deployment has to remember — and one that, when forgotten, is a crash loop rather
-  than an error. This was learned the expensive way; the fix was to keep the code dependency-free and move
-  the Node floor to 24 for the proxy support that used to need a wrapper.
+- **A runtime dependency needs a deployment step, and there is not one yet.** `stage` exports a **commit**
+  and nothing else, so a dependency that is not vendored or inlined never reaches the deployment: the
+  broker fails to resolve it and, under `Restart=always`, loops instead of reporting anything. That is
+  not an argument against dependencies — they are wanted and coming — it is a hole to close in `stage`
+  (install after staging, or build something self-contained) **before** the first one is taken. The
+  attempt that found it was a fetch wrapper for the proxy; the same ground is covered today by Node 24
+  and `NODE_USE_ENV_PROXY`, which is why that floor moved.
 - **Never commit key material.** `.gitignore` covers `*.pem` and `*.key`; a real App private
   key has already been dropped into this directory once. Before pushing:
   `git grep -l -- '-----BEGIN.*PRIVATE KEY-----' HEAD -- ':!AGENTS.md' ':!.agents/notes'` must find

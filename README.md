@@ -71,9 +71,10 @@ CI runs the suite on Linux and inside WSL, and checks both refusals on native Wi
 npm install -g git-credential-broker
 ```
 
-This package has no runtime dependencies, and that is load-bearing: `stage` exports a **commit** and
-nothing else, so a deployment never runs an install. A dependency would add a step to every deployment
-and a way for one to fail silently — which is exactly what happened the first time this project had one.
+This package has no runtime dependencies today. That is a state, not a rule: `stage` exports a **commit**
+and nothing else, so a dependency needs a deployment step that does not exist yet, and until it does the
+broker fails to resolve it and restarts in a loop rather than saying so. Dependencies are wanted; the
+step has to land first — install after staging, or build something self-contained.
 
 Or run it from a checkout. Node 24 strips TypeScript types, so there is nothing to build and no
 dependencies to install:
