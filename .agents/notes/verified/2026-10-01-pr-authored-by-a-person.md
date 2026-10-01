@@ -1,6 +1,7 @@
 # A user token on the existing App, so a person can be the author of the pull request
 
-Status: decided, not built.
+Status: built. See `src/commands/authorize.ts`, `src/device-flow.ts`, and the second half of
+`src/providers/github-app.ts`; the keys below are what shipped, not what was proposed.
 
 ## The problem
 
@@ -34,7 +35,7 @@ change; only which client id and secret are configured.
 
 ## Shape
 
-- Configuration, on the host block: `oauthClientId` and `oauthClientSecretPath`, beside
+- Configuration, on the host block: `clientId` — already there for the JWT — and no client secret at all, since the device flow needs none. Beside
   `privateKeyPath`. Absent means the feature is absent.
 - `git-credential-broker authorize --config …` on the host: the device flow, printing a code and a URL
   once, then storing the refresh token in the deployment directory beside the key — outside every
@@ -49,7 +50,7 @@ change; only which client id and secret are configured.
 
 ## Checklist
 
-1. Config: `oauthClientId`, `oauthClientSecretPath`, validated like the key, absent by default.
+1. Config: `clientId`, present by default; no secret to place.
 2. `src/commands/authorize.ts`: device flow against `github.com/login/device/code` and
    `/login/oauth/access_token`, storing the refresh token with mode 600.
 3. Provider: exchange the refresh token when it is about to create, cache the user token until it

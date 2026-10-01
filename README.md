@@ -274,7 +274,7 @@ A token per owner is one way to be the author; authorizing the app once is anoth
 token per owner, because GitHub issues it for the app *and* the person together. Run this on the host:
 
 ```sh
-git-credential-broker authorize --config /etc/git-cred-broker/broker.config.json
+git-credential-broker authorize --config /srv/git-cred-broker/broker.config.json
 ```
 
 It prints a code and asks you to open <https://github.com/login/device>, then waits. Type the code on
@@ -301,10 +301,12 @@ same checkout, and ask for it from the container:
 # on the host, once — it serves every checkout below $HOME and does nothing else
 git-credential-broker host-opener          # --root <dir> to narrow it, repeatable
 # or, at boot and for good: examples/host-opener-boot.sh (see below)
+```
 
 **Copy that file outside the mounts before a task runs it.** It runs as you, so leaving it in the
 checkout would let anything that can write the checkout decide what your credentials do at boot.
 
+```sh
 # in the container
 git-credential-broker pr --via-host --repo owner/repo --head feature --base main \
   --title "a title" --body-file pr.md

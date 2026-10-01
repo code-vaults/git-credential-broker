@@ -10,7 +10,7 @@
 # DSM: Control Panel → Task Scheduler → Create → Triggered Task → Boot-up
 #   User:     the user whose GitHub credentials should author the pull requests — *not* root, which
 #             has neither that user's gh login nor that user's home.
-#   Command:  sh /volume1/homes/<you>/Workspaces/<checkout>/examples/host-opener-boot.sh
+#   Command:  sh /usr/local/bin/host-opener-boot.sh        (the copy you made above)
 #
 # Settable from the outside, because a boot task gets a minimal environment:
 #

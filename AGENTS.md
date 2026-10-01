@@ -60,9 +60,11 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   repository is agent-writable too, so a staged sha is worth checking against a clone or the remote.
   The *helper* is fine here: it holds no secret and grants nothing; the broker decides.
 - **Strict configuration validation is deliberate.** Top-level `_comment*` keys are ignored,
-  but everything inside `hosts` is checked, and a malformed `allow` entry is rejected at load
+  and a malformed `allow` entry is rejected at load
   time. It fails closed either way, but silently — and a typo that looks like configuration is
-  worse than a crash. Do not soften this to be helpful.
+  worse than a crash. Do not soften this to be helpful. What is checked is the fields the block
+  defines: an unknown key inside `hosts` is dropped rather than refused, so a misspelled `userTokens`
+  is not a typo this will catch.
 - **Never log the credential.** The audit log records a SHA-256 *fingerprint* plus host, repo,
   DSH session id and expiry. `src/audit.ts` also redacts secret-looking keys defensively
   (`token_fingerprint` is deliberately exempt). The helper prints the credential to stdout
