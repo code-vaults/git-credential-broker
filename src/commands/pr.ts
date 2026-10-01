@@ -20,6 +20,7 @@ import {
   writeRequest,
 } from '../host-request.ts';
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
+import { qualifiedBranch } from './remotes.ts';
 import { fail, parseArgs, say } from './support.ts';
 
 /** Longer than a credential request: a token is minted, then the action is performed. */
@@ -103,8 +104,26 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (!repo) fail('--repo is required (e.g. owner/name), also with --via-host: the opener passes it on');
 
   const number = args.value('number');
-  const head = args.value('head');
-  const base = args.value('base');
+  // `--head origin:feat/x` and `--base upstream:main` name a configured remote instead of a repository
+  // typed by hand: it is the name this checkout already pushes to, and a typo lists the ones that exist.
+  const qualified = (value: string | undefined): string | undefined => {
+    if (value === undefined) return undefined;
+    try {
+      return qualifiedBranch(value, process.cwd());
+    } catch (error) {
+      fail((error as Error).message);
+    }
+  };
+  const head = qualified(args.value('head'));
+  const base = qualified(args.value('base'));
+  if (base !== undefined && base.includes(':')) {
+    // The base is the repository the pull request lands in, so it has to be the one --repo names; a
+    // remote pointing elsewhere is a mistake that would otherwise be discovered by GitHub, confusingly.
+    const named = base.slice(0, base.indexOf(':'));
+    if (named.toLowerCase() !== repo.split('/')[0]?.toLowerCase()) {
+      fail(`--base names ${named}, but --repo is ${repo}: the base has to be the repository the pull request lands in`);
+    }
+  }
   const title = args.value('title');
   const bodyFile = args.value('body-file');
   let body = args.value('body');
