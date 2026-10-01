@@ -21,9 +21,12 @@ permissions:
   contents: read
 
 jobs:
+  # The job names share the `test on …` stem so that one search finds all three: the required status
+  # checks in a ruleset are picked by name from a flat list, and names without a common stem mean one
+  # search per check. Keep the stem when adding a job.
   test:
     timeout-minutes: 15
-    name: tests (linux)
+    name: test on Linux
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,7 +40,7 @@ jobs:
 
   native-windows:
     timeout-minutes: 15
-    name: native Windows is refused
+    name: test on Windows (refused)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -111,7 +114,7 @@ jobs:
 
   wsl:
     timeout-minutes: 20
-    name: tests inside WSL
+    name: test on WSL
     runs-on: windows-latest
     # Informational for now. GitHub's Windows images ship the WSL feature but not necessarily an
     # installed distribution, and adding one needs a working kernel and a service restart; the first
