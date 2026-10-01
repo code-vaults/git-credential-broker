@@ -252,7 +252,10 @@ export function createRequestHandler(
       } catch (error) {
         // Same rule as a credential: a provider response can embed anything, so only our own
         // configuration errors are shown to the caller.
-        const reason = String((error as Error).message ?? error).slice(0, 300);
+        const hostDetail = (error as { hostDetail?: string }).hostDetail;
+      const reason =
+        String((error as Error).message ?? error).slice(0, 300) +
+        (hostDetail === undefined ? '' : ` | ${hostDetail}`);
         const callerMessage =
           error instanceof ProviderConfigError
             ? reason
@@ -394,7 +397,10 @@ export function createRequestHandler(
           prStatus: result.status,
         };
       } catch (error) {
-        const reason = String((error as Error).message ?? error).slice(0, 300);
+        const hostDetail = (error as { hostDetail?: string }).hostDetail;
+      const reason =
+        String((error as Error).message ?? error).slice(0, 300) +
+        (hostDetail === undefined ? '' : ` | ${hostDetail}`);
         const callerMessage =
           error instanceof ProviderConfigError
             ? reason
@@ -429,7 +435,10 @@ export function createRequestHandler(
       // The caller normally gets a generic message, because provider errors can embed API
       // responses. A ProviderConfigError is ours — a permission name and the configuration — and
       // passing it on is the difference between "see the broker log" and knowing what is missing.
-      const reason = String((error as Error).message ?? error).slice(0, 300);
+      const hostDetail = (error as { hostDetail?: string }).hostDetail;
+      const reason =
+        String((error as Error).message ?? error).slice(0, 300) +
+        (hostDetail === undefined ? '' : ` | ${hostDetail}`);
       const message =
         error instanceof ProviderConfigError
           ? reason

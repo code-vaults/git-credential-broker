@@ -293,20 +293,17 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     });
     const text = await response.text();
     if (!response.ok) {
-      // The URL is safe to name — the token is a header, not part of it — but the body is not, so
-      // this message carries only the endpoint and the status. It is marked as ours, which is what
-      // lets the pusher see it instead of "see the broker log".
       // The URL is safe to name — the token is a header, not part of it — but the body is not: it can quote
-      // the request, and it must never reach the container. It travels on a plain error instead, which the
-      // broker logs host-side and answers generically, so a 403 that is branch protection rather than a
-      // missing permission can be read where the operator can see it. The permission pre-flight in
-      // ensurePermissions stays a ProviderConfigError: that one names the permission, which is worth passing
-      // through and contains nothing from a response.
+      // the request, and it must never reach the container. So the message carries the endpoint and the
+      // status, which is what a pusher may see, and the body rides beside it where only the host log looks.
+      // The decision to write it there belongs to the broker, which owns that boundary; an error class
+      // cannot make it, because a caller that re-wraps this to name a permission wraps it in the same class.
       const detail = text.replace(/\s+/g, ' ').trim().slice(0, 400);
-      throw new Error(
-        `GitHub API ${method} ${url.replace(api, '')} answered ${response.status} for that request` +
-          (detail === '' ? '' : `: ${detail}`),
+      const failure = new ProviderConfigError(
+        `GitHub API ${method} ${url.replace(api, '')} answered ${response.status} for that request`,
       );
+      if (detail !== '') Object.assign(failure, { hostDetail: detail });
+      throw failure;
     }
     return { status: response.status, text };
   }
@@ -957,12 +954,14 @@ function describeCause(error: unknown): string {
       // Resolved above, where it also decided whether the app had to be asked at all.
         ({ text } = await callWithToken(method, url, actingToken ?? token, body));
       } catch (error) {
-        throw new ProviderConfigError(
-          // The cause is where an undici failure keeps its reason ("fetch failed" on its own says
-          // nothing). It reaches the host log, not the container: this is a ProviderConfigError, and
-          // the broker answers the pusher with whatever it carries.
+        // A permission sentence is composed here and is worth passing through; the host-only detail, if
+        // the failure carried any, is carried across rather than put in the message the pusher sees.
+        const wrapped = new ProviderConfigError(
           `${(error as Error).message}${describeCause(error)}; this needs the pull_requests: write permission on both the app and this installation`,
         );
+        const detail = (error as { hostDetail?: string }).hostDetail;
+        if (detail !== undefined) Object.assign(wrapped, { hostDetail: detail });
+        throw wrapped;
       }
 
       if (request.action === 'merge') {
