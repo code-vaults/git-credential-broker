@@ -41,8 +41,8 @@ change; only which client id and secret are configured.
   once, then storing the refresh token in the deployment directory beside the key — outside every
   mount, and never in the repository.
 - The broker refreshes on demand (the user token lasts eight hours) and writes the new refresh token
-  back. A refresh failure disables the feature with a loud log line; it never fails a push.
-- The token is used for `action: 'open'` and nothing else. Status, close, merge and update stay on the
+  back. A refresh failure fails that one action with a loud log line in the host log; it never fails a push.
+- The token is used for `action: 'open'` and `action: 'resolve'`, and for nothing else. Status, close, merge and update stay on the
   installation token, where the allowlist and the permission pre-flight live. A PR-creation token that
   cannot read a log or merge a branch is the point.
 - The audit record keeps saying which actor was used, so "who opened this" is answerable from the

@@ -60,3 +60,39 @@ describe('resolving a branch that names a remote', () => {
     assert.deepEqual(listRemotes(dir), ['origin', 'upstream']);
   });
 });
+
+describe('what a remote URL is allowed to look like', () => {
+  let dir = '';
+
+  before(() => {
+    dir = mkdtempSync(join(tmpdir(), 'remotes-forms-'));
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
+    git('init', '-q');
+    git('remote', 'add', 'ported', 'https://git.example.com:8443/me/thing.git');
+    git('remote', 'add', 'prefixed', 'https://git.example.com/gitlab/group/thing.git');
+    git('remote', 'add', 'local', '/srv/git/thing.git');
+    git('remote', 'add', 'files', 'file:///srv/git/thing.git');
+  });
+
+  after(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('does not read a port as an owner', () => {
+    assert.deepEqual(remoteRepo('ported', dir), { owner: 'me', repo: 'thing' });
+  });
+
+  it('does not read a directory as a host', () => {
+    assert.equal(remoteRepo('local', dir), undefined);
+    assert.equal(remoteRepo('files', dir), undefined);
+  });
+
+  it('refuses a URL with more path than owner/repo, and says which remote it was', () => {
+    assert.equal(remoteRepo('prefixed', dir), undefined);
+    assert.throws(
+      () => qualifiedBranch('prefixed:main', dir),
+      /remote "prefixed" points at .*gitlab\/group\/thing\.git/,
+      'the operator is told the URL, not that the remote does not exist',
+    );
+  });
+});

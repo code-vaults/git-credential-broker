@@ -61,20 +61,40 @@ export function listRemotes(cwd: string): string[] {
  * @returns the owner and repository, or undefined when there is no such remote or the URL is not one.
  */
 export function remoteRepo(name: string, cwd: string): RemoteRepo | undefined {
-  const url = git(['remote', 'get-url', name], cwd);
+  const url = remoteUrl(name, cwd);
   if (url === undefined) return undefined;
-  // Two spellings, one shape: `host:owner/repo` (ssh) and `host/owner/repo` (https). Either way the host
-  // is the first part and the repository is what is left, so anything else — a local path, a self-hosted
-  // layout with a prefix — is refused rather than read as something it is not.
-  const cleaned = url.replace(/^[a-z+]+:\/\//i, '').replace(/^[^@/]+@/, '');
-  const withoutHost =
-    cleaned.includes(':') && !(cleaned.split(':')[0] ?? '').includes('/')
-      ? cleaned.slice(cleaned.indexOf(':') + 1)
-      : cleaned.split('/').slice(1).join('/');
-  const path = withoutHost.replace(/^\/+/, '').replace(/\/+$/, '').replace(/\.git$/i, '');
-  const [owner, repo, ...rest] = path.split('/').filter((part) => part !== '');
+
+  // A URL has an authority and then a path; the scp form has a host and then one. Anything else — a local
+  // path, a `file:` URL, a host with no dot — is refused rather than read as an owner that happens to be a
+  // port number or a directory name.
+  let path: string | undefined;
+  if (/^[a-z+]+:\/\//i.test(url)) {
+    const rest = url.replace(/^[a-z+]+:\/\//i, '').replace(/^[^@/]*@/, '');
+    const slash = rest.indexOf('/');
+    const authority = slash < 0 ? '' : rest.slice(0, slash);
+    const host = authority.split(':')[0] ?? '';
+    if (slash >= 0 && host.includes('.')) path = rest.slice(slash + 1);
+  } else {
+    const scp = /^(?:[^@/]+@)?([^/:]+\.[^/:]+):(.+)$/.exec(url);
+    if (scp !== null && scp[2] !== undefined) path = scp[2];
+  }
+  if (path === undefined) return undefined;
+
+  const cleaned = path.replace(/^\/+/, '').replace(/\/+$/, '').replace(/\.git$/i, '');
+  const [owner, repo, ...rest] = cleaned.split('/').filter((part) => part !== '');
   if (owner === undefined || repo === undefined || rest.length > 0) return undefined;
   return { owner, repo };
+}
+
+/**
+ * The URL a remote points at, for saying what was wrong with it.
+ *
+ * @param name - the remote name.
+ * @param cwd - the directory to ask.
+ * @returns the URL, or undefined when there is no such remote.
+ */
+export function remoteUrl(name: string, cwd: string): string | undefined {
+  return git(['remote', 'get-url', name], cwd);
 }
 
 /**
@@ -93,6 +113,12 @@ export function qualifiedBranch(value: string, cwd: string): string {
   const found = remoteRepo(name, cwd);
   if (found === undefined) {
     const known = listRemotes(cwd);
+    const url = remoteUrl(name, cwd);
+    if (url !== undefined) {
+      throw new Error(
+        `remote ${JSON.stringify(name)} points at ${url}, which does not name an owner and a repository`,
+      );
+    }
     throw new Error(
       `no remote named ${JSON.stringify(name)} here, so ${JSON.stringify(value)} cannot be resolved` +
         (known.length > 0 ? `; this checkout has: ${known.join(', ')}` : '; this checkout has no remotes'),

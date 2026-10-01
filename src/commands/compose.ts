@@ -15,6 +15,7 @@ import { inferMode, loadConfig, resolveConfigPath, deploymentDir, SIDECAR } from
 import { platformRefusal } from '../platform.ts';
 import { packageVersion } from '../version.ts';
 import { fail, parseArgs, say, warn } from './support.ts';
+import { USER_TOKEN_FILE } from '../config.ts';
 
 /** Everything `compose` needs, resolved. */
 export interface ComposeInput {
@@ -136,7 +137,7 @@ ${command}
       # The authorized person's refresh token: the only secret mounted writable, because GitHub
       # rotates it on every exchange. The authorize command creates it; create it before the first
       # up, since a bind mount for a path that does not exist becomes a directory.
-      - ${input.dir}/user.refresh:${SIDECAR.userTokenPath}:rw
+      - ${input.dir}/${USER_TOKEN_FILE}:${SIDECAR.userTokenPath}:rw
       - ${input.dir}/log:${SIDECAR.auditDir}
       - ${socketDir}:${SIDECAR.socketDir}
 # The socket appears at ${socketDir}${SIDECAR.socketPath.slice(SIDECAR.socketDir.length)} on the host. Point the pushing

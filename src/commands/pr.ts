@@ -34,7 +34,9 @@ ever reaching this side.
 
 Opening (the default)
   --head <branch>      The branch holding the change                 [required]
+                       May be <remote>:<branch>, e.g. origin:feat/x, to name a fork
   --base <branch>      The branch to merge into (default: main)
+                       A <remote>:<branch> here names the same repository as --repo
   --title <text>       The title                                     [required]
   --body <text>        The body, inline
   --body-file <path>   The body, read from a file — a pull request body is usually long

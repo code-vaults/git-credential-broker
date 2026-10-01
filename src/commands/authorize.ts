@@ -16,7 +16,7 @@
 
 import { dirname, join, resolve as resolvePath } from 'node:path';
 
-import { userTokenPath, loadConfig, resolveConfigPath } from '../config.ts';
+import { USER_TOKEN_FILE, userTokenPath, loadConfig, resolveConfigPath } from '../config.ts';
 import { collectUserToken, startDeviceFlow, type Fetcher } from '../device-flow.ts';
 import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from './support.ts';
 
@@ -50,7 +50,7 @@ which is its default and what this wants.
  * @returns the path to write the refresh token to.
  */
 export function refreshTokenPath(configPath: string): string {
-  return join(dirname(resolvePath(configPath)), 'user.refresh');
+  return join(dirname(resolvePath(configPath)), USER_TOKEN_FILE);
 }
 
 /**

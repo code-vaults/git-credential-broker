@@ -289,16 +289,17 @@ function stringMapField(
   value: unknown,
   errors: string[],
   at: string,
+  field = 'permissions',
 ): Readonly<Record<string, string>> | undefined {
   if (value === undefined || value === null) return undefined;
   if (!isRecord(value)) {
-    errors.push(`${at}.permissions must be an object of permission names to access levels`);
+    errors.push(`${at}.${field} must be an object of names to values`);
     return undefined;
   }
   const out: Record<string, string> = {};
   for (const [key, entry] of Object.entries(value)) {
     if (typeof entry !== 'string') {
-      errors.push(`${at}.permissions["${key}"] must be a string`);
+      errors.push(`${at}.${field}["${key}"] must be a string`);
       continue;
     }
     out[key] = entry;
@@ -407,7 +408,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           // Keys are owners, and every other owner in this codebase is compared lower-cased. A key spelled
       // `An-Org` used to validate and then never match, which meant the pull request was created as the app
       // while the operator believed a person would author it.
-      userTokens: lowerCasedKeys(stringMapField(blockRaw['userTokens'], errors, at)),
+      userTokens: lowerCasedKeys(stringMapField(blockRaw['userTokens'], errors, at, 'userTokens')),
           privateKeyPem: stringField(blockRaw, 'privateKeyPem', errors, at),
           permissions: stringMapField(blockRaw['permissions'], errors, at),
           apiBaseUrl: stringField(blockRaw, 'apiBaseUrl', errors, at),
