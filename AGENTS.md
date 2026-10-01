@@ -117,12 +117,13 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   **More than one way to be the author exists, and none of them replaces another.** The opener (no
   long-lived secret, one process), `userTokens` (one process, a token per owner), and authorization on
   the existing app (one process, no manual rotation, a token that can do anything that person can)
-  answer the same question with different trades. Adding one is not a reason to remove another: a deployment chooses. When you add
-  the next one, document it beside the others rather than rewriting them.
+  answer the same question with different trades. Adding one is not a reason to remove another: a
+  deployment chooses, and when you add the next one, document it beside the others rather than
+  rewriting them.
 
-  Authorization is the fourth, and it is not a token to place: `authorize` runs the device flow once from a
-  browser somewhere else and leaves a refresh token beside the key, and the broker renews it and uses
-  the user token for exactly the two things an installation token cannot do — authoring a pull request
+  Authorization is not a token to place: `authorize` runs the device flow once from a browser
+  somewhere else and leaves a refresh token beside the key, which the broker renews by itself. The user
+  token is used for exactly the two things an installation token cannot do — authoring a pull request
   as a person, and resolving a review thread, which GraphQL refuses for an app. It needs the client id
   in the configuration and **Enable Device Flow** in the app settings, and no client secret at all. The
   refresh token is rotated on every exchange and written back; not writing it back would work once.
