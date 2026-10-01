@@ -27,6 +27,7 @@ that, because the broker renews the token itself.
 
   --config <path>   The configuration (default: $GIT_BROKER_CONFIG, else ./broker.config.json)
   --host <host>     The host block to authorize for (default: github.com)
+  --to <path>       Where to write the refresh token (default: beside the configuration)
   -h, --help        Show this help
 
 The app needs its client id configured (the App ID will not do), and "Enable Device Flow" selected in
@@ -35,20 +36,29 @@ which is its default and what this wants.
 `;
 
 /**
- * Where the refresh token is kept.
+ * Where this command writes the refresh token.
  *
- * Beside the private key, because that is where the broker will look for it: one rule, so a
- * deployment that keeps its key and its configuration together needs to configure nothing. Falling
- * back to the configuration directory covers the deployment that keeps its key inline as a PEM
- * rather than as a file.
+ * Beside the configuration, because the configuration is the path this process was *given*: the paths
+ * inside it belong to whichever process runs the broker, and for a sidecar those are container paths
+ * that do not exist out here. In the usual sidecar layout the configuration and the key sit in one
+ * directory, so this lands in the same file the broker reads; where they differ, the difference is
+ * printed rather than discovered later.
  *
- * @param privateKeyPath - where the key is, when it is a file.
  * @param configPath - the resolved configuration path.
  * @returns the path to write the refresh token to.
  */
-export function refreshTokenPath(privateKeyPath: string | undefined, configPath: string): string {
-  const beside = privateKeyPath === undefined ? dirname(resolvePath(configPath)) : dirname(resolvePath(privateKeyPath));
-  return join(beside, 'user.refresh');
+export function refreshTokenPath(configPath: string): string {
+  return join(dirname(resolvePath(configPath)), 'user.refresh');
+}
+
+/**
+ * Where the broker will look for it, which is beside the key — from the key's own point of view.
+ *
+ * @param privateKeyPath - the path as the configuration records it.
+ * @returns the path the broker reads, or `undefined` when the key is not a file.
+ */
+export function brokerReadsPath(privateKeyPath: string | undefined): string | undefined {
+  return privateKeyPath === undefined ? undefined : join(dirname(privateKeyPath), 'user.refresh');
 }
 
 /**
@@ -92,10 +102,16 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
     );
   }
 
-  const target = refreshTokenPath(block.privateKeyPath, configPath);
+  const target = args.value('to') ?? refreshTokenPath(configPath);
   writeSecretFile(target, `${token.refreshToken}\n`);
   say(`stored the refresh token in ${target} (mode 600)`);
-  say(`that is beside the private key${block.privateKeyPath === undefined ? " (or the configuration)" : ""}, which is where the broker looks for it`);
+  const readByBroker = brokerReadsPath(block.privateKeyPath);
+  if (readByBroker !== undefined && resolvePath(readByBroker) !== resolvePath(target)) {
+    say(`note: the broker will look in ${readByBroker} — make sure that is this file, and that it is`);
+    say('      writable, because GitHub rotates the token on every exchange');
+  } else {
+    say('which is where the broker looks for it — keep it writable, since the token is rotated on every use');
+  }
   say('the broker will use it for pull requests authored by that person; nothing else needs running');
   return 0;
 }
