@@ -12,7 +12,10 @@
  */
 
 /** Variables that say a proxy is expected, in the spellings the ecosystem uses. */
-const PROXY_VARS = ['http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY', 'all_proxy', 'ALL_PROXY'] as const;
+// Only the spellings Node's fetch actually reads. all_proxy is deliberately absent: measured on 24.21, a
+// fetch goes direct with all_proxy set and NODE_USE_ENV_PROXY=1, so naming it here would tell an operator
+// to set a variable that changes nothing and leave them with the silent direct connection this refuses.
+const PROXY_VARS = ['http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY'] as const;
 
 /**
  * Fail when a proxy is set but this process would ignore it.

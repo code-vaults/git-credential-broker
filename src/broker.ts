@@ -27,6 +27,7 @@ import { socketPathRefusal } from './platform.ts';
 import { hostConfig, normalizeRepoPath, repoAllowed } from './policy.ts';
 import { createLineReader, encodeMessage, parseMessage } from './socket-protocol.ts';
 import type { MergeMethod, AuditSink, BrokerConfig, Provider, WireResponse } from './types.ts';
+import { BRANCH } from './host-request.ts';
 
 /** Reported by the `ping` operation so the container side can prove what it reached. */
 export const BROKER_VERSION = '0.1.0';
@@ -283,7 +284,7 @@ export function createRequestHandler(
       const title = message['title'];
       const body = message['body'];
       const method = message['method'] ?? 'squash';
-      const branch = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
+      const branch = BRANCH;
       const usable = (value: unknown): value is string =>
         typeof value === 'string' && branch.test(value) && !value.includes('..');
 

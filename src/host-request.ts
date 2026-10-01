@@ -39,8 +39,10 @@ export const MAX_TITLE_CHARS = 256;
 export const MAX_BODY_CHARS = 65_536;
 
 /** Branch names that are passed on, matching the broker's rule: plausible, and never `..`. */
-// An optional `owner:` prefix, which is how GitHub spells "this branch lives in a fork".
-const BRANCH = /^([A-Za-z0-9][A-Za-z0-9._-]{0,38}:)?[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
+// An optional `owner:` prefix, which is how GitHub spells "this branch lives in a fork". Exported because
+// the broker validates the same two fields on the socket, and a second copy of this rule is how the two
+// ends came to disagree about what a branch may look like.
+export const BRANCH = /^([A-Za-z0-9][A-Za-z0-9._-]{0,38}:)?[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
 
 /** One request to open a pull request. */
 export interface HostOpenRequest {

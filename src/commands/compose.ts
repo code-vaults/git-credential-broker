@@ -69,7 +69,13 @@ export function renderCompose(input: ComposeInput): string {
     : `
     environment:
       # npx needs somewhere writable for its cache; /tmp is a tmpfs above.
-      - npm_config_cache=/tmp/npm-cache`;
+      - npm_config_cache=/tmp/npm-cache
+      # Egress. The socket needs no proxy; the broker's calls to api.github.com and github.com do.
+      - http_proxy=\${http_proxy:-}
+      - https_proxy=\${https_proxy:-}
+      - no_proxy=\${no_proxy:-}
+      # The daemon refuses to start with a proxy variable and without this one.
+      - NODE_USE_ENV_PROXY=1`;
 
   const command = fromCode
     ? `      - node
@@ -122,12 +128,6 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true${environment}
-    # Egress. The socket needs no proxy; the broker's calls to api.github.com and github.com do. Node's
-    # fetch ignores http_proxy, so a deployment behind one has to pass them here.
-    environment:
-      - http_proxy=\${http_proxy:-}
-      - https_proxy=\${https_proxy:-}
-      - no_proxy=\${no_proxy:-}
     command:
 ${command}
     volumes:${codeMount}

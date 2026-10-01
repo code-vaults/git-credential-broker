@@ -106,6 +106,20 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const number = args.value('number');
   // `--head origin:feat/x` and `--base upstream:main` name a configured remote instead of a repository
   // typed by hand: it is the name this checkout already pushes to, and a typo lists the ones that exist.
+  // The base is a branch of the repository --repo names, so the owner a remote resolves to is a check
+  // rather than part of the value: sending `owner:branch` as a base names a branch that cannot exist.
+  const baseBranch = (): string | undefined => {
+    const raw = args.value('base');
+    if (raw === undefined) return undefined;
+    const colon = raw.indexOf(':');
+    if (colon < 0) return raw;
+    const resolved = qualifiedBranch(raw, process.cwd());
+    const owner = resolved.slice(0, resolved.indexOf(':'));
+    if (`${owner}/${repo.split('/')[1] ?? ''}`.toLowerCase() !== repo.toLowerCase()) {
+      fail(`--base names a remote pointing at ${owner}/…, but --repo is ${repo}: the base is a branch of the repository the pull request lands in`);
+    }
+    return raw.slice(colon + 1);
+  };
   const qualified = (value: string | undefined): string | undefined => {
     if (value === undefined) return undefined;
     try {
@@ -115,15 +129,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     }
   };
   const head = qualified(args.value('head'));
-  const base = qualified(args.value('base'));
-  if (base !== undefined && base.includes(':')) {
-    // The base is the repository the pull request lands in, so it has to be the one --repo names; a
-    // remote pointing elsewhere is a mistake that would otherwise be discovered by GitHub, confusingly.
-    const named = base.slice(0, base.indexOf(':'));
-    if (named.toLowerCase() !== repo.split('/')[0]?.toLowerCase()) {
-      fail(`--base names ${named}, but --repo is ${repo}: the base has to be the repository the pull request lands in`);
-    }
-  }
+  const base = baseBranch();
   const title = args.value('title');
   const bodyFile = args.value('body-file');
   let body = args.value('body');

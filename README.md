@@ -302,7 +302,7 @@ everything that person reaches.
 #### Set up a proxy
 
 If this host reaches GitHub through a proxy, the process needs two things: the usual variables, and
-`NODE_USE_ENV_PROXY=1`. Node's own `fetch` reads `http_proxy` / `https_proxy` / `all_proxy` only when that
+`NODE_USE_ENV_PROXY=1`. Node's own `fetch` reads `http_proxy` / `https_proxy` only when that
 variable is set, and it arrived in Node 24 — which is why the floor moved there.
 
 ```sh
