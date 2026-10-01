@@ -63,7 +63,16 @@ export interface JobLogRequest {
 }
 
 /** What can be done to a pull request. */
-export type PullRequestAction = 'open' | 'close' | 'merge' | 'update' | 'status';
+export type PullRequestAction =
+  | 'open'
+  | 'close'
+  | 'merge'
+  | 'update'
+  | 'status'
+  | 'comment'
+  | 'threads'
+  | 'reply'
+  | 'resolve';
 
 /** How a merge should be recorded. */
 export type MergeMethod = 'merge' | 'squash' | 'rebase';
@@ -76,12 +85,22 @@ export interface PullRequestRequest {
   readonly action: PullRequestAction;
   /** The pull request number. Not needed to open one, required for the rest. */
   readonly number?: number;
+  /** The review comment being answered, for `action: "reply"`. */
+  readonly commentId?: number;
+  /** The review thread being resolved, for `action: "resolve"`. */
+  readonly threadId?: string;
   /** The branch holding the change, when opening. */
   readonly head?: string;
   /** The branch it merges into. */
   readonly base?: string;
   readonly title?: string;
   readonly body?: string;
+  /** The file a review comment is anchored to, repository-relative, without a leading slash. */
+  readonly filePath?: string;
+  /** The line in that file: in the new file for `side: "right"`, in the old one for `"left"`. */
+  readonly line?: number;
+  /** Which side of the diff the line counts on. The new file, unless told otherwise. */
+  readonly side?: 'left' | 'right';
   readonly draft?: boolean;
   readonly method?: MergeMethod;
 }
@@ -138,6 +157,16 @@ export interface GithubAppHostConfig extends BaseHostConfig {
   /** Fallback `iss` claim when no client ID is configured. */
   readonly appId?: string | number;
   readonly privateKeyPath?: string;
+  /**
+   * A person's fine-grained tokens, keyed by the owner whose repositories they cover.
+   *
+   * Keyed by owner because that is GitHub's own granularity: a fine-grained token belongs to one
+   * user or organization and cannot span two. Scoped as the README says — pull requests read and
+   * write, contents read, metadata read, and only the repositories the allowlist names — GitHub
+   * itself refuses to let such a token push or merge, because neither is possible without contents
+   * write. Used for creating and resolving a pull request, and nothing else; every other action stays on the app.
+   */
+  readonly userTokens?: Readonly<Record<string, string>>;
   readonly privateKeyPem?: string;
   /** REST permission names, e.g. `{ contents: 'write', pull_requests: 'write' }`. */
   readonly permissions?: Readonly<Record<string, string>>;
@@ -177,6 +206,8 @@ export interface WireRequest {
   /** For `op: "pull-request"`. */
   readonly action?: string;
   readonly number?: number;
+  readonly commentId?: number;
+  readonly threadId?: string;
   readonly method?: string;
   readonly head?: string;
   readonly base?: string;

@@ -17,9 +17,12 @@
  *
  * Reference: https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app
  */
+import { userTokenPath } from '../config.ts';
 import { createSign } from 'node:crypto';
 import { ProviderConfigError } from '../errors.ts';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+
+import { refreshUserToken } from '../device-flow.ts';
 
 import type { Credential, FetchLike, FetchResponseLike, GithubAppHostConfig, Provider } from '../types.ts';
 import type { JobLog, JobLogRequest } from '../types.ts';
@@ -290,12 +293,17 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     });
     const text = await response.text();
     if (!response.ok) {
-      // The URL is safe to name — the token is a header, not part of it — but the body is not, so
-      // this message carries only the endpoint and the status. It is marked as ours, which is what
-      // lets the pusher see it instead of "see the broker log".
-      throw new ProviderConfigError(
+      // The URL is safe to name — the token is a header, not part of it — but the body is not: it can quote
+      // the request, and it must never reach the container. So the message carries the endpoint and the
+      // status, which is what a pusher may see, and the body rides beside it where only the host log looks.
+      // The decision to write it there belongs to the broker, which owns that boundary; an error class
+      // cannot make it, because a caller that re-wraps this to name a permission wraps it in the same class.
+      const detail = text.replace(/\s+/g, ' ').trim().slice(0, 400);
+      const failure = new ProviderConfigError(
         `GitHub API ${method} ${url.replace(api, '')} answered ${response.status} for that request`,
       );
+      if (detail !== '') Object.assign(failure, { hostDetail: detail });
+      throw failure;
     }
     return { status: response.status, text };
   }
@@ -502,6 +510,27 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     };
   }
 
+      let cachedPersonToken: { token: string; until: number; source: string } | undefined;
+      // One renewal at a time. GitHub documents neither what happens to a refresh token used twice nor a
+      // grace period for it, so the honest reason is the failure that is certain rather than the one that is
+      // documented: two exchanges racing means one of them renews from a token the other has already
+      // replaced, and whichever write-back runs last decides what is on disk for the next renewal.
+      let renewingPersonToken: Promise<string | undefined> | undefined;
+
+/**
+ * One more sentence about a failure, when there is one worth having.
+ *
+ * `fetch failed` is the whole message undici gives for a connection problem and it names nothing useful;
+ * the reason is on `cause`. This is for the host log, so it is allowed to carry detail.
+ *
+ * @param error - whatever was thrown.
+ * @returns an empty string, or ` (the reason)`.
+ */
+function describeCause(error: unknown): string {
+  const cause = (error as { cause?: { message?: unknown } } | null)?.cause?.message;
+  return typeof cause === 'string' && cause !== '' ? ` (${cause})` : '';
+}
+
   return {
     name: 'github-app',
 
@@ -589,18 +618,307 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
      * @returns the number and the URL GitHub answered with.
      */
     async pullRequest(request: PullRequestRequest): Promise<PullRequest> {
-      await ensurePermissions(request.owner, PULL_REQUEST_PERMISSIONS);
-      const installationId = await resolveInstallationId(request.owner);
-      const { json: minted } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
-        repositories: [request.repo],
-        permissions: PULL_REQUEST_PERMISSIONS,
-      });
-      const token = (minted as { token?: unknown } | null)?.token;
-      if (typeof token !== 'string' || !token) {
-        throw new ProviderConfigError('GitHub returned no installation token for the pull request');
+      // The two actions a person may perform are decided first: when somebody has authorized this
+      // deployment, their token is the whole authority for them, and requiring an installation as well
+      // would refuse a repository the app was never installed on — the fork-to-upstream case the allowlist
+      // exists to permit. Everything else still acts as the app, and only ever could.
+      const personalForThis = request.action === 'open' || request.action === 'resolve';
+      const personToken = personalForThis ? await personalToken() : undefined;
+
+      // `--status` also reads /actions/runs, which is checked against actions: read. Pre-flighting
+      // pull_requests alone passed a grant that could not make that call, which is the opposite of what a
+      // pre-flight is for.
+      const wanted =
+        request.action === 'status' ? { ...PULL_REQUEST_PERMISSIONS, actions: 'read' } : PULL_REQUEST_PERMISSIONS;
+
+      // One variable, so every branch below holds a token without having to ask which kind it is.
+      let token: string | undefined;
+      // A token per owner is the other way a person acts. It counts exactly as the authorized token does:
+      // whoever is acting, requiring an installation as well would refuse a repository the app was never
+      // installed on — the fork-to-upstream case the allowlist exists to permit.
+      const fileToken =
+        request.action === 'open' || request.action === 'resolve'
+          ? cfg.userTokens?.[request.owner]
+          : undefined;
+      const actingToken =
+        personToken ?? (fileToken === undefined ? undefined : readFileSync(fileToken, 'utf8').trim());
+
+      if (actingToken === undefined) {
+        await ensurePermissions(request.owner, wanted);
+        const installationId = await resolveInstallationId(request.owner);
+        const { json: minted } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
+          repositories: [request.repo],
+          permissions: wanted,
+        });
+        const mintedToken = (minted as { token?: unknown } | null)?.token;
+        if (typeof mintedToken !== 'string' || !mintedToken) {
+          throw new ProviderConfigError('GitHub returned no installation token for the pull request');
+        }
+        token = mintedToken;
+      } else {
+        token = actingToken;
       }
 
       const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
+
+
+      /**
+       * The token of the person this deployment authorized, when there is one.
+
+       * Only two actions may use it, and both because an installation token cannot: GitHub will not
+       * author a pull request as a person for an app, and refuses to resolve a review thread for one.
+       * The refresh token lives beside the private key, and GitHub rotates it on every use, so the new
+       * one is written back — keeping the old would work once and then stop.
+       *
+       * @returns the user token, or `undefined` when nobody has authorized one.
+       */
+      async function personalToken(): Promise<string | undefined> {
+        if (renewingPersonToken !== undefined) return renewingPersonToken;
+        renewingPersonToken = renewPersonToken();
+        try {
+          return await renewingPersonToken;
+        } finally {
+          renewingPersonToken = undefined;
+        }
+      }
+
+      async function renewPersonToken(): Promise<string | undefined> {
+        if (cfg.clientId === undefined || cfg.privateKeyPath === undefined) return undefined;
+        const path = userTokenPath(cfg.privateKeyPath);
+        if (!existsSync(path)) return undefined;
+        const now = Date.now();
+        // The file is the only thing that says who the broker may act as, so it is read before the cache is
+        // trusted: running `authorize` again — the documented way to change that person, and the only one —
+        // has to take effect now rather than when the cached token happens to expire.
+        const held = readFileSync(path, 'utf8').trim();
+        if (
+          cachedPersonToken !== undefined &&
+          cachedPersonToken.until > now + 60_000 &&
+          cachedPersonToken.source === held
+        ) {
+          return cachedPersonToken.token;
+        }
+        let next;
+        try {
+          next = await refreshUserToken(cfg.clientId, held, (url, init) => fetchImpl(url, init));
+        } catch (error) {
+          // This is the one place a renewal failure is explained: the caller is an action that failed,
+          // and "fetch failed" on its own names neither the host nor the reason.
+          throw new Error(
+            `could not renew the authorized token from ${path}: ${(error as Error).message}${describeCause(error)}`,
+          );
+        }
+        if (next.refreshToken !== undefined) {
+          try {
+            writeFileSync(path, `${next.refreshToken}\n`, { mode: 0o600 });
+          } catch (error) {
+            // GitHub invalidated the token on disk the moment it answered, so this is not transient and not
+            // recoverable: the next renewal reads a dead token. Nothing else in the log would say so.
+            throw new Error(
+              `could not store the new refresh token in ${path}: ${(error as Error).message}; the previous ` +
+                'one is no longer valid, so run authorize again',
+            );
+          }
+        }
+        cachedPersonToken = {
+          token: next.token,
+          until: now + (next.expiresInSeconds ?? 28_800) * 1_000,
+          source: next.refreshToken ?? held,
+        };
+        return cachedPersonToken.token;
+      }
+
+      if (request.action === 'resolve') {
+        // Resolving has no REST endpoint either. The thread id is the one `--threads` prints.
+        // The thread id is a global node id, and the person token is not narrowed to a repository the way
+        // an installation token is. Ask whose thread it is before changing it: the allowlist decided which
+        // repositories this broker may touch, and a mutation is the wrong place to discover it did not.
+        const { text: scoped } = await callWithToken('POST', `${api}/graphql`, personToken ?? token, {
+          query:
+            'query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{pullRequest{repository{nameWithOwner}}}}}',
+          variables: { threadId: request.threadId },
+        });
+        let belongsTo: unknown;
+        try {
+          const parsed = JSON.parse(scoped) as {
+            data?: { node?: { pullRequest?: { repository?: { nameWithOwner?: unknown } } } };
+          };
+          belongsTo = parsed.data?.node?.pullRequest?.repository?.nameWithOwner;
+        } catch {
+          belongsTo = undefined;
+        }
+        if (
+          typeof belongsTo !== 'string' ||
+          belongsTo.toLowerCase() !== `${request.owner}/${request.repo}`.toLowerCase()
+        ) {
+          // A plain Error on purpose: this is the host log's business, not the container's.
+          throw new Error(
+            `refusing to resolve ${request.threadId}: it is not a review thread of ${request.owner}/${request.repo}` +
+              (typeof belongsTo === 'string' ? ` (it belongs to ${belongsTo})` : ' (or it could not be read)'),
+          );
+        }
+
+        const { text: raw } = await callWithToken('POST', `${api}/graphql`, personToken ?? token, {
+          query:
+            'mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}',
+          variables: { threadId: request.threadId ?? '' },
+        });
+        let answer: unknown = null;
+        try {
+          answer = JSON.parse(raw);
+        } catch {
+          answer = null;
+        }
+        const state = (answer ?? {}) as {
+          data?: { resolveReviewThread?: { thread?: { isResolved?: unknown } } };
+          errors?: unknown;
+        };
+        // A plain Error, not a ProviderConfigError: GraphQL answers in a response body, and those
+        // are not passed to the container.
+        if (Array.isArray(state.errors) && state.errors.length > 0) {
+          // The reason belongs in the host log, which is where a plain Error goes: the broker answers
+          // the container generically for one, so nothing from a response body crosses the socket.
+          throw new Error(`GitHub refused to resolve that review thread: ${JSON.stringify(state.errors).slice(0, 300)}`);
+        }
+        return {
+          number: request.number ?? 0,
+          url: '',
+          status: state.data?.resolveReviewThread?.thread?.isResolved === true ? 'resolved' : 'still open',
+        };
+      }
+
+      if (request.action === 'reply') {
+        // A reply belongs in the thread it answers. The issues API would need `issues: write` and
+        // would start a new conversation instead of joining one.
+        await callWithToken(
+          'POST',
+          `${collection}/${request.number}/comments/${String(request.commentId ?? 0)}/replies`,
+          token,
+          { body: request.body ?? '' },
+        );
+        return { number: request.number ?? 0, url: '' };
+      }
+
+      if (request.action === 'threads') {
+        // GraphQL, because review threads have no REST list. The repository and the number are
+        // named here, so the allowlist still decides what can be reached.
+        const { text: raw } = await callWithToken('POST', `${api}/graphql`, token, {
+          query:
+            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:50){totalCount nodes{id isResolved path line comments(first:10){nodes{databaseId author{login} body}}}}}}}',
+          variables: { owner: request.owner, name: request.repo, number: request.number },
+        });
+        let listed: unknown = null;
+        try {
+          listed = JSON.parse(raw);
+        } catch {
+          listed = null;
+        }
+        // Nothing from a response body reaches the container — the broker answers with a generic
+        // message for an ordinary Error — but the host log is where a reason belongs, and a refusal
+        // that reads as "no threads" is worse than one that reads as a refusal.
+        const refused = (listed ?? {}) as { errors?: unknown };
+        if (Array.isArray(refused.errors) && refused.errors.length > 0) {
+          throw new Error(`GitHub refused to list the review threads: ${JSON.stringify(refused.errors).slice(0, 300)}`);
+        }
+        const data = (listed ?? {}) as {
+          data?: { repository?: { pullRequest?: { reviewThreads?: { nodes?: unknown } } } };
+        };
+        const nodes = data.data?.repository?.pullRequest?.reviewThreads?.nodes;
+        const report: string[] = [];
+        if (Array.isArray(nodes)) {
+          for (const node of nodes as Array<{
+            id?: unknown;
+            isResolved?: unknown;
+            path?: unknown;
+            line?: unknown;
+            comments?: { nodes?: unknown };
+          }>) {
+            report.push(
+              `${node.isResolved === true ? 'resolved' : 'open    '} ${String(node.id ?? '')}  ${String(node.path ?? '')}:${String(node.line ?? '')}`,
+            );
+            const comments = node.comments?.nodes;
+            if (!Array.isArray(comments)) continue;
+            for (const comment of comments as Array<{
+              databaseId?: unknown;
+              author?: { login?: unknown };
+              body?: unknown;
+            }>) {
+              // The whole comment, not its first line and not 120 characters of it: a review bot puts the finding
+              // in the lines below the header, and a report that drops them sends the reader to the web UI for the
+              // one thing this command exists to show.
+              const body = String(comment.body ?? '');
+              // The prose, not the first twelve lines of the comment: a review bot prefixes its finding with the
+              // commands it ran and a fence of their output, so counting raw lines reads the preamble and never
+              // reaches the claim. Fences and the bot's own metadata lines are dropped, and the cap then applies to
+              // what is left, which is what the reader wants and what the writer meant.
+              const bodyLines = body.split('\n');
+              const kept: string[] = [];
+              let inFence = false;
+              for (const raw of bodyLines) {
+                const line = raw.trim();
+                if (line.startsWith('```')) { inFence = !inFence; continue; }
+                if (inFence) continue;
+                if (/^(🏁|🔎|⚙️|🌐|💡|💬|🔗|Repository:|Length of output:|Proposed fix$|---$|_?\s*[🔒📐🎯🩺🟡🟠])/u.test(line)) continue;
+                kept.push(line.replace(/<\/?[a-z][^>]*>/gi, '').trim());
+              }
+              const shown = kept.filter((line) => line !== '').slice(0, 14);
+              const more = kept.length > shown.length ? ` (+${kept.length - shown.length} more lines)` : '';
+              report.push(`    ${String(comment.databaseId ?? '')} @${String(comment.author?.login ?? '?')}:${more}`);
+              for (const line of shown) report.push(`      ${line.slice(0, 300)}`);
+            }
+          }
+        }
+        // A page is not the whole list. Saying which it is is the difference between a report and a guess.
+        const shown = Array.isArray(nodes) ? nodes.length : 0;
+        const counted = (data.data?.repository?.pullRequest?.reviewThreads as { totalCount?: unknown } | undefined)
+          ?.totalCount;
+        const total = typeof counted === 'number' ? counted : shown;
+        if (total > shown) {
+          report.push(`... and ${total - shown} more: this asks for the first 50 threads, and the first 10 comments of each`);
+        }
+
+        return {
+          number: request.number ?? 0,
+          url: '',
+          status: report.length > 0 ? report.join('\n') : 'no review threads on this pull request',
+        };
+      }
+
+      if (request.action === 'comment') {
+        // A review with no verdict: GitHub shows it as a comment on the pull request, and it needs
+        // only the pull request permission the app already has. A *conversation* comment would be the
+        // issues API, which needs `issues: write` — see the README.
+        await callWithToken('POST', `${collection}/${request.number}/reviews`, token, {
+          body: request.body ?? '',
+          event: 'COMMENT',
+          // An inline comment rides on the same review, so a body-only comment stays one code path.
+          ...(request.filePath === undefined || request.line === undefined
+            ? {}
+            : {
+                comments: [
+                  {
+                    path: request.filePath,
+                    line: request.line,
+                    // GitHub spells the side in capitals on this endpoint; ours is the readable one.
+                    side: (request.side ?? 'right').toUpperCase(),
+                    body: request.body ?? '',
+                  },
+                ],
+              }),
+        });
+        const { text: after } = await callWithToken('GET', `${collection}/${request.number}`, token);
+        let read: unknown = null;
+        try {
+          read = JSON.parse(after);
+        } catch {
+          read = null;
+        }
+        const html = (read ?? {}) as { html_url?: unknown };
+        return {
+          number: request.number ?? 0,
+          url: typeof html.html_url === 'string' ? html.html_url : '',
+        };
+      }
 
       if (request.action === 'status') {
         return readPullRequestStatus(request, token, collection);
@@ -627,11 +945,23 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
 
       let text: string;
       try {
-        ({ text } = await callWithToken(method, url, token, body));
+        // as theirs, which is what automated reviewers recognise. The token itself is as wide as that person —
+        // it carries the app permissions and could push and merge — and what is narrow is this code: it is
+        // used for creating and resolving, and every other action stays on the app's installation token.
+        // Creating a pull request as a person, and resolving a review thread: the two things an
+        // installation token is refused for. A token per owner is the older, narrower way and is still
+        // used when there is one; the authorized token answers for every owner at once.
+      // Resolved above, where it also decided whether the app had to be asked at all.
+        ({ text } = await callWithToken(method, url, actingToken ?? token, body));
       } catch (error) {
-        throw new ProviderConfigError(
-          `${(error as Error).message}; this needs the pull_requests: write permission on both the app and this installation`,
+        // A permission sentence is composed here and is worth passing through; the host-only detail, if
+        // the failure carried any, is carried across rather than put in the message the pusher sees.
+        const wrapped = new ProviderConfigError(
+          `${(error as Error).message}${describeCause(error)}; this needs the pull_requests: write permission on both the app and this installation`,
         );
+        const detail = (error as { hostDetail?: string }).hostDetail;
+        if (detail !== undefined) Object.assign(wrapped, { hostDetail: detail });
+        throw wrapped;
       }
 
       if (request.action === 'merge') {

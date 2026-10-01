@@ -71,7 +71,12 @@ CI runs the suite on Linux and inside WSL, and checks both refusals on native Wi
 npm install -g git-credential-broker
 ```
 
-Or run it from a checkout. Node 22.6+ strips TypeScript types, so there is nothing to build and no
+This package has no runtime dependencies today. That is a state, not a rule: `stage` exports a **commit**
+and nothing else, so a dependency needs a deployment step that does not exist yet, and until it does the
+broker fails to resolve it and restarts in a loop rather than saying so. Dependencies are wanted; the
+step has to land first — install after staging, or build something self-contained.
+
+Or run it from a checkout. Node 24 strips TypeScript types, so there is nothing to build and no
 dependencies to install:
 
 ```sh
@@ -118,7 +123,7 @@ Drop `--code` to get a sidecar that fetches the published package with `npx` at 
 
 ## Quick start: host process
 
-Use this when the host has Node 22.6+.
+Use this when the host has Node 24 or newer.
 
 ```sh
 cd /srv/git-cred-broker
@@ -231,10 +236,154 @@ without being able to push to the branch it targets.
 ```sh
 git-credential-broker pr --host github.com --repo owner/repo \
   --head feature --base main --title "a title" --body-file pr.md
+  # say it about one line rather than about the pull request
+  # --number 7 --comment --file Dockerfile --line 4 --side right --body "why this marker exists"
+  # from your fork into an upstream: a remote name instead of a repository typed by hand
+  git-credential-broker pr --repo code-vaults/repo --head origin:feature --base upstream:main --title "a title" \
+    --body-file pr.md
 ```
 
 Both the app and the installation need `pull_requests: write`; without it the error names the
 permission instead of failing at GitHub. `--draft` opens it as a draft.
+
+### Opening one as yourself
+
+There are three ways to have a pull request authored by a person, and they stay alternatives: the **host
+opener** below needs no long-lived secret anywhere and costs a process you keep running; **`userTokens`**
+needs no second process and costs a token per owner; and **authorizing the app** needs neither, at the cost
+of a token as wide as your own access to GitHub. A deployment picks the trade it prefers, and none of them
+replaces another.
+
+A pull request opened through the broker is authored by the app, and automated reviewers are
+entitled to skip those. To have one authored by you instead, run the opener on the host, beside the
+same checkout, and ask for it from the container:
+
+```sh
+# on the host, once — it serves every checkout below $HOME and does nothing else
+git-credential-broker host-opener          # --root <dir> to narrow it, repeatable
+# or, at boot and for good: examples/host-opener-boot.sh (see below)
+```
+
+**Copy that file outside the mounts before a task runs it.** It runs as you, so leaving it in the
+checkout would let anything that can write the checkout decide what your credentials do at boot.
+
+```sh
+# in the container
+git-credential-broker pr --via-host --repo owner/repo --head feature --base main \
+  --title "a title" --body-file pr.md
+```
+
+The opener creates pull requests with the credentials of whoever started it, which is the point;
+it never runs a shell, and the program it calls is configuration rather than a hard-coded `gh`:
+`--command /path/to/gh`, or `$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
+anything. `--root` may be repeated and defaults to `$HOME`, so `~/Workspaces`, `~/.dotfiles` and
+checkouts created later are all served with no further setup. To start it once and keep it,
+`examples/host-opener.service` is a systemd user unit; on a system without user services,
+`examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
+instance at a time, and its output in a log file. Without `--via-host`, or with no opener running, `pr` behaves
+exactly as before.
+
+
+A pull request opened with the app's installation token is authored by the app, and automated
+reviewers are entitled to skip those. The simplest way to have one authored by you is a
+**fine-grained personal access token** in the configuration:
+
+```jsonc
+{
+  "hosts": {
+    "github.com": {
+      "provider": "github-app",
+      "privateKeyPath": "/etc/git-cred-broker/app.pem",
+      "userTokens": { "an-org": "/etc/git-cred-broker/an-org.token" }
+    }
+  }
+}
+```
+
+`userTokens` is keyed by owner because that is GitHub's own granularity: a fine-grained token
+belongs to one user or organization and cannot span two, so two owners need two tokens. Create each
+with **Pull requests: Read and write**, **Contents: Read** and **Metadata: Read**, and give it access
+to **only the repositories the allowlist already names**. No contents *write* means
+GitHub itself refuses to let that token push or merge, so "it may only open pull requests" is
+enforced by GitHub rather than promised here. The token is used for creating and nothing else:
+closing, merging, updating and reading a state all stay on the app's installation token. Drop the
+field to go back to app-authored pull requests; `--via-host` still works either way.
+
+#### Authorizing as a person instead
+Two things the app needs: its **client id** in the configuration (the App ID will not do), and
+**Enable Device Flow** selected in its settings, and **Expire user authorization tokens** left on — the
+broker renews with the refresh token, and GitHub only issues one while that is selected. No client secret: the device flow does not use one,
+so no second long-lived secret joins the key.
+
+
+A token per owner is one way to be the author; authorizing the app once is another, and it needs no
+token per owner, because GitHub issues it for the app *and* the person together. Run this on the host:
+
+```sh
+git-credential-broker authorize --config /srv/git-cred-broker/broker.config.json
+```
+
+It prints a code and asks you to open <https://github.com/login/device>, then waits. Type the code on
+whatever device has a browser. The refresh token is stored beside the private key, which is where the
+broker looks for it, and the broker renews it from then on — nothing else needs running.
+
+The user token is used for exactly the two things an installation token cannot do: authoring a pull
+request as that person, and resolving a review thread, which GraphQL refuses for an app outright.
+
+The file needs to be **writable by the broker**, unlike the key: GitHub rotates the refresh token on
+every exchange, so mount it read-write (`./user.refresh:/etc/git-cred-broker/user.refresh:rw` in the
+sidecar). A read-only mount works until the first renewal, which is the worst moment to find out.
+
+The allowlist says what this channel **may be used for**, not what the app is installed on: an entry for a
+repository the app was never installed on is meaningful, because `authorize` and the host opener act as a
+person, who needs no permission there at all — that is how a pull request from your fork to an upstream
+works. It matters more for those two routes than for the app, not less: a person's token reaches
+everything that person reaches.
+
+#### Set up a proxy
+
+If this host reaches GitHub through a proxy, the process needs two things: the usual variables, and
+`NODE_USE_ENV_PROXY=1`. Node's own `fetch` reads `http_proxy` / `https_proxy` only when that
+variable is set, and it arrived in Node 24 — which is why the floor moved there.
+
+```sh
+http_proxy=http://proxy.example:7890
+https_proxy=http://proxy.example:7890
+no_proxy=localhost,127.0.0.1
+NODE_USE_ENV_PROXY=1
+```
+
+For a sidecar, pass them in its `environment:` (compose only forwards what the file names); for the host
+process, `EnvironmentFile=` in the unit and the boot wrapper, both of which already read
+`/etc/git-cred-broker/proxy.env` if it exists.
+
+The broker, `authorize` and `diagnose` **refuse to start** when a proxy variable is set and `NODE_USE_ENV_PROXY` is
+not `1`, instead of reaching GitHub directly by a route nobody chose. `gh`, which the host opener runs,
+reads those variables itself (it is Go), so it only needs them to arrive.
+
+
+
+
+#### Keeping it running
+
+On a host with user services, `examples/host-opener.service` is a unit for it:
+
+```sh
+npm i -g git-credential-broker                          # the unit calls the installed CLI
+cp examples/host-opener.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now host-opener
+loginctl enable-linger "$USER"                          # so it survives logout and starts at boot
+journalctl --user -u host-opener -f                     # its output
+```
+
+`loginctl enable-linger` is the part that is easy to miss: without it a user service stops when
+your last session ends and does not come back at boot. `Restart=always` is already in the unit, so
+a crash is a ten-second gap rather than a silent stop.
+
+On a host without user services — a Synology NAS, for instance — `examples/host-opener-boot.sh` is
+the same thing for a boot-time task: absolute paths, one instance at a time, its output in a log
+file.
 
 ## Configuration reference
 

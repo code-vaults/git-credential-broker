@@ -9,7 +9,7 @@ How to build, test and run this from a local checkout, rather than from the publ
 
 ## Requirements
 
-- **Node 22.6 or newer** — the CLI runs TypeScript directly, which is what makes a checkout usable
+- **Node 24 or newer** — the CLI runs TypeScript directly, which is what makes a checkout usable
   without a build step. Verified on Node 24.
 - **Yarn 4**, through corepack. `corepack enable` once, or prefix every command with `corepack`.
   `packageManager` in `package.json` pins the version.

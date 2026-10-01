@@ -340,6 +340,75 @@ describe('broker request handling', () => {
   });
 });
 
+
+  it('accepts an owner-qualified head, and hands it on unchanged', async () => {
+    const seen: Array<string | undefined> = [];
+    const opened: Provider = {
+      name: 'with-forks',
+      getCredential: () => Promise.reject(new Error('not used here')),
+      pullRequest: (request) => {
+        seen.push(request.head);
+        return Promise.resolve({ number: 7, url: 'https://github.com/me/widget/pull/7' });
+      },
+    };
+    const { handle } = makeHarness(['acme/widget'], opened);
+    const response = await handle({ ...REQUEST, op: 'pull-request', head: 'me:feature', base: 'main', title: 'a', body: 'b' });
+
+    assert.equal(response.ok, true, 'the fork form is a branch name the socket may carry');
+    assert.deepEqual(seen, ['me:feature'], 'and it reaches the provider exactly as written');
+  });
+
+  it('still refuses a head that tries to leave the request', async () => {
+    const opened: Provider = {
+      name: 'unused',
+      getCredential: () => Promise.reject(new Error('not used here')),
+      pullRequest: () => Promise.resolve({ number: 7, url: '' }),
+    };
+    const { handle } = makeHarness(['acme/widget'], opened);
+    const response = await handle({ ...REQUEST, op: 'pull-request', head: '../escape', base: 'main', title: 'a', body: 'b' });
+    assert.equal(response.code, 'bad-request');
+  });
+
+
+  it('carries an anchored comment, and refuses a bad anchor before the provider sees it', async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const provider: Provider = {
+      name: 'with-anchors',
+      getCredential: () => Promise.reject(new Error('not used here')),
+      pullRequest: (request) => {
+        seen.push(request as unknown as Record<string, unknown>);
+        return Promise.resolve({ number: 7, url: '' });
+      },
+    };
+    const { handle } = makeHarness(['acme/widget'], provider);
+    const comments = { ...REQUEST, op: 'pull-request', action: 'comment', number: 7, body: 'a note', filePath: 'Dockerfile', line: 4 };
+    const good = await handle(comments);
+    assert.equal(good.ok, true);
+    assert.deepEqual(
+      [seen.at(-1)?.['filePath'], seen.at(-1)?.['line'], seen.at(-1)?.['side']],
+      ['Dockerfile', 4, 'right'],
+      'the anchor reaches the provider, with the default side',
+    );
+
+    for (const [label, patch] of [
+      ['an absolute path', { filePath: '/etc/passwd' }],
+      ['a path that climbs out', { filePath: '../../etc/passwd' }],
+      ['an empty path', { filePath: '' }],
+      ['a line of zero', { line: 0 }],
+      ['a line that is not a number', { line: 'four' }],
+      ['an unknown side', { side: 'middle' }],
+      ['half an anchor', { line: undefined }],
+    ] as const) {
+      // Spreading an own property whose value is undefined does set the key, so the explicit
+      // "half an anchor" case still removes it and every other case keeps the line it named.
+      const response = await handle({ ...comments, ...patch });
+      assert.equal(response.code, 'bad-request', label + ' has to be refused by the broker');
+    }
+
+    const wrongAction = await handle({ ...comments, action: 'close' });
+    assert.equal(wrongAction.code, 'bad-request', 'and an anchor only belongs on a comment');
+  });
+
 describe('prepareSocketPath', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-sock-'));
   after(() => fs.rmSync(dir, { recursive: true, force: true }));

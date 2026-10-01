@@ -27,12 +27,17 @@ import { socketPathRefusal } from './platform.ts';
 import { hostConfig, normalizeRepoPath, repoAllowed } from './policy.ts';
 import { createLineReader, encodeMessage, parseMessage } from './socket-protocol.ts';
 import type { MergeMethod, AuditSink, BrokerConfig, Provider, WireResponse } from './types.ts';
+import { BRANCH } from './host-request.ts';
 
 /** Reported by the `ping` operation so the container side can prove what it reached. */
 export const BROKER_VERSION = '0.1.0';
 
 /** How long one socket connection may stay idle before it is dropped. */
-const REQUEST_TIMEOUT_MS = 30_000;
+// How long a connection may stay silent before it is dropped. It has to outlast the longest wait a client
+// makes on it: `pr` waits PR_TIMEOUT_MS (60s) for an answer that arrives only when the handler finishes, and
+// the handler is silent on the socket the whole time. At 30s the timer won every long action, and the client
+// reported "unreachable" for a merge or a close that had already happened.
+const REQUEST_TIMEOUT_MS = 120_000;
 
 /** Response codes returned to the helper. */
 export const CODES = {
@@ -130,11 +135,19 @@ export function createRequestHandler(
    * @param message - what the caller is told.
    * @returns the refusal.
    */
-  function deny(context: DecisionContext, code: string, reason: string, message: string): WireResponse {
-    audit.record({ event: 'credential', decision: 'deny', ...context, code, reason });
-    log(
-      `deny ${code} host=${context.host ?? '-'} repo=${context.repo ?? '-'} reason=${reason}`,
-    );
+  function deny(
+    context: DecisionContext,
+    code: string,
+    reason: string,
+    message: string,
+    // Detail for this side only: a provider's response body, which the caller must never receive. It
+    // reaches the audit record and the log line and nowhere else, because this function is what decides
+    // what the caller is told — a property on an error cannot make that decision.
+    hostDetail?: string,
+  ): WireResponse {
+    const detail = hostDetail === undefined || hostDetail === '' ? '' : ` | ${hostDetail}`;
+    audit.record({ event: 'credential', decision: 'deny', ...context, code, reason: reason + detail });
+    log(`deny ${code} host=${context.host ?? '-'} repo=${context.repo ?? '-'} reason=${reason}${detail}`);
     return { ok: false, code, reason: message };
   }
 
@@ -248,11 +261,12 @@ export function createRequestHandler(
         // Same rule as a credential: a provider response can embed anything, so only our own
         // configuration errors are shown to the caller.
         const reason = String((error as Error).message ?? error).slice(0, 300);
+      const hostDetail = (error as { hostDetail?: string }).hostDetail;
         const callerMessage =
           error instanceof ProviderConfigError
             ? reason
             : 'the broker could not read that log; see the broker log';
-        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage);
+        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail);
       }
     }
 
@@ -263,17 +277,26 @@ export function createRequestHandler(
         action !== 'close' &&
         action !== 'merge' &&
         action !== 'update' &&
-        action !== 'status'
+        action !== 'status' &&
+        action !== 'comment' &&
+        action !== 'threads' &&
+        action !== 'reply' &&
+        action !== 'resolve'
       ) {
         return deny(context, CODES.BAD_REQUEST, `bad action ${JSON.stringify(action)}`, 'unknown pull request action');
       }
       const number = message['number'];
+      const commentId = message['commentId'];
+      const threadId = message['threadId'];
       const head = message['head'];
       const base = message['base'];
       const title = message['title'];
       const body = message['body'];
+      const filePath = message['filePath'];
+      const line = message['line'];
+      const side = message['side'] ?? 'right';
       const method = message['method'] ?? 'squash';
-      const branch = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
+      const branch = BRANCH;
       const usable = (value: unknown): value is string =>
         typeof value === 'string' && branch.test(value) && !value.includes('..');
 
@@ -289,10 +312,45 @@ export function createRequestHandler(
       if (body !== undefined && (typeof body !== 'string' || body.length > 65_536)) {
         return deny(context, CODES.BAD_REQUEST, 'bad body', 'the body must be text of at most 65536 characters');
       }
+
+      // An anchored comment: both halves or neither, only on a comment, and never outside the repository.
+      const anchored = filePath !== undefined || line !== undefined;
+      if (anchored && action !== 'comment') {
+        return deny(context, CODES.BAD_REQUEST, `anchor fields with ${action}`, 'only a comment can be anchored to a file and a line');
+      }
+      if (anchored && (filePath === undefined || line === undefined)) {
+        return deny(context, CODES.BAD_REQUEST, 'half an anchor', 'an anchored comment needs a file and a line, or neither');
+      }
+      if (filePath !== undefined) {
+        if (
+          typeof filePath !== 'string' ||
+          filePath === '' ||
+          filePath.startsWith('/') ||
+          filePath.length > 1024 ||
+          filePath.split('/').includes('..')
+        ) {
+          return deny(context, CODES.BAD_REQUEST, `bad file path ${JSON.stringify(filePath)}`, 'the file path is not usable');
+        }
+      }
+      if (line !== undefined && (!Number.isInteger(line) || Number(line) <= 0)) {
+        return deny(context, CODES.BAD_REQUEST, `bad line ${JSON.stringify(line)}`, 'the line has to be a positive number');
+      }
+      if (side !== 'left' && side !== 'right') {
+        return deny(context, CODES.BAD_REQUEST, `bad side ${JSON.stringify(side)}`, 'the side has to be left or right');
+      }
       if (action === 'update' && title === undefined && body === undefined && base === undefined) {
         return deny(context, CODES.BAD_REQUEST, 'empty update', 'an update has to change a title, a body or a base');
       }
-      if (action !== 'open' && (typeof number !== 'number' || !Number.isInteger(number) || number <= 0)) {
+      if ((action === 'comment' || action === 'reply') && (typeof body !== 'string' || body.trim() === '')) {
+        return deny(context, CODES.BAD_REQUEST, 'empty comment', 'a comment has to say something');
+      }
+      if (action === 'reply' && (typeof commentId !== 'number' || !Number.isInteger(commentId) || commentId <= 0)) {
+        return deny(context, CODES.BAD_REQUEST, 'bad commentId', 'a reply needs the id of the comment it answers');
+      }
+      if (action === 'resolve' && (typeof threadId !== 'string' || threadId === '')) {
+        return deny(context, CODES.BAD_REQUEST, 'bad threadId', 'resolving needs the id of the thread, which --threads prints');
+      }
+      if (action !== 'open' && action !== 'resolve' && (typeof number !== 'number' || !Number.isInteger(number) || number <= 0)) {
         return deny(context, CODES.BAD_REQUEST, `bad number ${JSON.stringify(number)}`, 'this action needs a pull request number');
       }
       if (action === 'merge' && method !== 'merge' && method !== 'squash' && method !== 'rebase') {
@@ -313,6 +371,11 @@ export function createRequestHandler(
           repo: repo.repo,
           action,
           ...(typeof number === 'number' ? { number } : {}),
+          ...(typeof commentId === 'number' ? { commentId } : {}),
+          ...(typeof threadId === 'string' ? { threadId } : {}),
+        ...(typeof filePath === 'string' ? { filePath } : {}),
+        ...(typeof line === 'number' ? { line } : {}),
+        ...(typeof filePath === 'string' && typeof line === 'number' ? { side } : {}),
           ...(typeof head === 'string' ? { head } : {}),
           ...(typeof base === 'string' ? { base } : {}),
           ...(typeof title === 'string' ? { title } : {}),
@@ -341,11 +404,12 @@ export function createRequestHandler(
         };
       } catch (error) {
         const reason = String((error as Error).message ?? error).slice(0, 300);
+      const hostDetail = (error as { hostDetail?: string }).hostDetail;
         const callerMessage =
           error instanceof ProviderConfigError
             ? reason
             : 'the broker could not manage that pull request; see the broker log';
-        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage);
+        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail);
       }
     }
 
@@ -376,11 +440,12 @@ export function createRequestHandler(
       // responses. A ProviderConfigError is ours — a permission name and the configuration — and
       // passing it on is the difference between "see the broker log" and knowing what is missing.
       const reason = String((error as Error).message ?? error).slice(0, 300);
+      const hostDetail = (error as { hostDetail?: string }).hostDetail;
       const message =
         error instanceof ProviderConfigError
           ? reason
           : 'the broker could not mint a credential; see the broker log';
-      return deny(context, CODES.PROVIDER_ERROR, reason, message);
+      return deny(context, CODES.PROVIDER_ERROR, reason, message, hostDetail);
     }
   };
 }

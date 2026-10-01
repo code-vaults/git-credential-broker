@@ -10,7 +10,17 @@
  */
 import { readFileSync } from 'node:fs';
 
+import {
+  ANSWER_TIMEOUT_MS,
+  channelDir,
+  findGitDir,
+  readOpener,
+  removeResult,
+  waitForResult,
+  writeRequest,
+} from '../host-request.ts';
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
+import { baseBranchFor, qualifiedBranch } from './remotes.ts';
 import { fail, parseArgs, say } from './support.ts';
 
 /** Longer than a credential request: a token is minted, then the action is performed. */
@@ -24,15 +34,26 @@ ever reaching this side.
 
 Opening (the default)
   --head <branch>      The branch holding the change                 [required]
+                       May be <remote>:<branch>, e.g. origin:feat/x, to name a fork
   --base <branch>      The branch to merge into (default: main)
+                       A <remote>:<branch> here names the same repository as --repo
   --title <text>       The title                                     [required]
   --body <text>        The body, inline
   --body-file <path>   The body, read from a file — a pull request body is usually long
   --draft              Open it as a draft
+  --via-host           Ask a host-side opener to create it, as you, instead of as the app
+                       (run 'git-credential-broker host-opener' on the host to provide one)
 
 Acting on one
   --number <n>         The pull request number                       [required]
   --status             Report its state, mergeability and the runs for its commit
+  --comment            Post the body as a comment on it (needs only --number and --body/--body-file)
+  --file <path>        Anchor that comment to a line of this file, repository-relative
+  --line <n>           The line to anchor to, in the new file unless --side says otherwise
+  --side <left|right>  Which side of the diff --line counts on (default: right)
+  --threads            List its review threads: their ids, whether they are resolved, and the comments
+  --reply-to <id>      Reply inside the thread that comment id belongs to, with --body/--body-file
+  --resolve <thread>   Mark that review thread resolved (the id --threads prints)
   --close              Close it
   --merge              Merge it (branch protection still applies)
   --method <m>         merge, squash (default) or rebase
@@ -53,6 +74,10 @@ Common
  * @returns `close`, `merge`, `update` or `open`.
  */
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
+  if (args.value('resolve') !== undefined) return 'resolve' as const;
+  if (args.value('reply-to') !== undefined) return 'reply' as const;
+  if (args.has('threads')) return 'threads' as const;
+  if (args.has('comment')) return 'comment' as const;
   if (args.has('status')) return 'status' as const;
   if (args.has('close')) return 'close' as const;
   if (args.has('merge')) return 'merge' as const;
@@ -67,7 +92,9 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
  * @returns the process exit code: 0 done, 1 refused, 3 unreachable.
  */
 export async function runPr(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help', 'draft', 'close', 'merge', 'status'] });
+  const args = parseArgs(argv, {
+    booleans: ['help', 'draft', 'close', 'merge', 'status', 'comment', 'threads', 'via-host'],
+  });
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
     return 0;
@@ -75,17 +102,43 @@ export async function runPr(argv: readonly string[]): Promise<number> {
 
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const host = args.value('host');
-  const repo = args.value('repo');
-  if (!socketPath) {
-    fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `git-credential-broker setup`');
-  }
-  if (!host) fail('--host is required (e.g. github.com)');
-  if (!repo) fail('--repo is required (e.g. owner/name)');
-
+  const repo = args.value('repo') ?? fail('--repo is required (e.g. owner/name)');
   const action = actionOf(args);
+  if (args.has('via-host') && action !== 'open') {
+    fail('--via-host only creates a pull request, so it does not go with ' + JSON.stringify(action));
+  }
+  // `--method` takes a value, so `has` — which is about boolean flags — is false for it however it is given.
+  if (args.value('method') !== undefined && action !== 'merge') {
+    fail('--method chooses how to merge, so it only goes with --merge');
+  }
+  const viaHost = action === 'open' && args.has('via-host');
+  if (!host && !viaHost) fail('--host is required (e.g. github.com)');
+  if (!repo) fail('--repo is required (e.g. owner/name), also with --via-host: the opener passes it on');
+
   const number = args.value('number');
-  const head = args.value('head');
-  const base = args.value('base');
+  // `--head origin:feat/x` and `--base upstream:main` name a configured remote instead of a repository
+  // typed by hand: it is the name this checkout already pushes to, and a typo lists the ones that exist.
+  // The base is a branch of the repository --repo names, so the owner a remote resolves to is a check
+  // rather than part of the value: sending `owner:branch` as a base names a branch that cannot exist.
+  const baseBranch = (): string | undefined => {
+    const raw = args.value('base');
+    if (raw === undefined) return undefined;
+    try {
+      return baseBranchFor(raw, repo, process.cwd());
+    } catch (error) {
+      fail((error as Error).message);
+    }
+  };
+  const qualified = (value: string | undefined): string | undefined => {
+    if (value === undefined) return undefined;
+    try {
+      return qualifiedBranch(value, process.cwd());
+    } catch (error) {
+      fail((error as Error).message);
+    }
+  };
+  const head = qualified(args.value('head'));
+  const base = baseBranch();
   const title = args.value('title');
   const bodyFile = args.value('body-file');
   let body = args.value('body');
@@ -100,14 +153,84 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (action === 'open') {
     if (!head) fail('--head is required to open a pull request');
     if (!title) fail('--title is required to open a pull request');
-  } else if (number === undefined) {
+  } else if (action !== 'resolve' && number === undefined) {
     const verb = action === 'status' ? 'inspect' : action;
     fail(`--number is required to ${verb} a pull request`);
-  } else if (!Number.isInteger(Number(number)) || Number(number) <= 0) {
+  } else if (action !== 'resolve' && (!Number.isInteger(Number(number)) || Number(number) <= 0)) {
     fail(`--number must be a positive integer, got ${JSON.stringify(number)}`);
   }
   if (action === 'update' && title === undefined && body === undefined && base === undefined) {
     fail('an update has to change something: pass --title, --body/--body-file or --base');
+  }
+  if ((action === 'comment' || action === 'reply') && (body === undefined || body.trim() === '')) {
+    fail('a comment has to say something: pass --body or --body-file');
+  }
+
+  const filePath = args.value('file');
+  const lineArg = args.value('line');
+  const side = (args.value('side') ?? 'right').toLowerCase();
+  if ((filePath === undefined) !== (lineArg === undefined)) {
+    fail('an anchored comment needs both --file and --line, or neither');
+  }
+  if (filePath !== undefined) {
+    if (action !== 'comment') fail('--file and --line anchor a comment, so they only go with --comment');
+    if (!Number.isInteger(Number(lineArg)) || Number(lineArg) <= 0) {
+      fail(`--line must be a positive integer, got ${JSON.stringify(lineArg)}`);
+    }
+    if (side !== 'left' && side !== 'right') {
+      fail(`--side must be left or right, got ${JSON.stringify(args.value('side'))}`);
+    }
+  }
+  const replyTo = args.value('reply-to');
+  if (action === 'reply' && (replyTo === undefined || !Number.isInteger(Number(replyTo)) || Number(replyTo) <= 0)) {
+    fail(`--reply-to needs the id of the comment being answered, got ${JSON.stringify(replyTo)}`);
+  }
+
+  if (viaHost) {
+    if (head === undefined || title === undefined) fail('--via-host needs --head and --title');
+    const gitDir = findGitDir(process.cwd());
+    if (gitDir === undefined) fail('--via-host needs a git repository: run it from the checkout');
+    const dir = channelDir(gitDir);
+    if (readOpener(dir) === undefined) {
+      fail(
+        `no host opener is watching ${dir}\n` +
+          '  start one on the host: git-credential-broker host-opener --repo <that checkout>\n' +
+          '  or drop --via-host to open it as the app instead',
+      );
+    }
+    // writeRequest refuses a request the opener would have to refuse: a title past its limit, a body past
+    // its limit, a head equal to its base. It throws, and a stack trace tells the caller none of that.
+    let id: string;
+    try {
+      id = writeRequest(dir, {
+        repo,
+        head,
+        base: base ?? 'main',
+        title,
+        body: body ?? '',
+        draft: args.has('draft'),
+        session: 'pr',
+        pid: process.pid,
+      });
+    } catch (error) {
+      fail((error as Error).message);
+    }
+    const answer = await waitForResult(dir, id, ANSWER_TIMEOUT_MS);
+    removeResult(dir, id);
+    if (answer === undefined) {
+      fail(
+        `the host opener did not answer ${id} within ${Math.round(ANSWER_TIMEOUT_MS / 1000)}s\n` +
+          '  it may still be working: the request is not cancelled, and the opener removes it only once\n' +
+          '  it has created the pull request or failed. Check the pull request list before asking again.',
+      );
+    }
+    if (answer.error !== undefined) fail(`the host opener could not open it: ${answer.error}`);
+    say(`opened #${answer.number ?? '?'} (as you, through the host opener): ${answer.url ?? '(no url)'}`);
+    return 0;
+  }
+
+  if (socketPath === undefined) {
+    fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `git-credential-broker setup`');
   }
 
   let response;
@@ -121,10 +244,13 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         path: repo,
         action,
         ...(number === undefined ? {} : { number: Number(number) }),
+        ...(action === 'reply' ? { commentId: Number(replyTo) } : {}),
+        ...(action === 'resolve' ? { threadId: args.value('resolve') } : {}),
         ...(head === undefined ? {} : { head }),
         ...(base === undefined ? {} : { base }),
         ...(title === undefined ? {} : { title }),
         ...(body === undefined ? {} : { body }),
+        ...(filePath === undefined ? {} : { filePath, line: Number(lineArg), side }),
         ...(action === 'merge' ? { method: args.value('method') ?? 'squash' } : {}),
         draft: args.has('draft'),
         session: 'pr',
@@ -142,13 +268,23 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     return 1;
   }
 
-  if (action === 'status') {
+  if (action === 'status' || action === 'threads' || action === 'resolve') {
     say(response.prStatus ?? 'no report');
     return 0;
   }
 
   const done =
-    action === 'open' ? 'opened' : action === 'close' ? 'closed' : action === 'merge' ? 'merged' : 'updated';
+    action === 'open'
+      ? 'opened'
+      : action === 'close'
+        ? 'closed'
+        : action === 'merge'
+          ? 'merged'
+          : action === 'comment'
+            ? 'commented on'
+            : action === 'reply'
+              ? 'replied in'
+              : 'updated';
   const state = response.prState === undefined ? '' : ` (${response.prState})`;
   say(`${done} #${response.prNumber ?? '?'}${state}: ${response.prUrl ?? '(no url)'}`);
   return 0;

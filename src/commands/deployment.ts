@@ -12,7 +12,7 @@
  */
 import path from 'node:path';
 
-import { SIDECAR } from '../config.ts';
+import { USER_TOKEN_FILE, SIDECAR } from '../config.ts';
 import type { DeploymentMode } from '../config.ts';
 
 /** The modes, for validation and help text. */
@@ -28,6 +28,8 @@ export interface BrokerPaths {
 /** Files `init` writes on the host. The same in both modes; only the recorded paths differ. */
 export interface HostArtifacts {
   readonly keyPath: string;
+  /** Where authorize leaves the refresh token, beside the key. */
+  readonly userTokenPath: string;
   readonly configPath: string;
   readonly auditDir: string;
 }
@@ -44,6 +46,7 @@ export const HOST_SOCKET_PATH_DEFAULT = '/run/git-cred-broker/broker.sock';
 export function hostArtifacts(dir: string): HostArtifacts {
   return {
     keyPath: path.join(dir, 'app.pem'),
+    userTokenPath: path.join(dir, USER_TOKEN_FILE),
     configPath: path.join(dir, 'broker.config.json'),
     auditDir: path.join(dir, 'log'),
   };

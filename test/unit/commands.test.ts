@@ -535,10 +535,23 @@ describe('diagnose', () => {
       }),
     );
 
-    await assert.rejects(
-      () => runDiagnose(['--config', configPath]),
-      /exists only inside the sidecar container/,
-    );
+    // runDiagnose refuses to start when a proxy is configured without the switch, and it reads the real
+    // environment, so the variables are taken away for the call: the assertion is about the sidecar message,
+    // not about the machine this runs on.
+    const proxyVars = ['http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY', 'NODE_USE_ENV_PROXY'];
+    const savedProxy = proxyVars.map((name) => [name, process.env[name]] as const);
+    try {
+      for (const name of proxyVars) delete process.env[name];
+      await assert.rejects(
+        () => runDiagnose(['--config', configPath]),
+        /exists only inside the sidecar container/,
+      );
+    } finally {
+      for (const [name, value] of savedProxy) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
   });
 });
 
@@ -683,5 +696,70 @@ describe('compose', () => {
       rendered.includes('/volume1/homes/u/Workspaces/h/.dsh/git-broker:' + SIDECAR.socketDir),
       true,
     );
+  });
+
+  it('emits one environment block, with the proxy switch the daemon insists on', () => {
+    // Not a regex on a fragment: the failure this guards is a second `environment:` key, which is not valid
+    // YAML and which docker rejects — and `docker compose config` cannot run here.
+    const keys = rendered.split('environment:').length - 1;
+    assert.equal(keys, 1, 'a service with two environment keys is not a valid compose file');
+    assert.match(rendered, /NODE_USE_ENV_PROXY=1/, 'and the switch has to be there with the proxy variables');
+  });
+});
+
+describe('the anchor flags, at the CLI boundary', () => {
+  /**
+   * Run the real command as a process.
+   *
+   * Every case here is refused by `fail`, which exits, so it cannot be a call into the module — and that is
+   * the point of testing it here: the checks are the CLI's, and the unit tests under them never see them.
+   */
+  const cli = (args: readonly string[]): { status: number; stderr: string } => {
+    try {
+      execFileSync('node', ['src/cli/helper.ts', 'pr', ...args], {
+        cwd: path.resolve('.'),
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      return { status: 0, stderr: '' };
+    } catch (error) {
+      const failed = error as { status?: number | null; stderr?: string };
+      return { status: failed.status ?? -1, stderr: String(failed.stderr ?? '') };
+    }
+  };
+
+  const base = ['--host', 'github.com', '--repo', 'acme/widget', '--number', '7'];
+
+  it('refuses half an anchor, in both directions', () => {
+    const fileOnly = cli([...base, '--comment', '--file', 'Dockerfile', '--body', 'x']);
+    assert.equal(fileOnly.status, 1, 'a file with no line is refused');
+    assert.match(fileOnly.stderr, /both --file and --line/);
+
+    const lineOnly = cli([...base, '--comment', '--line', '4', '--body', 'x']);
+    assert.equal(lineOnly.status, 1, 'and a line with no file');
+    assert.match(lineOnly.stderr, /both --file and --line/);
+  });
+
+  it('refuses an anchor on an action that is not a comment', () => {
+    const closed = cli([...base, '--close', '--file', 'Dockerfile', '--line', '4', '--body', 'x']);
+    assert.equal(closed.status, 1);
+    assert.match(closed.stderr, /only go with --comment/);
+  });
+
+  it('refuses a side that is neither, and a line that is not a line', () => {
+    const side = cli([...base, '--comment', '--file', 'Dockerfile', '--line', '4', '--side', 'middle', '--body', 'x']);
+    assert.match(side.stderr, /--side must be left or right/);
+
+    for (const line of ['0', 'x', '-1']) {
+      const bad = cli([...base, '--comment', '--file', 'Dockerfile', '--line', line, '--body', 'x']);
+      assert.equal(bad.status, 1, `--line ${line} is refused`);
+      assert.match(bad.stderr, /--line must be a positive integer/);
+    }
+  });
+
+  it('refuses --method unless the action merges', () => {
+    const updated = cli([...base, '--method', 'squash', '--title', 'a title']);
+    assert.equal(updated.status, 1);
+    assert.match(updated.stderr, /only goes with --merge/);
   });
 });

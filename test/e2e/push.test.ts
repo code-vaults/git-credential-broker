@@ -152,7 +152,13 @@ async function setupHarness(
   let broker: ChildProcess | null = null;
 
   if (withBroker) {
-    broker = spawn(process.execPath, [DAEMON_BIN, '--config', configPath], { stdio: ['ignore', 'pipe', 'pipe'] });
+    // An explicit environment: the daemon refuses to start with a proxy variable and no switch, so a
+    // machine that exports one would fail this suite for a reason that has nothing to do with the change,
+    // and no_proxy keeps its own local git server off whatever proxy it does use.
+    broker = spawn(process.execPath, [DAEMON_BIN, '--config', configPath], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, NODE_USE_ENV_PROXY: '1', no_proxy: 'localhost,127.0.0.1' },
+    });
     broker.stdout?.on('data', (chunk: Buffer) => brokerLog.push(chunk.toString()));
     broker.stderr?.on('data', (chunk: Buffer) => brokerLog.push(chunk.toString()));
     await waitFor(() => canConnect(socketPath), { timeoutMs: 10_000, what: 'the broker to accept a connection' });

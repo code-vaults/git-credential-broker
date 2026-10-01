@@ -6,6 +6,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { posix } from 'node:path';
 
 import { parseAllowEntry } from './policy.ts';
 import type { BrokerConfig, GithubAppHostConfig, HostConfig, StaticHostConfig } from './types.ts';
@@ -50,9 +51,33 @@ export type DeploymentMode = 'host' | 'sidecar';
  * A contract with the compose file `compose` prints: it and `init --mode sidecar` both read these
  * from here, because a mismatch is a broker that starts and then cannot find its own key.
  */
+/**
+ * The file name the authorized person's refresh token is kept under.
+ *
+ * It sits beside the private key, because the broker reads the key and can find the token without being
+ * told anything else — one rule, used by the writer, the reader and the mount, so they cannot drift.
+ */
+export const USER_TOKEN_FILE = 'user.refresh';
+
+/**
+ * Where the authorized person's refresh token is, given the key it sits beside.
+ *
+ * posix, not path: these are paths inside the deployment, and the process reading them need not be the
+ * platform they belong to.
+ *
+ * @param privateKeyPath - the key, as the process that reads it sees the path.
+ * @returns the refresh token path.
+ */
+export function userTokenPath(privateKeyPath: string): string {
+  return posix.join(posix.dirname(privateKeyPath), USER_TOKEN_FILE);
+}
+
 export const SIDECAR = {
   configPath: '/etc/git-cred-broker/broker.config.json',
   keyPath: '/etc/git-cred-broker/app.pem',
+  // Beside the key, because that is how the provider derives it without being told.
+  // Derived from the key rather than written again: the mount target and the reader's path at once.
+  userTokenPath: posix.join(posix.dirname('/etc/git-cred-broker/app.pem'), USER_TOKEN_FILE),
   auditDir: '/var/log/git-cred-broker',
   auditPath: '/var/log/git-cred-broker/audit.jsonl',
   socketDir: '/run/git-broker',
@@ -76,6 +101,29 @@ export function inferMode(config: BrokerConfig): DeploymentMode {
 }
 
 /**
+ * Refuse to start when a person's token is named but not there.
+ *
+ * Same reasoning as the key: a path that does not resolve is a deployment mistake, and the process
+ * that runs the broker is the one whose paths count.
+ *
+ * @param config - the loaded configuration.
+ */
+export function assertUserTokensReadable(config: BrokerConfig): void {
+  for (const [host, block] of Object.entries(config.hosts)) {
+    if (block.provider !== 'github-app') continue;
+    for (const [owner, path] of Object.entries(block.userTokens ?? {})) {
+      if (existsSync(path)) continue;
+    throw new Error(
+      `cannot read the token for ${host}/${owner}: ${path} does not exist.\n` +
+        `       Create a fine-grained token with pull requests: read and write, contents: read and\n` +
+        `       metadata: read, for the repositories the allowlist names, and put it there — or drop\n` +
+        `       userTokens to keep opening pull requests as the app.`,
+    );
+    }
+  }
+}
+
+/**
  * Check that each recorded private key is readable, before the caller tries to read it.
  *
  * Both the daemon and `diagnose` need this, because both read the key, and a bare
@@ -86,6 +134,7 @@ export function inferMode(config: BrokerConfig): DeploymentMode {
  * @param config - the validated configuration.
  * @throws {Error} when a key file is missing, with the remedy in the message.
  */
+
 export function assertKeysReadable(config: BrokerConfig): void {
   const mode = inferMode(config);
   for (const [host, block] of Object.entries(config.hosts)) {
@@ -212,6 +261,23 @@ function stringOrNumberField(
 }
 
 /**
+ * The same map with its keys lower-cased.
+ *
+ * These keys are owners, and owners are case-insensitive on GitHub while every comparison in this
+ * codebase is made against a lower-cased one. Normalising at the edge is what keeps a configuration that
+ * looks right from silently doing nothing.
+ *
+ * @param value - the map, as written, or nothing when the field is absent.
+ * @returns the map with lower-cased keys, or nothing.
+ */
+function lowerCasedKeys(value: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (value === undefined) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value)) out[key.toLowerCase()] = entry;
+  return out;
+}
+
+/**
  * Read an optional map of strings, for REST permission names.
  *
  * @param value - the raw value.
@@ -219,20 +285,22 @@ function stringOrNumberField(
  * @param at - the human-readable location, for messages.
  * @returns the map, or undefined when absent or invalid.
  */
+
 function stringMapField(
   value: unknown,
   errors: string[],
   at: string,
+  field = 'permissions',
 ): Readonly<Record<string, string>> | undefined {
   if (value === undefined || value === null) return undefined;
   if (!isRecord(value)) {
-    errors.push(`${at}.permissions must be an object of permission names to access levels`);
+    errors.push(`${at}.${field} must be an object of names to values`);
     return undefined;
   }
   const out: Record<string, string> = {};
   for (const [key, entry] of Object.entries(value)) {
     if (typeof entry !== 'string') {
-      errors.push(`${at}.permissions["${key}"] must be a string`);
+      errors.push(`${at}.${field}["${key}"] must be a string`);
       continue;
     }
     out[key] = entry;
@@ -338,6 +406,10 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           clientId: stringField(blockRaw, 'clientId', errors, at),
           appId: stringOrNumberField(blockRaw, 'appId', errors, at),
           privateKeyPath: stringField(blockRaw, 'privateKeyPath', errors, at),
+          // Keys are owners, and every other owner in this codebase is compared lower-cased. A key spelled
+      // `An-Org` used to validate and then never match, which meant the pull request was created as the app
+      // while the operator believed a person would author it.
+      userTokens: lowerCasedKeys(stringMapField(blockRaw['userTokens'], errors, at, 'userTokens')),
           privateKeyPem: stringField(blockRaw, 'privateKeyPem', errors, at),
           permissions: stringMapField(blockRaw['permissions'], errors, at),
           apiBaseUrl: stringField(blockRaw, 'apiBaseUrl', errors, at),

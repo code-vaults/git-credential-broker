@@ -48,9 +48,62 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 
 ## Rules that are not obvious from the code
 
+- **A runtime dependency needs a deployment step, and there is not one yet.** `stage` exports a **commit**
+  and nothing else, so a dependency that is not vendored or inlined never reaches the deployment: the
+  broker fails to resolve it and, under `Restart=always`, loops instead of reporting anything. That is
+  not an argument against dependencies — they are wanted and coming — it is a hole to close in `stage`
+  (install after staging, or build something self-contained) **before** the first one is taken. The
+  attempt that found it was a fetch wrapper for the proxy; the same ground is covered today by Node 24
+  and `NODE_USE_ENV_PROXY`, which is why that floor moved.
+
+  The floor is checked at runtime, in both entry points, because `engines` is only a declaration here:
+  measured, `yarn install` succeeds with `"node": ">=99"`, and `.npmrc` is not read by Yarn 4 at all — so
+  neither would catch a host on an older interpreter. A deployment runs from a checkout with no install
+  step, which is exactly the case a runtime check covers and an install-time one does not.
+- **After writing a fix, read the file back — and never trust a check the shell can rewrite.** Three
+  commits in one session described changes the tree did not have: an edit applied after a commit whose
+  message claimed it and then discarded by a restore, and a `String.replace` whose replacement contained
+  `$$`, which JavaScript reads as one literal dollar, so it wrote the line it was trying to change and
+  reported success. The checks that missed it were a `grep -c` output read as success when it printed
+  zero, and an ssh command whose remote shell expanded `$$` into its own pid. `split`/`join` instead of a
+  replacement string, `sed -n`/`od -c` instead of a pattern a shell touches, and the file read back after
+  the commit: a message is not evidence.
+
+- **Look the behaviour up; do not reason about another system from memory.** Two of the four findings a
+  free review bot raised on this branch were things it had gone and read: the precedence of Node's
+  `--no-use-env-proxy` over `NODE_OPTIONS` and `NODE_USE_ENV_PROXY`, and GitHub's documentation on refresh
+  token reuse. Both were answered from memory here, and the memory was wrong in both cases — the first
+  version of the fix had the semantics backwards. The rule above says a message is not evidence; neither is
+  recall. Check the docs, or run the thing. `web_fetch` and a live invocation are both cheap; being
+  confidently wrong about a flag is not.
+- **A containment check on a path is not a string prefix.** `resolve()` is lexical, so a symlink inside a
+  checkout satisfies a `startsWith` on the served root while pointing at a directory outside it, and the
+  container can create one. Compare real paths (`realpathSync`), and ask what else can make a path point
+  elsewhere: the first fix for this was a prefix check, and the bypass was found by a review bot asking the
+  question the fix had not.
+- **The process that owns a boundary decides what crosses it, not the error class.** A response body put
+  into the message of a `ProviderConfigError` reached the container, because a caller that wraps that error
+  to name a missing permission wraps it in the same class and so passes the whole message through. Detail
+  that is only for the host log travels beside the message and is appended by the broker, which is the only
+  place that knows which side it is writing to.
+- **After a fix, read what the other side received — not just that the suite is green.** The leak above was
+  found by running the failed merge again and looking at what the container was told; the JSON was in it.
+  In the same way the FIFO, the symlinked `gitdir:` and the symlinked `.git` were each confirmed by
+  reproducing the attack, and a fix is not confirmed until the failing case is run again and now passes.
+- **When the tree breaks, restore the last green state before doing anything else.** An edit that inserted a
+  line into the middle of a call left the broker unable to start, and the next minutes were spent editing a
+  file that was already invalid. `git checkout --` back to the commit whose typecheck passed, then fix from
+  a read of the real text. Roll back first; a broken tree gets worse with attention, not better.
+- **A review round is not finished until every claim has been read, fixed, or answered.** Resolve the ones
+  that no longer hold, reply to the ones that are fixed, and say plainly which are left. A thread left open
+  is a claim nobody checked, and a bot whose report cannot be read — because the tool truncates it, or
+  because its finding is below a preamble — is a gap in the tool worth fixing before the review.
 - **Never commit key material.** `.gitignore` covers `*.pem` and `*.key`; a real App private
   key has already been dropped into this directory once. Before pushing:
-  `git grep -l 'BEGIN RSA PRIVATE KEY' HEAD` must find nothing.
+  `git grep -l -- '-----BEGIN.*PRIVATE KEY-----' HEAD -- ':!AGENTS.md' ':!.agents/notes'` must find
+  nothing. Both exclusions are needed and neither is a loophole: this line contains the pattern, and the
+  notes quote a directory listing of a key that is readable on this machine — the evidence for why the
+  key belongs outside the mounts, not key material.
 - **Do not run the broker from this checkout, and understand why the *key* being elsewhere is not
   enough.** The broker reads the key, so the code it executes has the key's privileges: it can mint
   installation tokens for anything the App can see, and it can read the key file. A key outside the
@@ -60,9 +113,11 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   repository is agent-writable too, so a staged sha is worth checking against a clone or the remote.
   The *helper* is fine here: it holds no secret and grants nothing; the broker decides.
 - **Strict configuration validation is deliberate.** Top-level `_comment*` keys are ignored,
-  but everything inside `hosts` is checked, and a malformed `allow` entry is rejected at load
+  and a malformed `allow` entry is rejected at load
   time. It fails closed either way, but silently — and a typo that looks like configuration is
-  worse than a crash. Do not soften this to be helpful.
+  worse than a crash. Do not soften this to be helpful. What is checked is the fields the block
+  defines: an unknown key inside `hosts` is dropped rather than refused, so a misspelled `userTokens`
+  is not a typo this will catch.
 - **Never log the credential.** The audit log records a SHA-256 *fingerprint* plus host, repo,
   DSH session id and expiry. `src/audit.ts` also redacts secret-looking keys defensively
   (`token_fingerprint` is deliberately exempt). The helper prints the credential to stdout
@@ -99,6 +154,42 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   to the branch it targets — the token is narrowed to `pull_requests: write`. CI runs on
   `pull_request`, so the branch gets the three jobs before anyone merges.
 
+- **A pull request authored by the app is one automated reviewers may skip, so a person can be the
+  author instead — through the host opener, and only for creating.** `pr --via-host` writes a request
+  under `<git dir>/git-credential-broker/pr-requests` (shared with the host, and untracked, so it
+  dirties nothing) and waits for the answer; `git-credential-broker host-opener` on the host turns it
+  into a pull request with the credentials of whoever runs it. That process is deliberately the only
+  thing that acts as a person: it runs no shell, its program is configuration, and it cannot push,
+  merge, close or read. Everything else stays on the socket, where the app is the only actor. Default
+  is still the broker — `--via-host` is asked for, never assumed.
+
+  The opener is started once per machine, not once per repository: it discovers the checkouts under
+  its `--root`s (default `$HOME`, so `~/Workspaces`, `~/.dotfiles` and anything added later are
+  served). The paths on the two sides never have to match — each side reads and writes its own view
+  of the same `.git` directory — so only the roots it scans are host-side paths. A request is served in the
+  checkout it was written in. That is a mechanism, not a boundary: the container can edit any checkout it can
+  write, its remote included, so what a deployment controls is which roots are served and which program runs.
+
+  **More than one way to be the author exists, and none of them replaces another.** The opener (no
+  long-lived secret, one process), `userTokens` (one process, a token per owner), and authorization on
+  the existing app (one process, no manual rotation, a token that can do anything that person can)
+  answer the same question with different trades. Adding one is not a reason to remove another: a
+  deployment chooses, and when you add the next one, document it beside the others rather than
+  rewriting them.
+
+  Authorization is not a token to place: `authorize` runs the device flow once from a browser
+  somewhere else and leaves a refresh token beside the key, which the broker renews by itself. The user
+  token is used for exactly the two things an installation token cannot do — authoring a pull request
+  as a person, and resolving a review thread, which GraphQL refuses for an app. It needs the client id
+  in the configuration and **Enable Device Flow** in the app settings, and no client secret at all. The
+  refresh token is rotated on every exchange and written back; not writing it back would work once.
+
+- **The allowlist says what may be used, not what is installed.** An entry for a repository the app was
+  never installed on is meaningful: `authorize` and the host opener act as a person, and a person needs no
+  permission on an upstream to open a pull request from their fork into it. For those two routes the
+  allowlist matters more than it does for the app, not less — a person's token reaches everything that
+  person reaches. The installation is a separate question, and the code asks it only when there is nobody
+  else to act as.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
   Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.json`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by
@@ -155,8 +246,10 @@ Full detail and the measurements behind them:
 | `src/helper.ts` | the container-side credential helper |
 | `src/policy.ts` | the authorization decision (default deny, exact segment matching) |
 | `src/providers/github-app.ts` | RS256 JWT, installation lookup, permission pre-flight, token cache |
+| `src/host-request.ts` | the request channel between the container and a host-side opener |
 | `test/e2e/push.test.ts` | a real push over authenticated smart HTTP |
-| `src/commands/` | the management CLI: `setup`, `init`, `stage`, `compose`, `probe`, `logs`, `pr`, `diagnose` |
+| `src/commands/` | the management CLI: `setup`, `init`, `stage`, `compose`, `probe`, `logs`, `pr`, `host-opener`, `authorize`, `diagnose` |
+| `src/device-flow.ts` | the device flow: the three exchanges that turn an authorization into a token |
 | `src/cli/helper.ts` | the one command that is both the git helper and the CLI |
 | `scripts/postbuild.mjs` | build-time fixup: shebang and exec bit on the CLI entry points |
 | `.agents/notes/proposed/` | the original design and its review |

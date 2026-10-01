@@ -1,0 +1,29 @@
+# A user service for the host-side opener, which creates pull requests as the person running it.
+#
+#   install:  npm i -g git-credential-broker      # the CLI is assumed to be on PATH
+#             cp examples/host-opener.service ~/.config/systemd/user/
+#             systemctl --user daemon-reload
+#             systemctl --user enable --now host-opener
+#   logs:     journalctl --user -u host-opener -f
+#
+# `%h` is this user's home, so every checkout below it is served, including ones created later.
+# Name a tree instead — `--root /volume1/homes/<you>` — if the container sees one outside it, and
+# `--command /usr/local/bin/gh` if gh is not on the service PATH.
+#
+# On a system without user services (a Synology NAS, for instance), the equivalent is a boot-time
+# task running the same command — see examples/host-opener-boot.sh.
+[Unit]
+Description=Fulfil container requests to open pull requests, as this user
+After=network-online.target
+
+[Service]
+# A systemd unit inherits nothing from your shell, and gh (Go) honours these while it runs. Put
+# http_proxy / https_proxy / no_proxy in this file if this host needs a proxy to reach github.com.
+EnvironmentFile=-/etc/git-cred-broker/proxy.env
+Type=simple
+ExecStart=/usr/bin/env git-credential-broker host-opener --root %h
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

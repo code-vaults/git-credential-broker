@@ -51,7 +51,10 @@ repositories each installation can reach. Never prints a key or a token.
  * @param argv - arguments after the command name.
  * @returns the process exit code: 0 everything reachable, 1 something is not.
  */
+import { assertProxyEnabled } from '../proxy.ts';
+
 export async function runDiagnose(argv: readonly string[]): Promise<number> {
+  assertProxyEnabled();
   const args = parseArgs(argv, { booleans: ['help'] });
   if (args.has('help') || args.has('h')) {
     say(DIAGNOSE_USAGE);

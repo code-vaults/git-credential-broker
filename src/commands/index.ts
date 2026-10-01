@@ -24,6 +24,8 @@ Commands
   probe      Ask the broker what it would do for a repository, without pushing
   logs       Read a workflow job's log through the broker (the token stays in the broker)
   pr         Open a pull request through the broker (the token stays in the broker)
+  host-opener  Watch for the container's requests to open pull requests, and create them (run on the host)
+  authorize  Authorize this app once, so pull requests can be authored by a person (run on the host)
   diagnose   Ask GitHub what the App can actually see (installations, permissions, repositories)
 
 Options
@@ -42,8 +44,6 @@ Environment
 
 Run \`git-credential-broker <command> --help\` for the options of one command.`;
 
-/** The subcommands, in the order help lists them. */
-export const COMMANDS = ['setup', 'init', 'stage', 'compose', 'probe', 'logs', 'pr', 'diagnose'] as const;
 
 /**
  * Dispatch a command line.
@@ -82,6 +82,10 @@ export async function runCli(argv: readonly string[]): Promise<number> {
       return (await import('./logs.ts')).runLogs(rest);
     case 'pr':
       return (await import('./pr.ts')).runPr(rest);
+    case 'authorize':
+      return (await import('./authorize.ts')).runAuthorize(rest);
+    case 'host-opener':
+      return (await import('./host-opener.ts')).runHostOpener(rest);
     case 'diagnose':
       return (await import('./diagnose.ts')).runDiagnose(rest);
     default:

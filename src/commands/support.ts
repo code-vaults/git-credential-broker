@@ -44,7 +44,9 @@ export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {
   const positionals: string[] = [];
 
   for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index];
+    // `-h` is advertised in every usage line and could never be true: an argument without two dashes went
+    // straight to positionals. Normalising here keeps every command's existing checks working.
+    const argument = argv[index]?.replace(/^-h$/, '--help').replace(/^-(?=[A-Za-z])/, '--');
     if (argument === undefined) continue;
     if (argument === '--') {
       positionals.push(...argv.slice(index + 1));

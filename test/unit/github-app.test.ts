@@ -6,7 +6,28 @@
  * scoping, permission narrowing and token reuse — with a stubbed transport, so they run
  * offline and never touch a real credential.
  */
+/**
+ * The body of a recorded call, as an object when it is JSON.
+ *
+ * The OAuth endpoints take a form, and a form is not JSON. Swallowing the failure is the point: a stub
+ * that throws while recording is a stub that fails the test it was meant to explain.
+ *
+ * @param body - the raw body, if the call had one.
+ * @returns the parsed object, or null.
+ */
+function recordedBody(body: string | undefined): Record<string, unknown> | null {
+  if (!body) return null;
+  try {
+    return JSON.parse(body) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createVerify, generateKeyPairSync } from 'node:crypto';
 import { describe, it } from 'node:test';
 
@@ -37,6 +58,8 @@ function jsonResponse(body: unknown, status = 200, headers: Record<string, strin
 
 /** One recorded call to the stubbed transport. */
 interface RecordedCall {
+  /** The body as sent, since the OAuth endpoints take a form rather than JSON. */
+  raw?: string;
   readonly url: string;
   readonly method: string;
   readonly body: Record<string, unknown> | null;
@@ -113,6 +136,8 @@ function textResponse(body: string, status = 200) {
 
 function createStubFetch(options: {
   installations: unknown;
+  /** What the GraphQL scope check is told the thread belongs to. */
+  threadRepo?: string;
   nowMs: number;
   token?: string;
   tokenStatus?: number;
@@ -136,9 +161,15 @@ function createStubFetch(options: {
     calls.push({
       url,
       method: init.method,
-      body: init.body ? (JSON.parse(init.body) as Record<string, unknown>) : null,
+      body: recordedBody(init.body),
       authorization: init.headers['authorization'],
+        raw: init.body ?? '',
     });
+    if (url.includes('/login/oauth/access_token')) {
+      return Promise.resolve(
+        jsonResponse({ access_token: 'person-token', refresh_token: 'rotated', expires_in: 28800 }),
+      );
+    }
     if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
     if (url.includes('/app/installations?')) return Promise.resolve(jsonResponse(installations));
     if (url.endsWith('/merge')) {
@@ -163,6 +194,16 @@ function createStubFetch(options: {
         }),
       );
     }
+    // A review: what the comment path posts, with or without inline comments on it.
+    // GraphQL: the scope check asks whose thread it is before resolving it, so both shapes answer.
+    if (url.endsWith('/graphql')) {
+      const body = init.body ?? '';
+      if (body.includes('resolveReviewThread')) return Promise.resolve(jsonResponse({ data: { resolveReviewThread: { thread: { isResolved: true } } } }));
+      return Promise.resolve(
+        jsonResponse({ data: { node: { pullRequest: { repository: { nameWithOwner: options.threadRepo ?? 'acme/widget' } } } } }),
+      );
+    }
+    if (url.endsWith('/reviews')) return Promise.resolve(jsonResponse({}));
     if (url.endsWith('/pulls')) {
       return Promise.resolve(
         jsonResponse({ number: 42, html_url: 'https://github.com/acme/widget/pull/42' }, 201),
@@ -338,8 +379,9 @@ describe('createGithubAppProvider', () => {
       calls.push({
         url,
         method: init.method,
-        body: init.body ? (JSON.parse(init.body) as Record<string, unknown>) : null,
+        body: recordedBody(init.body),
         authorization: init.headers['authorization'],
+        raw: init.body ?? '',
       });
       if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
       if (url.includes('/app/installations?')) {
@@ -520,9 +562,35 @@ describe('createGithubAppProvider', () => {
     const stub = createStubFetch({
   installations: [{ id: 42, account: { login: 'acme' } }],
   nowMs,
-  appPermissions: { pull_requests: 'write', contents: 'read' },
-  installationPermissions: { pull_requests: 'write', contents: 'read' },
+  appPermissions: { actions: 'read', pull_requests: 'write', contents: 'read' },
+  installationPermissions: { actions: 'read', pull_requests: 'write', contents: 'read' },
     });
+
+  it('refuses to report the runs when the grant for them is missing', async () => {
+    // The pre-flight exists to name the permission that is missing, and status reads /actions/runs as
+    // well as the pull request. Without this case the pre-flight could be reverted to asking for
+    // pull_requests alone and every test would still pass, which is how the gap was found.
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      appPermissions: { pull_requests: 'write', contents: 'read' },
+      installationPermissions: { pull_requests: 'write', contents: 'read' },
+    });
+
+    await assert.rejects(
+      providerFor(stub).pullRequest!({
+        action: 'status',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        number: 42,
+      }),
+      (error: unknown) => {
+        assert.match(String((error as Error).message), /actions/, 'and it names the permission that is missing');
+        return true;
+      },
+    );
+  });
     const pr = await providerFor(stub).pullRequest!({
   action: 'status',
   host: 'github.com',
@@ -569,4 +637,145 @@ describe('createGithubAppProvider', () => {
     assert.doesNotMatch(error.message, /PRIVATE KEY/);
     assert.doesNotMatch(error.message, /clientid/);
   });
+
+  describe("the authorized person's token", () => {
+    it('is renewed from beside the key, used for the pull request, and rotated back to disk', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'personal-token-'));
+      const refreshPath = join(dir, 'user.refresh');
+      writeFileSync(refreshPath, 'refresh-from-authorize\n', 'utf8');
+
+      const stub = createStubFetch({
+        installations: [{ id: 42, account: { login: 'acme' } }],
+        nowMs,
+        appPermissions: { pull_requests: 'write', contents: 'read' },
+        installationPermissions: { pull_requests: 'write', contents: 'read' },
+      });
+
+      const pr = await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
+        action: 'open',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        head: 'feat/thing',
+        base: 'main',
+        title: 'a title',
+        body: 'a body',
+      });
+
+      assert.equal(pr.number, 42);
+
+      const exchange = stub.calls.find((call) => call.url.includes('/login/oauth/access_token'));
+      assert.ok(exchange, 'the refresh token was exchanged');
+      assert.match(String(exchange?.raw), /grant_type=refresh_token/);
+      assert.match(String(exchange?.raw), /refresh_token=refresh-from-authorize/);
+
+      const created = stub.calls.find((call) => call.url.endsWith('/pulls'));
+      assert.equal(created?.authorization, 'Bearer person-token', 'and it was created as them');
+
+      assert.equal(
+        readFileSync(refreshPath, 'utf8').trim(),
+        'rotated',
+        'the rotated refresh token is written back: keeping the old one would work exactly once',
+      );
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+  });
+
+
+  it("creates the pull request without an installation when a person has authorized one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'no-installation-'));
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+
+    // An upstream the app was never installed on: the installation lookup finds nothing at all.
+    const stub = createStubFetch({ installations: [], nowMs });
+
+    const pr = await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
+      action: 'open', host: 'github.com', owner: 'upstream', repo: 'upstream',
+      head: 'feat/thing', base: 'main', title: 'a title', body: 'a body',
+    });
+
+    assert.equal(pr.number, 42);
+    assert.ok(
+      !stub.calls.some((call) => call.url.includes('/access_tokens')),
+      'and never mints an installation token it does not have',
+    );
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+
+  it('posts an anchored comment on the line it was given, on the same review it already posts', async () => {
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    await providerFor(stub).pullRequest!({
+      action: 'comment',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 7,
+      body: 'why this marker exists',
+      filePath: 'Dockerfile',
+      line: 4,
+    });
+
+    const review = stub.calls.find((call) => call.url.endsWith('/reviews'));
+    assert.ok(review, 'the review endpoint is the one used');
+    assert.deepEqual(
+      (review?.body as Record<string, unknown>)?.['comments'],
+      [{ path: 'Dockerfile', line: 4, side: 'RIGHT', body: 'why this marker exists' }],
+    );
+    assert.equal((review?.body as Record<string, unknown>)?.['event'], 'COMMENT');
+  });
+
+  it('posts a body-only comment the way it always has', async () => {
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    await providerFor(stub).pullRequest!({
+      action: 'comment', host: 'github.com', owner: 'acme', repo: 'widget', number: 7, body: 'a general remark',
+    });
+
+    const review = stub.calls.find((call) => call.url.endsWith('/reviews'));
+    assert.deepEqual(review?.body, { body: 'a general remark', event: 'COMMENT' }, 'nothing new in the payload');
+  });
+
+
+  it("resolves a thread with a token per owner, which is a person acting too", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'resolve-owner-'));
+    const tokenPath = join(dir, 'upstream.token');
+    writeFileSync(tokenPath, 'github_pat_x\n', 'utf8');
+
+    // No installation: the repository the app was never installed on, resolved as a person.
+    const stub = createStubFetch({ installations: [], nowMs, threadRepo: 'upstream/upstream' });
+    const answered = await providerFor(stub, { userTokens: { upstream: tokenPath } }).pullRequest!({
+      action: 'resolve', host: 'github.com', owner: 'upstream', repo: 'upstream', number: 4, threadId: 'PRRT_x',
+    });
+    assert.ok(answered, 'the resolve went through');
+
+    const mutation = stub.calls.find((call) => typeof call.raw === 'string' && call.raw.includes('resolveReviewThread'));
+    assert.ok(mutation, 'the mutation was sent');
+    assert.equal(mutation?.authorization, 'Bearer github_pat_x', 'and a token per owner is what sent it');
+    assert.equal(
+      stub.calls.some((call) => call.url.includes('/access_tokens')),
+      false,
+      'without asking for an installation, which GraphQL refuses for this',
+    );
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('refuses to resolve a thread that belongs to another repository', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'resolve-scope-'));
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-1\n', 'utf8');
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      threadRepo: 'someone/else',
+    });
+    await assert.rejects(
+      providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
+        action: 'resolve', host: 'github.com', owner: 'acme', repo: 'widget', number: 4, threadId: 'PRRT_elsewhere',
+      }),
+      /not a review thread of acme\/widget/,
+    );
+    rmSync(dir, { recursive: true, force: true });
+  });
+
 });

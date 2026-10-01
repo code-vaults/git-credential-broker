@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Writable } from 'node:stream';
-import { after, describe, it } from 'node:test';
+import { after, before, describe, it } from 'node:test';
 
 import { runDaemon } from '../../src/daemon.ts';
 
@@ -58,6 +58,11 @@ function githubAppHost(privateKeyPath: string) {
 }
 
 describe('daemon start-up diagnostics', () => {
+  // No --config is passed on purpose, and the default is resolved against the working directory: a
+  // broker.config.json in this checkout — gitignored, so it happens — would be loaded instead of nothing.
+  before(() => {
+    process.env['GIT_BROKER_CONFIG'] = path.join(os.tmpdir(), 'git-credential-broker-no-such-config.json');
+  });
   it('refuses native Windows instead of coming up with nothing enforced', async () => {
     // Before the config is even read: on Windows the socket would be a named pipe and the mode bits
     // would enforce nothing, so a broker that started would look healthy and be open to every local
