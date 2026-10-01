@@ -268,6 +268,26 @@ enforced by GitHub rather than promised here. The token is used for creating and
 closing, merging, updating and reading a state all stay on the app's installation token. Drop the
 field to go back to app-authored pull requests; `--via-host` still works either way.
 
+#### Authorizing as a person instead
+
+A token per owner is one way to be the author; authorizing the app once is another, and it needs no
+token per owner, because GitHub issues it for the app *and* the person together. Run this on the host:
+
+```sh
+git-credential-broker authorize --config /etc/git-cred-broker/broker.config.json
+```
+
+It prints a code and asks you to open <https://github.com/login/device>, then waits. Type the code on
+whatever device has a browser. The refresh token is stored beside the private key, which is where the
+broker looks for it, and the broker renews it from then on — nothing else needs running.
+
+The user token is used for exactly the two things an installation token cannot do: authoring a pull
+request as that person, and resolving a review thread, which GraphQL refuses for an app outright.
+
+Two things the app needs: its **client id** in the configuration (the App ID will not do), and
+**Enable Device Flow** selected in its settings. No client secret: the device flow does not use one,
+so no second long-lived secret joins the key.
+
 
 A pull request opened through the broker is authored by the app, and automated reviewers are
 entitled to skip those. To have one authored by you instead, run the opener on the host, beside the

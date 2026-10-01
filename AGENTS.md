@@ -120,6 +120,13 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   different trades. Adding one is not a reason to remove another: a deployment chooses. When you add
   the next one, document it beside the others rather than rewriting them.
 
+  A fourth way is authorization rather than a token: `authorize` runs the device flow once from a
+  browser somewhere else and leaves a refresh token beside the key, and the broker renews it and uses
+  the user token for exactly the two things an installation token cannot do — authoring a pull request
+  as a person, and resolving a review thread, which GraphQL refuses for an app. It needs the client id
+  in the configuration and **Enable Device Flow** in the app settings, and no client secret at all. The
+  refresh token is rotated on every exchange and written back; not writing it back would work once.
+
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
   Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.json`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by
