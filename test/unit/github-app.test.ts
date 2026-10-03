@@ -204,6 +204,15 @@ function createStubFetch(options: {
       );
     }
     if (url.endsWith('/reviews')) return Promise.resolve(jsonResponse({}));
+    if (/\/pulls\/comments\/\d+$/.test(url)) {
+      return Promise.resolve(
+        jsonResponse({
+          id: 99,
+          html_url: 'https://github.com/acme/widget/pull/7#discussion_r99',
+          body: 'a corrected note',
+        }),
+      );
+    }
     if (url.endsWith('/pulls')) {
       return Promise.resolve(
         jsonResponse({ number: 42, html_url: 'https://github.com/acme/widget/pull/42' }, 201),
@@ -735,6 +744,29 @@ describe('createGithubAppProvider', () => {
 
     const review = stub.calls.find((call) => call.url.endsWith('/reviews'));
     assert.deepEqual(review?.body, { body: 'a general remark', event: 'COMMENT' }, 'nothing new in the payload');
+  });
+
+  it('changes a review comment by its id, and reports the comment it changed', async () => {
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    const changed = await providerFor(stub).pullRequest!({
+      action: 'edit',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 7,
+      commentId: 99,
+      body: 'a corrected note',
+    });
+
+    const patch = stub.calls.find((call) => call.method === 'PATCH' && call.url.includes('/pulls/comments/'));
+    assert.ok(patch, 'a review comment is changed at the review comments endpoint');
+    // No pull request number in the route: the comment id already names the thing, and the repository
+    // in the path is what keeps the allowlist binding it.
+    assert.equal(patch?.url, 'https://api.github.com/repos/acme/widget/pulls/comments/99');
+    assert.deepEqual(patch?.body, { body: 'a corrected note' });
+    assert.equal(patch?.authorization, 'Bearer ghs_stub_token_value', 'and it is the app that changes it');
+    assert.equal(changed.number, 7);
+    assert.equal(changed.url, 'https://github.com/acme/widget/pull/7#discussion_r99');
   });
 
 

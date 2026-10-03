@@ -72,6 +72,7 @@ export type PullRequestAction =
   | 'comment'
   | 'threads'
   | 'reply'
+  | 'edit'
   | 'resolve';
 
 /** How a merge should be recorded. */
@@ -85,7 +86,7 @@ export interface PullRequestRequest {
   readonly action: PullRequestAction;
   /** The pull request number. Not needed to open one, required for the rest. */
   readonly number?: number;
-  /** The review comment being answered, for `action: "reply"`. */
+  /** The review comment being answered or changed, for `action: "reply"` or `"edit"`. */
   readonly commentId?: number;
   /** The review thread being resolved, for `action: "resolve"`. */
   readonly threadId?: string;

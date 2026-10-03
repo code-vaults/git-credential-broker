@@ -281,6 +281,7 @@ export function createRequestHandler(
         action !== 'comment' &&
         action !== 'threads' &&
         action !== 'reply' &&
+        action !== 'edit' &&
         action !== 'resolve'
       ) {
         return deny(context, CODES.BAD_REQUEST, `bad action ${JSON.stringify(action)}`, 'unknown pull request action');
@@ -341,11 +342,16 @@ export function createRequestHandler(
       if (action === 'update' && title === undefined && body === undefined && base === undefined) {
         return deny(context, CODES.BAD_REQUEST, 'empty update', 'an update has to change a title, a body or a base');
       }
-      if ((action === 'comment' || action === 'reply') && (typeof body !== 'string' || body.trim() === '')) {
+      if ((action === 'comment' || action === 'reply' || action === 'edit') && (typeof body !== 'string' || body.trim() === '')) {
         return deny(context, CODES.BAD_REQUEST, 'empty comment', 'a comment has to say something');
       }
-      if (action === 'reply' && (typeof commentId !== 'number' || !Number.isInteger(commentId) || commentId <= 0)) {
-        return deny(context, CODES.BAD_REQUEST, 'bad commentId', 'a reply needs the id of the comment it answers');
+      if ((action === 'reply' || action === 'edit') && (typeof commentId !== 'number' || !Number.isInteger(commentId) || commentId <= 0)) {
+        return deny(
+          context,
+          CODES.BAD_REQUEST,
+          'bad commentId',
+          action === 'reply' ? 'a reply needs the id of the comment it answers' : 'an edit needs the id of the review comment it changes',
+        );
       }
       if (action === 'resolve' && (typeof threadId !== 'string' || threadId === '')) {
         return deny(context, CODES.BAD_REQUEST, 'bad threadId', 'resolving needs the id of the thread, which --threads prints');

@@ -762,4 +762,16 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.equal(updated.status, 1);
     assert.match(updated.stderr, /only goes with --merge/);
   });
+
+  it('refuses an edit with nothing to say, or with no comment to change', () => {
+    const noBody = cli([...base, '--edit', '99']);
+    assert.equal(noBody.status, 1, 'an edit with no body is refused');
+    assert.match(noBody.stderr, /a comment has to say something/);
+
+    for (const id of ['0', 'x', '-1']) {
+      const bad = cli([...base, '--edit', id, '--body', 'a corrected note']);
+      assert.equal(bad.status, 1, `--edit ${id} is refused`);
+      assert.match(bad.stderr, /--edit needs the id of the review comment/);
+    }
+  });
 });

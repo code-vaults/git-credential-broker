@@ -799,6 +799,29 @@ function describeCause(error: unknown): string {
         return { number: request.number ?? 0, url: '' };
       }
 
+      if (request.action === 'edit') {
+        // A review comment is addressed by its own id, so unlike a reply the pull request number is not
+        // part of the route — but the repository is, which is what keeps the allowlist binding it. The
+        // comment id is the REST id, the one `--threads` prints as a comment's databaseId.
+        const { text: edited } = await callWithToken(
+          'PATCH',
+          `${api}/repos/${request.owner}/${request.repo}/pulls/comments/${String(request.commentId ?? 0)}`,
+          token,
+          { body: request.body ?? '' },
+        );
+        let read: unknown = null;
+        try {
+          read = JSON.parse(edited);
+        } catch {
+          read = null;
+        }
+        const html = (read ?? {}) as { html_url?: unknown };
+        return {
+          number: request.number ?? 0,
+          url: typeof html.html_url === 'string' ? html.html_url : '',
+        };
+      }
+
       if (request.action === 'threads') {
         // GraphQL, because review threads have no REST list. The repository and the number are
         // named here, so the allowlist still decides what can be reached.
