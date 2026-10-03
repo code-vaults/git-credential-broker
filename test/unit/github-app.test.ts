@@ -138,6 +138,8 @@ function createStubFetch(options: {
   installations: unknown;
   /** What the GraphQL scope check is told the thread belongs to. */
   threadRepo?: string;
+  /** Which pull request the stubbed review comment belongs to. */
+  commentPr?: number;
   nowMs: number;
   token?: string;
   tokenStatus?: number;
@@ -155,6 +157,7 @@ function createStubFetch(options: {
     installationPermissions = appPermissions,
     logText = 'stub log\n',
     jobMissing = false,
+    commentPr = 7,
   } = options;
   const calls: RecordedCall[] = [];
   const fetchImpl: FetchLike = (url, init) => {
@@ -208,7 +211,8 @@ function createStubFetch(options: {
       return Promise.resolve(
         jsonResponse({
           id: 99,
-          html_url: 'https://github.com/acme/widget/pull/7#discussion_r99',
+          html_url: `https://github.com/acme/widget/pull/${commentPr}#discussion_r99`,
+          pull_request_url: `https://api.github.com/repos/acme/widget/pulls/${commentPr}`,
           body: 'a corrected note',
         }),
       );
@@ -760,13 +764,41 @@ describe('createGithubAppProvider', () => {
 
     const patch = stub.calls.find((call) => call.method === 'PATCH' && call.url.includes('/pulls/comments/'));
     assert.ok(patch, 'a review comment is changed at the review comments endpoint');
-    // No pull request number in the route: the comment id already names the thing, and the repository
-    // in the path is what keeps the allowlist binding it.
+    // The comment id names the thing and is one for the whole repository, so the route carries no pull
+    // request number; the comment is read first to tie it back to the number the caller named.
     assert.equal(patch?.url, 'https://api.github.com/repos/acme/widget/pulls/comments/99');
     assert.deepEqual(patch?.body, { body: 'a corrected note' });
     assert.equal(patch?.authorization, 'Bearer ghs_stub_token_value', 'and it is the app that changes it');
+    const read = stub.calls.find((call) => call.method === 'GET' && call.url.endsWith('/pulls/comments/99'));
+    assert.ok(read, 'the comment is read before it is changed');
     assert.equal(changed.number, 7);
     assert.equal(changed.url, 'https://github.com/acme/widget/pull/7#discussion_r99');
+  });
+
+  it('refuses to edit a comment that belongs to another pull request, and changes nothing', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      commentPr: 8,
+    });
+    await assert.rejects(
+      providerFor(stub).pullRequest!({
+        action: 'edit',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        number: 7,
+        commentId: 99,
+        body: 'a corrected note',
+      }),
+      /#8, not #7/,
+      'the mismatch is refused by name',
+    );
+    assert.equal(
+      stub.calls.some((call) => call.method === 'PATCH'),
+      false,
+      'and the comment on the other pull request is left alone',
+    );
   });
 
 

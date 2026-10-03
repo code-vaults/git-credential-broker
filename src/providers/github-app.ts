@@ -531,6 +531,24 @@ function describeCause(error: unknown): string {
   return typeof cause === 'string' && cause !== '' ? ` (${cause})` : '';
 }
 
+/**
+ * The pull request number in the URL GitHub returns for a pull request.
+ *
+ * A review comment carries the pull request it belongs to as `pull_request_url`, which is how a comment
+ * id — one for the whole repository, not one per pull request — is tied back to the pull request named
+ * on the command line.
+ *
+ * @param value - an `.../pulls/{number}` URL, as GitHub returns it.
+ * @returns the number, or undefined when the value names none.
+ */
+function pullRequestNumber(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined;
+  const match = /\/pulls\/(\d+)\/?$/.exec(value);
+  if (match?.[1] === undefined) return undefined;
+  const number = Number(match[1]);
+  return Number.isInteger(number) && number > 0 ? number : undefined;
+}
+
   return {
     name: 'github-app',
 
@@ -800,24 +818,44 @@ function describeCause(error: unknown): string {
       }
 
       if (request.action === 'edit') {
-        // A review comment is addressed by its own id, so unlike a reply the pull request number is not
-        // part of the route — but the repository is, which is what keeps the allowlist binding it. The
-        // comment id is the REST id, the one `--threads` prints as a comment's databaseId.
-        const { text: edited } = await callWithToken(
-          'PATCH',
-          `${api}/repos/${request.owner}/${request.repo}/pulls/comments/${String(request.commentId ?? 0)}`,
-          token,
-          { body: request.body ?? '' },
-        );
+        // A review comment is addressed by its own id, so unlike a reply the route carries no pull request
+        // number — and that id is one for the whole repository, not one per pull request. Read the comment
+        // first and refuse when it belongs to a different pull request than the one named: a mutation is
+        // the wrong place to discover that `--number` was wrong, and the reply would otherwise claim a
+        // target it never touched. The repository in the path is still what the allowlist binds.
+        const endpoint = `${api}/repos/${request.owner}/${request.repo}/pulls/comments/${String(request.commentId ?? 0)}`;
+        const { text: current } = await callWithToken('GET', endpoint, token);
         let read: unknown = null;
         try {
-          read = JSON.parse(edited);
+          read = JSON.parse(current);
         } catch {
           read = null;
         }
-        const html = (read ?? {}) as { html_url?: unknown };
+        const found = (read ?? {}) as { pull_request_url?: unknown };
+        const belongsTo = pullRequestNumber(found.pull_request_url);
+        // A plain Error on purpose: which pull request a comment is on is the host log's business, not
+        // the container's, and `--number` is the caller's own claim about it.
+        if (belongsTo === undefined) {
+          throw new Error(
+            `refusing to edit comment ${String(request.commentId)}: could not read which pull request it belongs to`,
+          );
+        }
+        if (request.number !== undefined && belongsTo !== request.number) {
+          throw new Error(
+            `refusing to edit comment ${String(request.commentId)}: it is a review comment of ` +
+              `${request.owner}/${request.repo}#${belongsTo}, not #${request.number}`,
+          );
+        }
+        const { text: edited } = await callWithToken('PATCH', endpoint, token, { body: request.body ?? '' });
+        let changed: unknown = null;
+        try {
+          changed = JSON.parse(edited);
+        } catch {
+          changed = null;
+        }
+        const html = (changed ?? {}) as { html_url?: unknown };
         return {
-          number: request.number ?? 0,
+          number: belongsTo,
           url: typeof html.html_url === 'string' ? html.html_url : '',
         };
       }

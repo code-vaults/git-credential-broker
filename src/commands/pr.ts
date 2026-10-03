@@ -76,9 +76,14 @@ Common
  * @returns `close`, `merge`, `update` or `open`.
  */
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
-  if (args.value('resolve') !== undefined) return 'resolve' as const;
-  if (args.value('reply-to') !== undefined) return 'reply' as const;
-  if (args.value('edit') !== undefined) return 'edit' as const;
+  // `--resolve`, `--reply-to` and `--edit` take a value, and a bare one is parsed as a boolean flag with
+  // no value at all. Selecting the action from the flag's *presence* is what turns that into the refusal
+  // below — reading only `value` let a bare `--edit` fall through to `update`, which patched the pull
+  // request itself with the body meant for the comment.
+  const present = (name: string): boolean => args.has(name) || args.value(name) !== undefined;
+  if (present('resolve')) return 'resolve' as const;
+  if (present('reply-to')) return 'reply' as const;
+  if (present('edit')) return 'edit' as const;
   if (args.has('threads')) return 'threads' as const;
   if (args.has('comment')) return 'comment' as const;
   if (args.has('status')) return 'status' as const;
@@ -192,6 +197,10 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const editId = args.value('edit');
   if (action === 'edit' && (editId === undefined || !Number.isInteger(Number(editId)) || Number(editId) <= 0)) {
     fail(`--edit needs the id of the review comment being changed, got ${JSON.stringify(editId)}`);
+  }
+  const resolveId = args.value('resolve');
+  if (action === 'resolve' && (resolveId === undefined || resolveId.trim() === '')) {
+    fail(`--resolve needs the id of the thread being resolved, got ${JSON.stringify(resolveId)}`);
   }
 
   if (viaHost) {

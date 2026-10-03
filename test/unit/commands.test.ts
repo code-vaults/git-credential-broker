@@ -774,4 +774,19 @@ describe('the anchor flags, at the CLI boundary', () => {
       assert.match(bad.stderr, /--edit needs the id of the review comment/);
     }
   });
+
+  it('refuses a value flag given with no value, instead of updating the pull request', () => {
+    // A bare --edit / --reply-to / --resolve is parsed as a boolean flag with no value, so the action
+    // has to be selected from the flag's presence: reading only its value let the command fall through
+    // to `update`, which patched the body meant for the comment onto the pull request itself.
+    for (const [flag, message] of [
+      ['--edit', /--edit needs the id of the review comment/],
+      ['--reply-to', /--reply-to needs the id of the comment/],
+      ['--resolve', /--resolve needs the id of the thread/],
+    ] as const) {
+      const refused = cli([...base, flag, '--body', 'a corrected note']);
+      assert.equal(refused.status, 1, `a bare ${flag} is refused`);
+      assert.match(refused.stderr, message);
+    }
+  });
 });
