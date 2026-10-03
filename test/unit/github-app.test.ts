@@ -138,6 +138,8 @@ function createStubFetch(options: {
   installations: unknown;
   /** What the GraphQL scope check is told the thread belongs to. */
   threadRepo?: string;
+  /** Which pull request the stubbed review comment belongs to. */
+  commentPr?: number;
   nowMs: number;
   token?: string;
   tokenStatus?: number;
@@ -155,6 +157,7 @@ function createStubFetch(options: {
     installationPermissions = appPermissions,
     logText = 'stub log\n',
     jobMissing = false,
+    commentPr = 7,
   } = options;
   const calls: RecordedCall[] = [];
   const fetchImpl: FetchLike = (url, init) => {
@@ -204,6 +207,16 @@ function createStubFetch(options: {
       );
     }
     if (url.endsWith('/reviews')) return Promise.resolve(jsonResponse({}));
+    if (/\/pulls\/comments\/\d+$/.test(url)) {
+      return Promise.resolve(
+        jsonResponse({
+          id: 99,
+          html_url: `https://github.com/acme/widget/pull/${commentPr}#discussion_r99`,
+          pull_request_url: `https://api.github.com/repos/acme/widget/pulls/${commentPr}`,
+          body: 'a corrected note',
+        }),
+      );
+    }
     if (url.endsWith('/pulls')) {
       return Promise.resolve(
         jsonResponse({ number: 42, html_url: 'https://github.com/acme/widget/pull/42' }, 201),
@@ -735,6 +748,55 @@ describe('createGithubAppProvider', () => {
 
     const review = stub.calls.find((call) => call.url.endsWith('/reviews'));
     assert.deepEqual(review?.body, { body: 'a general remark', event: 'COMMENT' }, 'nothing new in the payload');
+  });
+
+  it('changes a review comment by its id, and reports the comment it changed', async () => {
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    const changed = await providerFor(stub).pullRequest!({
+      action: 'edit',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 7,
+      commentId: 99,
+      body: 'a corrected note',
+    });
+
+    const patch = stub.calls.find((call) => call.method === 'PATCH' && call.url.includes('/pulls/comments/'));
+    assert.ok(patch, 'a review comment is changed at the review comments endpoint');
+    // The comment id names the thing and is one for the whole repository, so the route carries no pull
+    // request number and nothing is read first: the number to report comes back in the answer.
+    assert.equal(patch?.url, 'https://api.github.com/repos/acme/widget/pulls/comments/99');
+    assert.deepEqual(patch?.body, { body: 'a corrected note' });
+    assert.equal(patch?.authorization, 'Bearer ghs_stub_token_value', 'and it is the app that changes it');
+    assert.equal(
+      stub.calls.some((call) => call.method === 'GET' && call.url.includes('/pulls/comments/')),
+      false,
+      'no round trip to read the comment first',
+    );
+    assert.equal(changed.number, 7);
+    assert.equal(changed.url, 'https://github.com/acme/widget/pull/7#discussion_r99');
+  });
+
+  it("reports the comment's own pull request, not the number the caller passed", async () => {
+    // The route cannot honour a pull request number, so the provider must not echo one: the review
+    // comment object names the pull request it belongs to, and that is what the CLI reports.
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      commentPr: 8,
+    });
+    const changed = await providerFor(stub).pullRequest!({
+      action: 'edit',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 7,
+      commentId: 99,
+      body: 'a corrected note',
+    });
+    assert.equal(changed.number, 8, 'the comment names #8, so #8 is what is reported');
+    assert.equal(changed.url, 'https://github.com/acme/widget/pull/8#discussion_r99');
   });
 
 

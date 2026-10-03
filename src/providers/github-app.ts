@@ -531,6 +531,24 @@ function describeCause(error: unknown): string {
   return typeof cause === 'string' && cause !== '' ? ` (${cause})` : '';
 }
 
+/**
+ * The pull request number in the URL GitHub returns for a pull request.
+ *
+ * A review comment carries the pull request it belongs to as `pull_request_url`, which is how a comment
+ * id — one for the whole repository, not one per pull request — is tied back to the pull request named
+ * on the command line.
+ *
+ * @param value - an `.../pulls/{number}` URL, as GitHub returns it.
+ * @returns the number, or undefined when the value names none.
+ */
+function pullRequestNumber(value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined;
+  const match = /\/pulls\/(\d+)\/?$/.exec(value);
+  if (match?.[1] === undefined) return undefined;
+  const number = Number(match[1]);
+  return Number.isInteger(number) && number > 0 ? number : undefined;
+}
+
   return {
     name: 'github-app',
 
@@ -797,6 +815,26 @@ function describeCause(error: unknown): string {
           { body: request.body ?? '' },
         );
         return { number: request.number ?? 0, url: '' };
+      }
+
+      if (request.action === 'edit') {
+        // A review comment is addressed by its own id, and that id is one for the whole repository, not
+        // one per pull request. The route therefore carries no pull request number and the CLI asks for
+        // none: the number to report is the one the comment itself names, read back from the answer
+        // rather than echoed from the request. The repository in the path is what the allowlist binds.
+        const endpoint = `${api}/repos/${request.owner}/${request.repo}/pulls/comments/${String(request.commentId ?? 0)}`;
+        const { text: edited } = await callWithToken('PATCH', endpoint, token, { body: request.body ?? '' });
+        let changed: unknown = null;
+        try {
+          changed = JSON.parse(edited);
+        } catch {
+          changed = null;
+        }
+        const html = (changed ?? {}) as { html_url?: unknown; pull_request_url?: unknown };
+        return {
+          number: pullRequestNumber(html.pull_request_url) ?? request.number ?? 0,
+          url: typeof html.html_url === 'string' ? html.html_url : '',
+        };
       }
 
       if (request.action === 'threads') {

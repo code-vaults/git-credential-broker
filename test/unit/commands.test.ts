@@ -714,12 +714,19 @@ describe('the anchor flags, at the CLI boundary', () => {
    * Every case here is refused by `fail`, which exits, so it cannot be a call into the module — and that is
    * the point of testing it here: the checks are the CLI's, and the unit tests under them never see them.
    */
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-pr-home-'));
+  after(() => fs.rmSync(home, { recursive: true, force: true }));
+
   const cli = (args: readonly string[]): { status: number; stderr: string } => {
     try {
       execFileSync('node', ['src/cli/helper.ts', 'pr', ...args], {
         cwd: path.resolve('.'),
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
+        // A test-owned HOME and no socket in the environment: the fallback must not depend on the machine
+        // that runs the suite, and a case that gets past validation has to die at the socket rather than
+        // reach a broker someone happens to have running.
+        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
       });
       return { status: 0, stderr: '' };
     } catch (error) {
@@ -761,5 +768,45 @@ describe('the anchor flags, at the CLI boundary', () => {
     const updated = cli([...base, '--method', 'squash', '--title', 'a title']);
     assert.equal(updated.status, 1);
     assert.match(updated.stderr, /only goes with --merge/);
+  });
+
+  it('refuses an edit with nothing to say, or with no comment to change', () => {
+    const noBody = cli([...base, '--edit', '99']);
+    assert.equal(noBody.status, 1, 'an edit with no body is refused');
+    assert.match(noBody.stderr, /a comment has to say something/);
+
+    for (const id of ['0', 'x', '-1']) {
+      const bad = cli([...base, '--edit', id, '--body', 'a corrected note']);
+      assert.equal(bad.status, 1, `--edit ${id} is refused`);
+      assert.match(bad.stderr, /--edit needs the id of the review comment/);
+    }
+  });
+
+  it('refuses a value flag given with no value, instead of updating the pull request', () => {
+    // A bare --edit / --reply-to / --resolve is parsed as a boolean flag with no value, so the action
+    // has to be selected from the flag's presence: reading only its value let the command fall through
+    // to `update`, which patched the body meant for the comment onto the pull request itself.
+    for (const [flag, message] of [
+      ['--edit', /--edit needs the id of the review comment/],
+      ['--reply-to', /--reply-to needs the id of the comment/],
+      ['--resolve', /--resolve needs the id of the thread/],
+    ] as const) {
+      const refused = cli([...base, flag, '--body', 'a corrected note']);
+      assert.equal(refused.status, 1, `a bare ${flag} is refused`);
+      assert.match(refused.stderr, message);
+    }
+  });
+
+  it('needs no --number to edit, which names the comment instead', () => {
+    // The route is /pulls/comments/{id}: it carries no pull request number, so requiring one would be a
+    // flag the command could not honour. This case gets past validation and dies at the socket, which is
+    // exactly the proof that the number check let it through.
+    const noNumber = cli([
+      '--host', 'github.com', '--repo', 'acme/widget',
+      '--edit', '99', '--body', 'a corrected note',
+    ]);
+    assert.equal(noNumber.status, 1);
+    assert.match(noNumber.stderr, /no broker socket/, 'it reached socket resolution');
+    assert.doesNotMatch(noNumber.stderr, /--number is required/, 'without being asked for a number');
   });
 });

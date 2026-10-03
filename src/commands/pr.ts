@@ -53,6 +53,8 @@ Acting on one
   --side <left|right>  Which side of the diff --line counts on (default: right)
   --threads            List its review threads: their ids, whether they are resolved, and the comments
   --reply-to <id>      Reply inside the thread that comment id belongs to, with --body/--body-file
+  --edit <id>          Replace the body of that review comment, with --body/--body-file
+                       (an id --threads prints; no --number is needed)
   --resolve <thread>   Mark that review thread resolved (the id --threads prints)
   --close              Close it
   --merge              Merge it (branch protection still applies)
@@ -74,8 +76,14 @@ Common
  * @returns `close`, `merge`, `update` or `open`.
  */
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
-  if (args.value('resolve') !== undefined) return 'resolve' as const;
-  if (args.value('reply-to') !== undefined) return 'reply' as const;
+  // `--resolve`, `--reply-to` and `--edit` take a value, and a bare one is parsed as a boolean flag with
+  // no value at all. Selecting the action from the flag's *presence* is what turns that into the refusal
+  // below — reading only `value` let a bare `--edit` fall through to `update`, which patched the pull
+  // request itself with the body meant for the comment.
+  const present = (name: string): boolean => args.has(name) || args.value(name) !== undefined;
+  if (present('resolve')) return 'resolve' as const;
+  if (present('reply-to')) return 'reply' as const;
+  if (present('edit')) return 'edit' as const;
   if (args.has('threads')) return 'threads' as const;
   if (args.has('comment')) return 'comment' as const;
   if (args.has('status')) return 'status' as const;
@@ -153,16 +161,19 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (action === 'open') {
     if (!head) fail('--head is required to open a pull request');
     if (!title) fail('--title is required to open a pull request');
-  } else if (action !== 'resolve' && number === undefined) {
+  } else if (action !== 'resolve' && action !== 'edit' && number === undefined) {
     const verb = action === 'status' ? 'inspect' : action;
     fail(`--number is required to ${verb} a pull request`);
-  } else if (action !== 'resolve' && (!Number.isInteger(Number(number)) || Number(number) <= 0)) {
+  }
+  // `--resolve` and `--edit` name their target by id and need no pull request number, but one given
+  // anyway still has to be a number.
+  if (number !== undefined && (!Number.isInteger(Number(number)) || Number(number) <= 0)) {
     fail(`--number must be a positive integer, got ${JSON.stringify(number)}`);
   }
   if (action === 'update' && title === undefined && body === undefined && base === undefined) {
     fail('an update has to change something: pass --title, --body/--body-file or --base');
   }
-  if ((action === 'comment' || action === 'reply') && (body === undefined || body.trim() === '')) {
+  if ((action === 'comment' || action === 'reply' || action === 'edit') && (body === undefined || body.trim() === '')) {
     fail('a comment has to say something: pass --body or --body-file');
   }
 
@@ -184,6 +195,14 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const replyTo = args.value('reply-to');
   if (action === 'reply' && (replyTo === undefined || !Number.isInteger(Number(replyTo)) || Number(replyTo) <= 0)) {
     fail(`--reply-to needs the id of the comment being answered, got ${JSON.stringify(replyTo)}`);
+  }
+  const editId = args.value('edit');
+  if (action === 'edit' && (editId === undefined || !Number.isInteger(Number(editId)) || Number(editId) <= 0)) {
+    fail(`--edit needs the id of the review comment being changed, got ${JSON.stringify(editId)}`);
+  }
+  const resolveId = args.value('resolve');
+  if (action === 'resolve' && (resolveId === undefined || resolveId.trim() === '')) {
+    fail(`--resolve needs the id of the thread being resolved, got ${JSON.stringify(resolveId)}`);
   }
 
   if (viaHost) {
@@ -243,8 +262,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         host,
         path: repo,
         action,
-        ...(number === undefined ? {} : { number: Number(number) }),
+        ...(number === undefined || action === 'edit' ? {} : { number: Number(number) }),
         ...(action === 'reply' ? { commentId: Number(replyTo) } : {}),
+        ...(action === 'edit' ? { commentId: Number(editId) } : {}),
         ...(action === 'resolve' ? { threadId: args.value('resolve') } : {}),
         ...(head === undefined ? {} : { head }),
         ...(base === undefined ? {} : { base }),
@@ -284,7 +304,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
             ? 'commented on'
             : action === 'reply'
               ? 'replied in'
-              : 'updated';
+              : action === 'edit'
+                ? 'edited a review comment on'
+                : 'updated';
   const state = response.prState === undefined ? '' : ` (${response.prState})`;
   say(`${done} #${response.prNumber ?? '?'}${state}: ${response.prUrl ?? '(no url)'}`);
   return 0;

@@ -409,6 +409,49 @@ describe('broker request handling', () => {
     assert.equal(wrongAction.code, 'bad-request', 'and an anchor only belongs on a comment');
   });
 
+  it('carries an edit by comment id alone, and audits which comment it changed', async () => {
+    const seen: Array<Record<string, unknown>> = [];
+    const provider: Provider = {
+      name: 'with-edits',
+      getCredential: () => Promise.reject(new Error('not used here')),
+      pullRequest: (request) => {
+        seen.push(request as unknown as Record<string, unknown>);
+        // The provider reads the pull request back from the comment, so the broker need not be told it.
+        return Promise.resolve({ number: 8, url: 'https://github.com/acme/widget/pull/8#discussion_r99' });
+      },
+    };
+    const { handle, events } = makeHarness(['acme/widget'], provider);
+    const good = await handle({
+      ...REQUEST,
+      op: 'pull-request',
+      action: 'edit',
+      commentId: 99,
+      body: 'a corrected note',
+    });
+    assert.equal(good.ok, true);
+    assert.equal(good.prNumber, 8);
+    assert.deepEqual(
+      [seen.at(-1)?.['action'], seen.at(-1)?.['commentId'], seen.at(-1)?.['body'], seen.at(-1)?.['number']],
+      ['edit', 99, 'a corrected note', undefined],
+      'the action, the comment id and the new body reach the provider, with no number required',
+    );
+    assert.equal(events.at(-1)?.['action'], 'edit', 'the audit records the action');
+    assert.equal(events.at(-1)?.['comment_id'], 99, 'and the comment it changed, which a number would not name');
+    assert.equal(events.at(-1)?.['pr_number'], 8, 'with the number the comment itself reports');
+
+    const empty = await handle({
+      ...REQUEST,
+      op: 'pull-request',
+      action: 'edit',
+      commentId: 99,
+      body: '   ',
+    });
+    assert.equal(empty.code, 'bad-request', 'an edit has to say something');
+
+    const noId = await handle({ ...REQUEST, op: 'pull-request', action: 'edit', body: 'a note' });
+    assert.equal(noId.code, 'bad-request', 'and it has to name the comment it changes');
+  });
+
 describe('prepareSocketPath', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-sock-'));
   after(() => fs.rmSync(dir, { recursive: true, force: true }));
