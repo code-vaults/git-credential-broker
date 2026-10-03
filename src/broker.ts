@@ -356,7 +356,7 @@ export function createRequestHandler(
       if (action === 'resolve' && (typeof threadId !== 'string' || threadId === '')) {
         return deny(context, CODES.BAD_REQUEST, 'bad threadId', 'resolving needs the id of the thread, which --threads prints');
       }
-      if (action !== 'open' && action !== 'resolve' && (typeof number !== 'number' || !Number.isInteger(number) || number <= 0)) {
+      if (action !== 'open' && action !== 'resolve' && action !== 'edit' && (typeof number !== 'number' || !Number.isInteger(number) || number <= 0)) {
         return deny(context, CODES.BAD_REQUEST, `bad number ${JSON.stringify(number)}`, 'this action needs a pull request number');
       }
       if (action === 'merge' && method !== 'merge' && method !== 'squash' && method !== 'rebase') {
@@ -395,6 +395,9 @@ export function createRequestHandler(
           ...context,
           action,
           ...(typeof number === 'number' ? { number } : {}),
+          // The comment an edit changes is the one thing the entry would otherwise not say, and the
+          // number alone does not name it. Recorded for a reply too, which also carries an id.
+          ...(typeof commentId === 'number' ? { comment_id: commentId } : {}),
           ...(typeof head === 'string' ? { head } : {}),
           ...(typeof base === 'string' ? { base } : {}),
           pr_number: result.number,

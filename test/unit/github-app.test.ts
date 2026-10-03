@@ -765,40 +765,38 @@ describe('createGithubAppProvider', () => {
     const patch = stub.calls.find((call) => call.method === 'PATCH' && call.url.includes('/pulls/comments/'));
     assert.ok(patch, 'a review comment is changed at the review comments endpoint');
     // The comment id names the thing and is one for the whole repository, so the route carries no pull
-    // request number; the comment is read first to tie it back to the number the caller named.
+    // request number and nothing is read first: the number to report comes back in the answer.
     assert.equal(patch?.url, 'https://api.github.com/repos/acme/widget/pulls/comments/99');
     assert.deepEqual(patch?.body, { body: 'a corrected note' });
     assert.equal(patch?.authorization, 'Bearer ghs_stub_token_value', 'and it is the app that changes it');
-    const read = stub.calls.find((call) => call.method === 'GET' && call.url.endsWith('/pulls/comments/99'));
-    assert.ok(read, 'the comment is read before it is changed');
+    assert.equal(
+      stub.calls.some((call) => call.method === 'GET' && call.url.includes('/pulls/comments/')),
+      false,
+      'no round trip to read the comment first',
+    );
     assert.equal(changed.number, 7);
     assert.equal(changed.url, 'https://github.com/acme/widget/pull/7#discussion_r99');
   });
 
-  it('refuses to edit a comment that belongs to another pull request, and changes nothing', async () => {
+  it("reports the comment's own pull request, not the number the caller passed", async () => {
+    // The route cannot honour a pull request number, so the provider must not echo one: the review
+    // comment object names the pull request it belongs to, and that is what the CLI reports.
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       commentPr: 8,
     });
-    await assert.rejects(
-      providerFor(stub).pullRequest!({
-        action: 'edit',
-        host: 'github.com',
-        owner: 'acme',
-        repo: 'widget',
-        number: 7,
-        commentId: 99,
-        body: 'a corrected note',
-      }),
-      /#8, not #7/,
-      'the mismatch is refused by name',
-    );
-    assert.equal(
-      stub.calls.some((call) => call.method === 'PATCH'),
-      false,
-      'and the comment on the other pull request is left alone',
-    );
+    const changed = await providerFor(stub).pullRequest!({
+      action: 'edit',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 7,
+      commentId: 99,
+      body: 'a corrected note',
+    });
+    assert.equal(changed.number, 8, 'the comment names #8, so #8 is what is reported');
+    assert.equal(changed.url, 'https://github.com/acme/widget/pull/8#discussion_r99');
   });
 
 

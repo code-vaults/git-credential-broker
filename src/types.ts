@@ -84,7 +84,7 @@ export interface PullRequestRequest {
   readonly owner: string;
   readonly repo: string;
   readonly action: PullRequestAction;
-  /** The pull request number. Not needed to open one, required for the rest. */
+  /** The pull request number. Not needed to open one, to resolve a thread, or to edit a comment. */
   readonly number?: number;
   /** The review comment being answered or changed, for `action: "reply"` or `"edit"`. */
   readonly commentId?: number;

@@ -54,7 +54,7 @@ Acting on one
   --threads            List its review threads: their ids, whether they are resolved, and the comments
   --reply-to <id>      Reply inside the thread that comment id belongs to, with --body/--body-file
   --edit <id>          Replace the body of that review comment, with --body/--body-file
-                       (an id --threads prints; GitHub accepts it only from the comment's author)
+                       (an id --threads prints; no --number is needed)
   --resolve <thread>   Mark that review thread resolved (the id --threads prints)
   --close              Close it
   --merge              Merge it (branch protection still applies)
@@ -161,11 +161,13 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (action === 'open') {
     if (!head) fail('--head is required to open a pull request');
     if (!title) fail('--title is required to open a pull request');
-  } else if (action !== 'resolve' && number === undefined) {
+  } else if (action !== 'resolve' && action !== 'edit' && number === undefined) {
     const verb = action === 'status' ? 'inspect' : action;
-    const target = action === 'edit' ? 'the review comment on a pull request' : 'a pull request';
-    fail(`--number is required to ${verb} ${target}`);
-  } else if (action !== 'resolve' && (!Number.isInteger(Number(number)) || Number(number) <= 0)) {
+    fail(`--number is required to ${verb} a pull request`);
+  }
+  // `--resolve` and `--edit` name their target by id and need no pull request number, but one given
+  // anyway still has to be a number.
+  if (number !== undefined && (!Number.isInteger(Number(number)) || Number(number) <= 0)) {
     fail(`--number must be a positive integer, got ${JSON.stringify(number)}`);
   }
   if (action === 'update' && title === undefined && body === undefined && base === undefined) {
@@ -260,7 +262,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         host,
         path: repo,
         action,
-        ...(number === undefined ? {} : { number: Number(number) }),
+        ...(number === undefined || action === 'edit' ? {} : { number: Number(number) }),
         ...(action === 'reply' ? { commentId: Number(replyTo) } : {}),
         ...(action === 'edit' ? { commentId: Number(editId) } : {}),
         ...(action === 'resolve' ? { threadId: args.value('resolve') } : {}),

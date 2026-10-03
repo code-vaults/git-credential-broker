@@ -241,7 +241,7 @@ git-credential-broker pr --host github.com --repo owner/repo \
   # read its review threads, answer one, or change a comment you wrote
   # --number 7 --threads
   # --number 7 --reply-to 123456 --body "good point"
-  # --number 7 --edit 123456 --body "corrected: it is the other branch"
+  # --edit 123456 --body "corrected: it is the other branch"
   # from your fork into an upstream: a remote name instead of a repository typed by hand
   git-credential-broker pr --repo code-vaults/repo --head origin:feature --base upstream:main --title "a title" \
     --body-file pr.md
@@ -250,9 +250,9 @@ git-credential-broker pr --host github.com --repo owner/repo \
 Both the app and the installation need `pull_requests: write`; without it the error names the
 permission instead of failing at GitHub. `--draft` opens it as a draft. `--threads` prints the ids of
 a pull request's review threads and their comments; `--reply-to` adds a reply inside one, and
-`--edit` replaces the body of one of those review comments. GitHub lets only an author change a
-comment, and the comments this command posts are the app's, so `--edit` changes those rather than a
-person's.
+`--edit` replaces the body of one of those review comments. The comment id names the comment — and its
+pull request — so `--edit` takes no `--number`. GitHub lets only an author change a comment, and the
+comments this command posts are the app's, so `--edit` changes those rather than a person's.
 
 ### Opening one as yourself
 

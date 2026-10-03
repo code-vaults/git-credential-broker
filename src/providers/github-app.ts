@@ -818,34 +818,11 @@ function pullRequestNumber(value: unknown): number | undefined {
       }
 
       if (request.action === 'edit') {
-        // A review comment is addressed by its own id, so unlike a reply the route carries no pull request
-        // number — and that id is one for the whole repository, not one per pull request. Read the comment
-        // first and refuse when it belongs to a different pull request than the one named: a mutation is
-        // the wrong place to discover that `--number` was wrong, and the reply would otherwise claim a
-        // target it never touched. The repository in the path is still what the allowlist binds.
+        // A review comment is addressed by its own id, and that id is one for the whole repository, not
+        // one per pull request. The route therefore carries no pull request number and the CLI asks for
+        // none: the number to report is the one the comment itself names, read back from the answer
+        // rather than echoed from the request. The repository in the path is what the allowlist binds.
         const endpoint = `${api}/repos/${request.owner}/${request.repo}/pulls/comments/${String(request.commentId ?? 0)}`;
-        const { text: current } = await callWithToken('GET', endpoint, token);
-        let read: unknown = null;
-        try {
-          read = JSON.parse(current);
-        } catch {
-          read = null;
-        }
-        const found = (read ?? {}) as { pull_request_url?: unknown };
-        const belongsTo = pullRequestNumber(found.pull_request_url);
-        // A plain Error on purpose: which pull request a comment is on is the host log's business, not
-        // the container's, and `--number` is the caller's own claim about it.
-        if (belongsTo === undefined) {
-          throw new Error(
-            `refusing to edit comment ${String(request.commentId)}: could not read which pull request it belongs to`,
-          );
-        }
-        if (request.number !== undefined && belongsTo !== request.number) {
-          throw new Error(
-            `refusing to edit comment ${String(request.commentId)}: it is a review comment of ` +
-              `${request.owner}/${request.repo}#${belongsTo}, not #${request.number}`,
-          );
-        }
         const { text: edited } = await callWithToken('PATCH', endpoint, token, { body: request.body ?? '' });
         let changed: unknown = null;
         try {
@@ -853,9 +830,9 @@ function pullRequestNumber(value: unknown): number | undefined {
         } catch {
           changed = null;
         }
-        const html = (changed ?? {}) as { html_url?: unknown };
+        const html = (changed ?? {}) as { html_url?: unknown; pull_request_url?: unknown };
         return {
-          number: belongsTo,
+          number: pullRequestNumber(html.pull_request_url) ?? request.number ?? 0,
           url: typeof html.html_url === 'string' ? html.html_url : '',
         };
       }
