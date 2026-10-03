@@ -91,6 +91,23 @@ describe('stage', () => {
     );
   });
 
+  it('refuses a mount whose path is spelled through an alias', () => {
+    // The host spells $HOME /var/services/homes/u; the container sees the same directory as
+    // /volume1/homes/u. A lexical check let a target under the second name through, which staged the
+    // broker's code into a directory the agent can rewrite — the one thing this command exists to stop.
+    const repo = makeRepo('alias');
+    const real = path.join(scratch, 'alias-real');
+    fs.mkdirSync(path.join(real, 'Workspaces'), { recursive: true });
+    const alias = path.join(scratch, 'alias-link');
+    fs.symlinkSync(real, alias, 'junction');
+
+    assert.throws(
+      () => performStage({ repo, to: path.join(real, 'Workspaces', 'app'), ref: 'HEAD', home: alias }),
+      /mounted into the container/,
+    );
+    assert.equal(fs.existsSync(path.join(real, 'Workspaces', 'app')), false, 'and nothing was written');
+  });
+
   it('refuses to clear the deployment directory that holds the key', () => {
     const repo = makeRepo('deployment');
     const to = path.join(scratch, 'deployment-dir');
@@ -118,6 +135,26 @@ describe('stage', () => {
     assert.throws(
       () => performStage({ repo, to: path.join(repo, 'dist'), ref: 'HEAD', home: scratch }),
       /overlap/,
+    );
+  });
+
+  it('refuses a target that is a symlink into the repository', () => {
+    // The overlap check compares canonical paths for the same reason the mount check does: a `--to` that
+    // is a symlink to the repository *is* the repository, and the spellings differ.
+    const repo = makeRepo('overlap-link');
+
+    const link = path.join(scratch, 'link-to-repo');
+    fs.symlinkSync(repo, link, 'junction');
+    assert.throws(
+      () => performStage({ repo, to: link, ref: 'HEAD', home: scratch }),
+      /repository and the target overlap/,
+    );
+
+    const sub = path.join(scratch, 'link-into-repo');
+    fs.symlinkSync(path.join(repo, 'src'), sub, 'junction');
+    assert.throws(
+      () => performStage({ repo, to: sub, ref: 'HEAD', home: scratch }),
+      /repository and the target overlap/,
     );
   });
 });

@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { fail, insideMountedPath, parseArgs, say, warn, writeSecretFile } from './support.ts';
+import { canonicalPath, fail, insideMountedPath, parseArgs, say, warn, writeSecretFile } from './support.ts';
 
 /** The record `stage` leaves behind, so the running code is identifiable afterwards. */
 export const STAGED_RECORD = 'STAGED.json';
@@ -69,7 +69,15 @@ export function performStage(input: StageInput): StageResult {
         'private key in reach, so code there is code the agent can rewrite — stage outside every mount.',
     );
   }
-  if (to === repo || to.startsWith(repo + path.sep) || repo.startsWith(to + path.sep)) {
+  // Canonical, for the same reason the mount check is: a `--to` that is a symlink into the repository
+  // *is* the repository, and comparing the spellings would miss it.
+  const realRepo = canonicalPath(repo);
+  const realTo = canonicalPath(to);
+  if (
+    realTo === realRepo ||
+    realTo.startsWith(realRepo + path.sep) ||
+    realRepo.startsWith(realTo + path.sep)
+  ) {
     throw new Error(`refusing to stage ${repo} into ${to}: the repository and the target overlap`);
   }
 
