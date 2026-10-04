@@ -193,7 +193,32 @@ describe('mounted path detection', () => {
   it('refuses when the runtime knows of no container at all', () => {
     // Installed but empty is not "nothing is shared": it is the state in which the check is blind.
     const exec = (_cli: string, args: readonly string[]): string => (args[0] === 'ps' ? '' : '[]');
-    assert.throws(() => mountedPaths(home, { container: false, exec }), /could name a container/);
+    assert.throws(
+      () => mountedPaths(home, { container: false, exec }),
+      /could be asked, or none knows of a container/,
+    );
+  });
+
+  it('treats a missing runtime as absent, but an installed failing one as a blind spot', () => {
+    const failure = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
+    const one = (cli: string, args: readonly string[]): string => {
+      if (cli !== 'podman') throw failure('ENOENT');
+      return args[0] === 'ps' ? 'id-1\n' : JSON.stringify([{ Type: 'bind', Source: '/srv', Destination: '/srv' }]);
+    };
+    assert.deepEqual(
+      mountedPaths('/srv/u', { container: false, exec: one }),
+      ['/srv'],
+      'a host with one runtime must not be refused because the others are not installed',
+    );
+    const unreachable = (cli: string, args: readonly string[]): string => {
+      if (cli === 'docker') throw failure('ECONNREFUSED');
+      return one(cli, args);
+    };
+    assert.throws(
+      () => mountedPaths('/srv/u', { container: false, exec: unreachable }),
+      /could be asked, or none knows of a container/,
+      'a runtime that is installed but unreachable hides its containers, so another list cannot cover for it',
+    );
   });
 
   it('refuses rather than guess when nothing can answer', () => {

@@ -185,7 +185,7 @@ describe('reading a pull request URL out of a program', () => {
 });
 
 describe('finding the checkouts to serve', () => {
-  it('finds every checkout under a root, at any depth, hidden directories included', () => {
+  it('finds the checkouts within the given depth, hidden directories included', () => {
     const root = mkdtempSync(join(tmpdir(), 'discover-test-'));
     for (const repo of ['.hidden', 'trees/one', 'trees/two/deep', 'plain']) {
       mkdirSync(join(root, repo, '.git'), { recursive: true });

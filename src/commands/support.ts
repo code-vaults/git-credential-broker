@@ -245,11 +245,14 @@ export function boundPathsTouchingHome(output: string, home: string): string[] {
   return [...found];
 }
 
-/** One runtime's answer: how many containers it knows of, and the host paths they bind near the home. */
-interface RuntimeAnswer {
-  readonly containers: number;
-  readonly mounts: string[];
-}
+/**
+ * What a runtime had to say: it is not installed (skip it), it is there and could not be asked (a
+ * blind spot, so the whole check refuses), or it answered.
+ */
+type RuntimeQuery =
+  | { readonly kind: 'absent' }
+  | { readonly kind: 'failed' }
+  | { readonly kind: 'ok'; readonly containers: number; readonly mounts: string[] };
 
 /** Run a container runtime command; a failure means that runtime could not be asked. */
 function runtimeExec(cli: string, args: readonly string[]): string {
@@ -257,7 +260,21 @@ function runtimeExec(cli: string, args: readonly string[]): string {
 }
 
 /**
- * One runtime's answer, or undefined when that command is not there to ask.
+ * Whether a failed spawn means the command is not installed, rather than installed and failing.
+ *
+ * The difference decides whether the guard can proceed at all. A host that has only docker must not be
+ * refused because podman is missing; a host whose docker daemon is unreachable must be, because its
+ * containers are precisely the ones nothing else can see.
+ *
+ * @param error - the error a spawn threw.
+ * @returns true when the command was not found at all.
+ */
+function notInstalled(error: unknown): boolean {
+  return (error as { code?: unknown } | null | undefined)?.code === 'ENOENT';
+}
+
+/**
+ * One runtime's answer.
  *
  * `--all`, not only the running containers: a stopped container's bind mounts are still configured and
  * it can be started again at any time. This is most likely to run while the agent container is down —
@@ -266,26 +283,27 @@ function runtimeExec(cli: string, args: readonly string[]): string {
  * @param cli - the command to run.
  * @param home - the home to compare against.
  * @param exec - how to run it.
- * @returns the answer, or undefined when this command could not answer.
+ * @returns what this runtime had to say.
  */
 function mountsFromRuntime(
   cli: string,
   home: string,
   exec: (cli: string, args: readonly string[]) => string,
-): RuntimeAnswer | undefined {
+): RuntimeQuery {
   let ids: string;
   try {
     ids = exec(cli, ['ps', '--all', '--quiet']);
-  } catch {
-    return undefined;
+  } catch (error) {
+    return notInstalled(error) ? { kind: 'absent' } : { kind: 'failed' };
   }
   const known = ids.split('\n').map((id) => id.trim()).filter((id) => id !== '');
-  if (known.length === 0) return { containers: 0, mounts: [] };
+  if (known.length === 0) return { kind: 'ok', containers: 0, mounts: [] };
   try {
     const listed = exec(cli, ['inspect', '--format', '{{json .Mounts}}', ...known]);
-    return { containers: known.length, mounts: boundPathsTouchingHome(listed, home) };
+    return { kind: 'ok', containers: known.length, mounts: boundPathsTouchingHome(listed, home) };
   } catch {
-    return undefined;
+    // It listed containers a moment ago, so it is installed. Failing now is a blind spot, not absence.
+    return { kind: 'failed' };
   }
 }
 
@@ -296,20 +314,22 @@ function mountsFromRuntime(
  * namespace, so the runtimes are asked instead. Their answers are unioned, because one host can run
  * more than one of them and a container under either is still a container that can rewrite the code.
  *
- * A runtime that knows of no container at all is not an answer. That is precisely the state in which
- * this check is blind — the agent container may simply be stopped, its mounts still configured — so it
- * is treated as "cannot tell" and the caller refuses.
+ * Two states are not answers, and both make the caller refuse. A runtime that knows of no container at
+ * all is one — the agent container may simply be stopped, its mounts still configured. A runtime that
+ * is installed but cannot be queried is the other: its containers are invisible, and another runtime's
+ * list cannot cover for them.
  *
  * @param home - the home to compare against.
  * @param exec - how to run a runtime.
- * @returns the paths, or undefined when no runtime could name a container.
+ * @returns the paths, or undefined when they cannot be known.
  */
 function detectedMounts(home: string, exec: (cli: string, args: readonly string[]) => string): string[] | undefined {
   const found = new Set<string>();
   let containers = 0;
   for (const cli of CONTAINER_CLIS) {
     const answer = mountsFromRuntime(cli, home, exec);
-    if (answer === undefined) continue;
+    if (answer.kind === 'absent') continue;
+    if (answer.kind === 'failed') return undefined;
     containers += answer.containers;
     for (const mount of answer.mounts) found.add(mount);
   }
@@ -350,7 +370,7 @@ export function mountedPaths(home: string = os.homedir(), source: MountSource = 
       'cannot tell which directories the container shares: ' +
         (container
           ? 'its own mount table could not be read'
-          : 'none of docker, podman or nerdctl could name a container') +
+          : 'none of docker, podman or nerdctl could be asked, or none knows of a container') +
         '; refusing rather than guessing',
     );
   }
@@ -376,7 +396,9 @@ export function insideMountedPath(
 ): string | null {
   const resolved = canonicalPath(target);
   for (const mounted of mounts ?? mountedPaths(home)) {
-    const real = canonicalPath(mounted);
+    // The mount side takes the tolerant form: discovery may have kept a mount that answers EACCES in
+    // its lexical spelling, and one unreadable mount elsewhere must not fail a check about this target.
+    const real = canonicalOrResolved(mounted);
     if (resolved === real || resolved.startsWith(`${real}${path.sep}`)) return mounted;
   }
   return null;

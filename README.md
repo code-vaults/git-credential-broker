@@ -293,8 +293,10 @@ git-credential-broker pr --via-host --repo owner/repo --head feature --base main
 The opener creates pull requests with the credentials of whoever started it, which is the point;
 it never runs a shell, and the program it calls is configuration rather than a hard-coded `gh`:
 `--command /path/to/gh`, or `$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
-anything. `--root` may be repeated and defaults to `$HOME`, so every checkout under it — including
-ones created later — is served with no further setup. To start it once and keep it,
+anything. `--root` may be repeated and defaults to `$HOME`; checkouts within `--depth` levels of a root
+(4 by default) are served with no further setup, including ones created later, which the next sweep
+picks up. The bound exists because the walk repeats every `--interval` seconds; raise `--depth` for
+deeper layouts. To start it once and keep it,
 `examples/host-opener.service` is a systemd user unit; on a system without user services,
 `examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
 instance at a time, and its output in a log file. Without `--via-host`, or with no opener running, `pr` behaves
