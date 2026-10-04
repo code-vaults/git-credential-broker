@@ -124,8 +124,14 @@ export interface MountSource {
   readonly container?: boolean;
 }
 
-/** The command that reports what running containers mount. */
-const CONTAINER_CLI = 'docker';
+/**
+ * The commands that can report what running containers mount.
+ *
+ * Docker, Podman and nerdctl share the `ps`/`inspect` interface used here, so one code path covers all
+ * three. Plain containerd has no equivalent — `ctr` speaks a different language, in a namespace it
+ * chooses — so a host that offers only that is refused rather than guessed at.
+ */
+const CONTAINER_CLIS = ['docker', 'podman', 'nerdctl'] as const;
 
 /**
  * Decode one field of `/proc/self/mountinfo`.
@@ -217,17 +223,15 @@ export function boundPathsUnderHome(output: string, home: string): string[] {
 }
 
 /**
- * Ask the container runtime which directories it has bound from the user's home.
+ * One runtime's answer, or undefined when that command is not there to ask.
  *
- * The host's own mount table cannot answer this: a bind mount exists only in the container's
- * namespace, so the runtime is asked instead.
- *
+ * @param cli - the command to run.
  * @param home - the home to keep mounts under.
- * @returns the paths, or undefined when the runtime is not there to ask.
+ * @returns the paths, or undefined when this command could not answer.
  */
-function detectedMounts(home: string): string[] | undefined {
+function mountsFromRuntime(cli: string, home: string): string[] | undefined {
   const run = (args: readonly string[]): string =>
-    execFileSync(CONTAINER_CLI, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    execFileSync(cli, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   let ids: string;
   try {
     ids = run(['ps', '--quiet']);
@@ -241,6 +245,28 @@ function detectedMounts(home: string): string[] | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Ask every container runtime on this host which directories it has bound from the user's home.
+ *
+ * The host's own mount table cannot answer this: a bind mount exists only in the container's
+ * namespace, so the runtimes are asked instead. Their answers are unioned, because one host can run
+ * more than one of them and a container under either is still a container that can rewrite the code.
+ *
+ * @param home - the home to keep mounts under.
+ * @returns the paths, or undefined when no runtime was there to ask.
+ */
+function detectedMounts(home: string): string[] | undefined {
+  const found = new Set<string>();
+  let answered = false;
+  for (const cli of CONTAINER_CLIS) {
+    const mounts = mountsFromRuntime(cli, home);
+    if (mounts === undefined) continue;
+    answered = true;
+    for (const mount of mounts) found.add(mount);
+  }
+  return answered ? [...found] : undefined;
 }
 
 /**
@@ -277,7 +303,7 @@ export function mountedPaths(home: string = os.homedir(), source: MountSource = 
       'cannot tell which directories the container shares: ' +
         (container
           ? 'its own mount table could not be read'
-          : 'the container runtime could not be asked (is docker installed and reachable?)') +
+          : 'none of docker, podman or nerdctl could be asked') +
         '; refusing rather than guessing',
     );
   }

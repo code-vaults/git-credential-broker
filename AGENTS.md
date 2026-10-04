@@ -85,10 +85,10 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   **The other half is what it compares against.** The directories shared with the container are the
   user's to name, so there is no list to hard-code.
   A process inside the container reads its own mount table (`/proc/self/mountinfo`); a host process asks
-  the container runtime (`docker inspect`) for the paths its containers bind-mount, which is a superset on
-  purpose: any container that can rewrite the broker's code is as good a reason not to stage there as the
-  agent is. When neither can answer, the check refuses rather than guesses — the guess is what would put
-  the code, or the key, somewhere a container can rewrite.
+  a container runtime — docker, podman or nerdctl, whichever is there — for the paths its containers
+  bind-mount, which is a superset on purpose: any container that can rewrite the broker's code is as good
+  a reason not to stage there as the agent is. When neither can answer, the check refuses rather than
+  guesses — the guess is what would put the code, or the key, somewhere a container can rewrite.
 - **The process that owns a boundary decides what crosses it, not the error class.** A response body put
   into the message of a `ProviderConfigError` reached the container, because a caller that wraps that error
   to name a missing permission wraps it in the same class and so passes the whole message through. Detail
