@@ -27,6 +27,7 @@ import {
   gitConfigSet,
   insideMountedPath,
   listFlag,
+  mountedPaths,
   parseArgs,
   say,
   warn,
@@ -114,7 +115,12 @@ export async function performSetup(input: SetupInput): Promise<SetupResult> {
   }
   // The config must not be written into any directory the container can rewrite. Canonical, so the
   // host's spelling of a shared directory and the container's spelling of the same one are one place.
-  const mounted = insideMountedPath(input.gitconfig, input.home, input.mounts);
+  // `setup` runs in the container by definition, so the mount table it is standing on is the
+  // authority. Reading it directly means a container that leaves no marker for `isInsideContainer`
+  // (plain containerd, a Kubernetes pod) still gets the right answer instead of hunting for a runtime
+  // it does not have.
+  const mounts = input.mounts ?? mountedPaths(input.home, { container: true });
+  const mounted = insideMountedPath(input.gitconfig, input.home, mounts);
   if (mounted) {
     throw new Error(
       `${input.gitconfig} is inside ${mounted}, which is mounted into the container; refusing to write ` +

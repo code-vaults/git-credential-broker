@@ -116,12 +116,13 @@ docker compose -f "$DEPLOY/docker-compose.broker.yml" up -d
 ```
 
 Nothing above has to name the shared directories. A host process asks the container runtime — docker,
-podman or nerdctl, whichever is there — for the host paths its containers bind-mount; a process inside
-the container reads `/proc/self/mountinfo`. When neither can answer — including a host whose only
-runtime is plain `containerd`, which has no interface this knows — `init`, `stage` and `authorize`
-refuse rather than guess. The runtime route is deliberately a superset: a directory bind-mounted into
-*any* running container counts as shared, because any container that can rewrite the broker's code is
-as good a reason not to stage there as the agent is.
+podman or nerdctl, whichever is there — for the host paths its containers bind-mount, running or
+stopped; a process inside the container reads `/proc/self/mountinfo`. When neither can answer — no
+runtime, a runtime that knows of no container at all, or a host whose only runtime is plain
+`containerd`, which has no interface this knows — `init`, `stage` and `authorize` refuse rather than
+guess. The runtime route is deliberately a superset: a directory bind-mounted into *any* container
+counts as shared, because any container that can rewrite the broker's code is as good a reason not to
+stage there as the agent is.
 
 `stage` prints the commit it exported; check that sha against your own clone or the remote before
 trusting it, since the repository you export from is one an agent can write to. It leaves a

@@ -120,7 +120,7 @@ describe('mounted path detection', () => {
     ]);
   });
 
-  it('asks the container runtime on the host, and keeps only bind mounts under the home', () => {
+  it('asks the container runtime on the host, and keeps the bind mounts that touch the home', () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-inspect-'));
     const inside = path.join(base, 'shared');
     const deeper = path.join(base, 'sub', 'deep');
@@ -141,11 +141,59 @@ describe('mounted path detection', () => {
       assert.deepEqual(
         got,
         [inside, deeper].map((entry) => fs.realpathSync(entry)).sort(),
-        'a volume and anything outside the home are not shared directories',
+        'a volume and an unrelated path are not shared directories',
       );
     } finally {
       fs.rmSync(base, { recursive: true, force: true });
     }
+  });
+
+  it('asks for every container, not only the running ones', () => {
+    // A stopped container still has its bind mounts configured, and can be started again at any time.
+    // `init` runs on a fresh host and from boot scripts, which is exactly when a running-only list is
+    // blind. Regression: an empty runtime answer used to be trusted as "nothing is shared".
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-runtime-'));
+    const inside = path.join(base, 'shared');
+    fs.mkdirSync(inside, { recursive: true });
+    const calls: string[][] = [];
+    const exec = (cli: string, args: readonly string[]): string => {
+      calls.push([cli, ...args]);
+      if (args[0] === 'ps') return 'b3f1c2d4e5f6\n';
+      return JSON.stringify([{ Type: 'bind', Source: inside, Destination: '/home/u/shared' }]);
+    };
+    try {
+      assert.deepEqual(
+        mountedPaths(base, { container: false, exec }).map((entry) => fs.realpathSync(entry)),
+        [fs.realpathSync(inside)],
+        'a stopped container is still a container that can rewrite the staged code',
+      );
+      assert.equal(calls[0]?.includes('--all'), true, 'ps must include the containers that are not running');
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it('counts a mount that contains the home, not only ones under it', () => {
+    // A container that binds the home's parent can rewrite everything in the home.
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-ancestor-'));
+    const homeDir = path.join(base, 'u');
+    fs.mkdirSync(homeDir, { recursive: true });
+    const exec = (_cli: string, args: readonly string[]): string =>
+      args[0] === 'ps' ? 'b3f1c2d4e5f6\n' : JSON.stringify([{ Type: 'bind', Source: base, Destination: '/mnt' }]);
+    try {
+      assert.deepEqual(
+        mountedPaths(homeDir, { container: false, exec }).map((entry) => fs.realpathSync(entry)),
+        [fs.realpathSync(base)],
+      );
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses when the runtime knows of no container at all', () => {
+    // Installed but empty is not "nothing is shared": it is the state in which the check is blind.
+    const exec = (_cli: string, args: readonly string[]): string => (args[0] === 'ps' ? '' : '[]');
+    assert.throws(() => mountedPaths(home, { container: false, exec }), /could name a container/);
   });
 
   it('refuses rather than guess when nothing can answer', () => {

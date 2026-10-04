@@ -108,6 +108,13 @@ export function listFlag(args: Args, name: string): string[] {
  * inside the agent container. Docker and Podman each leave a marker; nothing here names a directory,
  * because no directory is this tool's to assume.
  *
+ * Those markers are also this function's known gap, and it does double duty. A container that leaves
+ * neither — plain containerd, a Kubernetes pod — reads as a host: the "run this on the host" refusal
+ * in `init` and `authorize` does not fire, and `mountedPaths` looks for a runtime instead of reading
+ * the mount table it is standing on. `setup`, which is in the container by definition, says so itself
+ * and reads the table. The refusal cases still fail closed afterwards, when no runtime can be asked,
+ * but they fail with a message about the runtime rather than about the container.
+ *
  * @returns true when running inside a container.
  */
 export function isInsideContainer(): boolean {
@@ -122,6 +129,8 @@ export interface MountSource {
   readonly inspect?: string | null;
   /** Whether this process is in the container, whose own mount table is the authority. */
   readonly container?: boolean;
+  /** How to run a container runtime command, so a test need not have one installed. */
+  readonly exec?: (cli: string, args: readonly string[]) => string;
 }
 
 /**
@@ -167,7 +176,22 @@ function canonicalOrResolved(target: string): string {
 }
 
 /**
- * The mount points at or under a home, read from a mount table.
+ * Whether one canonical directory contains the other.
+ *
+ * Both directions matter. A mount *under* the home is shared, and so is a mount that *contains* the
+ * home: a container that binds `/srv` while the home is `/srv/u` can rewrite everything in the home,
+ * so dropping that mount for sitting above the home is the same blind spot in the other direction.
+ *
+ * @param a - one canonical path.
+ * @param b - the other canonical path.
+ * @returns true when either contains the other.
+ */
+function overlaps(a: string, b: string): boolean {
+  return a === b || a.startsWith(`${b}${path.sep}`) || b.startsWith(`${a}${path.sep}`);
+}
+
+/**
+ * The mount points that overlap a home, read from a mount table.
  *
  * The container is the thing that knows what it mounts. A list of directory names in this file would
  * be a guess about a home this code has never seen.
@@ -176,21 +200,20 @@ function canonicalOrResolved(target: string): string {
  * @param home - the home to measure against.
  * @returns the mount points, spelled as the table spells them.
  */
-export function mountsUnderHome(mountinfo: string, home: string): string[] {
+export function mountsTouchingHome(mountinfo: string, home: string): string[] {
   const root = canonicalOrResolved(home);
   const found: string[] = [];
   for (const line of mountinfo.split('\n')) {
     const field = line.split(' ')[4];
     if (field === undefined) continue;
     const point = path.resolve(decodeMountField(field));
-    const real = canonicalOrResolved(point);
-    if (real === root || real.startsWith(`${root}${path.sep}`)) found.push(point);
+    if (overlaps(canonicalOrResolved(point), root)) found.push(point);
   }
   return found;
 }
 
 /**
- * The host paths a container runtime bound from the user's home.
+ * The host paths a container runtime bound that overlap the user's home.
  *
  * `docker inspect --format '{{json .Mounts}}'` prints one array per container. Only bind mounts count:
  * a volume or a tmpfs is not a directory the user named. Every container is considered, not only the
@@ -198,10 +221,10 @@ export function mountsUnderHome(mountinfo: string, home: string): string[] {
  * — so this is deliberately a superset.
  *
  * @param output - the runtime's output, one array per line.
- * @param home - the home to keep mounts under.
+ * @param home - the home to compare against.
  * @returns the host paths, unique and canonical.
  */
-export function boundPathsUnderHome(output: string, home: string): string[] {
+export function boundPathsTouchingHome(output: string, home: string): string[] {
   const root = canonicalOrResolved(home);
   const found = new Set<string>();
   for (const line of output.split('\n')) {
@@ -216,57 +239,81 @@ export function boundPathsUnderHome(output: string, home: string): string[] {
     for (const mount of mounts as Array<{ Type?: unknown; Source?: unknown }>) {
       if (mount.Type !== 'bind' || typeof mount.Source !== 'string') continue;
       const real = canonicalOrResolved(mount.Source);
-      if (real === root || real.startsWith(`${root}${path.sep}`)) found.add(real);
+      if (overlaps(real, root)) found.add(real);
     }
   }
   return [...found];
 }
 
+/** One runtime's answer: how many containers it knows of, and the host paths they bind near the home. */
+interface RuntimeAnswer {
+  readonly containers: number;
+  readonly mounts: string[];
+}
+
+/** Run a container runtime command; a failure means that runtime could not be asked. */
+function runtimeExec(cli: string, args: readonly string[]): string {
+  return execFileSync(cli, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+}
+
 /**
  * One runtime's answer, or undefined when that command is not there to ask.
  *
+ * `--all`, not only the running containers: a stopped container's bind mounts are still configured and
+ * it can be started again at any time. This is most likely to run while the agent container is down —
+ * `init` on a fresh host, or a boot script — which is exactly when a running-only list is blind.
+ *
  * @param cli - the command to run.
- * @param home - the home to keep mounts under.
- * @returns the paths, or undefined when this command could not answer.
+ * @param home - the home to compare against.
+ * @param exec - how to run it.
+ * @returns the answer, or undefined when this command could not answer.
  */
-function mountsFromRuntime(cli: string, home: string): string[] | undefined {
-  const run = (args: readonly string[]): string =>
-    execFileSync(cli, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+function mountsFromRuntime(
+  cli: string,
+  home: string,
+  exec: (cli: string, args: readonly string[]) => string,
+): RuntimeAnswer | undefined {
   let ids: string;
   try {
-    ids = run(['ps', '--quiet']);
+    ids = exec(cli, ['ps', '--all', '--quiet']);
   } catch {
     return undefined;
   }
-  const running = ids.split('\n').map((id) => id.trim()).filter((id) => id !== '');
-  if (running.length === 0) return [];
+  const known = ids.split('\n').map((id) => id.trim()).filter((id) => id !== '');
+  if (known.length === 0) return { containers: 0, mounts: [] };
   try {
-    return boundPathsUnderHome(run(['inspect', '--format', '{{json .Mounts}}', ...running]), home);
+    const listed = exec(cli, ['inspect', '--format', '{{json .Mounts}}', ...known]);
+    return { containers: known.length, mounts: boundPathsTouchingHome(listed, home) };
   } catch {
     return undefined;
   }
 }
 
 /**
- * Ask every container runtime on this host which directories it has bound from the user's home.
+ * Ask every container runtime on this host which directories it has bound near the user's home.
  *
  * The host's own mount table cannot answer this: a bind mount exists only in the container's
  * namespace, so the runtimes are asked instead. Their answers are unioned, because one host can run
  * more than one of them and a container under either is still a container that can rewrite the code.
  *
- * @param home - the home to keep mounts under.
- * @returns the paths, or undefined when no runtime was there to ask.
+ * A runtime that knows of no container at all is not an answer. That is precisely the state in which
+ * this check is blind — the agent container may simply be stopped, its mounts still configured — so it
+ * is treated as "cannot tell" and the caller refuses.
+ *
+ * @param home - the home to compare against.
+ * @param exec - how to run a runtime.
+ * @returns the paths, or undefined when no runtime could name a container.
  */
-function detectedMounts(home: string): string[] | undefined {
+function detectedMounts(home: string, exec: (cli: string, args: readonly string[]) => string): string[] | undefined {
   const found = new Set<string>();
-  let answered = false;
+  let containers = 0;
   for (const cli of CONTAINER_CLIS) {
-    const mounts = mountsFromRuntime(cli, home);
-    if (mounts === undefined) continue;
-    answered = true;
-    for (const mount of mounts) found.add(mount);
+    const answer = mountsFromRuntime(cli, home, exec);
+    if (answer === undefined) continue;
+    containers += answer.containers;
+    for (const mount of answer.mounts) found.add(mount);
   }
-  return answered ? [...found] : undefined;
+  return containers === 0 ? undefined : [...found];
 }
 
 /**
@@ -285,17 +332,17 @@ export function mountedPaths(home: string = os.homedir(), source: MountSource = 
   const container = source.container ?? isInsideContainer();
   let mounts: string[] | undefined;
   if (source.mountinfo !== undefined) {
-    mounts = mountsUnderHome(source.mountinfo, home);
+    mounts = mountsTouchingHome(source.mountinfo, home);
   } else if (source.inspect !== undefined) {
-    mounts = source.inspect === null ? undefined : boundPathsUnderHome(source.inspect, home);
+    mounts = source.inspect === null ? undefined : boundPathsTouchingHome(source.inspect, home);
   } else if (container) {
     try {
-      mounts = mountsUnderHome(fs.readFileSync('/proc/self/mountinfo', 'utf8'), home);
+      mounts = mountsTouchingHome(fs.readFileSync('/proc/self/mountinfo', 'utf8'), home);
     } catch {
       mounts = undefined;
     }
   } else {
-    mounts = detectedMounts(home);
+    mounts = detectedMounts(home, source.exec ?? runtimeExec);
   }
 
   if (mounts === undefined) {
@@ -303,7 +350,7 @@ export function mountedPaths(home: string = os.homedir(), source: MountSource = 
       'cannot tell which directories the container shares: ' +
         (container
           ? 'its own mount table could not be read'
-          : 'none of docker, podman or nerdctl could be asked') +
+          : 'none of docker, podman or nerdctl could name a container') +
         '; refusing rather than guessing',
     );
   }
