@@ -190,6 +190,30 @@ describe('mounted path detection', () => {
     }
   });
 
+  it('counts a container that binds the host root, which contains everything', () => {
+    // The root is where the prefix test used to fail: `'/'.startsWith('//')` is false, so a bind of
+    // the host root was dropped even though such a container can rewrite every path on the host.
+    const root = path.parse(path.resolve(path.sep)).root;
+    const exec = (_cli: string, args: readonly string[]): string =>
+      args[0] === 'ps' ? 'b3f1c2d4e5f6\n' : JSON.stringify([{ Type: 'bind', Source: root, Destination: '/host' }]);
+    assert.deepEqual(mountedPaths(home, { container: false, exec }), [root]);
+    assert.equal(
+      insideMountedPath(`${home}/Workspaces/x`, home, [root]),
+      root,
+      'and the guard refuses a target under it, rather than matching nothing',
+    );
+  });
+
+  it("ignores the container's own root filesystem, which the image made", () => {
+    // Every mount table lists it. Counting it would put every path inside a mount and refuse `setup`
+    // its own `~/.gitconfig`. A *bind* of the host root arrives through the runtime, above.
+    const table = [
+      '675 573 0:36 / / rw,relatime - overlay overlay rw',
+      `676 573 0:36 /x ${home}/shared rw - btrfs /dev/x rw`,
+    ].join('\n');
+    assert.deepEqual(mountedPaths(home, { mountinfo: table, container: true }), [`${home}/shared`]);
+  });
+
   it('refuses when the runtime knows of no container at all', () => {
     // Installed but empty is not "nothing is shared": it is the state in which the check is blind.
     const exec = (_cli: string, args: readonly string[]): string => (args[0] === 'ps' ? '' : '[]');

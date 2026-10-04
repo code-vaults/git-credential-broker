@@ -176,6 +176,37 @@ function canonicalOrResolved(target: string): string {
 }
 
 /**
+ * Whether a path is the root of its filesystem.
+ *
+ * Every mount table lists the container's own root filesystem, and that root is the image's, not a
+ * directory the host handed over. Counting it as shared would put every path "inside a mount" and
+ * refuse `setup` its own config; a *bind* of the host root arrives through the runtime instead, where
+ * it does count.
+ *
+ * @param target - the path to test.
+ * @returns true when it is a filesystem root.
+ */
+function filesystemRoot(target: string): boolean {
+  const resolved = path.resolve(target);
+  return resolved === path.parse(resolved).root;
+}
+
+/**
+ * Whether one canonical directory contains another.
+ *
+ * The root is special in its spelling and nothing else: `'/'.startsWith('/' + '/')` is false, so the
+ * ordinary prefix test says the host root contains nothing at all.
+ *
+ * @param parent - the directory that would contain.
+ * @param child - the path it would contain.
+ * @returns true when parent holds child.
+ */
+function contains(parent: string, child: string): boolean {
+  if (child === parent) return true;
+  return filesystemRoot(parent) ? child.startsWith(parent) : child.startsWith(`${parent}${path.sep}`);
+}
+
+/**
  * Whether one canonical directory contains the other.
  *
  * Both directions matter. A mount *under* the home is shared, and so is a mount that *contains* the
@@ -187,7 +218,7 @@ function canonicalOrResolved(target: string): string {
  * @returns true when either contains the other.
  */
 function overlaps(a: string, b: string): boolean {
-  return a === b || a.startsWith(`${b}${path.sep}`) || b.startsWith(`${a}${path.sep}`);
+  return contains(a, b) || contains(b, a);
 }
 
 /**
@@ -207,6 +238,8 @@ export function mountsTouchingHome(mountinfo: string, home: string): string[] {
     const field = line.split(' ')[4];
     if (field === undefined) continue;
     const point = path.resolve(decodeMountField(field));
+    // The container's own root filesystem is in every mount table, and it is not a shared directory.
+    if (filesystemRoot(point)) continue;
     if (overlaps(canonicalOrResolved(point), root)) found.push(point);
   }
   return found;
@@ -398,8 +431,9 @@ export function insideMountedPath(
   for (const mounted of mounts ?? mountedPaths(home)) {
     // The mount side takes the tolerant form: discovery may have kept a mount that answers EACCES in
     // its lexical spelling, and one unreadable mount elsewhere must not fail a check about this target.
-    const real = canonicalOrResolved(mounted);
-    if (resolved === real || resolved.startsWith(`${real}${path.sep}`)) return mounted;
+    // `contains`, not a prefix test, or a container binding the host root would be discovered and then
+    // never matched — `'/x'.startsWith('//')` is false.
+    if (contains(canonicalOrResolved(mounted), resolved)) return mounted;
   }
   return null;
 }
