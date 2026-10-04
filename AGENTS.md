@@ -81,6 +81,13 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   container can create one. Compare real paths (`realpathSync`), and ask what else can make a path point
   elsewhere: the first fix for this was a prefix check, and the bypass was found by a review bot asking the
   question the fix had not.
+
+  **The other half is what it compares against.** The directories shared with the container are the
+  user's to name — `~/.dotfiles` is only ever what that user called it — so there is no list to hard-code.
+  `GIT_BROKER_MOUNTS` declares them for a host process, which cannot see the container; a process inside
+  the container reads its own mount table (`/proc/self/mountinfo`) instead. When neither is available the
+  check refuses rather than guesses, because the guess is what would put the code, or the key, somewhere
+  the agent can rewrite.
 - **The process that owns a boundary decides what crosses it, not the error class.** A response body put
   into the message of a `ProviderConfigError` reached the container, because a caller that wraps that error
   to name a missing permission wraps it in the same class and so passes the whole message through. Detail

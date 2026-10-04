@@ -113,20 +113,96 @@ export function isInsideContainer(): boolean {
   return fs.existsSync('/home/app/Workspaces') && !fs.existsSync('/volume1');
 }
 
-/**
- * The container's mounts under the user's home, as seen from the host.
- *
- * A private key must never live under one of these.
- *
- * @param home - the home directory to resolve against.
- * @returns the absolute paths.
- */
-export function mountedPaths(home: string = os.homedir()): string[] {
-  return [path.join(home, 'Workspaces'), path.join(home, '.dsh'), path.join(home, '.dotfiles')];
+/** The environment variable naming the directories the container shares with the host. */
+export const MOUNTS_VAR = 'GIT_BROKER_MOUNTS';
+
+/** Where the shared directories came from, when a caller supplies them instead of the environment. */
+export interface MountSource {
+  /** The raw value of {@link MOUNTS_VAR}. */
+  readonly declared?: string;
+  /** The contents of `/proc/self/mountinfo`. */
+  readonly mountinfo?: string;
+  /** Whether this process is in the container, whose own mount table is the authority. */
+  readonly container?: boolean;
 }
 
 /**
- * Whether a path is inside one of the container's mounts.
+ * Decode one field of `/proc/self/mountinfo`.
+ *
+ * The kernel escapes space, tab, newline and backslash as octal, so a mount point containing a space
+ * arrives as `\040` instead of splitting the line.
+ *
+ * @param value - the raw field.
+ * @returns the decoded path.
+ */
+function decodeMountField(value: string): string {
+  return value.replace(/\\([0-7]{3})/g, (_whole, octal: string) => String.fromCharCode(Number.parseInt(octal, 8)));
+}
+
+/**
+ * The mount points at or under a home, read from a mount table.
+ *
+ * The container is the thing that knows what it mounts. A list of directory names in this file would
+ * be a guess about someone else's home — `.dotfiles` is only ever what the user called it.
+ *
+ * @param mountinfo - the contents of `/proc/self/mountinfo`.
+ * @param home - the home to measure against.
+ * @returns the mount points, spelled as the table spells them.
+ */
+export function mountsUnderHome(mountinfo: string, home: string): string[] {
+  const root = canonicalPath(home);
+  const found: string[] = [];
+  for (const line of mountinfo.split('\n')) {
+    const field = line.split(' ')[4];
+    if (field === undefined) continue;
+    const point = path.resolve(decodeMountField(field));
+    const real = canonicalPath(point);
+    if (real === root || real.startsWith(`${root}${path.sep}`)) found.push(point);
+  }
+  return found;
+}
+
+/**
+ * The directories the container shares with the host.
+ *
+ * `GIT_BROKER_MOUNTS` wins when it is set, which is how a host process is told: it cannot see the
+ * container's mount table. Inside the container the table is read instead. When neither is available
+ * this refuses rather than guessing, because the guess is what would put the broker's code, or the
+ * private key, in a directory the agent can rewrite.
+ *
+ * @param home - the home whose mounts are wanted.
+ * @param source - a declared value or mount table, for a test.
+ * @returns the shared directories.
+ * @throws {Error} when neither source is available.
+ */
+export function mountedPaths(home: string = os.homedir(), source: MountSource = {}): string[] {
+  const declared = source.declared ?? process.env[MOUNTS_VAR];
+  if (declared !== undefined && declared.trim() !== '') {
+    return declared
+      .split(path.delimiter)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry !== '');
+  }
+  const container = source.container ?? fs.existsSync('/.dockerenv');
+  let mountinfo = source.mountinfo;
+  if (mountinfo === undefined && container) {
+    try {
+      mountinfo = fs.readFileSync('/proc/self/mountinfo', 'utf8');
+    } catch {
+      mountinfo = undefined;
+    }
+  }
+  if (mountinfo === undefined) {
+    throw new Error(
+      `cannot tell which directories the container shares: set ${MOUNTS_VAR} to them, separated by ` +
+        `"${path.delimiter}" (a process in the container reads its own mount table; this one cannot)`,
+    );
+  }
+  return mountsUnderHome(mountinfo, home);
+}
+
+/**
+ * Whether a path is inside one of the directories the container shares with the host.
  *
  * Both sides are canonicalized before they are compared: `$HOME` on the host may be one name for a
  * directory the container sees under another (`/var/services/homes/u` and `/volume1/homes/u`), and a
@@ -134,11 +210,16 @@ export function mountedPaths(home: string = os.homedir()): string[] {
  *
  * @param target - the path to check.
  * @param home - the home directory to resolve against.
+ * @param mounts - the shared directories, when the caller already has them.
  * @returns the mount it is inside, or null.
  */
-export function insideMountedPath(target: string, home: string = os.homedir()): string | null {
+export function insideMountedPath(
+  target: string,
+  home: string = os.homedir(),
+  mounts?: readonly string[],
+): string | null {
   const resolved = canonicalPath(target);
-  for (const mounted of mountedPaths(home)) {
+  for (const mounted of mounts ?? mountedPaths(home)) {
     const real = canonicalPath(mounted);
     if (resolved === real || resolved.startsWith(`${real}${path.sep}`)) return mounted;
   }

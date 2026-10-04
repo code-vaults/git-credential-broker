@@ -37,6 +37,14 @@ function makeRepo(name: string): string {
 }
 
 describe('stage', () => {
+  /**
+   * `performStage` with the shared directories supplied.
+   *
+   * Resolving them for real refuses on a host with no `GIT_BROKER_MOUNTS`, which is the point in
+   * production and noise here: each case states its own list, and the mount cases pass theirs.
+   */
+  const stage = (input: Parameters<typeof performStage>[0]) => performStage({ mounts: [], ...input });
+
   it('exports the commit, records where it came from, and ignores the working tree', () => {
     const repo = makeRepo('clean');
     const to = path.join(scratch, 'staged/clean');
@@ -44,7 +52,7 @@ describe('stage', () => {
     // An uncommitted edit that must NOT reach the staged tree.
     fs.writeFileSync(path.join(repo, 'src', 'daemon.ts'), 'export const version = 999;\n');
 
-    const result = performStage({ repo, to, ref: 'HEAD', home: scratch });
+    const result = stage({ repo, to, ref: 'HEAD', home: scratch });
 
     assert.equal(result.dirtyWorkingTree, true, 'the dirty tree is reported');
     assert.equal(result.files > 0, true);
@@ -58,13 +66,13 @@ describe('stage', () => {
     const repo = makeRepo('restage');
     const to = path.join(scratch, 'staged/restage');
 
-    performStage({ repo, to, ref: 'HEAD', home: scratch });
+    stage({ repo, to, ref: 'HEAD', home: scratch });
     fs.writeFileSync(path.join(repo, 'src', 'old.ts'), 'export const gone = true;\n');
     execFileSync('git', ['add', '-A'], { cwd: repo });
     execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'second'], {
       cwd: repo,
     });
-    performStage({ repo, to, ref: 'HEAD', home: scratch });
+    stage({ repo, to, ref: 'HEAD', home: scratch });
 
     assert.equal(fs.existsSync(path.join(to, 'src', 'old.ts')), true, 'the new commit added it');
 
@@ -74,7 +82,7 @@ describe('stage', () => {
     execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'third'], {
       cwd: repo,
     });
-    performStage({ repo, to, ref: 'HEAD', home: scratch });
+    stage({ repo, to, ref: 'HEAD', home: scratch });
     assert.equal(fs.existsSync(path.join(to, 'src', 'old.ts')), false, 'no stale file survives a restage');
   });
 
@@ -85,7 +93,7 @@ describe('stage', () => {
     fs.mkdirSync(inside, { recursive: true });
 
     assert.throws(
-      () => performStage({ repo, to: inside, ref: 'HEAD', home }),
+      () => stage({ repo, to: inside, ref: 'HEAD', home, mounts: [path.join(home, 'Workspaces')] }),
       /mounted into the container/,
       'code the agent can rewrite must never be staged where it will run with the key',
     );
@@ -102,7 +110,14 @@ describe('stage', () => {
     fs.symlinkSync(real, alias, 'junction');
 
     assert.throws(
-      () => performStage({ repo, to: path.join(real, 'Workspaces', 'app'), ref: 'HEAD', home: alias }),
+      () =>
+        stage({
+          repo,
+          to: path.join(real, 'Workspaces', 'app'),
+          ref: 'HEAD',
+          home: alias,
+          mounts: [path.join(alias, 'Workspaces')],
+        }),
       /mounted into the container/,
     );
     assert.equal(fs.existsSync(path.join(real, 'Workspaces', 'app')), false, 'and nothing was written');
@@ -115,7 +130,7 @@ describe('stage', () => {
     fs.writeFileSync(path.join(to, 'app.pem'), 'the key\n');
     fs.writeFileSync(path.join(to, 'broker.config.json'), '{}\n');
 
-    assert.throws(() => performStage({ repo, to, ref: 'HEAD', home: scratch, force: true }), /deployment directory/);
+    assert.throws(() => stage({ repo, to, ref: 'HEAD', home: scratch, force: true }), /deployment directory/);
     assert.equal(fs.readFileSync(path.join(to, 'app.pem'), 'utf8'), 'the key\n', 'the key is untouched');
   });
 
@@ -125,15 +140,15 @@ describe('stage', () => {
     fs.mkdirSync(to, { recursive: true });
     fs.writeFileSync(path.join(to, 'something.txt'), 'mine\n');
 
-    assert.throws(() => performStage({ repo, to, ref: 'HEAD', home: scratch }), /not ours to clear/);
+    assert.throws(() => stage({ repo, to, ref: 'HEAD', home: scratch }), /not ours to clear/);
     assert.equal(fs.existsSync(path.join(to, 'something.txt')), true, 'nothing was removed');
   });
 
   it('refuses a target that overlaps the repository', () => {
     const repo = makeRepo('overlap');
-    assert.throws(() => performStage({ repo, to: repo, ref: 'HEAD', home: scratch }), /overlap/);
+    assert.throws(() => stage({ repo, to: repo, ref: 'HEAD', home: scratch }), /overlap/);
     assert.throws(
-      () => performStage({ repo, to: path.join(repo, 'dist'), ref: 'HEAD', home: scratch }),
+      () => stage({ repo, to: path.join(repo, 'dist'), ref: 'HEAD', home: scratch }),
       /overlap/,
     );
   });
@@ -146,14 +161,14 @@ describe('stage', () => {
     const link = path.join(scratch, 'link-to-repo');
     fs.symlinkSync(repo, link, 'junction');
     assert.throws(
-      () => performStage({ repo, to: link, ref: 'HEAD', home: scratch }),
+      () => stage({ repo, to: link, ref: 'HEAD', home: scratch }),
       /repository and the target overlap/,
     );
 
     const sub = path.join(scratch, 'link-into-repo');
     fs.symlinkSync(path.join(repo, 'src'), sub, 'junction');
     assert.throws(
-      () => performStage({ repo, to: sub, ref: 'HEAD', home: scratch }),
+      () => stage({ repo, to: sub, ref: 'HEAD', home: scratch }),
       /repository and the target overlap/,
     );
   });

@@ -105,6 +105,11 @@ read-only mount, so nothing is fetched or built at boot.
 DEPLOY=/srv/git-cred-broker        # broker.config.json, app.pem and log/ live here
 SOCKET_DIR=~/.dsh/git-broker       # a host directory the pushing container already mounts
 
+# The directories the agent container can see. The host commands that write — init, stage, authorize —
+# refuse without this rather than guess: what the container mounts is the user's to name. Inside the
+# container, `setup` reads the container's own mount table and needs no variable.
+export GIT_BROKER_MOUNTS="$HOME/Workspaces:$HOME/.dsh:$HOME/.dotfiles"
+
 git-credential-broker init --mode sidecar --dir "$DEPLOY" \
   --cert ~/Downloads/app.private-key.pem \
   --allow owner/repo --client-id Iv23li… --app-id 123456
@@ -114,6 +119,12 @@ git-credential-broker compose --code "$DEPLOY/app" --socket-dir "$SOCKET_DIR" \
   > "$DEPLOY/docker-compose.broker.yml"
 docker compose -f "$DEPLOY/docker-compose.broker.yml" up -d
 ```
+
+`GIT_BROKER_MOUNTS` is the one piece of deployment knowledge the host needs: which directories the
+agent container shares with it. Name them as your deployment mounts them — `~/.dotfiles` above is
+whatever you called it, and a deployment that mounts none should say so with an empty value rather
+than leave the variable out. The container side discovers its own mounts, so a `setup` inside it
+never needs this.
 
 `stage` prints the commit it exported; check that sha against your own clone or the remote before
 trusting it, since the repository you export from is one an agent can write to. It leaves a

@@ -42,6 +42,8 @@ export interface InitEnvironment {
   readonly isInsideContainer?: () => boolean;
   /** The home directory whose mounts must not contain the key. */
   readonly home?: string;
+  /** The directories the container shares, when the caller already has them. */
+  readonly mounts?: readonly string[];
 }
 
 /** Everything `init` needs, resolved. */
@@ -235,7 +237,7 @@ export function performInit(input: InitInput): InitResult {
   }
 
   const home = input.env?.home ?? (process.env['HOME'] ?? '');
-  const mounted = insideMountedPath(input.dir, home);
+  const mounted = insideMountedPath(input.dir, home, input.env?.mounts);
   if (mounted) {
     throw new Error(
       `${input.dir} is inside ${mounted}, which is mounted into the container; the private key must live outside every mount`,

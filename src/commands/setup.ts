@@ -54,6 +54,8 @@ export interface SetupInput {
   readonly dryRun: boolean;
   /** Home whose mounts the config must not be written into; defaults to the real home. */
   readonly home?: string;
+  /** The directories the container shares, when the caller already has them. */
+  readonly mounts?: readonly string[];
   /** Platform to answer for; injectable so the refusal is testable. */
   readonly platform?: NodeJS.Platform;
 }
@@ -113,7 +115,7 @@ export async function performSetup(input: SetupInput): Promise<SetupResult> {
   // The general form of "~/.gitconfig is a symlink into ~/.dotfiles": the config must not be written into
   // any directory the container can rewrite. Canonical, so the host's spelling of a mount and the
   // container's spelling of the same directory are one place.
-  const mounted = insideMountedPath(input.gitconfig, input.home);
+  const mounted = insideMountedPath(input.gitconfig, input.home, input.mounts);
   if (mounted) {
     throw new Error(
       `${input.gitconfig} is inside ${mounted}, which is mounted into the container; refusing to write ` +
