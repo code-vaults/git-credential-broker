@@ -185,27 +185,52 @@ describe('reading a pull request URL out of a program', () => {
 });
 
 describe('finding the checkouts to serve', () => {
-  it('finds every checkout under a root, at any depth, dotfiles included', () => {
+  it('finds the checkouts within the given depth, hidden directories included', () => {
     const root = mkdtempSync(join(tmpdir(), 'discover-test-'));
-    for (const repo of ['.dotfiles', 'Workspaces/one', 'Workspaces/two/deep', 'plain']) {
+    for (const repo of ['.hidden', 'trees/one', 'trees/two/deep', 'plain']) {
       mkdirSync(join(root, repo, '.git'), { recursive: true });
       writeFileSync(join(root, repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
       writeFileSync(join(root, repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     }
     // never descended into, and never enough on its own
-    mkdirSync(join(root, 'Workspaces/one/node_modules/decoy/.git'), { recursive: true });
-    writeFileSync(join(root, 'Workspaces/one/node_modules/decoy/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    writeFileSync(join(root, 'Workspaces/one/node_modules/decoy/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    mkdirSync(join(root, 'Workspaces/three/four/five/six/seven/.git'), { recursive: true });
-    writeFileSync(join(root, 'Workspaces/three/four/five/six/seven/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    writeFileSync(join(root, 'Workspaces/three/four/five/six/seven/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    mkdirSync(join(root, 'trees/one/node_modules/decoy/.git'), { recursive: true });
+    writeFileSync(join(root, 'trees/one/node_modules/decoy/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    writeFileSync(join(root, 'trees/one/node_modules/decoy/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    mkdirSync(join(root, 'trees/three/four/five/six/seven/.git'), { recursive: true });
+    writeFileSync(join(root, 'trees/three/four/five/six/seven/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    writeFileSync(join(root, 'trees/three/four/five/six/seven/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
 
     const repos = discoverCheckouts(root, 4)
       .map((found) => found.repo.slice(root.length + 1))
       .sort();
-    assert.deepEqual(repos, ['.dotfiles', 'Workspaces/one', 'Workspaces/two/deep', 'plain']);
+    assert.deepEqual(repos, ['.hidden', 'plain', 'trees/one', 'trees/two/deep']);
 
     rmSync(root, { recursive: true, force: true });
+  });
+
+  it('serves a worktree whose git directory is spelled through an alias of the root', () => {
+    // The root can be one name for a directory the filesystem knows by another ($HOME on the host this was
+    // found on), and a worktree records its git directory under the real one. Comparing the raw spellings
+    // served the plain checkout and silently skipped the worktree beside it.
+    const base = mkdtempSync(join(tmpdir(), 'discover-alias-'));
+    const real = join(base, 'real');
+    mkdirSync(join(real, 'checkout', 'worktree'), { recursive: true });
+    mkdirSync(join(real, 'gitdir'), { recursive: true });
+    writeFileSync(join(real, 'gitdir', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    writeFileSync(join(real, 'checkout', 'worktree', '.git'), `gitdir: ${join(real, 'gitdir')}\n`, 'utf8');
+    mkdirSync(join(real, 'plain', '.git'), { recursive: true });
+    writeFileSync(join(real, 'plain', '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const alias = join(base, 'alias');
+    symlinkSync(real, alias, 'junction');
+
+    try {
+      const repos = discoverCheckouts(alias, 4)
+        .map((found) => found.repo.slice(alias.length + 1))
+        .sort();
+      assert.deepEqual(repos, ['checkout/worktree', 'plain']);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 
   it('returns a channel directory per checkout', () => {

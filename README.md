@@ -103,7 +103,7 @@ read-only mount, so nothing is fetched or built at boot.
 
 ```sh
 DEPLOY=/srv/git-cred-broker        # broker.config.json, app.pem and log/ live here
-SOCKET_DIR=~/.dsh/git-broker       # a host directory the pushing container already mounts
+SOCKET_DIR=/srv/git-broker-socket  # a host directory the pushing container already mounts
 
 git-credential-broker init --mode sidecar --dir "$DEPLOY" \
   --cert ~/Downloads/app.private-key.pem \
@@ -114,6 +114,15 @@ git-credential-broker compose --code "$DEPLOY/app" --socket-dir "$SOCKET_DIR" \
   > "$DEPLOY/docker-compose.broker.yml"
 docker compose -f "$DEPLOY/docker-compose.broker.yml" up -d
 ```
+
+Nothing above has to name the shared directories. A host process asks the container runtime — docker,
+podman or nerdctl, whichever is there — for the host paths its containers bind-mount, running or
+stopped; a process inside the container reads `/proc/self/mountinfo`. When neither can answer — no
+runtime, a runtime that knows of no container at all, or a host whose only runtime is plain
+`containerd`, which has no interface this knows — `init`, `stage` and `authorize` refuse rather than
+guess. The runtime route is deliberately a superset: a directory bind-mounted into *any* container
+counts as shared, because any container that can rewrite the broker's code is as good a reason not to
+stage there as the agent is.
 
 `stage` prints the commit it exported; check that sha against your own clone or the remote before
 trusting it, since the repository you export from is one an agent can write to. It leaves a
@@ -157,7 +166,7 @@ when the image has none. In compose:
       - GIT_BROKER_SOCKET=/run/git-broker/broker.sock
       - GIT_BROKER_REQUIRE=1
     volumes:
-      - ~/.dsh/git-broker:/run/git-broker
+      - /srv/git-broker-socket:/run/git-broker
 ```
 
 ## Everyday changes
@@ -284,8 +293,10 @@ git-credential-broker pr --via-host --repo owner/repo --head feature --base main
 The opener creates pull requests with the credentials of whoever started it, which is the point;
 it never runs a shell, and the program it calls is configuration rather than a hard-coded `gh`:
 `--command /path/to/gh`, or `$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
-anything. `--root` may be repeated and defaults to `$HOME`, so `~/Workspaces`, `~/.dotfiles` and
-checkouts created later are all served with no further setup. To start it once and keep it,
+anything. `--root` may be repeated and defaults to `$HOME`; checkouts within `--depth` levels of a root
+(4 by default) are served with no further setup, including ones created later, which the next sweep
+picks up. The bound exists because the walk repeats every `--interval` seconds; raise `--depth` for
+deeper layouts. To start it once and keep it,
 `examples/host-opener.service` is a systemd user unit; on a system without user services,
 `examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
 instance at a time, and its output in a log file. Without `--via-host`, or with no opener running, `pr` behaves
@@ -453,8 +464,9 @@ matter:
   can rewrite that code, the agent owns the allowlist. That is what `stage` is for.
 
 With a shared `.git/config` between host and container: never set credentials with `git config
---local` (it is the same file on both sides); the container's own `~/.gitconfig` is private, but
-`~/.dotfiles` is mounted, which is why `setup` refuses to write through a symlink into it.
+--local` (it is the same file on both sides); the container's own `~/.gitconfig` is private, but any
+directory the container shares is not, which is why `setup` refuses to write the config through a
+symlink or into one.
 
 Credential helpers are only consulted for HTTP(S) remotes, so none of this affects the host's SSH
 pushes.

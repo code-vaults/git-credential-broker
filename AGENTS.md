@@ -81,6 +81,16 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   container can create one. Compare real paths (`realpathSync`), and ask what else can make a path point
   elsewhere: the first fix for this was a prefix check, and the bypass was found by a review bot asking the
   question the fix had not.
+
+  **The other half is what it compares against.** The directories shared with the container are the
+  user's to name, so there is no list to hard-code.
+  A process inside the container reads its own mount table (`/proc/self/mountinfo`); a host process asks
+  a container runtime — docker, podman or nerdctl, whichever is there — for the paths its containers
+  bind-mount, running or stopped, which is a superset on purpose: any container that can rewrite the
+  broker's code is as good a reason not to stage there as the agent is. A runtime that knows of no
+  container is not an answer — that is exactly when the check is blind, since the agent container may
+  simply be stopped with its mounts still configured — so it refuses rather than guesses, as it does
+  when nothing can answer at all.
 - **The process that owns a boundary decides what crosses it, not the error class.** A response body put
   into the message of a `ProviderConfigError` reached the container, because a caller that wraps that error
   to name a missing permission wraps it in the same class and so passes the whole message through. Detail
@@ -164,8 +174,10 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   is still the broker — `--via-host` is asked for, never assumed.
 
   The opener is started once per machine, not once per repository: it discovers the checkouts under
-  its `--root`s (default `$HOME`, so `~/Workspaces`, `~/.dotfiles` and anything added later are
-  served). The paths on the two sides never have to match — each side reads and writes its own view
+  its `--root`s (default `$HOME`) within `--depth` levels of each (4 by default), so anything added
+  later is picked up by the next sweep. The bound is deliberate — the walk repeats every `--interval`
+  seconds — and `--depth` raises it for a deeper layout. The paths on the two sides never have to
+  match — each side reads and writes its own view
   of the same `.git` directory — so only the roots it scans are host-side paths. A request is served in the
   checkout it was written in. That is a mechanism, not a boundary: the container can edit any checkout it can
   write, its remote included, so what a deployment controls is which roots are served and which program runs.
@@ -229,14 +241,16 @@ Full detail and the measurements behind them:
 - **Egress requires the proxy.** Direct connections to github.com hang rather than fail.
   The credential channel is a unix socket, so it is unaffected — that is why it is a socket.
 - **The container is recreated often**, so its writable layer is ephemeral. Anything that must
-  survive belongs in compose `environment:` or on a mounted path. `~/Workspaces`, `~/.dsh` and
-  `~/.dotfiles` are mounts; `/home/app` itself is not; `/volume1` does not exist inside.
+  survive belongs in compose `environment:` or on a mounted path. Which directories this deployment
+  mounts is the deployment's business — the tool discovers them rather than knowing them — and
+  `/home/app` itself is not one of them, nor does `/volume1` exist inside.
 - **Do not rely on the executable bit in commits**: this share's ACLs defeat git's exec-bit
   detection, so every sibling repository has `core.fileMode=false`. The exec bit for the CLI
   entry points is applied by `scripts/postbuild.mjs` at build time, and npm sets it for the
   installed bins, so nothing depends on it being tracked.
-- **`~/.dsh` lives *inside* the `~/Workspaces` mount**, so "put it in `~/.dsh`" means "put it on
-  the shared NAS share". Never treat it as a private location for secrets.
+- **A directory the container shares is not a private location**, even one that looks like the
+  tool's own home: this deployment's socket directory lives inside another shared directory, so
+  treating it as private would put a secret on the share.
 
 ## Where things are
 

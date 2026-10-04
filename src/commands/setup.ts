@@ -25,7 +25,9 @@ import {
   findSystemCaBundle,
   gitConfigList,
   gitConfigSet,
+  insideMountedPath,
   listFlag,
+  mountedPaths,
   parseArgs,
   say,
   warn,
@@ -51,6 +53,10 @@ export interface SetupInput {
   readonly rewriteSshHost: string | null;
   /** Report what would happen without writing anything. */
   readonly dryRun: boolean;
+  /** Home whose mounts the config must not be written into; defaults to the real home. */
+  readonly home?: string;
+  /** The directories the container shares, when the caller already has them. */
+  readonly mounts?: readonly string[];
   /** Platform to answer for; injectable so the refusal is testable. */
   readonly platform?: NodeJS.Platform;
 }
@@ -92,7 +98,7 @@ export function defaultHelperPath(): string {
  *
  * @param input - the resolved options.
  * @returns what was done.
- * @throws {Error} when the target config is a symlink or resolves into the host's dotfiles.
+ * @throws {Error} when the target config is a symlink, or inside a directory the container shares.
  */
 export async function performSetup(input: SetupInput): Promise<SetupResult> {
   // Refuse on native Windows: configuring git there would look like success and never work, because
@@ -101,16 +107,25 @@ export async function performSetup(input: SetupInput): Promise<SetupResult> {
   if (refusal !== null) {
     throw new Error(refusal);
   }
-  // Writing through a symlink would edit whatever it points at. On the host, ~/.gitconfig is a
-  // symlink into ~/.dotfiles, which is mounted into the container — so this is not theoretical.
+  // Writing through a symlink would edit whatever it points at, and a config that lives in a directory
+  // the container shares is one the container can rewrite.
   if (fs.existsSync(input.gitconfig) && fs.lstatSync(input.gitconfig).isSymbolicLink()) {
     const target = fs.realpathSync(input.gitconfig);
     throw new Error(`${input.gitconfig} is a symlink to ${target}; refusing to write through it`);
   }
-  const dotfiles = path.join(os.homedir(), '.dotfiles');
-  const resolved = path.resolve(input.gitconfig);
-  if (resolved === dotfiles || resolved.startsWith(`${dotfiles}${path.sep}`)) {
-    throw new Error(`${input.gitconfig} resolves into ~/.dotfiles, which is the host's own configuration`);
+  // The config must not be written into any directory the container can rewrite. Canonical, so the
+  // host's spelling of a shared directory and the container's spelling of the same one are one place.
+  // `setup` runs in the container by definition, so the mount table it is standing on is the
+  // authority. Reading it directly means a container that leaves no marker for `isInsideContainer`
+  // (plain containerd, a Kubernetes pod) still gets the right answer instead of hunting for a runtime
+  // it does not have.
+  const mounts = input.mounts ?? mountedPaths(input.home, { container: true });
+  const mounted = insideMountedPath(input.gitconfig, input.home, mounts);
+  if (mounted) {
+    throw new Error(
+      `${input.gitconfig} is inside ${mounted}, which is mounted into the container; refusing to write ` +
+        "this environment's git config where the container can rewrite it",
+    );
   }
 
   const warnings: string[] = [];
@@ -228,6 +243,7 @@ export async function runSetup(argv: readonly string[]): Promise<number> {
       caBundlePath: args.value('ca-bundle') ?? path.join(home, '.config', 'git-credential-broker', 'ca-bundle.pem'),
       rewriteSshHost: args.has('no-rewrite-ssh') ? null : (args.value('rewrite-ssh') ?? 'github.com'),
       dryRun: args.has('dry-run'),
+      home,
     });
 
     say(`git config     : ${result.gitconfig}${args.has('dry-run') ? ' (dry run)' : ''}`);

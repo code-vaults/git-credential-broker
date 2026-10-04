@@ -21,7 +21,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { canonicalPath, fail, insideMountedPath, parseArgs, say, warn, writeSecretFile } from './support.ts';
+import { canonicalPath } from '../paths.ts';
+import { fail, insideMountedPath, parseArgs, say, warn, writeSecretFile } from './support.ts';
 
 /** The record `stage` leaves behind, so the running code is identifiable afterwards. */
 export const STAGED_RECORD = 'STAGED.json';
@@ -36,6 +37,8 @@ export interface StageInput {
   readonly ref: string;
   /** The home whose mounts the target must not be inside. */
   readonly home?: string;
+  /** The directories the container shares, when the caller already has them. */
+  readonly mounts?: readonly string[];
   /** Replace a target that this command did not stage itself. */
   readonly force?: boolean;
 }
@@ -62,7 +65,7 @@ export function performStage(input: StageInput): StageResult {
   const to = path.resolve(input.to);
   const home = input.home ?? process.env['HOME'] ?? '';
 
-  const mounted = insideMountedPath(to, home);
+  const mounted = insideMountedPath(to, home, input.mounts);
   if (mounted) {
     throw new Error(
       `${to} is inside ${mounted}, which is mounted into the container. The broker runs with the ` +

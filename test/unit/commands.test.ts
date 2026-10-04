@@ -97,34 +97,185 @@ describe('parseArgs', () => {
 });
 
 describe('mounted path detection', () => {
-  it('knows what the container can see', () => {
-    const home = '/home/app';
-    assert.deepEqual(mountedPaths(home), ['/home/app/Workspaces', '/home/app/.dsh', '/home/app/.dotfiles']);
-    assert.equal(insideMountedPath('/home/app/Workspaces/x', home), '/home/app/Workspaces');
-    assert.equal(insideMountedPath('/home/app/.dsh/git-broker', home), '/home/app/.dsh');
-    assert.equal(insideMountedPath('/volume1/docker/git-cred-broker', home), null);
-    assert.equal(insideMountedPath('/home/app/Workspaces-evil', home), null, 'must not prefix-match a sibling');
+  /** A home and a shared-directory list stated here, so no case reads the machine's own mount table. */
+  const home = '/home/u';
+  const mounts = ['/home/u/shared', '/home/u/cache', '/home/u/notes'];
+
+  it('is inside a shared directory, and not a sibling that merely starts the same', () => {
+    assert.equal(insideMountedPath('/home/u/shared/x', home, mounts), '/home/u/shared');
+    assert.equal(insideMountedPath('/home/u/cache/git-broker', home, mounts), '/home/u/cache');
+    assert.equal(insideMountedPath('/srv/other', home, mounts), null);
+    assert.equal(insideMountedPath('/home/u/shared-evil', home, mounts), null, 'must not prefix-match a sibling');
+  });
+
+  it('reads them from the container mount table', () => {
+    const table = [
+      `675 573 0:36 /x ${home}/shared rw - btrfs /dev/x rw`,
+      `676 573 0:36 /y ${home}/with\\040space rw - btrfs /dev/x rw`,
+      '677 573 0:36 /z /somewhere/else rw - btrfs /dev/x rw',
+    ].join('\n');
+    assert.deepEqual(mountedPaths(home, { mountinfo: table, container: true }), [
+      `${home}/shared`,
+      `${home}/with space`,
+    ]);
+  });
+
+  it('asks the container runtime on the host, and keeps the bind mounts that touch the home', () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-inspect-'));
+    const inside = path.join(base, 'shared');
+    const deeper = path.join(base, 'sub', 'deep');
+    fs.mkdirSync(inside, { recursive: true });
+    fs.mkdirSync(deeper, { recursive: true });
+    const inspect = [
+      JSON.stringify([
+        { Type: 'bind', Source: inside, Destination: '/home/u/shared' },
+        { Type: 'bind', Source: deeper, Destination: '/home/u/cache' },
+        { Type: 'volume', Source: path.join(base, 'volume'), Destination: '/vol' },
+        { Type: 'bind', Source: '/srv/elsewhere', Destination: '/srv/elsewhere' },
+      ]),
+    ].join('\n');
+    try {
+      const got = mountedPaths(base, { container: false, inspect })
+        .map((entry) => fs.realpathSync(entry))
+        .sort();
+      assert.deepEqual(
+        got,
+        [inside, deeper].map((entry) => fs.realpathSync(entry)).sort(),
+        'a volume and an unrelated path are not shared directories',
+      );
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it('asks for every container, not only the running ones', () => {
+    // A stopped container still has its bind mounts configured, and can be started again at any time.
+    // `init` runs on a fresh host and from boot scripts, which is exactly when a running-only list is
+    // blind. Regression: an empty runtime answer used to be trusted as "nothing is shared".
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-runtime-'));
+    const inside = path.join(base, 'shared');
+    fs.mkdirSync(inside, { recursive: true });
+    const calls: string[][] = [];
+    const exec = (cli: string, args: readonly string[]): string => {
+      calls.push([cli, ...args]);
+      if (args[0] === 'ps') return 'b3f1c2d4e5f6\n';
+      return JSON.stringify([{ Type: 'bind', Source: inside, Destination: '/home/u/shared' }]);
+    };
+    try {
+      assert.deepEqual(
+        mountedPaths(base, { container: false, exec }).map((entry) => fs.realpathSync(entry)),
+        [fs.realpathSync(inside)],
+        'a stopped container is still a container that can rewrite the staged code',
+      );
+      assert.equal(calls[0]?.includes('--all'), true, 'ps must include the containers that are not running');
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it('counts a mount that contains the home, not only ones under it', () => {
+    // A container that binds the home's parent can rewrite everything in the home.
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-ancestor-'));
+    const homeDir = path.join(base, 'u');
+    fs.mkdirSync(homeDir, { recursive: true });
+    const exec = (_cli: string, args: readonly string[]): string =>
+      args[0] === 'ps' ? 'b3f1c2d4e5f6\n' : JSON.stringify([{ Type: 'bind', Source: base, Destination: '/mnt' }]);
+    try {
+      assert.deepEqual(
+        mountedPaths(homeDir, { container: false, exec }).map((entry) => fs.realpathSync(entry)),
+        [fs.realpathSync(base)],
+      );
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it('counts a container that binds the host root, which contains everything', () => {
+    // The root is where the prefix test used to fail: `'/'.startsWith('//')` is false, so a bind of
+    // the host root was dropped even though such a container can rewrite every path on the host.
+    const root = path.parse(path.resolve(path.sep)).root;
+    const exec = (_cli: string, args: readonly string[]): string =>
+      args[0] === 'ps' ? 'b3f1c2d4e5f6\n' : JSON.stringify([{ Type: 'bind', Source: root, Destination: '/host' }]);
+    assert.deepEqual(mountedPaths(home, { container: false, exec }), [root]);
+    assert.equal(
+      insideMountedPath(`${home}/Workspaces/x`, home, [root]),
+      root,
+      'and the guard refuses a target under it, rather than matching nothing',
+    );
+  });
+
+  it("ignores the container's own root filesystem, which the image made", () => {
+    // Every mount table lists it. Counting it would put every path inside a mount and refuse `setup`
+    // its own `~/.gitconfig`. A *bind* of the host root arrives through the runtime, above.
+    const table = [
+      '675 573 0:36 / / rw,relatime - overlay overlay rw',
+      `676 573 0:36 /x ${home}/shared rw - btrfs /dev/x rw`,
+    ].join('\n');
+    assert.deepEqual(mountedPaths(home, { mountinfo: table, container: true }), [`${home}/shared`]);
+  });
+
+  it('refuses when the runtime knows of no container at all', () => {
+    // Installed but empty is not "nothing is shared": it is the state in which the check is blind.
+    const exec = (_cli: string, args: readonly string[]): string => (args[0] === 'ps' ? '' : '[]');
+    assert.throws(
+      () => mountedPaths(home, { container: false, exec }),
+      /could be asked, or none knows of a container/,
+    );
+  });
+
+  it('treats a missing runtime as absent, but an installed failing one as a blind spot', () => {
+    const failure = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
+    const one = (cli: string, args: readonly string[]): string => {
+      if (cli !== 'podman') throw failure('ENOENT');
+      return args[0] === 'ps' ? 'id-1\n' : JSON.stringify([{ Type: 'bind', Source: '/srv', Destination: '/srv' }]);
+    };
+    assert.deepEqual(
+      mountedPaths('/srv/u', { container: false, exec: one }),
+      ['/srv'],
+      'a host with one runtime must not be refused because the others are not installed',
+    );
+    const unreachable = (cli: string, args: readonly string[]): string => {
+      if (cli === 'docker') throw failure('ECONNREFUSED');
+      return one(cli, args);
+    };
+    assert.throws(
+      () => mountedPaths('/srv/u', { container: false, exec: unreachable }),
+      /could be asked, or none knows of a container/,
+      'a runtime that is installed but unreachable hides its containers, so another list cannot cover for it',
+    );
+  });
+
+  it('refuses rather than guess when nothing can answer', () => {
+    assert.throws(
+      () => mountedPaths(home, { container: false, inspect: null }),
+      /refusing rather than guessing/,
+    );
   });
 
   it('resolves the aliases of one directory instead of trusting the spelling', () => {
-    // Measured on the host this was found on: `$HOME` is /var/services/homes/u while the container sees the
-    // same directory as /volume1/homes/u, so a lexical prefix check called a path inside the mount outside
-    // it — and `stage` wrote the broker's code into a directory the agent can rewrite.
+    // One shared directory can have two spellings — a symlinked home, a bind mount reached two ways —
+    // so a lexical prefix check calls a path inside it outside, which is how `stage` wrote the broker's
+    // code into a directory the agent can rewrite.
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-mount-alias-'));
     const real = path.join(root, 'real');
-    fs.mkdirSync(path.join(real, 'Workspaces'), { recursive: true });
+    fs.mkdirSync(path.join(real, 'data'), { recursive: true });
     const alias = path.join(root, 'alias');
     // 'junction' so the case also runs on Windows, where a plain symlink needs a privilege; the type is
     // ignored on the platforms that have no junctions.
     fs.symlinkSync(real, alias, 'junction');
     try {
-      const mounted = path.join(alias, 'Workspaces');
-      assert.equal(insideMountedPath(path.join(real, 'Workspaces', 'x'), alias), mounted, 'real target, aliased home');
-      assert.equal(insideMountedPath(path.join(real, 'Workspaces'), alias), mounted, 'and the mount itself');
-      assert.equal(insideMountedPath(path.join(real, 'elsewhere'), alias), null, 'a sibling is still outside');
+      const mounted = path.join(alias, 'data');
+      const shared = [mounted];
       assert.equal(
-        insideMountedPath(path.join(alias, 'Workspaces', 'y'), real),
-        path.join(real, 'Workspaces'),
+        insideMountedPath(path.join(real, 'data', 'x'), alias, shared),
+        mounted,
+        'real target, aliased mount',
+      );
+      assert.equal(insideMountedPath(path.join(real, 'data'), alias, shared), mounted, 'and the mount itself');
+      assert.equal(insideMountedPath(path.join(real, 'elsewhere'), alias, shared), null, 'a sibling is still outside');
+      assert.equal(
+        insideMountedPath(path.join(alias, 'data', 'y'), real, [path.join(real, 'data')]),
+        path.join(real, 'data'),
         'and the reverse spelling',
       );
     } finally {
@@ -141,11 +292,12 @@ describe('mounted path detection', () => {
     const alias = path.join(root, 'alias');
     fs.symlinkSync(real, alias, 'junction');
     try {
-      const mounted = path.join(alias, 'Workspaces');
-      assert.equal(insideMountedPath(path.join(real, 'Workspaces', 'new', 'deep'), alias), mounted);
-      assert.equal(insideMountedPath(path.join(real, 'Workspaces'), alias), mounted);
+      const mounted = path.join(alias, 'data');
+      const shared = [mounted];
+      assert.equal(insideMountedPath(path.join(real, 'data', 'new', 'deep'), alias, shared), mounted);
+      assert.equal(insideMountedPath(path.join(real, 'data'), alias, shared), mounted);
       assert.equal(
-        insideMountedPath(path.join(real, 'Workspaces-evil'), alias),
+        insideMountedPath(path.join(real, 'data-evil'), alias, shared),
         null,
         'a sibling is not inside, with the mount missing too',
       );
@@ -173,6 +325,8 @@ describe('setup', () => {
       caBundlePath: path.join(base, '.config', 'git-credential-broker', 'ca-bundle.pem'),
       rewriteSshHost: 'github.com',
       dryRun: false,
+      // Stated, so the shared-directory resolution does not read this machine's mount table.
+      mounts: [],
       ...overrides,
     };
   }
@@ -225,6 +379,27 @@ describe('setup', () => {
     await performSetup(input);
     assert.equal(gitEntries(input.gitconfig).some((entry) => entry.includes('insteadof')), false);
   });
+
+  it('refuses a config inside a container mount, whatever the mount is spelled', async () => {
+    // One shared directory can have two spellings (a symlinked home, a bind mount). The check this
+    // replaced compared spellings, so the container's was accepted and the host's own git config would
+    // be written where the container can rewrite it.
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'setup-mount-alias-'));
+    const real = path.join(base, 'real');
+    fs.mkdirSync(path.join(real, 'shared'), { recursive: true });
+    const alias = path.join(base, 'alias');
+    fs.symlinkSync(real, alias, 'junction');
+    try {
+      const gitconfig = path.join(real, 'shared', 'gitconfig');
+      await assert.rejects(
+        () => performSetup(setupInput({ gitconfig, home: alias, mounts: [path.join(alias, 'shared')], dryRun: true })),
+        /mounted into the container/,
+      );
+      assert.equal(fs.existsSync(gitconfig), false, 'and nothing was written');
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('init', () => {
@@ -239,7 +414,7 @@ describe('init', () => {
     force: false,
     // This suite runs inside the very container init refuses to run in, so the detected
     // environment is injected. The guard itself is exercised by the tests below.
-    env: { isInsideContainer: () => false, home: fakeHome },
+    env: { isInsideContainer: () => false, home: fakeHome, mounts: [] },
   };
 
   it('installs the key 0600 and writes a config the daemon accepts', () => {
@@ -316,9 +491,15 @@ describe('init', () => {
   it('refuses a key inside a container mount', () => {
     const root = dir(`init-mount-${Math.random().toString(36).slice(2)}`);
     const cert = writeKey(path.join(root, 'downloaded.pem'));
-    const mounted = path.join(fakeHome, 'Workspaces', 'somewhere');
+    const mounted = path.join(fakeHome, 'shared', 'somewhere');
     assert.throws(
-      () => performInit({ ...baseInput, cert, dir: mounted }),
+      () =>
+        performInit({
+          ...baseInput,
+          cert,
+          dir: mounted,
+          env: { ...baseInput.env, mounts: [path.join(fakeHome, 'shared')] },
+        }),
       /mounted into the container/,
       'the private key must never live where the container can read it',
     );
@@ -653,7 +834,7 @@ describe('config discovery', () => {
       appId: 123456,
       permissions: { contents: 'write' },
       force: false,
-      env: { isInsideContainer: () => false, home: dir('discovery-home') },
+      env: { isInsideContainer: () => false, home: dir('discovery-home'), mounts: [] },
     });
 
     assert.equal(result.configPath, custom);
@@ -665,7 +846,7 @@ describe('config discovery', () => {
 describe('compose', () => {
   const rendered = renderCompose({
     dir: '/volume1/docker/git-cred-broker',
-    socketDir: '/volume1/homes/u/Workspaces/h/.dsh/git-broker',
+    socketDir: '/srv/shared/git-broker',
     user: '1026:100',
     image: 'node:24-slim',
     packageSpec: 'git-credential-broker@0.1.0',
@@ -693,7 +874,7 @@ describe('compose', () => {
   it('can run staged code from a mount instead, fetching and building nothing at boot', () => {
     const fromCode = renderCompose({
       dir: '/volume1/docker/git-cred-broker',
-      socketDir: '/volume1/homes/u/Workspaces/h/.dsh/git-broker',
+      socketDir: '/srv/shared/git-broker',
       user: '1026:100',
       image: 'node:24-slim',
       packageSpec: 'git-credential-broker@0.1.0',
@@ -741,7 +922,7 @@ describe('compose', () => {
     assert.equal(rendered.includes(`${deployDir}/app.pem:${SIDECAR.keyPath}:ro`), true);
     assert.equal(rendered.includes(`${deployDir}/log:${SIDECAR.auditDir}`), true);
     assert.equal(
-      rendered.includes('/volume1/homes/u/Workspaces/h/.dsh/git-broker:' + SIDECAR.socketDir),
+      rendered.includes('/srv/shared/git-broker:' + SIDECAR.socketDir),
       true,
     );
   });
