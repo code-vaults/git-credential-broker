@@ -112,6 +112,43 @@ export function isInsideContainer(): boolean {
 }
 
 /**
+ * A path with the symlinks in its existing part resolved.
+ *
+ * `realpathSync` throws for a path that does not exist yet, and `stage` is asked to write to one, so the
+ * nearest existing ancestor is resolved and the rest is appended. Comparing the raw spellings is what let
+ * `/var/services/homes/u/Workspaces` and `/volume1/homes/u/Workspaces` — one directory with two names —
+ * look like different places, which is exactly the bypass the mount and overlap checks exist to close.
+ *
+ * @param target - the path to canonicalize.
+ * @returns the real path, or the resolved path when nothing on it exists.
+ * @throws {Error} when the path cannot be resolved for a reason other than being absent, because a
+ *   lexical answer there could call a path inside a mount outside it.
+ */
+export function canonicalPath(target: string): string {
+  const absolute = path.resolve(target);
+  let existing = absolute;
+  const missing: string[] = [];
+  for (;;) {
+    try {
+      const real = fs.realpathSync(existing);
+      return missing.length === 0 ? real : path.join(real, ...missing.toReversed());
+    } catch (error) {
+      // Only a path that is not there is walked up. Anything else — EACCES, ELOOP — means the real path
+      // cannot be known, and a lexical fallback could miss a symlinked component and pass a path the
+      // check exists to refuse, so it propagates and the caller fails closed.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
+      const parent = path.dirname(existing);
+      // Unreachable while the root exists and realpaths; kept so a filesystem that refuses even `/`
+      // cannot spin here forever.
+      if (parent === existing) return absolute;
+      missing.push(path.basename(existing));
+      existing = parent;
+    }
+  }
+}
+
+/**
  * The container's mounts under the user's home, as seen from the host.
  *
  * A private key must never live under one of these.
@@ -126,14 +163,19 @@ export function mountedPaths(home: string = os.homedir()): string[] {
 /**
  * Whether a path is inside one of the container's mounts.
  *
+ * Both sides are canonicalized before they are compared: `$HOME` on the host may be one name for a
+ * directory the container sees under another (`/var/services/homes/u` and `/volume1/homes/u`), and a
+ * lexical prefix check calls the same directory two different places.
+ *
  * @param target - the path to check.
  * @param home - the home directory to resolve against.
  * @returns the mount it is inside, or null.
  */
 export function insideMountedPath(target: string, home: string = os.homedir()): string | null {
-  const resolved = path.resolve(target);
+  const resolved = canonicalPath(target);
   for (const mounted of mountedPaths(home)) {
-    if (resolved === mounted || resolved.startsWith(`${mounted}${path.sep}`)) return mounted;
+    const real = canonicalPath(mounted);
+    if (resolved === real || resolved.startsWith(`${real}${path.sep}`)) return mounted;
   }
   return null;
 }

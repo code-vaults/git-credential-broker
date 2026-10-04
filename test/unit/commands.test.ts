@@ -105,6 +105,54 @@ describe('mounted path detection', () => {
     assert.equal(insideMountedPath('/volume1/docker/git-cred-broker', home), null);
     assert.equal(insideMountedPath('/home/app/Workspaces-evil', home), null, 'must not prefix-match a sibling');
   });
+
+  it('resolves the aliases of one directory instead of trusting the spelling', () => {
+    // Measured on the host this was found on: `$HOME` is /var/services/homes/u while the container sees the
+    // same directory as /volume1/homes/u, so a lexical prefix check called a path inside the mount outside
+    // it — and `stage` wrote the broker's code into a directory the agent can rewrite.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-mount-alias-'));
+    const real = path.join(root, 'real');
+    fs.mkdirSync(path.join(real, 'Workspaces'), { recursive: true });
+    const alias = path.join(root, 'alias');
+    // 'junction' so the case also runs on Windows, where a plain symlink needs a privilege; the type is
+    // ignored on the platforms that have no junctions.
+    fs.symlinkSync(real, alias, 'junction');
+    try {
+      const mounted = path.join(alias, 'Workspaces');
+      assert.equal(insideMountedPath(path.join(real, 'Workspaces', 'x'), alias), mounted, 'real target, aliased home');
+      assert.equal(insideMountedPath(path.join(real, 'Workspaces'), alias), mounted, 'and the mount itself');
+      assert.equal(insideMountedPath(path.join(real, 'elsewhere'), alias), null, 'a sibling is still outside');
+      assert.equal(
+        insideMountedPath(path.join(alias, 'Workspaces', 'y'), real),
+        path.join(real, 'Workspaces'),
+        'and the reverse spelling',
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('canonicalizes a mount that does not exist yet, which is the path stage is asked to create', () => {
+    // `stage --to` is normally a directory that is not there yet, so the mount's own path may not exist
+    // either. The nearest existing ancestor has to be resolved on both sides or the spellings differ.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-mount-missing-'));
+    const real = path.join(root, 'real');
+    fs.mkdirSync(real, { recursive: true });
+    const alias = path.join(root, 'alias');
+    fs.symlinkSync(real, alias, 'junction');
+    try {
+      const mounted = path.join(alias, 'Workspaces');
+      assert.equal(insideMountedPath(path.join(real, 'Workspaces', 'new', 'deep'), alias), mounted);
+      assert.equal(insideMountedPath(path.join(real, 'Workspaces'), alias), mounted);
+      assert.equal(
+        insideMountedPath(path.join(real, 'Workspaces-evil'), alias),
+        null,
+        'a sibling is not inside, with the mount missing too',
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('setup', () => {
