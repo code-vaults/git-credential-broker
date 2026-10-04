@@ -126,8 +126,39 @@ describe('mounted path detection', () => {
     ]);
   });
 
-  it('refuses rather than guess when neither the declaration nor a mount table is available', () => {
-    assert.throws(() => mountedPaths(home, { declared: '', container: false }), /GIT_BROKER_MOUNTS/);
+  it('asks the container runtime on the host, and keeps only bind mounts under the home', () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-inspect-'));
+    const inside = path.join(base, 'Workspaces');
+    const deeper = path.join(base, 'sub', 'deep');
+    fs.mkdirSync(inside, { recursive: true });
+    fs.mkdirSync(deeper, { recursive: true });
+    const inspect = [
+      JSON.stringify([
+        { Type: 'bind', Source: inside, Destination: '/home/app/Workspaces' },
+        { Type: 'bind', Source: deeper, Destination: '/home/app/.dsh' },
+        { Type: 'volume', Source: path.join(base, 'volume'), Destination: '/vol' },
+        { Type: 'bind', Source: '/srv/elsewhere', Destination: '/srv/elsewhere' },
+      ]),
+    ].join('\n');
+    try {
+      const got = mountedPaths(base, { declared: '', container: false, inspect })
+        .map((entry) => fs.realpathSync(entry))
+        .sort();
+      assert.deepEqual(
+        got,
+        [inside, deeper].map((entry) => fs.realpathSync(entry)).sort(),
+        'a volume and anything outside the home are not shared directories',
+      );
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses rather than guess when nothing can answer', () => {
+    assert.throws(
+      () => mountedPaths(home, { declared: '', container: false, inspect: null }),
+      /GIT_BROKER_MOUNTS/,
+    );
   });
 
   it('resolves the aliases of one directory instead of trusting the spelling', () => {

@@ -105,10 +105,10 @@ read-only mount, so nothing is fetched or built at boot.
 DEPLOY=/srv/git-cred-broker        # broker.config.json, app.pem and log/ live here
 SOCKET_DIR=~/.dsh/git-broker       # a host directory the pushing container already mounts
 
-# The directories the agent container can see. The host commands that write — init, stage, authorize —
-# refuse without this rather than guess: what the container mounts is the user's to name. Inside the
-# container, `setup` reads the container's own mount table and needs no variable.
-export GIT_BROKER_MOUNTS="$HOME/Workspaces:$HOME/.dsh:$HOME/.dotfiles"
+# Optional: the directories the agent container shares with this host. Left unset, a host process asks
+# the container runtime instead, and a process inside the container reads its own mount table. Set it
+# only to override that — a host with no runtime to ask, or to narrow what counts as shared.
+# export GIT_BROKER_MOUNTS="$HOME/Workspaces:$HOME/.dsh:$HOME/.dotfiles"
 
 git-credential-broker init --mode sidecar --dir "$DEPLOY" \
   --cert ~/Downloads/app.private-key.pem \
@@ -120,11 +120,13 @@ git-credential-broker compose --code "$DEPLOY/app" --socket-dir "$SOCKET_DIR" \
 docker compose -f "$DEPLOY/docker-compose.broker.yml" up -d
 ```
 
-`GIT_BROKER_MOUNTS` is the one piece of deployment knowledge the host needs: which directories the
-agent container shares with it. Name them as your deployment mounts them — `~/.dotfiles` above is
-whatever you called it, and a deployment that mounts none should say so with an empty value rather
-than leave the variable out. The container side discovers its own mounts, so a `setup` inside it
-never needs this.
+Nothing above has to name the shared directories. A host process asks the container runtime for the
+host paths its containers bind-mount; a process inside the container reads `/proc/self/mountinfo`.
+`GIT_BROKER_MOUNTS` overrides both, for a host with no runtime to ask or to narrow what counts as
+shared. When none of the three can answer, `init`, `stage` and `authorize` refuse rather than guess.
+The runtime route is deliberately a superset: a directory bind-mounted into *any* running container
+counts as shared, because any container that can rewrite the broker's code is as good a reason not to
+stage there as the agent is.
 
 `stage` prints the commit it exported; check that sha against your own clone or the remote before
 trusting it, since the repository you export from is one an agent can write to. It leaves a

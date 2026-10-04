@@ -122,9 +122,14 @@ export interface MountSource {
   readonly declared?: string;
   /** The contents of `/proc/self/mountinfo`. */
   readonly mountinfo?: string;
+  /** `Mounts` arrays as the container runtime prints them; null when it could not be asked. */
+  readonly inspect?: string | null;
   /** Whether this process is in the container, whose own mount table is the authority. */
   readonly container?: boolean;
 }
+
+/** The command that reports what running containers mount. */
+const CONTAINER_CLI = 'docker';
 
 /**
  * Decode one field of `/proc/self/mountinfo`.
@@ -140,6 +145,26 @@ function decodeMountField(value: string): string {
 }
 
 /**
+ * `canonicalPath`, but a path that cannot be resolved is answered lexically.
+ *
+ * For a *candidate* in a list this is the safe direction. A host runs containers whose mounts this
+ * user cannot read — measured: a Synology document-viewer mount answers EACCES — and one of those
+ * must not stop the whole list being read. A candidate that is lexically under the home is still
+ * treated as shared, which over-refuses rather than under-refuses. The strict form stays for the path
+ * being guarded, where an answer that cannot be known is a refusal.
+ *
+ * @param target - the path to resolve.
+ * @returns the real path, or the resolved path when it cannot be read.
+ */
+function canonicalOrResolved(target: string): string {
+  try {
+    return canonicalPath(target);
+  } catch {
+    return path.resolve(target);
+  }
+}
+
+/**
  * The mount points at or under a home, read from a mount table.
  *
  * The container is the thing that knows what it mounts. A list of directory names in this file would
@@ -150,30 +175,90 @@ function decodeMountField(value: string): string {
  * @returns the mount points, spelled as the table spells them.
  */
 export function mountsUnderHome(mountinfo: string, home: string): string[] {
-  const root = canonicalPath(home);
+  const root = canonicalOrResolved(home);
   const found: string[] = [];
   for (const line of mountinfo.split('\n')) {
     const field = line.split(' ')[4];
     if (field === undefined) continue;
     const point = path.resolve(decodeMountField(field));
-    const real = canonicalPath(point);
+    const real = canonicalOrResolved(point);
     if (real === root || real.startsWith(`${root}${path.sep}`)) found.push(point);
   }
   return found;
 }
 
 /**
+ * The host paths a container runtime bound from the user's home.
+ *
+ * `docker inspect --format '{{json .Mounts}}'` prints one array per container. Only bind mounts count:
+ * a volume or a tmpfs is not a directory the user named. Every container is considered, not only the
+ * agent's — any container that can rewrite a directory is a reason not to put the broker's code there
+ * — so this is deliberately a superset.
+ *
+ * @param output - the runtime's output, one array per line.
+ * @param home - the home to keep mounts under.
+ * @returns the host paths, unique and canonical.
+ */
+export function boundPathsUnderHome(output: string, home: string): string[] {
+  const root = canonicalOrResolved(home);
+  const found = new Set<string>();
+  for (const line of output.split('\n')) {
+    if (line.trim() === '') continue;
+    let mounts: unknown;
+    try {
+      mounts = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(mounts)) continue;
+    for (const mount of mounts as Array<{ Type?: unknown; Source?: unknown }>) {
+      if (mount.Type !== 'bind' || typeof mount.Source !== 'string') continue;
+      const real = canonicalOrResolved(mount.Source);
+      if (real === root || real.startsWith(`${root}${path.sep}`)) found.add(real);
+    }
+  }
+  return [...found];
+}
+
+/**
+ * Ask the container runtime which directories it has bound from the user's home.
+ *
+ * The host's own mount table cannot answer this: a bind mount exists only in the container's
+ * namespace, so the runtime is asked instead.
+ *
+ * @param home - the home to keep mounts under.
+ * @returns the paths, or undefined when the runtime is not there to ask.
+ */
+function detectedMounts(home: string): string[] | undefined {
+  const run = (args: readonly string[]): string =>
+    execFileSync(CONTAINER_CLI, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  let ids: string;
+  try {
+    ids = run(['ps', '--quiet']);
+  } catch {
+    return undefined;
+  }
+  const running = ids.split('\n').map((id) => id.trim()).filter((id) => id !== '');
+  if (running.length === 0) return [];
+  try {
+    return boundPathsUnderHome(run(['inspect', '--format', '{{json .Mounts}}', ...running]), home);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The directories the container shares with the host.
  *
- * `GIT_BROKER_MOUNTS` wins when it is set, which is how a host process is told: it cannot see the
- * container's mount table. Inside the container the table is read instead. When neither is available
- * this refuses rather than guessing, because the guess is what would put the broker's code, or the
- * private key, in a directory the agent can rewrite.
+ * In order: `GIT_BROKER_MOUNTS`, which is how an operator overrides everything; the container's own
+ * mount table, when this process is in the container; the container runtime, when it is not. Only
+ * when none of the three can answer does this refuse — the guess it will not make is what would put
+ * the broker's code, or the private key, in a directory a container can rewrite.
  *
  * @param home - the home whose mounts are wanted.
- * @param source - a declared value or mount table, for a test.
+ * @param source - a declared value, mount table or runtime output, for a test.
  * @returns the shared directories.
- * @throws {Error} when neither source is available.
+ * @throws {Error} when nothing can answer.
  */
 export function mountedPaths(home: string = os.homedir(), source: MountSource = {}): string[] {
   const declared = source.declared ?? process.env[MOUNTS_VAR];
@@ -183,22 +268,30 @@ export function mountedPaths(home: string = os.homedir(), source: MountSource = 
       .map((entry) => entry.trim())
       .filter((entry) => entry !== '');
   }
-  const container = source.container ?? fs.existsSync('/.dockerenv');
-  let mountinfo = source.mountinfo;
-  if (mountinfo === undefined && container) {
+
+  let mounts: string[] | undefined;
+  if (source.mountinfo !== undefined) {
+    mounts = mountsUnderHome(source.mountinfo, home);
+  } else if (source.inspect !== undefined) {
+    mounts = source.inspect === null ? undefined : boundPathsUnderHome(source.inspect, home);
+  } else if (source.container ?? fs.existsSync('/.dockerenv')) {
     try {
-      mountinfo = fs.readFileSync('/proc/self/mountinfo', 'utf8');
+      mounts = mountsUnderHome(fs.readFileSync('/proc/self/mountinfo', 'utf8'), home);
     } catch {
-      mountinfo = undefined;
+      mounts = undefined;
     }
+  } else {
+    mounts = detectedMounts(home);
   }
-  if (mountinfo === undefined) {
+
+  if (mounts === undefined) {
     throw new Error(
       `cannot tell which directories the container shares: set ${MOUNTS_VAR} to them, separated by ` +
-        `"${path.delimiter}" (a process in the container reads its own mount table; this one cannot)`,
+        `"${path.delimiter}" (inside the container its mount table is read; on the host the container ` +
+        'runtime is asked, and it did not answer)',
     );
   }
-  return mountsUnderHome(mountinfo, home);
+  return mounts;
 }
 
 /**
