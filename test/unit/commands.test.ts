@@ -225,6 +225,27 @@ describe('setup', () => {
     await performSetup(input);
     assert.equal(gitEntries(input.gitconfig).some((entry) => entry.includes('insteadof')), false);
   });
+
+  it('refuses a config inside a container mount, whatever the mount is spelled', async () => {
+    // The host spells $HOME /var/services/homes/u and the container spells the same directory
+    // /volume1/homes/u. The check this replaced joined ~/.dotfiles lexically, so the second spelling was
+    // accepted and the host's own git config would be written where the container can rewrite it.
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'setup-mount-alias-'));
+    const real = path.join(base, 'real');
+    fs.mkdirSync(path.join(real, '.dotfiles'), { recursive: true });
+    const alias = path.join(base, 'alias');
+    fs.symlinkSync(real, alias, 'junction');
+    try {
+      const gitconfig = path.join(real, '.dotfiles', 'gitconfig');
+      await assert.rejects(
+        () => performSetup(setupInput({ gitconfig, home: alias, dryRun: true })),
+        /mounted into the container/,
+      );
+      assert.equal(fs.existsSync(gitconfig), false, 'and nothing was written');
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('init', () => {

@@ -25,6 +25,7 @@ import {
   findSystemCaBundle,
   gitConfigList,
   gitConfigSet,
+  insideMountedPath,
   listFlag,
   parseArgs,
   say,
@@ -51,6 +52,8 @@ export interface SetupInput {
   readonly rewriteSshHost: string | null;
   /** Report what would happen without writing anything. */
   readonly dryRun: boolean;
+  /** Home whose mounts the config must not be written into; defaults to the real home. */
+  readonly home?: string;
   /** Platform to answer for; injectable so the refusal is testable. */
   readonly platform?: NodeJS.Platform;
 }
@@ -107,10 +110,15 @@ export async function performSetup(input: SetupInput): Promise<SetupResult> {
     const target = fs.realpathSync(input.gitconfig);
     throw new Error(`${input.gitconfig} is a symlink to ${target}; refusing to write through it`);
   }
-  const dotfiles = path.join(os.homedir(), '.dotfiles');
-  const resolved = path.resolve(input.gitconfig);
-  if (resolved === dotfiles || resolved.startsWith(`${dotfiles}${path.sep}`)) {
-    throw new Error(`${input.gitconfig} resolves into ~/.dotfiles, which is the host's own configuration`);
+  // The general form of "~/.gitconfig is a symlink into ~/.dotfiles": the config must not be written into
+  // any directory the container can rewrite. Canonical, so the host's spelling of a mount and the
+  // container's spelling of the same directory are one place.
+  const mounted = insideMountedPath(input.gitconfig, input.home);
+  if (mounted) {
+    throw new Error(
+      `${input.gitconfig} is inside ${mounted}, which is mounted into the container; refusing to write ` +
+        "this environment's git config where the container can rewrite it",
+    );
   }
 
   const warnings: string[] = [];
@@ -228,6 +236,7 @@ export async function runSetup(argv: readonly string[]): Promise<number> {
       caBundlePath: args.value('ca-bundle') ?? path.join(home, '.config', 'git-credential-broker', 'ca-bundle.pem'),
       rewriteSshHost: args.has('no-rewrite-ssh') ? null : (args.value('rewrite-ssh') ?? 'github.com'),
       dryRun: args.has('dry-run'),
+      home,
     });
 
     say(`git config     : ${result.gitconfig}${args.has('dry-run') ? ' (dry run)' : ''}`);

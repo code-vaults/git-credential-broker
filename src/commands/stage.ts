@@ -21,7 +21,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { canonicalPath, fail, insideMountedPath, parseArgs, say, warn, writeSecretFile } from './support.ts';
+import { canonicalPath } from '../paths.ts';
+import { fail, insideMountedPath, parseArgs, say, warn, writeSecretFile } from './support.ts';
 
 /** The record `stage` leaves behind, so the running code is identifiable afterwards. */
 export const STAGED_RECORD = 'STAGED.json';

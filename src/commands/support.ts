@@ -9,6 +9,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { canonicalPath } from '../paths.ts';
+
 /** One parsed command line. */
 export interface Args {
   /** Every value given for a flag, in order. */
@@ -109,43 +111,6 @@ export function listFlag(args: Args, name: string): string[] {
  */
 export function isInsideContainer(): boolean {
   return fs.existsSync('/home/app/Workspaces') && !fs.existsSync('/volume1');
-}
-
-/**
- * A path with the symlinks in its existing part resolved.
- *
- * `realpathSync` throws for a path that does not exist yet, and `stage` is asked to write to one, so the
- * nearest existing ancestor is resolved and the rest is appended. Comparing the raw spellings is what let
- * `/var/services/homes/u/Workspaces` and `/volume1/homes/u/Workspaces` — one directory with two names —
- * look like different places, which is exactly the bypass the mount and overlap checks exist to close.
- *
- * @param target - the path to canonicalize.
- * @returns the real path, or the resolved path when nothing on it exists.
- * @throws {Error} when the path cannot be resolved for a reason other than being absent, because a
- *   lexical answer there could call a path inside a mount outside it.
- */
-export function canonicalPath(target: string): string {
-  const absolute = path.resolve(target);
-  let existing = absolute;
-  const missing: string[] = [];
-  for (;;) {
-    try {
-      const real = fs.realpathSync(existing);
-      return missing.length === 0 ? real : path.join(real, ...missing.toReversed());
-    } catch (error) {
-      // Only a path that is not there is walked up. Anything else — EACCES, ELOOP — means the real path
-      // cannot be known, and a lexical fallback could miss a symlinked component and pass a path the
-      // check exists to refuse, so it propagates and the caller fails closed.
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
-      const parent = path.dirname(existing);
-      // Unreachable while the root exists and realpaths; kept so a filesystem that refuses even `/`
-      // cannot spin here forever.
-      if (parent === existing) return absolute;
-      missing.push(path.basename(existing));
-      existing = parent;
-    }
-  }
 }
 
 /**

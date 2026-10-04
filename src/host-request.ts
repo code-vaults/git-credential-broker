@@ -24,7 +24,9 @@ import {
 } from 'node:fs';
 import { realpathSync } from 'node:fs';
 import { lstatSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
+
+import { canonicalPath } from './paths.ts';
 
 /** The directory under the git directory that carries requests and answers. */
 export const CHANNEL_PATH = 'git-credential-broker/pr-requests';
@@ -157,15 +159,20 @@ const SKIP = new Set(['.git', 'node_modules', '@eaDir', '#recycle', '$RECYCLE.BI
  */
 export function discoverCheckouts(root: string, maxDepth = 4): { repo: string; dir: string }[] {
   const found: { repo: string; dir: string }[] = [];
+  // The root can be one name for a directory the filesystem knows by another, and a worktree records its
+  // git directory under the real one. Both sides are canonical, or the plain checkout is served and the
+  // worktree beside it is silently not.
+  const realRoot = canonicalPath(root).replace(/[/\\]+$/, '');
   const walk = (current: string, depth: number): void => {
     const gitDir = gitDirAt(current);
     if (gitDir !== undefined) {
-      // A `gitdir:` pointer is written by whoever has the checkout, which is the container. Serving a channel
-  // at a path it names would let it choose where the opener creates files, and running `gh` there would let
-  // it choose which repository that checkout means. A worktree's pointer stays under the same root.
-  if (gitDir.startsWith(`${root.replace(/[/\\]+$/, '')}/`)) {
-    found.push({ repo: current, dir: channelDir(gitDir) });
-  }
+      // A `gitdir:` pointer is written by whoever has the checkout, which is the container. Serving a
+      // channel at a path it names would let it choose where the opener creates files, and running `gh`
+      // there would let it choose which repository that checkout means. A worktree's pointer stays under
+      // the same root.
+      if (canonicalPath(gitDir).startsWith(`${realRoot}${sep}`)) {
+        found.push({ repo: current, dir: channelDir(gitDir) });
+      }
       return;
     }
     if (depth >= maxDepth) return;

@@ -208,6 +208,31 @@ describe('finding the checkouts to serve', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it('serves a worktree whose git directory is spelled through an alias of the root', () => {
+    // The root can be one name for a directory the filesystem knows by another ($HOME on the host this was
+    // found on), and a worktree records its git directory under the real one. Comparing the raw spellings
+    // served the plain checkout and silently skipped the worktree beside it.
+    const base = mkdtempSync(join(tmpdir(), 'discover-alias-'));
+    const real = join(base, 'real');
+    mkdirSync(join(real, 'checkout', 'worktree'), { recursive: true });
+    mkdirSync(join(real, 'gitdir'), { recursive: true });
+    writeFileSync(join(real, 'gitdir', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    writeFileSync(join(real, 'checkout', 'worktree', '.git'), `gitdir: ${join(real, 'gitdir')}\n`, 'utf8');
+    mkdirSync(join(real, 'plain', '.git'), { recursive: true });
+    writeFileSync(join(real, 'plain', '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const alias = join(base, 'alias');
+    symlinkSync(real, alias, 'junction');
+
+    try {
+      const repos = discoverCheckouts(alias, 4)
+        .map((found) => found.repo.slice(alias.length + 1))
+        .sort();
+      assert.deepEqual(repos, ['checkout/worktree', 'plain']);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  });
+
   it('returns a channel directory per checkout', () => {
     const root = mkdtempSync(join(tmpdir(), 'discover-test-'));
     mkdirSync(join(root, 'a', '.git'), { recursive: true });
