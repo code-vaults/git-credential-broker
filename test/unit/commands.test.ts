@@ -737,7 +737,7 @@ describe('config discovery', () => {
       appId: 123456,
       permissions: { contents: 'write' },
       force: false,
-      env: { isInsideContainer: () => false, home: dir('discovery-home') },
+      env: { isInsideContainer: () => false, home: dir('discovery-home'), mounts: [] },
     });
 
     assert.equal(result.configPath, custom);
