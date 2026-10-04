@@ -98,14 +98,14 @@ describe('parseArgs', () => {
 
 describe('mounted path detection', () => {
   /** A home and a shared-directory list stated here, so no case reads the machine's own mount table. */
-  const home = '/home/app';
-  const mounts = ['/home/app/Workspaces', '/home/app/.dsh', '/home/app/.dotfiles'];
+  const home = '/home/u';
+  const mounts = ['/home/u/shared', '/home/u/cache', '/home/u/notes'];
 
   it('is inside a shared directory, and not a sibling that merely starts the same', () => {
-    assert.equal(insideMountedPath('/home/app/Workspaces/x', home, mounts), '/home/app/Workspaces');
-    assert.equal(insideMountedPath('/home/app/.dsh/git-broker', home, mounts), '/home/app/.dsh');
-    assert.equal(insideMountedPath('/volume1/docker/git-cred-broker', home, mounts), null);
-    assert.equal(insideMountedPath('/home/app/Workspaces-evil', home, mounts), null, 'must not prefix-match a sibling');
+    assert.equal(insideMountedPath('/home/u/shared/x', home, mounts), '/home/u/shared');
+    assert.equal(insideMountedPath('/home/u/cache/git-broker', home, mounts), '/home/u/cache');
+    assert.equal(insideMountedPath('/srv/other', home, mounts), null);
+    assert.equal(insideMountedPath('/home/u/shared-evil', home, mounts), null, 'must not prefix-match a sibling');
   });
 
   it('takes the shared directories from GIT_BROKER_MOUNTS when it is set', () => {
@@ -116,26 +116,26 @@ describe('mounted path detection', () => {
 
   it('reads them from the container mount table when nothing is declared', () => {
     const table = [
-      '675 573 0:36 /x /home/app/Workspaces rw - btrfs /dev/x rw',
-      '676 573 0:36 /y /home/app/with\\040space rw - btrfs /dev/x rw',
+      `675 573 0:36 /x ${home}/shared rw - btrfs /dev/x rw`,
+      `676 573 0:36 /y ${home}/with\\040space rw - btrfs /dev/x rw`,
       '677 573 0:36 /z /somewhere/else rw - btrfs /dev/x rw',
     ].join('\n');
     assert.deepEqual(mountedPaths(home, { declared: '', mountinfo: table, container: true }), [
-      '/home/app/Workspaces',
-      '/home/app/with space',
+      `${home}/shared`,
+      `${home}/with space`,
     ]);
   });
 
   it('asks the container runtime on the host, and keeps only bind mounts under the home', () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-inspect-'));
-    const inside = path.join(base, 'Workspaces');
+    const inside = path.join(base, 'shared');
     const deeper = path.join(base, 'sub', 'deep');
     fs.mkdirSync(inside, { recursive: true });
     fs.mkdirSync(deeper, { recursive: true });
     const inspect = [
       JSON.stringify([
-        { Type: 'bind', Source: inside, Destination: '/home/app/Workspaces' },
-        { Type: 'bind', Source: deeper, Destination: '/home/app/.dsh' },
+        { Type: 'bind', Source: inside, Destination: '/home/u/shared' },
+        { Type: 'bind', Source: deeper, Destination: '/home/u/cache' },
         { Type: 'volume', Source: path.join(base, 'volume'), Destination: '/vol' },
         { Type: 'bind', Source: '/srv/elsewhere', Destination: '/srv/elsewhere' },
       ]),
@@ -162,29 +162,29 @@ describe('mounted path detection', () => {
   });
 
   it('resolves the aliases of one directory instead of trusting the spelling', () => {
-    // Measured on the host this was found on: `$HOME` is /var/services/homes/u while the container sees the
-    // same directory as /volume1/homes/u, so a lexical prefix check called a path inside the mount outside
-    // it — and `stage` wrote the broker's code into a directory the agent can rewrite.
+    // One shared directory can have two spellings — a symlinked home, a bind mount reached two ways —
+    // so a lexical prefix check calls a path inside it outside, which is how `stage` wrote the broker's
+    // code into a directory the agent can rewrite.
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-mount-alias-'));
     const real = path.join(root, 'real');
-    fs.mkdirSync(path.join(real, 'Workspaces'), { recursive: true });
+    fs.mkdirSync(path.join(real, 'data'), { recursive: true });
     const alias = path.join(root, 'alias');
     // 'junction' so the case also runs on Windows, where a plain symlink needs a privilege; the type is
     // ignored on the platforms that have no junctions.
     fs.symlinkSync(real, alias, 'junction');
     try {
-      const mounted = path.join(alias, 'Workspaces');
+      const mounted = path.join(alias, 'data');
       const shared = [mounted];
       assert.equal(
-        insideMountedPath(path.join(real, 'Workspaces', 'x'), alias, shared),
+        insideMountedPath(path.join(real, 'data', 'x'), alias, shared),
         mounted,
         'real target, aliased mount',
       );
-      assert.equal(insideMountedPath(path.join(real, 'Workspaces'), alias, shared), mounted, 'and the mount itself');
+      assert.equal(insideMountedPath(path.join(real, 'data'), alias, shared), mounted, 'and the mount itself');
       assert.equal(insideMountedPath(path.join(real, 'elsewhere'), alias, shared), null, 'a sibling is still outside');
       assert.equal(
-        insideMountedPath(path.join(alias, 'Workspaces', 'y'), real, [path.join(real, 'Workspaces')]),
-        path.join(real, 'Workspaces'),
+        insideMountedPath(path.join(alias, 'data', 'y'), real, [path.join(real, 'data')]),
+        path.join(real, 'data'),
         'and the reverse spelling',
       );
     } finally {
@@ -201,12 +201,12 @@ describe('mounted path detection', () => {
     const alias = path.join(root, 'alias');
     fs.symlinkSync(real, alias, 'junction');
     try {
-      const mounted = path.join(alias, 'Workspaces');
+      const mounted = path.join(alias, 'data');
       const shared = [mounted];
-      assert.equal(insideMountedPath(path.join(real, 'Workspaces', 'new', 'deep'), alias, shared), mounted);
-      assert.equal(insideMountedPath(path.join(real, 'Workspaces'), alias, shared), mounted);
+      assert.equal(insideMountedPath(path.join(real, 'data', 'new', 'deep'), alias, shared), mounted);
+      assert.equal(insideMountedPath(path.join(real, 'data'), alias, shared), mounted);
       assert.equal(
-        insideMountedPath(path.join(real, 'Workspaces-evil'), alias, shared),
+        insideMountedPath(path.join(real, 'data-evil'), alias, shared),
         null,
         'a sibling is not inside, with the mount missing too',
       );
@@ -290,18 +290,18 @@ describe('setup', () => {
   });
 
   it('refuses a config inside a container mount, whatever the mount is spelled', async () => {
-    // The host spells $HOME /var/services/homes/u and the container spells the same directory
-    // /volume1/homes/u. The check this replaced joined ~/.dotfiles lexically, so the second spelling was
-    // accepted and the host's own git config would be written where the container can rewrite it.
+    // One shared directory can have two spellings (a symlinked home, a bind mount). The check this
+    // replaced compared spellings, so the container's was accepted and the host's own git config would
+    // be written where the container can rewrite it.
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'setup-mount-alias-'));
     const real = path.join(base, 'real');
-    fs.mkdirSync(path.join(real, '.dotfiles'), { recursive: true });
+    fs.mkdirSync(path.join(real, 'shared'), { recursive: true });
     const alias = path.join(base, 'alias');
     fs.symlinkSync(real, alias, 'junction');
     try {
-      const gitconfig = path.join(real, '.dotfiles', 'gitconfig');
+      const gitconfig = path.join(real, 'shared', 'gitconfig');
       await assert.rejects(
-        () => performSetup(setupInput({ gitconfig, home: alias, mounts: [path.join(alias, '.dotfiles')], dryRun: true })),
+        () => performSetup(setupInput({ gitconfig, home: alias, mounts: [path.join(alias, 'shared')], dryRun: true })),
         /mounted into the container/,
       );
       assert.equal(fs.existsSync(gitconfig), false, 'and nothing was written');
@@ -400,14 +400,14 @@ describe('init', () => {
   it('refuses a key inside a container mount', () => {
     const root = dir(`init-mount-${Math.random().toString(36).slice(2)}`);
     const cert = writeKey(path.join(root, 'downloaded.pem'));
-    const mounted = path.join(fakeHome, 'Workspaces', 'somewhere');
+    const mounted = path.join(fakeHome, 'shared', 'somewhere');
     assert.throws(
       () =>
         performInit({
           ...baseInput,
           cert,
           dir: mounted,
-          env: { ...baseInput.env, mounts: [path.join(fakeHome, 'Workspaces')] },
+          env: { ...baseInput.env, mounts: [path.join(fakeHome, 'shared')] },
         }),
       /mounted into the container/,
       'the private key must never live where the container can read it',
@@ -755,7 +755,7 @@ describe('config discovery', () => {
 describe('compose', () => {
   const rendered = renderCompose({
     dir: '/volume1/docker/git-cred-broker',
-    socketDir: '/volume1/homes/u/Workspaces/h/.dsh/git-broker',
+    socketDir: '/srv/shared/git-broker',
     user: '1026:100',
     image: 'node:24-slim',
     packageSpec: 'git-credential-broker@0.1.0',
@@ -783,7 +783,7 @@ describe('compose', () => {
   it('can run staged code from a mount instead, fetching and building nothing at boot', () => {
     const fromCode = renderCompose({
       dir: '/volume1/docker/git-cred-broker',
-      socketDir: '/volume1/homes/u/Workspaces/h/.dsh/git-broker',
+      socketDir: '/srv/shared/git-broker',
       user: '1026:100',
       image: 'node:24-slim',
       packageSpec: 'git-credential-broker@0.1.0',
@@ -831,7 +831,7 @@ describe('compose', () => {
     assert.equal(rendered.includes(`${deployDir}/app.pem:${SIDECAR.keyPath}:ro`), true);
     assert.equal(rendered.includes(`${deployDir}/log:${SIDECAR.auditDir}`), true);
     assert.equal(
-      rendered.includes('/volume1/homes/u/Workspaces/h/.dsh/git-broker:' + SIDECAR.socketDir),
+      rendered.includes('/srv/shared/git-broker:' + SIDECAR.socketDir),
       true,
     );
   });

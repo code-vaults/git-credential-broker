@@ -122,6 +122,6 @@ Then, inside the container:
 git-credential-broker setup
 ```
 
-Do **not** put the private key or any credential in `~/Workspaces`, `~/.dsh` or `~/.dotfiles`:
-all three are mounted into the container. `~/.dsh` in particular is *inside* the
-`~/Workspaces` mount, so it is not a safe place for anything secret.
+Do **not** put the private key or any credential anywhere the agent container mounts: every such
+directory is shared with it. The broker's configuration, key and token belong outside all of them,
+and `init`, `stage` and `authorize` refuse a target they detect as shared.

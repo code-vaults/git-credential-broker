@@ -13,9 +13,9 @@ import path from 'node:path';
  * A path with the symlinks in its existing part resolved.
  *
  * `realpathSync` throws for a path that does not exist yet, and `stage` is asked to write to one, so the
- * nearest existing ancestor is resolved and the rest is appended. Comparing the raw spellings is what let
- * `/var/services/homes/u/Workspaces` and `/volume1/homes/u/Workspaces` — one directory with two names —
- * look like different places, which is exactly the bypass these checks exist to close.
+ * nearest existing ancestor is resolved and the rest is appended. Comparing raw spellings is what lets
+ * one directory with two names — a symlinked home, a bind mount reached two ways — look like two
+ * different places, which is exactly the bypass these checks exist to close.
  *
  * @param target - the path to canonicalize.
  * @returns the real path, or the resolved path when nothing on it exists.

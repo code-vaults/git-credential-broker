@@ -150,7 +150,7 @@ const SKIP = new Set(['.git', 'node_modules', '@eaDir', '#recycle', '$RECYCLE.BI
  *
  * The opener is meant to be started once for a machine, so it is given roots rather than one
  * repository: every checkout below them is served, including ones created later. Dotted
- * directories are *not* skipped — a dotfiles repository is one, and it is a checkout like any
+ * directories are *not* skipped — a repository whose name begins with a dot is a checkout like any
  * other. A directory holding a checkout is not descended into, which keeps the walk cheap.
  *
  * @param root - where to start.

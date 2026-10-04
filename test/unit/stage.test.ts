@@ -89,23 +89,23 @@ describe('stage', () => {
   it('refuses a target inside a container mount', () => {
     const repo = makeRepo('mounted');
     const home = path.join(scratch, 'home');
-    const inside = path.join(home, 'Workspaces', 'somewhere');
+    const inside = path.join(home, 'shared', 'somewhere');
     fs.mkdirSync(inside, { recursive: true });
 
     assert.throws(
-      () => stage({ repo, to: inside, ref: 'HEAD', home, mounts: [path.join(home, 'Workspaces')] }),
+      () => stage({ repo, to: inside, ref: 'HEAD', home, mounts: [path.join(home, 'shared')] }),
       /mounted into the container/,
       'code the agent can rewrite must never be staged where it will run with the key',
     );
   });
 
   it('refuses a mount whose path is spelled through an alias', () => {
-    // The host spells $HOME /var/services/homes/u; the container sees the same directory as
-    // /volume1/homes/u. A lexical check let a target under the second name through, which staged the
-    // broker's code into a directory the agent can rewrite — the one thing this command exists to stop.
+    // One shared directory can have two spellings (a symlinked home, a bind mount). A lexical check let
+    // a target under the second name through, which staged the broker's code into a directory the agent
+    // can rewrite — the one thing this command exists to stop.
     const repo = makeRepo('alias');
     const real = path.join(scratch, 'alias-real');
-    fs.mkdirSync(path.join(real, 'Workspaces'), { recursive: true });
+    fs.mkdirSync(path.join(real, 'shared'), { recursive: true });
     const alias = path.join(scratch, 'alias-link');
     fs.symlinkSync(real, alias, 'junction');
 
@@ -113,14 +113,14 @@ describe('stage', () => {
       () =>
         stage({
           repo,
-          to: path.join(real, 'Workspaces', 'app'),
+          to: path.join(real, 'shared', 'app'),
           ref: 'HEAD',
           home: alias,
-          mounts: [path.join(alias, 'Workspaces')],
+          mounts: [path.join(alias, 'shared')],
         }),
       /mounted into the container/,
     );
-    assert.equal(fs.existsSync(path.join(real, 'Workspaces', 'app')), false, 'and nothing was written');
+    assert.equal(fs.existsSync(path.join(real, 'shared', 'app')), false, 'and nothing was written');
   });
 
   it('refuses to clear the deployment directory that holds the key', () => {

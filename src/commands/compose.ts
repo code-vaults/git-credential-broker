@@ -196,7 +196,7 @@ export function runCompose(argv: readonly string[]): number {
   const configPath = resolveConfigPath(args.value('config'));
   const socketDir = args.value('socket-dir');
   if (!socketDir) {
-    fail('--socket-dir is required (a host directory the pushing container already mounts, e.g. its ~/.dsh)');
+    fail('--socket-dir is required (a host directory the pushing container already mounts)');
   }
   const dir = args.value('dir') ?? deploymentDir(configPath);
 

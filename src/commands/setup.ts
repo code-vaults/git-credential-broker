@@ -97,7 +97,7 @@ export function defaultHelperPath(): string {
  *
  * @param input - the resolved options.
  * @returns what was done.
- * @throws {Error} when the target config is a symlink or resolves into the host's dotfiles.
+ * @throws {Error} when the target config is a symlink, or inside a directory the container shares.
  */
 export async function performSetup(input: SetupInput): Promise<SetupResult> {
   // Refuse on native Windows: configuring git there would look like success and never work, because
@@ -106,15 +106,14 @@ export async function performSetup(input: SetupInput): Promise<SetupResult> {
   if (refusal !== null) {
     throw new Error(refusal);
   }
-  // Writing through a symlink would edit whatever it points at. On the host, ~/.gitconfig is a
-  // symlink into ~/.dotfiles, which is mounted into the container — so this is not theoretical.
+  // Writing through a symlink would edit whatever it points at, and a config that lives in a directory
+  // the container shares is one the container can rewrite.
   if (fs.existsSync(input.gitconfig) && fs.lstatSync(input.gitconfig).isSymbolicLink()) {
     const target = fs.realpathSync(input.gitconfig);
     throw new Error(`${input.gitconfig} is a symlink to ${target}; refusing to write through it`);
   }
-  // The general form of "~/.gitconfig is a symlink into ~/.dotfiles": the config must not be written into
-  // any directory the container can rewrite. Canonical, so the host's spelling of a mount and the
-  // container's spelling of the same directory are one place.
+  // The config must not be written into any directory the container can rewrite. Canonical, so the
+  // host's spelling of a shared directory and the container's spelling of the same one are one place.
   const mounted = insideMountedPath(input.gitconfig, input.home, input.mounts);
   if (mounted) {
     throw new Error(

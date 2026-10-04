@@ -83,7 +83,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   question the fix had not.
 
   **The other half is what it compares against.** The directories shared with the container are the
-  user's to name — `~/.dotfiles` is only ever what that user called it — so there is no list to hard-code.
+  user's to name, so there is no list to hard-code.
   A process inside the container reads its own mount table (`/proc/self/mountinfo`); a host process asks
   the container runtime (`docker inspect`) for the paths its containers bind-mount, which is a superset on
   purpose: any container that can rewrite the broker's code is as good a reason not to stage there as the
@@ -172,7 +172,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   is still the broker — `--via-host` is asked for, never assumed.
 
   The opener is started once per machine, not once per repository: it discovers the checkouts under
-  its `--root`s (default `$HOME`, so `~/Workspaces`, `~/.dotfiles` and anything added later are
+  its `--root`s (default `$HOME`, so every checkout under it, including anything added later, is
   served). The paths on the two sides never have to match — each side reads and writes its own view
   of the same `.git` directory — so only the roots it scans are host-side paths. A request is served in the
   checkout it was written in. That is a mechanism, not a boundary: the container can edit any checkout it can
@@ -237,14 +237,16 @@ Full detail and the measurements behind them:
 - **Egress requires the proxy.** Direct connections to github.com hang rather than fail.
   The credential channel is a unix socket, so it is unaffected — that is why it is a socket.
 - **The container is recreated often**, so its writable layer is ephemeral. Anything that must
-  survive belongs in compose `environment:` or on a mounted path. `~/Workspaces`, `~/.dsh` and
-  `~/.dotfiles` are mounts; `/home/app` itself is not; `/volume1` does not exist inside.
+  survive belongs in compose `environment:` or on a mounted path. Which directories this deployment
+  mounts is the deployment's business — the tool discovers them rather than knowing them — and
+  `/home/app` itself is not one of them, nor does `/volume1` exist inside.
 - **Do not rely on the executable bit in commits**: this share's ACLs defeat git's exec-bit
   detection, so every sibling repository has `core.fileMode=false`. The exec bit for the CLI
   entry points is applied by `scripts/postbuild.mjs` at build time, and npm sets it for the
   installed bins, so nothing depends on it being tracked.
-- **`~/.dsh` lives *inside* the `~/Workspaces` mount**, so "put it in `~/.dsh`" means "put it on
-  the shared NAS share". Never treat it as a private location for secrets.
+- **A directory the container shares is not a private location**, even one that looks like the
+  tool's own home: this deployment's socket directory lives inside another shared directory, so
+  treating it as private would put a secret on the share.
 
 ## Where things are
 

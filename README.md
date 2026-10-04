@@ -103,12 +103,12 @@ read-only mount, so nothing is fetched or built at boot.
 
 ```sh
 DEPLOY=/srv/git-cred-broker        # broker.config.json, app.pem and log/ live here
-SOCKET_DIR=~/.dsh/git-broker       # a host directory the pushing container already mounts
+SOCKET_DIR=/srv/git-broker-socket  # a host directory the pushing container already mounts
 
 # Optional: the directories the agent container shares with this host. Left unset, a host process asks
 # the container runtime instead, and a process inside the container reads its own mount table. Set it
 # only to override that — a host with no runtime to ask, or to narrow what counts as shared.
-# export GIT_BROKER_MOUNTS="$HOME/Workspaces:$HOME/.dsh:$HOME/.dotfiles"
+# export GIT_BROKER_MOUNTS="/srv/shared-a:/srv/shared-b"
 
 git-credential-broker init --mode sidecar --dir "$DEPLOY" \
   --cert ~/Downloads/app.private-key.pem \
@@ -170,7 +170,7 @@ when the image has none. In compose:
       - GIT_BROKER_SOCKET=/run/git-broker/broker.sock
       - GIT_BROKER_REQUIRE=1
     volumes:
-      - ~/.dsh/git-broker:/run/git-broker
+      - /srv/git-broker-socket:/run/git-broker
 ```
 
 ## Everyday changes
@@ -297,8 +297,8 @@ git-credential-broker pr --via-host --repo owner/repo --head feature --base main
 The opener creates pull requests with the credentials of whoever started it, which is the point;
 it never runs a shell, and the program it calls is configuration rather than a hard-coded `gh`:
 `--command /path/to/gh`, or `$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
-anything. `--root` may be repeated and defaults to `$HOME`, so `~/Workspaces`, `~/.dotfiles` and
-checkouts created later are all served with no further setup. To start it once and keep it,
+anything. `--root` may be repeated and defaults to `$HOME`, so every checkout under it — including
+ones created later — is served with no further setup. To start it once and keep it,
 `examples/host-opener.service` is a systemd user unit; on a system without user services,
 `examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
 instance at a time, and its output in a log file. Without `--via-host`, or with no opener running, `pr` behaves
@@ -466,8 +466,9 @@ matter:
   can rewrite that code, the agent owns the allowlist. That is what `stage` is for.
 
 With a shared `.git/config` between host and container: never set credentials with `git config
---local` (it is the same file on both sides); the container's own `~/.gitconfig` is private, but
-`~/.dotfiles` is mounted, which is why `setup` refuses to write through a symlink into it.
+--local` (it is the same file on both sides); the container's own `~/.gitconfig` is private, but any
+directory the container shares is not, which is why `setup` refuses to write the config through a
+symlink or into one.
 
 Credential helpers are only consulted for HTTP(S) remotes, so none of this affects the host's SSH
 pushes.

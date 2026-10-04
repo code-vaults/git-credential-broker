@@ -185,25 +185,25 @@ describe('reading a pull request URL out of a program', () => {
 });
 
 describe('finding the checkouts to serve', () => {
-  it('finds every checkout under a root, at any depth, dotfiles included', () => {
+  it('finds every checkout under a root, at any depth, hidden directories included', () => {
     const root = mkdtempSync(join(tmpdir(), 'discover-test-'));
-    for (const repo of ['.dotfiles', 'Workspaces/one', 'Workspaces/two/deep', 'plain']) {
+    for (const repo of ['.hidden', 'trees/one', 'trees/two/deep', 'plain']) {
       mkdirSync(join(root, repo, '.git'), { recursive: true });
       writeFileSync(join(root, repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
       writeFileSync(join(root, repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     }
     // never descended into, and never enough on its own
-    mkdirSync(join(root, 'Workspaces/one/node_modules/decoy/.git'), { recursive: true });
-    writeFileSync(join(root, 'Workspaces/one/node_modules/decoy/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    writeFileSync(join(root, 'Workspaces/one/node_modules/decoy/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    mkdirSync(join(root, 'Workspaces/three/four/five/six/seven/.git'), { recursive: true });
-    writeFileSync(join(root, 'Workspaces/three/four/five/six/seven/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    writeFileSync(join(root, 'Workspaces/three/four/five/six/seven/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    mkdirSync(join(root, 'trees/one/node_modules/decoy/.git'), { recursive: true });
+    writeFileSync(join(root, 'trees/one/node_modules/decoy/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    writeFileSync(join(root, 'trees/one/node_modules/decoy/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    mkdirSync(join(root, 'trees/three/four/five/six/seven/.git'), { recursive: true });
+    writeFileSync(join(root, 'trees/three/four/five/six/seven/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    writeFileSync(join(root, 'trees/three/four/five/six/seven/.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
 
     const repos = discoverCheckouts(root, 4)
       .map((found) => found.repo.slice(root.length + 1))
       .sort();
-    assert.deepEqual(repos, ['.dotfiles', 'Workspaces/one', 'Workspaces/two/deep', 'plain']);
+    assert.deepEqual(repos, ['.hidden', 'plain', 'trees/one', 'trees/two/deep']);
 
     rmSync(root, { recursive: true, force: true });
   });

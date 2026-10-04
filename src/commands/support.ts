@@ -102,15 +102,16 @@ export function listFlag(args: Args, name: string): string[] {
 }
 
 /**
- * Whether this process is running inside the agent container rather than on the host.
+ * Whether this process is running inside a container rather than on the host.
  *
- * The container mounts the workspace but has no `/volume1`, which is where the host keeps
- * everything this project needs to protect.
+ * A credential must not be written anywhere a container can read it, and the broker must not run
+ * inside the agent container. Docker and Podman each leave a marker; nothing here names a directory,
+ * because no directory is this tool's to assume.
  *
- * @returns true when running inside the container.
+ * @returns true when running inside a container.
  */
 export function isInsideContainer(): boolean {
-  return fs.existsSync('/home/app/Workspaces') && !fs.existsSync('/volume1');
+  return fs.existsSync('/.dockerenv') || fs.existsSync('/run/.containerenv');
 }
 
 /** The environment variable naming the directories the container shares with the host. */
@@ -168,7 +169,7 @@ function canonicalOrResolved(target: string): string {
  * The mount points at or under a home, read from a mount table.
  *
  * The container is the thing that knows what it mounts. A list of directory names in this file would
- * be a guess about someone else's home — `.dotfiles` is only ever what the user called it.
+ * be a guess about a home this code has never seen.
  *
  * @param mountinfo - the contents of `/proc/self/mountinfo`.
  * @param home - the home to measure against.
@@ -274,7 +275,7 @@ export function mountedPaths(home: string = os.homedir(), source: MountSource = 
     mounts = mountsUnderHome(source.mountinfo, home);
   } else if (source.inspect !== undefined) {
     mounts = source.inspect === null ? undefined : boundPathsUnderHome(source.inspect, home);
-  } else if (source.container ?? fs.existsSync('/.dockerenv')) {
+  } else if (source.container ?? isInsideContainer()) {
     try {
       mounts = mountsUnderHome(fs.readFileSync('/proc/self/mountinfo', 'utf8'), home);
     } catch {
