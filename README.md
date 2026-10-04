@@ -105,11 +105,6 @@ read-only mount, so nothing is fetched or built at boot.
 DEPLOY=/srv/git-cred-broker        # broker.config.json, app.pem and log/ live here
 SOCKET_DIR=/srv/git-broker-socket  # a host directory the pushing container already mounts
 
-# Optional: the directories the agent container shares with this host. Left unset, a host process asks
-# the container runtime instead, and a process inside the container reads its own mount table. Set it
-# only to override that — a host with no runtime to ask, or to narrow what counts as shared.
-# export GIT_BROKER_MOUNTS="/srv/shared-a:/srv/shared-b"
-
 git-credential-broker init --mode sidecar --dir "$DEPLOY" \
   --cert ~/Downloads/app.private-key.pem \
   --allow owner/repo --client-id Iv23li… --app-id 123456
@@ -122,11 +117,10 @@ docker compose -f "$DEPLOY/docker-compose.broker.yml" up -d
 
 Nothing above has to name the shared directories. A host process asks the container runtime for the
 host paths its containers bind-mount; a process inside the container reads `/proc/self/mountinfo`.
-`GIT_BROKER_MOUNTS` overrides both, for a host with no runtime to ask or to narrow what counts as
-shared. When none of the three can answer, `init`, `stage` and `authorize` refuse rather than guess.
-The runtime route is deliberately a superset: a directory bind-mounted into *any* running container
-counts as shared, because any container that can rewrite the broker's code is as good a reason not to
-stage there as the agent is.
+When neither can answer, `init`, `stage` and `authorize` refuse rather than guess. The runtime route
+is deliberately a superset: a directory bind-mounted into *any* running container counts as shared,
+because any container that can rewrite the broker's code is as good a reason not to stage there as
+the agent is.
 
 `stage` prints the commit it exported; check that sha against your own clone or the remote before
 trusting it, since the repository you export from is one an agent can write to. It leaves a

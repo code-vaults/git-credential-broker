@@ -41,9 +41,6 @@ Environment
   GIT_BROKER_SOCKET       Broker socket path
   GIT_BROKER_REQUIRE=1    Fail closed instead of behaving as if not installed when unconfigured
   GIT_BROKER_SOCKET_FILE  Where to read the socket path from when no variable is set
-  GIT_BROKER_MOUNTS       Override the directories the agent container shares with this host,
-                          ":"-separated; otherwise the container runtime (on the host) or the mount
-                          table (in the container) is asked
 
 Run \`git-credential-broker <command> --help\` for the options of one command.`;
 

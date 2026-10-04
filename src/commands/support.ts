@@ -114,13 +114,8 @@ export function isInsideContainer(): boolean {
   return fs.existsSync('/.dockerenv') || fs.existsSync('/run/.containerenv');
 }
 
-/** The environment variable naming the directories the container shares with the host. */
-export const MOUNTS_VAR = 'GIT_BROKER_MOUNTS';
-
-/** Where the shared directories came from, when a caller supplies them instead of the environment. */
+/** Where the shared directories came from, when a caller supplies them instead of detecting them. */
 export interface MountSource {
-  /** The raw value of {@link MOUNTS_VAR}. */
-  readonly declared?: string;
   /** The contents of `/proc/self/mountinfo`. */
   readonly mountinfo?: string;
   /** `Mounts` arrays as the container runtime prints them; null when it could not be asked. */
@@ -251,31 +246,23 @@ function detectedMounts(home: string): string[] | undefined {
 /**
  * The directories the container shares with the host.
  *
- * In order: `GIT_BROKER_MOUNTS`, which is how an operator overrides everything; the container's own
- * mount table, when this process is in the container; the container runtime, when it is not. Only
- * when none of the three can answer does this refuse — the guess it will not make is what would put
- * the broker's code, or the private key, in a directory a container can rewrite.
+ * The container's own mount table answers when this process is in the container; the container runtime
+ * answers when it is not. Only when neither can does this refuse — the guess it will not make is what
+ * would put the broker's code, or the private key, in a directory a container can rewrite.
  *
  * @param home - the home whose mounts are wanted.
- * @param source - a declared value, mount table or runtime output, for a test.
+ * @param source - a mount table or runtime output, for a test.
  * @returns the shared directories.
  * @throws {Error} when nothing can answer.
  */
 export function mountedPaths(home: string = os.homedir(), source: MountSource = {}): string[] {
-  const declared = source.declared ?? process.env[MOUNTS_VAR];
-  if (declared !== undefined && declared.trim() !== '') {
-    return declared
-      .split(path.delimiter)
-      .map((entry) => entry.trim())
-      .filter((entry) => entry !== '');
-  }
-
+  const container = source.container ?? isInsideContainer();
   let mounts: string[] | undefined;
   if (source.mountinfo !== undefined) {
     mounts = mountsUnderHome(source.mountinfo, home);
   } else if (source.inspect !== undefined) {
     mounts = source.inspect === null ? undefined : boundPathsUnderHome(source.inspect, home);
-  } else if (source.container ?? isInsideContainer()) {
+  } else if (container) {
     try {
       mounts = mountsUnderHome(fs.readFileSync('/proc/self/mountinfo', 'utf8'), home);
     } catch {
@@ -287,9 +274,11 @@ export function mountedPaths(home: string = os.homedir(), source: MountSource = 
 
   if (mounts === undefined) {
     throw new Error(
-      `cannot tell which directories the container shares: set ${MOUNTS_VAR} to them, separated by ` +
-        `"${path.delimiter}" (inside the container its mount table is read; on the host the container ` +
-        'runtime is asked, and it did not answer)',
+      'cannot tell which directories the container shares: ' +
+        (container
+          ? 'its own mount table could not be read'
+          : 'the container runtime could not be asked (is docker installed and reachable?)') +
+        '; refusing rather than guessing',
     );
   }
   return mounts;
@@ -298,9 +287,9 @@ export function mountedPaths(home: string = os.homedir(), source: MountSource = 
 /**
  * Whether a path is inside one of the directories the container shares with the host.
  *
- * Both sides are canonicalized before they are compared: `$HOME` on the host may be one name for a
- * directory the container sees under another (`/var/services/homes/u` and `/volume1/homes/u`), and a
- * lexical prefix check calls the same directory two different places.
+ * Both sides are canonicalized before they are compared: the host may spell a directory one way and
+ * the container another (a symlinked home, a bind mount reached two ways), and a lexical prefix check
+ * calls the same directory two different places.
  *
  * @param target - the path to check.
  * @param home - the home directory to resolve against.

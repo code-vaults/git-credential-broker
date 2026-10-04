@@ -40,8 +40,8 @@ describe('stage', () => {
   /**
    * `performStage` with the shared directories supplied.
    *
-   * Resolving them for real refuses on a host with no `GIT_BROKER_MOUNTS`, which is the point in
-   * production and noise here: each case states its own list, and the mount cases pass theirs.
+   * Resolving them for real asks the container runtime, which is right in production and noise here:
+   * each case states its own list, and the mount cases pass theirs.
    */
   const stage = (input: Parameters<typeof performStage>[0]) => performStage({ mounts: [], ...input });
 

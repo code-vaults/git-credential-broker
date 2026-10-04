@@ -108,19 +108,13 @@ describe('mounted path detection', () => {
     assert.equal(insideMountedPath('/home/u/shared-evil', home, mounts), null, 'must not prefix-match a sibling');
   });
 
-  it('takes the shared directories from GIT_BROKER_MOUNTS when it is set', () => {
-    const declared = ['/srv/a', '/srv/b'].join(path.delimiter);
-    assert.deepEqual(mountedPaths(home, { declared }), ['/srv/a', '/srv/b']);
-    assert.deepEqual(mountedPaths(home, { declared: ` ${['/srv/a'].join(path.delimiter)} ` }), ['/srv/a']);
-  });
-
-  it('reads them from the container mount table when nothing is declared', () => {
+  it('reads them from the container mount table', () => {
     const table = [
       `675 573 0:36 /x ${home}/shared rw - btrfs /dev/x rw`,
       `676 573 0:36 /y ${home}/with\\040space rw - btrfs /dev/x rw`,
       '677 573 0:36 /z /somewhere/else rw - btrfs /dev/x rw',
     ].join('\n');
-    assert.deepEqual(mountedPaths(home, { declared: '', mountinfo: table, container: true }), [
+    assert.deepEqual(mountedPaths(home, { mountinfo: table, container: true }), [
       `${home}/shared`,
       `${home}/with space`,
     ]);
@@ -141,7 +135,7 @@ describe('mounted path detection', () => {
       ]),
     ].join('\n');
     try {
-      const got = mountedPaths(base, { declared: '', container: false, inspect })
+      const got = mountedPaths(base, { container: false, inspect })
         .map((entry) => fs.realpathSync(entry))
         .sort();
       assert.deepEqual(
@@ -156,8 +150,8 @@ describe('mounted path detection', () => {
 
   it('refuses rather than guess when nothing can answer', () => {
     assert.throws(
-      () => mountedPaths(home, { declared: '', container: false, inspect: null }),
-      /GIT_BROKER_MOUNTS/,
+      () => mountedPaths(home, { container: false, inspect: null }),
+      /refusing rather than guessing/,
     );
   });
 
