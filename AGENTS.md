@@ -202,6 +202,19 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   allowlist matters more than it does for the app, not less — a person's token reaches everything that
   person reaches. The installation is a separate question, and the code asks it only when there is nobody
   else to act as.
+
+  An error on this route does not say which gate refused. Adding a repository to the allowlist moves it
+  from `repo-not-allowed` to a generic `provider-error`, "could not mint a credential" — which is this
+  rule and nothing more: allowed to try, no installation to mint from. `diagnose` answers it directly,
+  listing the installations and the repositories each one reaches; asking for a credential for a
+  repository the app *is* installed on is the control that needs no such command.
+
+  **Which actions are left is the operational half.** `pr --via-host` is create-only — the opener runs
+  `gh pr create` and nothing else — and every other action goes through the installation token. So on a
+  repository the app is not installed on, a pull request can be opened but not edited, closed or merged,
+  and neither the container nor the host opener has a route to its metadata. That is not a gap to close
+  with a flag: acting as a person, from a checkout on the host that holds the person's own credentials,
+  is the design.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
   Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.json`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by
