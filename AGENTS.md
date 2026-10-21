@@ -12,6 +12,24 @@ the key must sit outside the mounts, how a share's ACLs behave, which bug prompt
 belongs in `.agents/notes/`, or here when it is a rule about working in this repository. The README
 had reached 549 lines mostly by accumulating rationale; it is not the place for it.
 
+## Status and roadmap
+
+The action/CLI redesign (host-side `gh`, `gcb gh`, host-user delegation, TOML config) is
+**planned, not implemented**. [`ROADMAP.md`](ROADMAP.md) is authoritative for the target and the
+order; this file continues to describe the current tree, which is the last green baseline. Do not
+implement a later phase to unblock an earlier one without updating the roadmap first. The target
+brand is `gcb`: the CLI, container and service share the name, the main broker is `gcb daemon`, and
+the current `host-opener` becomes `host-broker` (typed host operations, not a shell). Names in this
+file are the current ones until that phase lands.
+
+Keep the roadmap and the skills current as part of the work, not after it:
+
+- every phase updates this file (rules, layout table, commands) and the user-facing README it changes;
+- container-facing skills live one directory per skill under `.agents/skills/<name>/SKILL.md` and are
+  part of the deliverable, not an afterthought;
+- a reversed locked decision gets a design note under `.agents/notes/` and a roadmap update, never a
+  silent code change.
+
 ## What it is, in one paragraph
 
 A host-side broker holds a GitHub App private key and mints short-lived, single-repository
@@ -114,6 +132,13 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   nothing. Both exclusions are needed and neither is a loophole: this line contains the pattern, and the
   notes quote a directory listing of a key that is readable on this machine — the evidence for why the
   key belongs outside the mounts, not key material.
+- **Everything published is public.** The repository, the npm package, README badges,
+  `package.json`/`Cargo.toml`/`pyproject.toml` metadata, LICENSE and sponsor links are all visible.
+  Do not add personal or deployment detail that the project does not need: real hostnames, usernames,
+  checkout paths, key locations, private repository names. Public identity the project deliberately
+  publishes — copyright holder, author/maintainer, repository/homepage, funding or sponsor links — is
+  allowed; keep it deliberate and minimal. This is a judgement call, not a fixed list of exempt files:
+  when unsure, use a placeholder and ask.
 - **Do not run the broker from this checkout, and understand why the *key* being elsewhere is not
   enough.** The broker reads the key, so the code it executes has the key's privileges: it can mint
   installation tokens for anything the App can see, and it can read the key file. A key outside the

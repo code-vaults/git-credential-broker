@@ -4,6 +4,10 @@ Short-lived, single-repository git credentials for a container, from a broker on
 the only long-lived secret. The GitHub App private key never enters the container, and `git push`
 still works.
 
+> **Roadmap:** the action/CLI redesign — host-side `gh`, `gcb gh`, host-user delegation, TOML
+> configuration — is planned but not implemented. [`ROADMAP.md`](ROADMAP.md) is the target; this
+> README documents the current tree.
+
 Two commands are installed:
 
 - **`git-credential-broker`** — the credential helper git calls, and the CLI that sets everything up
