@@ -264,8 +264,8 @@ Account selection:
 - `gh pr create` prompts to push or fork only when it has to infer the head from a local branch.
   The host broker runs from a temporary directory, so the canonical command always passes `--head`
   (resolved by the client from the checkout, or required as a flag), `--title` and `--body`;
-  with those, gh never prompts. A head that is not pushed is GitHub's 422, not a broker pre-check:
-  let it fail naturally. `review` / `issue create` do not push, so the SSH `Host` aliases are not
+  with those, gh never prompts. A head that is not pushed is GitHub's 422, not a broker
+  pre-check: let it fail naturally and let the client translate it into `head-not-pushed`. `review` / `issue create` do not push, so the SSH `Host` aliases are not
   used. If a future operation needs Git over SSH, it must use the checkout's own SSH configuration.
 
 - [ ] `gcb gh pr create --as-user agent …` requests the host broker instead of the app broker.
@@ -294,10 +294,20 @@ Account selection:
 - [ ] Audit the host-user action with `as_user`, repo, operation, and outcome; never the token.
 - [ ] Concurrency: the host broker serves one request per account at a time only if the underlying `gh`
       state requires it; per-account config directories make parallel accounts safe.
+- [ ] `pr create` when the head is not on the remote:
+      - no raw gh prompt: canonical args include `--head`, and the client translates the condition
+        into `head-not-pushed` (preflight, or GitHub's 422 mapped to that code);
+      - dsh asks with `ask_user_question`, not `ctx.approval` (approval is allow-once, not a choice):
+        1. Push `<head>` to `<remote>`, then create the PR (recommended);
+        2. Create from a fork (only when the deployment allows it);
+        3. Cancel.
+      - choosing push runs a separate `git push` through the credential helper: its own
+        `contents: write` token, audit, and branch/ruleset policy. `pr create` never pushes or forks;
+      - the broker does not call dsh; the container-side client or agent renders the question.
 
 **Done when:** a PR created with `--as-user agent` is authored by that account, a review and an issue
-also work, concurrent requests for two accounts do not interfere, and an uninstalled repo gets an
-actionable error.
+also work, concurrent requests for two accounts do not interfere, an uninstalled repo gets an
+actionable error, and an unpushed head produces the `head-not-pushed` choice instead of a gh prompt.
 
 ## Phase 4 — dsh integration and skills (owned by `../idsh`)
 
@@ -312,6 +322,9 @@ actionable error.
       - `reason` names the operation, repository/branch, the permission needed, and the risk;
       - configuration for branch globs and command classes; advisory only, not a server-side
         boundary.
+- [ ] For `gcb gh pr create`, present `head-not-pushed` as an `ask_user_question` with
+      push/fork/cancel. Do not use `tools/pre-execute`'s `ask` for it: approval is allow-once, not a
+      choice, and `pr create` must never push or fork implicitly.
 - [ ] Container-facing skills, one directory per skill under `.agents/skills/<name>/SKILL.md`:
       - `gcb-gh`: what is allowed, what is denied, the shorthand, body-file behaviour;
       - `gcb-host-user`: `--as-user`, when to use it, what it means for authorship;
