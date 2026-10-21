@@ -1,8 +1,8 @@
 # ROADMAP
 
 This is the staged plan for the next version. `README.md` documents the tree as it exists today;
-this file documents where it is going. The tree is at the last green baseline; no part of this plan
-is implemented yet.
+this file documents where it is going. The tree is at the last green baseline; the runtime changes
+in this plan are not implemented yet.
 
 ## Locked decisions
 
@@ -199,19 +199,19 @@ config_dir = "/home/operator/.config/gh-agent"
       - if revoke fails, log host-side and report that the token expires on its own.
 - [ ] Action permissions (initial table):
 
-      | Action | Command | Permissions |
-      |---|---|---|
-      | `pr:view` | `gh pr view` | `pull_requests: read`, `contents: read`, `checks: read`, `statuses: read` |
-      | `pr:list` | `gh pr list` | `pull_requests: read` |
-      | `pr:diff` | `gh pr diff` | `pull_requests: read`, `contents: read` |
-      | `pr:create` | `gh pr create` | `pull_requests: write`, `contents: read` |
-      | `pr:comment` | `gh pr comment` | `pull_requests: write` |
-      | `pr:review` | `gh pr review` | `pull_requests: write` |
-      | `issue:create` | `gh issue create` | `issues: write` |
-      | `run:view` | `gh run view` | `actions: read` |
-      | `run:list` | `gh run list` | `actions: read` |
+  | Action | Command | Permissions |
+  |---|---|---|
+  | `pr:view` | `gh pr view` | `pull_requests: read`, `contents: read`, `checks: read`, `statuses: read` |
+  | `pr:list` | `gh pr list` | `pull_requests: read` |
+  | `pr:diff` | `gh pr diff` | `pull_requests: read`, `contents: read` |
+  | `pr:create` | `gh pr create` | `pull_requests: write`, `contents: read` |
+  | `pr:comment` | `gh pr comment` | `pull_requests: write` |
+  | `pr:review` | `gh pr review` | `pull_requests: write` |
+  | `issue:create` | `gh issue create` | `issues: write` |
+  | `run:view` | `gh run view` | `actions: read` |
+  | `run:list` | `gh run list` | `actions: read` |
 
-      Add rows only with the GitHub endpoint documentation for that command in the commit or note.
+  Add rows only with the GitHub endpoint documentation for that command in the commit or note.
 - [ ] Audit: action, repo, command, permissions, duration, exit status, truncated flag, fingerprint.
       Never output contents, never a token.
 - [ ] Error boundary: provider response bodies stay in the host log; only broker-composed errors
@@ -261,10 +261,14 @@ Account selection:
   The host broker sets `GH_CONFIG_DIR` from the request's `--as-user`; no switch, no shared state. The
   same pattern is what a host-side independent agent should use, so it becomes a skill rather than
   only a host broker detail.
-- `gh pr create` / `review` / `issue create` do not push, so the SSH `Host` aliases are not used.
+- `gh pr create` can prompt to push or fork when the current branch is not fully pushed. The host
+  broker must require a fully pushed head or a validated `--head` before invoking it; `--head` skips
+  push/fork behavior. `review` / `issue create` do not push, so the SSH `Host` aliases are not used.
   If a future operation needs Git over SSH, it must use the checkout's own SSH configuration.
 
 - [ ] `gcb gh pr create --as-user agent …` requests the host broker instead of the app broker.
+- [ ] Require a fully pushed head or a validated `--head` before `gh pr create`; no interactive
+      push/fork prompt is reachable.
 - [ ] Keep one client-facing socket: the app broker forwards `--as-user` requests to the
       host broker over a host-local channel. The host broker's socket is not mounted into the agent
       container.
