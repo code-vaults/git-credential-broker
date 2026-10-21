@@ -261,14 +261,16 @@ Account selection:
   The host broker sets `GH_CONFIG_DIR` from the request's `--as-user`; no switch, no shared state. The
   same pattern is what a host-side independent agent should use, so it becomes a skill rather than
   only a host broker detail.
-- `gh pr create` can prompt to push or fork when the current branch is not fully pushed. The host
-  broker must require a fully pushed head or a validated `--head` before invoking it; `--head` skips
-  push/fork behavior. `review` / `issue create` do not push, so the SSH `Host` aliases are not used.
-  If a future operation needs Git over SSH, it must use the checkout's own SSH configuration.
+- `gh pr create` prompts to push or fork only when it has to infer the head from a local branch.
+  The host broker runs from a temporary directory, so the canonical command always passes `--head`
+  (resolved by the client from the checkout, or required as a flag), `--title` and `--body`;
+  with those, gh never prompts. A head that is not pushed is GitHub's 422, not a broker pre-check:
+  let it fail naturally. `review` / `issue create` do not push, so the SSH `Host` aliases are not
+  used. If a future operation needs Git over SSH, it must use the checkout's own SSH configuration.
 
 - [ ] `gcb gh pr create --as-user agent …` requests the host broker instead of the app broker.
-- [ ] Require a fully pushed head or a validated `--head` before `gh pr create`; no interactive
-      push/fork prompt is reachable.
+- [ ] Canonicalize `pr create` with `--repo`, `--head`, `--title` and `--body`; never invoke
+      it in a way that can prompt. Do not pre-check whether the head is pushed.
 - [ ] Keep one client-facing socket: the app broker forwards `--as-user` requests to the
       host broker over a host-local channel. The host broker's socket is not mounted into the agent
       container.
