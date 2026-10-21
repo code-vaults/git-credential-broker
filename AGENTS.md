@@ -18,9 +18,9 @@ The action/CLI redesign (host-side `gh`, `gcb gh`, host-user delegation, TOML co
 **planned, not implemented**. [`ROADMAP.md`](ROADMAP.md) is authoritative for the target and the
 order; this file continues to describe the current tree, which is the last green baseline. Do not
 implement a later phase to unblock an earlier one without updating the roadmap first. The target
-brand is `gcb`: the CLI, container and service share the name, the main broker is `gcb daemon`, and
-the current `host-opener` becomes `host-broker` (typed host operations, not a shell). Names in this
-file are the current ones until that phase lands.
+brand is `gcb`: the CLI, container and service share the name, the main broker is `gcb app`, and
+the current `host-opener` becomes `gcb host` (typed host operations, not a shell; service name
+`gcb-host`). Names in this file are the current ones until that phase lands.
 
 Keep the roadmap and the skills current as part of the work, not after it:
 

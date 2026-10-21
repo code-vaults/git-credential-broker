@@ -43,11 +43,11 @@ is implemented yet.
 The brand is **gcb**. One command, one service name:
 
 - CLI: `gcb` (also the git credential helper);
-- main app broker: `gcb daemon`, container/service `gcb`;
-- host-side operation broker: `gcb host-broker` (currently `host-opener`);
+- main app broker: `gcb app`, container/service `gcb`;
+- host-side operation broker: `gcb host`, service `gcb-host` (currently `host-opener`);
 - client commands: `gcb gh …`, and later `gcb glab …`.
 
-`host-broker` is deliberately broader than "opener": it can grow to gh, glab, signing, and other
+The host broker is deliberately broader than "opener": it can grow to gh, glab, signing, and other
 host operations. That breadth is allowed only through its typed operation table — it is not an
 arbitrary host shell. The pairing to document is **app broker** (App identity, installation tokens)
 versus **host broker** (host user identity, host CLIs).
@@ -56,8 +56,8 @@ Where each command runs:
 
 - **agent container**: `gcb gh …` is the client; git uses the credential helper. `gcb gh` is not a
   host-side command.
-- **host**: `gcb daemon` (app broker) and `gcb host-broker` (host executor) are services. The human
-  uses `gh` directly, with `gh auth switch` if they prefer; `gcb host-broker` is not a CLI for them.
+- **host**: `gcb app` (app broker) and `gcb host` (host executor) are service commands. The human
+  uses `gh` directly, with `gh auth switch` if they prefer; `gcb host` is not a CLI for them.
 - `--as-user` is a request from the container client. The app broker validates it and forwards it to
   the host broker over a host-local channel; only the app broker's socket needs to be mounted into
   the container. The host broker never exposes a shell, only its typed operation table.
@@ -101,7 +101,7 @@ The configuration is the source of truth and must be comfortable to edit by hand
 - [ ] Development mode: the globally installed `gcb` detects an explicit dev pointer (e.g.
       `GCB_DEV=1` plus `~/.config/gcb/dev.json`, written by `gcb dev use <checkout>`) and re-execs
       the development entry with the same argv. Production ignores the pointer. The dev path never
-      changes the socket, token, or host-broker paths unless the developer sets them.
+      changes the socket, token, or host paths unless the developer sets them.
 - [ ] Define config v1:
       - top-level `version`;
       - hosts keyed by git host;
@@ -156,7 +156,7 @@ config_dir = "/home/operator/.config/gh-agent"
 
 - [ ] CLI dispatch:
       - built-ins first (`setup`, `init`, `stage`, `compose`, `probe`, `diagnose`, `authorize`,
-        `host-broker`, `config`, `version`, `help`);
+        `app`, `host`, `config`, `version`, `help`);
       - `gcb gh …` explicit;
       - `gcb pr view …`, `gcb run view …` etc. resolve to the `gh` subcommand.
 - [ ] Remove the built-in `pr` and `logs` commands. `gcb run view --job <id> --log` replaces `logs`.
@@ -216,7 +216,7 @@ config_dir = "/home/operator/.config/gh-agent"
       Never output contents, never a token.
 - [ ] Error boundary: provider response bodies stay in the host log; only broker-composed errors
       cross the socket. A failed `gh` returns a bounded, sanitized reason.
-- [ ] Rename `host-opener` to `host-broker` and keep the person-authored route; wire it to the new flag in Phase 3.
+- [ ] Rename `host-opener` to `gcb host` and keep the person-authored route; wire it to the new flag in Phase 3.
 
 **Done when:** `gcb gh pr view`, `pr create`, `pr comment`, `pr review`, and `run view --log` work
 end to end with a fake `gh`, the token is revoked in every path, and injection/unknown-flag tests
@@ -260,13 +260,13 @@ Account selection:
 
   The host broker sets `GH_CONFIG_DIR` from the request's `--as-user`; no switch, no shared state. The
   same pattern is what a host-side independent agent should use, so it becomes a skill rather than
-  only a host-broker detail.
+  only a host broker detail.
 - `gh pr create` / `review` / `issue create` do not push, so the SSH `Host` aliases are not used.
   If a future operation needs Git over SSH, it must use the checkout's own SSH configuration.
 
 - [ ] `gcb gh pr create --as-user agent …` requests the host broker instead of the app broker.
 - [ ] Keep one client-facing socket: the app broker forwards `--as-user` requests to the
-      host broker over a host-local channel. The host-broker socket is not mounted into the agent
+      host broker over a host-local channel. The host broker's socket is not mounted into the agent
       container.
 - [ ] `--as-user` is valid only on commands the host broker supports; elsewhere it is refused.
 - [ ] The host broker supports multiple accounts:
@@ -274,7 +274,7 @@ Account selection:
       - `gh auth switch` is global mutable state and races concurrent requests;
       - a request names the account; the host broker refuses an unknown account and lists the configured
         ones.
-- [ ] Extend host-broker operations beyond `pr create`:
+- [ ] Extend host broker operations beyond `pr create`:
       - `pr review` (approve / request changes / comment);
       - `issue create`;
       - `pr comment` if the per-user identity matters.
@@ -319,7 +319,7 @@ actionable error.
 
 ## Phase 5 — operations and hardening
 
-- [ ] `gcb doctor`: config validity, `gh` version/path, host-broker liveness, account selection,
+- [ ] `gcb doctor`: config validity, `gh` version/path, host broker liveness, account selection,
       socket permissions; no ruleset or App-permission audit.
 - [ ] Audit rotation and a documented retention policy; rate/size limits for `gcb gh`.
 - [ ] Timeout and output-cap defaults validated against a slow proxy; document how to raise them.
