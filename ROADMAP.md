@@ -316,6 +316,24 @@ Account selection:
   do not push, so the SSH `Host` aliases are not used. If a future operation needs Git over SSH, it
   must use the checkout's own SSH configuration.
 
+  **Why there is no freshness preflight, even though the first view can omit local commits.**
+  `gh pr create` creates from the remote head branch. If the remote branch is stale, the initial PR
+  reflects that stale head and omits local commits. This is accepted on purpose:
+
+  - a PR tracks its head branch, not a fixed commit; a later `git push` updates the PR, so the
+    omission is visible and recoverable rather than permanent;
+  - the preflight cannot be atomic. GitHub's create call takes a branch name, not a head SHA, so a
+    check followed by a create still races with another push; pinning the head would require a
+    different API (or a Git proxy) that does not exist here;
+  - the host broker has no local commit graph, and a client-computed ancestry result is untrusted and
+    stale by the time gh runs; adding it would create false confidence;
+  - the action token carries `pull_requests: write` only. A stale PR is a workflow mistake, not a
+    privilege escalation; the PR and its checks make it visible.
+
+  A hard guarantee would require a Git proxy or a post-create verification that blocks/closes a
+  mismatched PR. Both are deliberately out of scope for this phase; if the omission must be
+  impossible, that is the design to revisit.
+
 - [ ] `gcb gh pr create --as-user agent …` requests the host broker instead of the app broker.
 - [ ] Canonicalize `pr create` with `--repo`, `--head`, `--title` and `--body`; never invoke
       it in a way that can prompt. No head-state preflight: no local/remote SHA, no ancestry, no
