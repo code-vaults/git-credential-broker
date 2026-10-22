@@ -327,8 +327,9 @@ Account selection:
     different API (or a Git proxy) that does not exist here;
   - the host broker has no local commit graph, and a client-computed ancestry result is untrusted and
     stale by the time gh runs; adding it would create false confidence;
-  - the action token carries `pull_requests: write` only. A stale PR is a workflow mistake, not a
-    privilege escalation; the PR and its checks make it visible.
+  - the action token carries `pull_requests: write` plus `contents: read`, and no `contents: write`.
+    A stale PR is a workflow mistake, not a privilege escalation; the PR and its checks make it
+    visible.
 
   A hard guarantee would require a Git proxy or a post-create verification that blocks/closes a
   mismatched PR. Both are deliberately out of scope for this phase; if the omission must be
