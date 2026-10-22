@@ -28,7 +28,7 @@ ls /volume1                                # No such file or directory
 - **`/home/app` 本身不是挂载**：所以 `/home/app/.gitconfig`、`~/.config/...` 都是容器本地的，宿主看不到，也不会被宿主读取。
 - 容器 uid == 宿主 uid == **`1026:100`**（PUID/PGID 模型；宿主文件属主就是这个 uid）。
 - **`CapEff=0x0`**（`CapPrm=0`）：降权有效，agent 拿不回 root；`SETUID` 只在 bounding set 里。
-- 宿主用户是 `JounQin`，宿主 home 里 `~/.gitconfig` 是 `~/.dotfiles/gitconfig` 的软链。
+- 宿主用户就是 uid 1026 对应的账号；它的 `~/.gitconfig` 是 `~/.dotfiles/gitconfig` 的软链。
 
 **最重要的一条推论**：这个容器**重建很频繁**（2026-09-30 一个下午重建 3 次），容器可写层的东西重建即丢。凡是要活过重建的，只有两个地方能放：
 

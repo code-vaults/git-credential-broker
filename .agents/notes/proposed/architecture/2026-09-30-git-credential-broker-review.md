@@ -211,16 +211,15 @@ D. 未设置、stdin 为 /dev/null → fatal: ...: No such device or address    
 **这两句不能同时成立。** 实测容器内可读：
 
 ```
--r-xr-xr-x app  /home/app/Workspaces/gitlab-ee/config/ssl/gitlab-ee.key   → -----BEGIN EC PRIVATE KEY-----
--r-xr-xr-x app  /home/app/Workspaces/gitlab-ee/config/ssl/nas.example.internal.key → -----BEGIN EC PRIVATE KEY-----
+(readable TLS private keys were found inside a mounted workspace; their paths are not reproduced here)
 ```
 
-`nas.example.internal.key` 是**通配域名的 TLS 私钥**（权限 0444/0555，本 uid 可读）。
+其中一把是**通配域名的 TLS 私钥**（权限 0444/0555，本 uid 可读）。
 它一旦外泄，最坏结果不是「多一个 PR」，而是**整个域的 MITM**。
 建议：要么收紧该目录的可读性（别让 `app` 读得到），要么把 §3 的措辞改成
 「**仓库侧**爆炸半径有界；容器可读内容的泄露面需另行治理」。
 
-> 顺带一条同类暴露：`~/.dsh/.credentials.yaml`（DSH 模型 API key）也在容器可读范围内，
+> 顺带一条同类暴露：`.dsh` 下的一个凭据文件（DSH 模型 API key）也在容器可读范围内，
 > 且经实测 **`.dsh` 本身位于 `Workspaces` 挂载之内**（见 §5 核对表），
 > 所以「把东西放 `.dsh` 就安全」是错的。
 
@@ -313,7 +312,7 @@ D. 未设置、stdin 为 /dev/null → fatal: ...: No such device or address    
    `/home/app/.dsh/git-cred-broker/broker.sock`（零 compose 改动，但在 Agent 可写树内）？
 2. broker 形态：宿主进程（DSM 计划任务 / systemd）还是 sidecar 容器？
    若选 sidecar，私钥要多挂进一个容器，需重新核对 §2.1 的「挂载面固定」。
-3. 通配 TLS 私钥（`nas.example.internal.key`）的可读性是否收紧？（决定 §3 措辞）
+3. 通配 TLS 私钥的可读性是否收紧？（决定 §3 措辞）
 4. 审计日志保留期与轮转。
 5. 是否现在就为 GitLab 预留 provider 抽象（§10.7），还是一次只做 GitHub。
 

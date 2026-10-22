@@ -30,7 +30,7 @@ Agent（DSH）运行在 NAS 上的 Docker 容器里，需要访问：
 | 约束 | 说明 |
 |---|---|
 | 执行位置固定 | Agent 必须在 NAS 容器内（要 LAN + 本地文件） |
-| 挂载面固定 | `~/Workspaces` 全量可写挂载（含 `gitlab-ee/config/ssl/` 下的 `*.example.internal` 通配 TLS 私钥） |
+| 挂载面固定 | `~/Workspaces` 全量可写挂载（含某个项目里的一把通配 TLS 私钥） |
 | 运行身份固定 | 容器 root 启动后降权到 `app`(uid 1026)，可保留 `CAP_SETUID/SETGID` |
 | 凭据分发 | 目标仓库分布在个人账号下（可能不止一个 owner） |
 
@@ -196,7 +196,7 @@ git config --global url."https://github.com/".insteadOf "git@github.com:"
 
    真正的收益是：私钥不泄露、权限不越出 App 的安装范围、可集中吊销、可用量短时。**不是**"Agent 无法推不该推的东西"。
 
-2. **有推送权限的 Agent 能把它读到的任何内容推出去。** `~/Workspaces` 是全量可写挂载（21 个项目 + `gitlab-ee` 的 TLS 私钥），这些都在它的读取范围内。
+2. **有推送权限的 Agent 能把它读到的任何内容推出去。** `~/Workspaces` 是全量可写挂载（多个项目，其中一处有 TLS 私钥），这些都在它的读取范围内。
 
 3. **分支保护是最后一道闸门，也是最重要的一道。** 若 `main` 未受保护，凭据泄露的后果从"多一个 PR"升级为"仓库被改写"。**因此必须配合**：
    - `main` / release 分支开启分支保护

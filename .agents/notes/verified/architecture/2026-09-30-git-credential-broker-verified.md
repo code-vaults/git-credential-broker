@@ -136,6 +136,6 @@ tail -f /volume1/docker/git-cred-broker/log/audit.jsonl
 ## 6. 未决 / 待确认
 
 1. **旧私钥是否真的撤销**：文件已删，无法再用它签 JWT 探测；GitHub 也无 API 列出 App 私钥。需人工在 App 设置页确认只剩与 `app.pem` 对应的那一把。
-2. `/volume1/public/certificates/` 里那份私钥副本仍在（按用户要求先不管）。**目录名带 public 却是私钥**，建议确认部署稳定后删除（broker 用的是自己 0600 的副本）。
+2. 证书目录里那份私钥副本仍在（按用户要求先不管）。**目录名带 public 却是私钥**，建议确认部署稳定后删除（broker 用的是自己 0600 的副本）。
 3. `~/Workspaces/git-credential-broker/dist` 是 gitignore 的构建产物，也是 helper 的运行路径。若被清理，需在容器内 `corepack yarn build` 重建。
 4. 若将来要让 agent 直接开 PR，配置里把 `pull_requests: write` 加上（App 已授权）；主干防护仍需另有 ruleset，且要确认该 App **不在** ruleset 的 bypass 列表里。
