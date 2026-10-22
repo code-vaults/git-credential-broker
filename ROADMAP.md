@@ -111,6 +111,35 @@ The configuration is the source of truth and must be comfortable to edit by hand
       - owner/repo matching case-insensitive; branch matching case-sensitive; `*` one segment,
         `**` multiple segments;
       - unknown keys, unknown actions, unknown groups, malformed globs: refuse at load time.
+- [ ] Config-defined actions and built-in overrides:
+      - `[actions."<name>"]` declares `command`, optional `positional`, a `flags` whitelist, and
+        `permissions`; the broker rebuilds a canonical argv from those values, never forwards raw
+        argv and never uses a shell;
+      - the built-in hard-deny list applies to configured actions too; unknown flags and undeclared
+        positionals are refused;
+      - configured permissions must be a subset of the host's `max_permissions` ceiling;
+      - a built-in action may be overridden only to `enabled = false`, `deny = true`, or a narrower
+        permission set. Changing its command, flags, or widening permissions is refused; add a new
+        action name instead;
+      - `gcb actions list|describe|check|discover` reports built-in and configured actions, validates
+        them, and lists gh commands that are not yet covered without enabling them.
+- [ ] Live reload (no restart):
+      - watch the configuration **directory**, not a single file, with `fs.watch`; debounce
+        200–500ms and re-add the watcher after rename/delete;
+      - poll every 5 seconds (configurable) and compare mtime+size+content hash. SMB/NFS/9p and
+        single-file bind mounts do not reliably deliver inotify events, so polling is the normal
+        path on a NAS, not a crash fallback;
+      - read the whole file, parse, validate, then atomically swap a frozen snapshot. Any parse or
+        validation failure keeps the last good snapshot, logs and audits `config reload failed`,
+        and leaves the service running;
+      - `SIGHUP` forces a reload;
+      - reload applies allowlists, groups, actions, timeouts and accounts. Provider/key changes
+        rebuild the affected providers; in-flight requests keep the snapshot they started with;
+        already-issued git tokens are not revoked and expire normally;
+      - deployment mounts the config **directory** into a container, not the file, so a host-side
+        atomic replace is visible;
+      - `gcb doctor` reports the active config digest and the last reload result;
+        `gcb config check` is the one-shot validation.
 - [ ] Keep JSON working for one release: `gcb config migrate` converts an existing
       `broker.config.json` to TOML, preserving hand edits and comments where possible.
 - [ ] Add `gcb config check` and `gcb config edit` (`$EDITOR`, validated on save).
@@ -124,6 +153,7 @@ version = 1
 [hosts."github.com"]
 provider = "github-app"
 groups = ["maintainer", "reviewer"]
+max_permissions = { pull_requests = "write", contents = "read", issues = "write", checks = "read", statuses = "read", actions = "read" }
 
 [groups.maintainer]
 repos = ["acme/*", "code-vaults/git-*"]
@@ -137,6 +167,12 @@ default = 120
 
 [groups.maintainer.branches]
 advisory_push = ["agent/*"]   # not enforced by the broker; the dsh plugin may use it
+
+[actions."issue.close"]
+command = ["issue", "close"]
+positional = ["number"]
+flags = { comment = "string" }
+permissions = { issues = "write" }
 
 [groups.reviewer]
 repos = ["upstream/*"]
@@ -200,9 +236,11 @@ config_dir = "/home/operator/.config/gh-agent"
       - `finally`-revoke on success, failure, and timeout;
       - if revoke fails, log host-side and report that the token expires on its own.
 - [ ] Single-source action catalog (table below): one declarative table drives the permission
-      preflight, token mint, command table and docs; a test rejects drift. The command→permission
-      mapping is curated because `gh` exposes no machine-readable source for it, so review and tests
-      replace a second hand-maintained list.
+      preflight, token mint, command table and docs; configured actions extend it under the Phase 1
+      rules. A test rejects drift between catalog, preflight, mint and docs, and rejects any built-in
+      override that widens a permission. The command→permission mapping is curated because `gh`
+      exposes no machine-readable source for it, so review and tests replace a second hand-maintained
+      list.
 - [ ] Action permissions (initial table):
 
   | Action | Command | Permissions |
