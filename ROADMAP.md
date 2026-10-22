@@ -308,25 +308,18 @@ Account selection:
 - `gh pr create` prompts to push or fork only when it has to infer the head from a local branch.
   The host broker runs from a temporary directory, so the canonical command always passes `--head`
   (resolved by the client from the checkout, or required as a flag), `--title` and `--body`;
-  with those, gh never prompts. Two different questions are handled separately:
-
-  - **Freshness.** For a same-repository head, the client sends the local head SHA; the host broker
-    reads the remote branch SHA before invoking gh. Missing remote → `head-not-pushed`; remote SHA
-    differs → `head-behind`; equal → invoke gh. This is a freshness check, not an existence
-    preflight, and it is what prevents a PR that silently omits local commits. A fork head has no
-    local SHA; mark it `freshness: unknown` and never treat it as fresh.
-  - **Existence and validation.** If gh still fails with HTTP 200 `errors[].type: UNPROCESSABLE`,
-    the **host broker** checks the ref and returns a sanitized classification. Only a missing head
-    becomes `head-not-pushed`; other causes (no commits, invalid base/head) stay on the normal error
-    path as `pr-create-rejected`.
-
-  `review` and `issue create` do not push, so the SSH `Host` aliases are not used. If a future
-  operation needs Git over SSH, it must use the checkout's own SSH configuration.
+  with those, gh never prompts. There is no head-state preflight: the host broker does not compare
+  local and remote SHAs, check ancestry, classify freshness, or map a failure to a push flow. A PR
+  tracks its head branch; a later push updates it, so any snapshot taken before the call would be
+  stale. GitHub decides whether the head exists. A failure returns a sanitized
+  `pr-create-failed`; the agent or skill may decide to push and retry. `review` and `issue create`
+  do not push, so the SSH `Host` aliases are not used. If a future operation needs Git over SSH, it
+  must use the checkout's own SSH configuration.
 
 - [ ] `gcb gh pr create --as-user agent …` requests the host broker instead of the app broker.
 - [ ] Canonicalize `pr create` with `--repo`, `--head`, `--title` and `--body`; never invoke
-      it in a way that can prompt. Do not pre-check whether the head exists; the only preflight is
-      the local/remote freshness comparison.
+      it in a way that can prompt. No head-state preflight: no local/remote SHA, no ancestry, no
+      freshness classification.
 - [ ] Keep one client-facing socket: the app broker forwards `--as-user` requests to the
       host broker over a host-local channel. The host broker's socket is not mounted into the agent
       container.
@@ -350,35 +343,18 @@ Account selection:
 - [ ] Audit the host-user action with `as_user`, repo, operation, and outcome; never the token.
 - [ ] Concurrency: the host broker serves one request per account at a time only if the underlying `gh`
       state requires it; per-account config directories make parallel accounts safe.
-- [ ] `pr create` head state:
-      - **freshness preflight** for same-repository heads: the client sends the local head SHA; the
-        host broker reads the remote branch SHA. Missing remote → `head-not-pushed`; remote SHA
-        differs → `head-behind`; equal → invoke gh. A fork head is `freshness: unknown` unless the
-        branch exists locally and a SHA is supplied; never create silently from a stale remote.
-      - no raw gh prompt and no existence preflight: canonical args include `--head`; GitHub decides.
-        On HTTP 200 with `errors[].type: UNPROCESSABLE`, the host broker diagnoses the ref after
-        the failure and returns a sanitized result:
-        - head missing → `head-not-pushed` (offer push/fork/cancel);
-        - head present but no commits or an invalid base/head → `pr-create-rejected`, normal error
-          path, no push option;
-      - dsh asks with `ask_user_question`, not `ctx.approval` (approval is allow-once, not a choice):
-        1. Push `<head>` to `<remote>`, then create the PR (recommended);
-        2. Create from a fork (only when the deployment allows it);
-        3. Cancel.
-      - choosing push runs a separate `git push` through the credential helper: its own
-        `contents: write` token, audit, and branch/ruleset policy. `pr create` never pushes or forks;
-      - the broker does not call dsh; the container-side client or agent renders the question.
-      - tests:
-        - permission preflight requires both `pull_requests: write` and `contents: read`;
-        - local == remote, local != remote, remote missing, and fork `freshness: unknown`;
-        - missing head + HTTP 200 `UNPROCESSABLE` → `head-not-pushed` choice;
-        - existing head + `UNPROCESSABLE` (no commits or invalid ref) → `pr-create-rejected`, no
-          push option;
-        - a local branch ahead of the remote never creates a PR that omits those commits.
+- [ ] `pr create` head handling:
+      - no raw gh prompt: canonical args include `--head`, `--title` and `--body`; no preflight.
+      - GitHub decides whether the head exists. The broker does not compare SHAs, check ancestry,
+        classify freshness, or map a failure to `head-not-pushed`.
+      - a failure returns a sanitized `pr-create-failed`, with the provider detail on the host log.
+      - `pr create` never pushes, forks, or asks for push/fork; a later `git push` updates the PR.
+      - tests: failure returns `pr-create-failed`; no SHA inputs are required; the broker never
+        pushes or forks.
 
 **Done when:** a PR created with `--as-user agent` is authored by that account, a review and an issue
 also work, concurrent requests for two accounts do not interfere, an uninstalled repo gets an
-actionable error, and an unpushed head produces the `head-not-pushed` choice instead of a gh prompt.
+actionable error, and a failed `pr create` returns `pr-create-failed` without a push/fork side effect.
 
 ## Phase 4 — dsh integration and skills (owned by `../idsh`)
 
@@ -393,9 +369,6 @@ actionable error, and an unpushed head produces the `head-not-pushed` choice ins
       - `reason` names the operation, repository/branch, the permission needed, and the risk;
       - configuration for branch globs and command classes; advisory only, not a server-side
         boundary.
-- [ ] For `gcb gh pr create`, present `head-not-pushed` as an `ask_user_question` with
-      push/fork/cancel. Do not use `tools/pre-execute`'s `ask` for it: approval is allow-once, not a
-      choice, and `pr create` must never push or fork implicitly.
 - [ ] Container-facing skills, one directory per skill under `.agents/skills/<name>/SKILL.md`:
       - `gcb-gh`: what is allowed, what is denied, the shorthand, body-file behaviour;
       - `gcb-host-user`: `--as-user`, when to use it, what it means for authorship;
