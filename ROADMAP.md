@@ -264,9 +264,11 @@ Account selection:
 - `gh pr create` prompts to push or fork only when it has to infer the head from a local branch.
   The host broker runs from a temporary directory, so the canonical command always passes `--head`
   (resolved by the client from the checkout, or required as a flag), `--title` and `--body`;
-  with those, gh never prompts. A head that is not pushed is GitHub's 422, not a broker
-  pre-check: let it fail naturally and let the client translate it into `head-not-pushed`. `review` / `issue create` do not push, so the SSH `Host` aliases are not
-  used. If a future operation needs Git over SSH, it must use the checkout's own SSH configuration.
+  with those, gh never prompts. A head that is not pushed is a GitHub validation failure, not a
+  broker pre-check: let it fail naturally. The client maps that failure into `head-not-pushed`,
+  including a `createPullRequest` response that is HTTP 200 with `errors[].type: UNPROCESSABLE`.
+  `review` and `issue create` do not push, so the SSH `Host` aliases are not used. If a future
+  operation needs Git over SSH, it must use the checkout's own SSH configuration.
 
 - [ ] `gcb gh pr create --as-user agent …` requests the host broker instead of the app broker.
 - [ ] Canonicalize `pr create` with `--repo`, `--head`, `--title` and `--body`; never invoke
@@ -296,7 +298,8 @@ Account selection:
       state requires it; per-account config directories make parallel accounts safe.
 - [ ] `pr create` when the head is not on the remote:
       - no raw gh prompt: canonical args include `--head`, and the client translates the condition
-        into `head-not-pushed` (preflight, or GitHub's 422 mapped to that code);
+        into `head-not-pushed` (preflight, or the GitHub `createPullRequest` validation failure,
+        including HTTP 200 with `errors[].type: UNPROCESSABLE`, mapped to that code);
       - dsh asks with `ask_user_question`, not `ctx.approval` (approval is allow-once, not a choice):
         1. Push `<head>` to `<remote>`, then create the PR (recommended);
         2. Create from a fork (only when the deployment allows it);
@@ -304,6 +307,8 @@ Account selection:
       - choosing push runs a separate `git push` through the credential helper: its own
         `contents: write` token, audit, and branch/ruleset policy. `pr create` never pushes or forks;
       - the broker does not call dsh; the container-side client or agent renders the question.
+      - test the unpushed-head case: assert it produces the `head-not-pushed` choice, including the
+        HTTP 200 with `errors[].type: UNPROCESSABLE` shape.
 
 **Done when:** a PR created with `--as-user agent` is authored by that account, a review and an issue
 also work, concurrent requests for two accounts do not interfere, an uninstalled repo gets an
