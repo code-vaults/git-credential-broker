@@ -77,7 +77,9 @@ node --conditions=development packages/host/bin/gcb.js daemon --config /tmp/depl
 As the commands a user of the package gets:
 
 ```sh
-npm install -g .           # or: npm link
+mkdir -p /tmp/gcb-packs
+npm pack packages/cli packages/client packages/host --pack-destination /tmp/gcb-packs
+npm install -g /tmp/gcb-packs/gcb-cli-*.tgz /tmp/gcb-packs/gcb-client-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
 gcb --version
 ```
 
@@ -86,7 +88,10 @@ As an image, if you would rather pin a build than mount code or fetch at boot:
 ```dockerfile
 FROM node:24-slim
 COPY . /src
-RUN cd /src && corepack yarn install && corepack yarn build && npm install -g .
+RUN cd /src && corepack yarn install && corepack yarn build \
+  && mkdir -p /tmp/gcb-packs \
+  && npm pack packages/cli packages/client packages/host --pack-destination /tmp/gcb-packs \
+  && npm install -g /tmp/gcb-packs/gcb-cli-*.tgz /tmp/gcb-packs/gcb-client-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
 ```
 
 ```sh

@@ -28,7 +28,7 @@
     "test:unit": "node --conditions=development --disable-warning=ExperimentalWarning --test test/unit/*.test.ts",
     "test:e2e": "yarn build && node --conditions=development --disable-warning=ExperimentalWarning --test test/e2e/*.test.ts",
     "check": "yarn typecheck && yarn test",
-    "pack:check": "node scripts/pack-check.mjs",
+    "pack:check": "yarn build && node scripts/pack-check.mjs",
     "prepublishOnly": "yarn check"
   },
   "devDependencies": {

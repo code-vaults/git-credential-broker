@@ -91,7 +91,7 @@ export function performStage(input: StageInput): StageResult {
     'broker.config.yml',
     'broker.config.yaml',
     'broker.config.toml',
-    'broker.config.yml',
+    'broker.config.json',
     'log',
   ].filter((name) =>
     fs.existsSync(path.join(to, name)),

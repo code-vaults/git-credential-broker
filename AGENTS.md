@@ -57,7 +57,7 @@ corepack yarn pack:check # build, then show exactly what npm would publish
 The CLI runs from source too, so there is no need to build to try a command:
 
 ```sh
-node packages/client/bin/gcb.js --help
+node --conditions=development packages/client/bin/gcb.js --help
 node --conditions=development packages/host/bin/gcb.js compose --socket-dir /tmp/sock    # reads --config, $GIT_BROKER_CONFIG, else ./broker.config.yml
 ```
 

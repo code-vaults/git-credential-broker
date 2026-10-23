@@ -221,7 +221,7 @@ a sidecar it is inside the container:
 
 ```sh
 docker compose -f docker-compose.broker.yml exec git-cred-broker \
-  node /opt/gcb/packages/host/bin/gcb.js \
+  npx --yes --package gcb-host gcb \
   diagnose --config /etc/git-cred-broker/broker.config.yml
 ```
 
@@ -399,7 +399,7 @@ reads those variables itself (it is Go), so it only needs them to arrive.
 On a host with user services, `examples/host-opener.service` is a unit for it:
 
 ```sh
-npm i -g gcb                          # the unit calls the installed CLI
+npm i -g gcb-host                     # the unit calls the installed CLI
 cp examples/host-opener.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now host-opener
