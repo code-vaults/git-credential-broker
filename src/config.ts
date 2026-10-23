@@ -1,11 +1,12 @@
 /**
- * Broker configuration: loaded from a JSON file that lives on the host, outside every
+ * Broker configuration: loaded from a JSON or TOML file that lives on the host, outside every
  * mount the agent container can see, and validated eagerly so a broken or over-broad
  * configuration stops the daemon at startup instead of silently denying (or silently
  * allowing) at push time.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { parse as parseToml } from 'smol-toml';
 import { posix } from 'node:path';
 
 import { parseAllowEntry } from './policy.ts';
@@ -440,7 +441,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
 /**
  * Read and validate a configuration file.
  *
- * @param path - path to the JSON config.
+ * @param path - path to the config; a `.toml` suffix selects TOML, everything else JSON.
  * @returns the validated configuration.
  */
 export function loadConfig(path: string): BrokerConfig {
@@ -451,10 +452,18 @@ export function loadConfig(path: string): BrokerConfig {
     throw new Error(`cannot read config ${path}: ${(error as Error).message}`);
   }
   let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (error) {
-    throw new Error(`config ${path} is not valid JSON: ${(error as Error).message}`);
+  if (path.toLowerCase().endsWith('.toml')) {
+    try {
+      parsed = parseToml(text);
+    } catch (error) {
+      throw new Error(`config ${path} is not valid TOML: ${(error as Error).message}`);
+    }
+  } else {
+    try {
+      parsed = JSON.parse(text);
+    } catch (error) {
+      throw new Error(`config ${path} is not valid JSON: ${(error as Error).message}`);
+    }
   }
   return validateConfig(parsed, path);
 }
