@@ -14,6 +14,7 @@
  * `--force` still exists, for regenerating from flags when the file is beyond editing.
  */
 import fs from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import { parseDocument, stringify } from 'yaml';
 
 import {
@@ -128,20 +129,17 @@ export function mergeAllowList(existing: readonly string[], input: InitInput): s
     }
   }
 
-  const result = input.replaceAllow
-    ? [...additions]
-    : (() => {
-        const removed = new Set((input.removeAllow ?? []).map((entry) => entry.toLowerCase()));
-        const kept = existing.filter((entry) => !removed.has(entry.toLowerCase()));
-        const seen = new Set(kept.map((entry) => entry.toLowerCase()));
-        for (const entry of additions) {
-          const key = entry.toLowerCase();
-          if (seen.has(key)) continue;
-          seen.add(key);
-          kept.push(entry);
-        }
-        return kept;
-      })();
+  const canonical = (entry: string): string => entry.trim().toLowerCase();
+  const removed = new Set((input.removeAllow ?? []).map(canonical));
+  const kept = input.replaceAllow ? [] : existing.filter((entry) => !removed.has(canonical(entry)));
+  const seen = new Set(kept.map(canonical));
+  const result = [...kept];
+  for (const entry of additions) {
+    const key = canonical(entry);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(entry.trim());
+  }
 
   if (result.length === 0) {
     throw new Error(
@@ -347,14 +345,16 @@ export function performInit(input: InitInput): InitResult {
     if (paths.privateKeyPath !== block.privateKeyPath) {
       changes.push({ path: ['hosts', 'github.com', 'privateKeyPath'], value: paths.privateKeyPath });
     }
-    if (allowChanged) changes.push({ path: ['hosts', 'github.com', 'allow'], value: mergedBlock.allow });
-    if (input.clientId !== undefined) {
+    if (allowChanged && !isDeepStrictEqual(mergedBlock.allow, block.allow)) {
+      changes.push({ path: ['hosts', 'github.com', 'allow'], value: mergedBlock.allow });
+    }
+    if (input.clientId !== undefined && input.clientId !== block.clientId) {
       changes.push({ path: ['hosts', 'github.com', 'clientId'], value: input.clientId });
     }
-    if (input.appId !== undefined) {
+    if (input.appId !== undefined && input.appId !== block.appId) {
       changes.push({ path: ['hosts', 'github.com', 'appId'], value: input.appId });
     }
-    if (input.permissions !== undefined) {
+    if (input.permissions !== undefined && !isDeepStrictEqual(input.permissions, block.permissions)) {
       changes.push({ path: ['hosts', 'github.com', 'permissions'], value: input.permissions });
     }
     fs.mkdirSync(artifacts.auditDir, { recursive: true });
@@ -507,6 +507,26 @@ function list(args: ReturnType<typeof parseArgs>, name: string): string[] {
 }
 
 /**
+ * Resolve which deployment directory and configuration file an init invokes.
+ *
+ * Without --dir, the config is the file the broker reads: --config, else GIT_BROKER_CONFIG, else
+ * the default name. With --dir, the default name inside that directory is used.
+ *
+ * @param args - the two path flags.
+ * @param env - the environment, injectable for tests.
+ * @returns the directory and, when explicit, the config path.
+ */
+export function resolveInitSelection(
+  args: { readonly config?: string; readonly dir?: string },
+  env: NodeJS.ProcessEnv = process.env,
+): { readonly dir: string; readonly configPath: string | undefined } {
+  const dir = args.dir ?? deploymentDir(resolveConfigPath(args.config, env));
+  const configPath =
+    args.config ?? (args.dir === undefined ? resolveConfigPath(undefined, env) : undefined);
+  return { dir, configPath };
+}
+
+/**
  * Run the `init` command.
  *
  * @param argv - arguments after the command name.
@@ -530,12 +550,13 @@ export async function runInit(argv: readonly string[]): Promise<number> {
     fail(`--mode must be one of ${DEPLOYMENT_MODES.join(', ')}`);
   }
 
-  const dir = args.value('dir') ?? deploymentDir(resolveConfigPath(args.value('config')));
+  const selection = resolveInitSelection({ config: args.value('config'), dir: args.value('dir') });
+  const dir = selection.dir;
   try {
     const result = performInit({
       cert: args.value('cert'),
-      dir,
-      configPath: args.value('config'),
+      dir: selection.dir,
+      configPath: selection.configPath,
       allow: list(args, 'allow'),
       removeAllow: list(args, 'remove-allow'),
       replaceAllow: args.has('replace-allow'),

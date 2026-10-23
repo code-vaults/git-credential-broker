@@ -17,7 +17,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { renderCompose, runCompose } from '../../packages/host/src/commands/compose.ts';
 import { runDiagnose } from '../../packages/host/src/commands/diagnose.ts';
 import { SIDECAR, loadConfig, resolveConfigPath, deploymentDir } from '../../packages/host/src/config.ts';
-import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit } from '../../packages/host/src/commands/init.ts';
+import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit, resolveInitSelection } from '../../packages/host/src/commands/init.ts';
 import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../packages/cli/src/support.ts';
 import { defaultHelperPath, performSetup } from '../../packages/client/src/commands/setup.ts';
 import type { BrokerConfig, GithubAppHostConfig } from '../../packages/cli/src/types.ts';
@@ -603,6 +603,22 @@ describe('init', () => {
     assert.deepEqual(appBlock(updated.config).allow, ['a/one', 'b/two']);
   });
 
+  it('selects GIT_BROKER_CONFIG when neither --config nor --dir is given', () => {
+    const root = dir(`init-select-env-${Math.random().toString(36).slice(2)}`);
+    const file = path.join(root, 'custom.yml');
+    const selection = resolveInitSelection({}, { GIT_BROKER_CONFIG: file });
+    assert.equal(selection.dir, root);
+    assert.equal(selection.configPath, file);
+  });
+
+  it('uses the default file inside --dir and ignores the environment for the target', () => {
+    const root = dir(`init-select-dir-${Math.random().toString(36).slice(2)}`);
+    const file = path.join(root, 'custom.yml');
+    const selection = resolveInitSelection({ dir: root }, { GIT_BROKER_CONFIG: file });
+    assert.equal(selection.dir, root);
+    assert.equal(selection.configPath, undefined);
+  });
+
   it('preserves other hosts when updating github.com', () => {
     const root = dir(`init-hosts-${Math.random().toString(36).slice(2)}`);
     const cert = writeKey(path.join(root, 'downloaded.pem'));
@@ -776,6 +792,17 @@ describe('mergeAllowList', () => {
     assert.throws(
       () => mergeAllowList(['a/one'], { dir: '/x', replaceAllow: true, force: false }),
       /default-deny/,
+    );
+  });
+
+  it('treats whitespace-padded entries as the same key and deduplicates replace mode', () => {
+    assert.deepEqual(
+      mergeAllowList([' a/one', 'b/two'], { dir: '/x', removeAllow: ['a/one'], force: false }),
+      ['b/two'],
+    );
+    assert.deepEqual(
+      mergeAllowList([], { dir: '/x', allow: ['a/one', 'A/ONE'], replaceAllow: true, force: false }),
+      ['a/one'],
     );
   });
 

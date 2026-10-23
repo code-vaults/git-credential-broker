@@ -110,8 +110,9 @@ Keep the checkout outside every container mount.
 
 ## Quick start: sidecar
 
-Docker only; nothing to install on the host. The image is stock `node:24-slim`, and the code is a
-read-only mount, so nothing is fetched or built at boot.
+Docker only. Run `init` and `compose` from an installed `gcb-host`. The image is stock `node:24-slim`;
+the default sidecar fetches `gcb-host` with `npx` at start, while `--code` runs a staged commit with no
+registry access at boot.
 
 ```sh
 DEPLOY=/srv/git-cred-broker        # broker.config.yml, app.pem and log/ live here

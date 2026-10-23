@@ -22,7 +22,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc -p packages/cli/tsconfig.build.json && tsc -p packages/client/tsconfig.build.json && tsc -p packages/host/tsconfig.build.json && node scripts/postbuild.mjs",
+    "build": "node scripts/clean-build.mjs && tsc -p packages/cli/tsconfig.build.json && tsc -p packages/client/tsconfig.build.json && tsc -p packages/host/tsconfig.build.json && node scripts/postbuild.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "yarn build && node --conditions=development --disable-warning=ExperimentalWarning --test test/unit/*.test.ts test/e2e/*.test.ts",
     "test:unit": "node --conditions=development --disable-warning=ExperimentalWarning --test test/unit/*.test.ts",

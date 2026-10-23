@@ -78,8 +78,8 @@ As the commands a user of the package gets:
 
 ```sh
 mkdir -p /tmp/gcb-packs
-npm pack packages/cli packages/client packages/host --pack-destination /tmp/gcb-packs
-npm install -g /tmp/gcb-packs/gcb-cli-*.tgz /tmp/gcb-packs/gcb-client-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
+npm pack packages/cli packages/host --pack-destination /tmp/gcb-packs
+npm install -g /tmp/gcb-packs/gcb-cli-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
 gcb --version
 ```
 
@@ -90,8 +90,8 @@ FROM node:24-slim
 COPY . /src
 RUN cd /src && corepack yarn install && corepack yarn build \
   && mkdir -p /tmp/gcb-packs \
-  && npm pack packages/cli packages/client packages/host --pack-destination /tmp/gcb-packs \
-  && npm install -g /tmp/gcb-packs/gcb-cli-*.tgz /tmp/gcb-packs/gcb-client-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
+  && npm pack packages/cli packages/host --pack-destination /tmp/gcb-packs \
+  && npm install -g /tmp/gcb-packs/gcb-cli-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
 ```
 
 ```sh

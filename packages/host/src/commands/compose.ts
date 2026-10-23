@@ -201,13 +201,14 @@ export function runCompose(argv: readonly string[]): number {
 
   const explicitConfig = args.value('config');
   const dirArg = args.value('dir');
-  const configPath =
+  const configPath = path.resolve(
     explicitConfig !== undefined
       ? resolveConfigPath(explicitConfig)
       : dirArg !== undefined
         ? path.join(dirArg, 'broker.config.yml')
-        : resolveConfigPath();
-  const dir = dirArg ?? deploymentDir(configPath);
+        : resolveConfigPath(),
+  );
+  const dir = path.resolve(dirArg ?? deploymentDir(configPath));
   const socketDir = args.value('socket-dir');
   if (!socketDir) {
     fail('--socket-dir is required (a host directory the pushing container already mounts)');

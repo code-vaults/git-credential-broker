@@ -118,7 +118,7 @@ export function assertUserTokensReadable(config: BrokerConfig): void {
         `       Create a fine-grained token with pull requests: read and write, contents: read and\n` +
         `       metadata: read, for the repositories the allowlist names, and put it there — or drop\n` +
         `       userTokens to keep opening pull requests as the app.`,
-    );
+      );
     }
   }
 }
