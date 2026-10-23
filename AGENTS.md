@@ -14,9 +14,10 @@ had reached 549 lines mostly by accumulating rationale; it is not the place for 
 
 ## Status and roadmap
 
-The action/CLI redesign (host-side `gh`, `gcb gh`, host-user delegation, TOML config) is
-**planned, not implemented**. [`ROADMAP.md`](ROADMAP.md) is authoritative for the target and the
-order; this file continues to describe the current tree, which is the last green baseline. Do not
+The action/CLI redesign (host-side `gh`, `gcb gh`, host-user delegation) is **planned, not
+implemented**. TOML configuration and the self-contained bundle are implemented; the host-side command
+redesign is not. [`ROADMAP.md`](ROADMAP.md) is authoritative for the target and the order; this file
+describes the current tree, which is the last green baseline. Do not
 implement a later phase to unblock an earlier one without updating the roadmap first. The target
 brand is `gcb`: the CLI, container and service share the name, the main broker is `gcb app`, and
 the current `host-opener` becomes `gcb host` (typed host operations, not a shell; service name
@@ -57,7 +58,7 @@ The CLI runs from source too, so there is no need to build to try a command:
 
 ```sh
 node src/cli/helper.ts --help
-node src/cli/helper.ts compose --socket-dir /tmp/sock    # reads --config, $GIT_BROKER_CONFIG, else ./broker.config.json
+node src/cli/helper.ts compose --socket-dir /tmp/sock    # reads --config, $GIT_BROKER_CONFIG, else ./broker.config.toml
 ```
 
 `yarn test` builds first because the end-to-end suite execs `dist/cli/helper.js` as a **real**
@@ -66,13 +67,11 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 
 ## Rules that are not obvious from the code
 
-- **A runtime dependency needs a deployment step, and there is not one yet.** `stage` exports a **commit**
-  and nothing else, so a dependency that is not vendored or inlined never reaches the deployment: the
-  broker fails to resolve it and, under `Restart=always`, loops instead of reporting anything. That is
-  not an argument against dependencies — they are wanted and coming — it is a hole to close in `stage`
-  (install after staging, or build something self-contained) **before** the first one is taken. The
-  attempt that found it was a fetch wrapper for the proxy; the same ground is covered today by Node 24
-  and `NODE_USE_ENV_PROXY`, which is why that floor moved.
+- **Runtime dependencies are bundled, not installed at the deployment.** `smol-toml` is the first;
+  `esbuild` produces self-contained `dist/gcb.js` and `dist/gcb-daemon.js`, and `stage` builds them from
+  the exported commit and records their hashes. `esbuild` lives in the source checkout's `node_modules`;
+  `stage` exposes it to the staged build with a temporary symlink, then removes it. A dependency that is
+  not bundled would still fail at the deployment, so keep the gate closed.
 
   The floor is checked at runtime, in both entry points, because `engines` is only a declaration here:
   measured, `yarn install` succeeds with `"node": ">=99"`, and `.npmrc` is not read by Yarn 4 at all — so
@@ -144,7 +143,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   installation tokens for anything the App can see, and it can read the key file. A key outside the
   container buys nothing while the process holding it runs code from an agent-writable directory —
   the agent then owns the allowlist. The boundary is control of the code. `stage` exports a
-  **commit** (never the working tree) into a directory outside every mount and records the sha; the
+  **commit** (never the working tree) into a directory outside every mount, builds the self-contained
+  bundle from it, and records the sha and both bundle hashes; the
   repository is agent-writable too, so a staged sha is worth checking against a clone or the remote.
   The *helper* is fine here: it holds no secret and grants nothing; the broker decides.
 - **Strict configuration validation is deliberate.** Top-level `_comment*` keys are ignored,
@@ -241,12 +241,12 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   with a flag: acting as a person, from a checkout on the host that holds the person's own credentials,
   is the design.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
-  Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.json`, and takes
+  Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.toml`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by
   the process that runs the broker, so `deployment.ts` holds one definition per deployment and
   both `init --mode` and `compose` read it; a config whose mode does not match the deployment is
-  refused rather than half-working. `/broker.config.json` is gitignored here: a personal copy is
-  host-specific, the tracked reference is `examples/broker.config.example.json`.
+  refused rather than half-working. `/broker.config.toml` is gitignored here: a personal copy is
+  host-specific, the tracked reference is `examples/broker.config.example.toml`.
 - **`init` merges; it never rewrites what you did not mention.** The configuration file is the
   source of truth, so updates preserve hand edits and `--allow` *adds*. Do not turn this back
   into "regenerate from flags": `--force` replacing the allowlist silently dropped repositories.
@@ -304,5 +304,6 @@ Full detail and the measurements behind them:
 | `src/device-flow.ts` | the device flow: the three exchanges that turn an authorization into a token |
 | `src/cli/helper.ts` | the one command that is both the git helper and the CLI |
 | `scripts/postbuild.mjs` | build-time fixup: shebang and exec bit on the CLI entry points |
+| `scripts/bundle.ts` | esbuild bundle of the two self-contained entry points |
 | `.agents/notes/proposed/` | the original design and its review |
 | `.agents/notes/verified/` | what was built, and the measured environment facts |

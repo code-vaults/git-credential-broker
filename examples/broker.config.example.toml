@@ -1,0 +1,52 @@
+# Example broker configuration. This file lives on the HOST, outside every path the agent
+# container can see, and it is the one place that decides which repositories may receive a
+# credential.
+#
+# Required keys: socketPath, hosts. Everything else is optional. The file is TOML; comments are
+# ordinary TOML comments, so they survive a hand edit (init rewrites the file, so keep a copy if
+# you need comments preserved across regeneration).
+#
+# See the README's configuration reference for every field.
+
+socketPath = "/run/git-cred-broker/broker.sock"
+
+# Octal, written in decimal. 432 = 0660, right when broker uid == container uid.
+socketMode = 432
+
+# Append-only JSONL, deliberately unreadable from the container. Records grants and refusals,
+# never credentials.
+auditPath = "/var/log/git-cred-broker/audit.jsonl"
+
+# Re-mint a cached token this many seconds before it expires.
+tokenCacheSkewSeconds = 300
+
+[hosts."github.com"]
+# Each entry is keyed by the host exactly as git reports it: "github.com" (no port) or
+# "host:port" for a non-default port. Provider is "github-app" or "static".
+provider = "github-app"
+
+# clientId is preferred as the JWT `iss`; appId is the fallback. The client secret is NOT used
+# and is not needed anywhere.
+clientId = "Iv23lifamTDN4XTLvLuk"
+appId = 5138420
+privateKeyPath = "/volume1/docker/git-cred-broker/app.pem"
+
+# Optional: fine-grained tokens keyed by owner, used only to create pull requests.
+[hosts."github.com".userTokens]
+an-org = "/volume1/docker/git-cred-broker/an-org.token"
+
+# Must not exceed the app's own grant. Grant "Pull requests: Read and write" in the app settings
+# first if you want the agent to open PRs.
+permissions = { contents = "write" }
+
+# `allow` is default-deny and matched per path segment: "owner/repo", "owner/*". There is no
+# prefix matching, so "acme/widget" can never authorize "acme/widget-evil". A malformed entry
+# (no slash, three segments, a partial wildcard like "wid*") is rejected at startup.
+allow = ["code-vaults/example-repo", "code-vaults/*"]
+
+[hosts."git.example.internal:8443"]
+provider = "static"
+allowInsecureHttp = true
+username = "git"
+passwordPath = "/volume1/docker/git-cred-broker/gitea.token"
+allow = ["infra/*"]

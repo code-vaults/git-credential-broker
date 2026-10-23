@@ -1,7 +1,7 @@
 /**
  * Where each deployment expects its files, from the **broker's** point of view.
  *
- * This module exists because of one easily-missed fact: the paths inside `broker.config.json` are
+ * This module exists because of one easily-missed fact: the paths inside `broker.config.toml` are
  * resolved by whichever process reads the file. A broker running as a host process sees the
  * host's filesystem, and a broker running as a sidecar sees only what its `volumes:` mount.
  * The same file therefore means two different things, and one config cannot serve both.
@@ -47,7 +47,7 @@ export function hostArtifacts(dir: string): HostArtifacts {
   return {
     keyPath: path.join(dir, 'app.pem'),
     userTokenPath: path.join(dir, USER_TOKEN_FILE),
-    configPath: path.join(dir, 'broker.config.json'),
+    configPath: path.join(dir, 'broker.config.toml'),
     auditDir: path.join(dir, 'log'),
   };
 }

@@ -32,8 +32,8 @@ Type=simple
 # The socket directory must be reachable by the container's uid.
 RuntimeDirectory=git-cred-broker
 RuntimeDirectoryMode=0750
-ExecStartPre=/usr/bin/git-credential-brokerd --config /volume1/docker/git-cred-broker/broker.config.json --check
-ExecStart=/usr/bin/git-credential-brokerd --config /volume1/docker/git-cred-broker/broker.config.json
+ExecStartPre=/usr/bin/git-credential-brokerd --config /volume1/docker/git-cred-broker/broker.config.toml --check
+ExecStart=/usr/bin/git-credential-brokerd --config /volume1/docker/git-cred-broker/broker.config.toml
 Restart=on-failure
 # The key is 0600 root; nothing else needs read access to it.
 User=root
@@ -75,10 +75,10 @@ services:
     command:
       - sh
       - -c
-      - exec npx --yes --package 'git-credential-broker' git-credential-brokerd --config /etc/git-cred-broker/broker.config.json
+      - exec npx --yes --package 'git-credential-broker' git-credential-brokerd --config /etc/git-cred-broker/broker.config.toml
     volumes:
       # The configuration and the key: read-only, mounted here and nowhere else.
-      - ./broker.config.json:/etc/git-cred-broker/broker.config.json:ro
+      - ./broker.config.toml:/etc/git-cred-broker/broker.config.toml:ro
       - ./app.pem:/etc/git-cred-broker/app.pem:ro
       # Writable, and the only secret that is: GitHub rotates the refresh token on every exchange,
       # so the broker has to write the new one back. It sits beside the key on the host and is

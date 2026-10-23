@@ -15,6 +15,15 @@ import { after, describe, it } from 'node:test';
 
 import { performStage, STAGED_RECORD } from '../../src/commands/stage.ts';
 
+/** A fake bundle step: enough for stage to run, without esbuild. */
+const BUNDLE_SCRIPT = `import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+const root = process.argv[process.argv.indexOf('--root') + 1];
+mkdirSync(path.join(root, 'dist'), { recursive: true });
+writeFileSync(path.join(root, 'dist', 'gcb.js'), '#!/usr/bin/env node\\nconsole.log("gcb");\\n');
+writeFileSync(path.join(root, 'dist', 'gcb-daemon.js'), '#!/usr/bin/env node\\nconsole.log("daemon");\\n');
+`;
+
 /** Scratch space. */
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-stage-'));
 after(() => fs.rmSync(scratch, { recursive: true, force: true }));
@@ -32,6 +41,11 @@ function makeRepo(name: string): string {
   git('-c', 'init.defaultBranch=main', 'init', '-q');
   fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
   fs.writeFileSync(path.join(repo, 'src', 'daemon.ts'), 'export const version = 1;\n');
+  fs.mkdirSync(path.join(repo, 'scripts'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'scripts', 'bundle.ts'), BUNDLE_SCRIPT);
+  // The bundle step is given this directory through a temporary symlink; its contents are irrelevant
+  // to the fake script, but stage correctly refuses to build without one.
+  fs.mkdirSync(path.join(repo, 'node_modules'));
   git('add', '-A');
   git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'first');
   return repo;
@@ -65,27 +79,8 @@ describe('stage', () => {
 
   it('bundles the staged commit and records both hashes', () => {
     const repo = makeRepo('bundled');
-    fs.mkdirSync(path.join(repo, 'scripts'), { recursive: true });
-    fs.writeFileSync(
-      path.join(repo, 'scripts', 'bundle.mjs'),
-      `import { mkdirSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
-const root = process.argv[process.argv.indexOf('--root') + 1];
-mkdirSync(path.join(root, 'dist'), { recursive: true });
-writeFileSync(path.join(root, 'dist', 'gcb.js'), '#!/usr/bin/env node\\nconsole.log("gcb");\\n');
-writeFileSync(path.join(root, 'dist', 'gcb-daemon.js'), '#!/usr/bin/env node\\nconsole.log("daemon");\\n');
-`,
-    );
-    execFileSync('git', ['add', '-A'], { cwd: repo });
-    execFileSync(
-      'git',
-      ['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'bundle'],
-      { cwd: repo },
-    );
-
     const to = path.join(scratch, 'staged/bundled');
     const result = stage({ repo, to, ref: 'HEAD', home: scratch });
-    assert.ok(result.bundles, 'the bundle hashes are reported');
     assert.equal(fs.existsSync(path.join(to, 'dist', 'gcb.js')), true);
     assert.equal(fs.existsSync(path.join(to, 'dist', 'gcb-daemon.js')), true);
     const record = JSON.parse(fs.readFileSync(path.join(to, STAGED_RECORD), 'utf8')) as {
@@ -93,7 +88,22 @@ writeFileSync(path.join(root, 'dist', 'gcb-daemon.js'), '#!/usr/bin/env node\\nc
     };
     assert.deepEqual(record.bundles, result.bundles);
     const expected = createHash('sha256').update(fs.readFileSync(path.join(to, 'dist', 'gcb.js'))).digest('hex');
-    assert.equal(result.bundles?.gcb, expected);
+    assert.equal(result.bundles.gcb, expected);
+  });
+
+  it('refuses a commit that predates the bundle script', () => {
+    const repo = makeRepo('no-bundle');
+    fs.rmSync(path.join(repo, 'scripts', 'bundle.ts'));
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync(
+      'git',
+      ['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'no bundle'],
+      { cwd: repo },
+    );
+    assert.throws(
+      () => stage({ repo, to: path.join(scratch, 'staged/no-bundle'), ref: 'HEAD', home: scratch }),
+      /no scripts\/bundle\.ts/,
+    );
   });
 
   it('replaces a tree it staged before, leaving nothing stale behind', () => {
@@ -162,7 +172,7 @@ writeFileSync(path.join(root, 'dist', 'gcb-daemon.js'), '#!/usr/bin/env node\\nc
     const to = path.join(scratch, 'deployment-dir');
     fs.mkdirSync(to, { recursive: true });
     fs.writeFileSync(path.join(to, 'app.pem'), 'the key\n');
-    fs.writeFileSync(path.join(to, 'broker.config.json'), '{}\n');
+    fs.writeFileSync(path.join(to, 'broker.config.toml'), '{}\n');
 
     assert.throws(() => stage({ repo, to, ref: 'HEAD', home: scratch, force: true }), /deployment directory/);
     assert.equal(fs.readFileSync(path.join(to, 'app.pem'), 'utf8'), 'the key\n', 'the key is untouched');

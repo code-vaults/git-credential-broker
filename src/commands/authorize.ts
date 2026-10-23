@@ -27,7 +27,7 @@ Get a user token for this app, by authorizing it once from a browser somewhere e
 beside the configuration. It stores a refresh token and prints where; nothing else needs running after
 that, because the broker renews the token itself.
 
-  --config <path>   The configuration (default: $GIT_BROKER_CONFIG, else ./broker.config.json)
+  --config <path>   The configuration (default: $GIT_BROKER_CONFIG, else ./broker.config.toml)
   --host <host>     The host block to authorize for (default: github.com)
   --to <path>       Where to write the refresh token (default: beside the configuration)
   -h, --help        Show this help

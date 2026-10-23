@@ -52,8 +52,8 @@ export interface StageResult {
   readonly files: number;
   /** Uncommitted changes existed and are therefore *not* part of what was staged. */
   readonly dirtyWorkingTree: boolean;
-  /** SHA-256 of the self-contained bundles, when the commit carries the bundle script. */
-  readonly bundles?: { readonly gcb: string; readonly daemon: string };
+  /** SHA-256 of the self-contained bundles built from the commit. */
+  readonly bundles: { readonly gcb: string; readonly daemon: string };
 }
 
 /**
@@ -89,7 +89,7 @@ export function performStage(input: StageInput): StageResult {
 
   // The deployment directory holds the key and the configuration. A `--to` typo pointing at it
   // would clear both, so refuse before anything is removed.
-  const deploymentFiles = ['app.pem', 'broker.config.json', 'log'].filter((name) =>
+  const deploymentFiles = ['app.pem', 'broker.config.toml', 'log'].filter((name) =>
     fs.existsSync(path.join(to, name)),
   );
   if (deploymentFiles.length > 0) {
@@ -146,39 +146,58 @@ export function performStage(input: StageInput): StageResult {
     fs.rmSync(indexFile, { force: true });
   }
 
-  // The deployment has no node_modules and no build step. When the commit carries the bundle
-  // script, build the self-contained entry points from the exported source and record their hashes;
-  // older commits without the script keep the source-launch behaviour. esbuild and the parser come
-  // from the source checkout's node_modules, which is not part of the commit: the recorded hashes
-  // identify the result, but they do not independently prove the toolchain.
-  const bundleScript = path.join(to, 'scripts', 'bundle.mjs');
-  let bundles: { gcb: string; daemon: string } | undefined;
-  if (fs.existsSync(bundleScript)) {
-    const bundle = spawnSync(
-      process.execPath,
-      [bundleScript, '--root', to, '--node-modules', path.join(repo, 'node_modules')],
-      { cwd: to, encoding: 'utf8', env: { ...process.env, NODE_ENV: 'production' } },
+  // The deployment has no node_modules and no build step: build the self-contained entry points
+  // from the exported source and record their hashes. esbuild and the parser come from the source
+  // checkout's node_modules, which is not part of the commit; a temporary symlink lets the staged
+  // bundle script import esbuild normally. The recorded hashes identify the result, but they do not
+  // independently prove the toolchain.
+  const bundleScript = path.join(to, 'scripts', 'bundle.ts');
+  if (!fs.existsSync(bundleScript)) {
+    throw new Error(
+      'the staged commit has no scripts/bundle.ts; it predates the self-contained build. Restage a commit that has it.',
     );
+  }
+  const sourceModules = path.join(repo, 'node_modules');
+  if (!fs.existsSync(sourceModules)) {
+    throw new Error(`cannot bundle the staged commit: ${sourceModules} does not exist; install dependencies first`);
+  }
+  const stagedModules = path.join(to, 'node_modules');
+  if (fs.existsSync(stagedModules)) {
+    throw new Error(`refusing to bundle: ${stagedModules} already exists in the staged tree`);
+  }
+  fs.symlinkSync(sourceModules, stagedModules, 'dir');
+  try {
+    const bundle = spawnSync(process.execPath, [bundleScript, '--root', to], {
+      cwd: to,
+      encoding: 'utf8',
+      env: { ...process.env, NODE_ENV: 'production' },
+    });
     if (bundle.status !== 0) {
       throw new Error(
         `bundling the staged commit failed: ${(bundle.stderr ?? '').trim() || `exit ${String(bundle.status)}`}`,
       );
     }
-    const digest = (file: string): string =>
-      createHash('sha256').update(fs.readFileSync(path.join(to, file))).digest('hex');
-    bundles = { gcb: digest('dist/gcb.js'), daemon: digest('dist/gcb-daemon.js') };
+  } finally {
+    try {
+      fs.unlinkSync(stagedModules);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
   }
+  const digest = (file: string): string =>
+    createHash('sha256').update(fs.readFileSync(path.join(to, file))).digest('hex');
+  const bundles = { gcb: digest('dist/gcb.js'), daemon: digest('dist/gcb-daemon.js') };
 
   writeSecretFile(
     record,
     `${JSON.stringify(
-      { ref: input.ref, sha, subject, stagedAt: new Date().toISOString(), bundles: bundles ?? null },
+      { ref: input.ref, sha, subject, stagedAt: new Date().toISOString(), bundles },
       null,
       2,
     )}\n`,
     0o644,
   );
-  return { to, sha, subject, files, dirtyWorkingTree, ...(bundles === undefined ? {} : { bundles }) };
+  return { to, sha, subject, files, dirtyWorkingTree, bundles };
 }
 
 /** Usage text for `stage`. */
@@ -199,7 +218,7 @@ agent can write to is a repository whose commits the agent can rewrite.
 
 Then run the self-contained bundle from there:
 
-  node <to>/dist/gcb-daemon.js --config <deployment directory>/broker.config.json
+  node <to>/dist/gcb-daemon.js --config <deployment directory>/broker.config.toml
 `;
 
 /**

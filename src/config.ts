@@ -13,13 +13,13 @@ import { parseAllowEntry } from './policy.ts';
 import type { BrokerConfig, GithubAppHostConfig, HostConfig, StaticHostConfig } from './types.ts';
 
 /** The file every command looks for when no configuration path is given. */
-export const DEFAULT_CONFIG_FILE = 'broker.config.json';
+export const DEFAULT_CONFIG_FILE = 'broker.config.toml';
 
 /**
  * Where the configuration lives when nothing says otherwise.
  *
  * This convention is what makes the commands usable without repeating paths: run them from the
- * deployment directory and `./broker.config.json` is found, or export `GIT_BROKER_CONFIG` once.
+ * deployment directory and `./broker.config.toml` is found, or export `GIT_BROKER_CONFIG` once.
  * An explicit `--config` always wins.
  *
  * @param explicit - the `--config` argument, if any.
@@ -74,7 +74,7 @@ export function userTokenPath(privateKeyPath: string): string {
 }
 
 export const SIDECAR = {
-  configPath: '/etc/git-cred-broker/broker.config.json',
+  configPath: '/etc/git-cred-broker/broker.config.toml',
   keyPath: '/etc/git-cred-broker/app.pem',
   // Beside the key, because that is how the provider derives it without being told.
   // Derived from the key rather than written again: the mount target and the reader's path at once.
@@ -319,7 +319,7 @@ function stringMapField(
  */
 export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig {
   if (!isRecord(raw)) {
-    throw new Error(`invalid config (${source}): top level must be a JSON object`);
+    throw new Error(`invalid config (${source}): top level must be an object`);
   }
 
   const errors: string[] = [];
@@ -441,7 +441,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
 /**
  * Read and validate a configuration file.
  *
- * @param path - path to the config; a `.toml` suffix selects TOML, everything else JSON.
+ * @param path - path to the TOML config.
  * @returns the validated configuration.
  */
 export function loadConfig(path: string): BrokerConfig {
@@ -452,18 +452,10 @@ export function loadConfig(path: string): BrokerConfig {
     throw new Error(`cannot read config ${path}: ${(error as Error).message}`);
   }
   let parsed: unknown;
-  if (path.toLowerCase().endsWith('.toml')) {
-    try {
-      parsed = parseToml(text);
-    } catch (error) {
-      throw new Error(`config ${path} is not valid TOML: ${(error as Error).message}`);
-    }
-  } else {
-    try {
-      parsed = JSON.parse(text);
-    } catch (error) {
-      throw new Error(`config ${path} is not valid JSON: ${(error as Error).message}`);
-    }
+  try {
+    parsed = parseToml(text);
+  } catch (error) {
+    throw new Error(`config ${path} is not valid TOML: ${(error as Error).message}`);
   }
   return validateConfig(parsed, path);
 }

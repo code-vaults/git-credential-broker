@@ -42,7 +42,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node scripts/postbuild.mjs && node scripts/bundle.mjs",
+    "build": "tsc -p tsconfig.build.json && node scripts/postbuild.mjs && node scripts/bundle.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "yarn build && node --disable-warning=ExperimentalWarning --test test/unit/*.test.ts test/e2e/*.test.ts",
     "test:unit": "node --disable-warning=ExperimentalWarning --test test/unit/*.test.ts",
@@ -50,7 +50,7 @@
     "check": "yarn typecheck && yarn test",
     "prepublishOnly": "yarn check",
     "pack:check": "yarn build && npm pack --dry-run",
-    "bundle": "node scripts/bundle.mjs"
+    "bundle": "node scripts/bundle.ts"
   },
   "devDependencies": {
     "@types/node": "^24.19.0",

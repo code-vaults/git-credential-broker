@@ -17,7 +17,7 @@ Two commands are installed:
 
 ```
 ┌─ HOST ──────────────────────────────────────────────────────────────────────┐
-│  broker.config.json   allowlist, paths                                      │
+│  broker.config.toml   allowlist, paths                                      │
 │  app.pem              the only long-lived secret: 0600, outside every mount  │
 │  audit.jsonl          append-only, unreadable from the container             │
 │                                                                             │
@@ -75,17 +75,17 @@ CI runs the suite on Linux and inside WSL, and checks both refusals on native Wi
 npm install -g git-credential-broker
 ```
 
-This package has no runtime dependencies today. That is a state, not a rule: `stage` exports a **commit**
-and nothing else, so a dependency needs a deployment step that does not exist yet, and until it does the
-broker fails to resolve it and restarts in a loop rather than saying so. Dependencies are wanted; the
-step has to land first — install after staging, or build something self-contained.
+The package has one runtime dependency, `smol-toml`, and the build inlines it: `yarn bundle` produces
+self-contained `dist/gcb.js` and `dist/gcb-daemon.js`. `stage` exports a **commit**, builds those bundles
+from it, and records both hashes in `STAGED.json`, so a staged deployment needs no `node_modules` and no
+install step.
 
-Or run it from a checkout. Node 24 strips TypeScript types, so there is nothing to build and no
-dependencies to install:
+Or run it from a checkout. Node 24 strips TypeScript types, but the source still needs its dependencies:
 
 ```sh
 git clone https://github.com/code-vaults/git-credential-broker /opt/git-credential-broker
-node /opt/git-credential-broker/src/cli/helper.ts --help
+cd /opt/git-credential-broker && corepack yarn install
+node src/cli/helper.ts --help
 ```
 
 Keep the checkout outside every container mount.
@@ -106,7 +106,7 @@ Docker only; nothing to install on the host. The image is stock `node:24-slim`, 
 read-only mount, so nothing is fetched or built at boot.
 
 ```sh
-DEPLOY=/srv/git-cred-broker        # broker.config.json, app.pem and log/ live here
+DEPLOY=/srv/git-cred-broker        # broker.config.toml, app.pem and log/ live here
 SOCKET_DIR=/srv/git-broker-socket  # a host directory the pushing container already mounts
 
 git-credential-broker init --mode sidecar --dir "$DEPLOY" \
@@ -194,13 +194,13 @@ git-credential-broker init --mode host --socket-path /run/git-cred-broker/broker
 
 `--socket-path` is required when moving to host mode, because the socket on file belongs to the
 sidecar. Commands find the configuration by convention — `--config`, else `$GIT_BROKER_CONFIG`, else
-`./broker.config.json` — so run them from the deployment directory.
+`./broker.config.toml` — so run them from the deployment directory.
 
 ## Check it without pushing
 
 ```sh
 git-credential-broker probe --host github.com --repo owner/repo
-git-credential-broker diagnose --config /srv/git-cred-broker/broker.config.json
+git-credential-broker diagnose --config /srv/git-cred-broker/broker.config.toml
 ```
 
 `probe` prints the broker's decision with the credential reduced to a fingerprint, so its output is
@@ -215,7 +215,7 @@ a sidecar it is inside the container:
 ```sh
 docker compose -f docker-compose.broker.yml exec git-cred-broker \
   node /opt/git-credential-broker/src/cli/helper.ts \
-  diagnose --config /etc/git-cred-broker/broker.config.json
+  diagnose --config /etc/git-cred-broker/broker.config.toml
 ```
 
 ### Reading a CI log
@@ -343,7 +343,7 @@ A token per owner is one way to be the author; authorizing the app once is anoth
 token per owner, because GitHub issues it for the app *and* the person together. Run this on the host:
 
 ```sh
-git-credential-broker authorize --config /srv/git-cred-broker/broker.config.json
+git-credential-broker authorize --config /srv/git-cred-broker/broker.config.toml
 ```
 
 It prints a code and asks you to open <https://github.com/login/device>, then waits. Type the code on
@@ -410,7 +410,8 @@ file.
 
 ## Configuration reference
 
-The broker only ever reads this file; it contains no secrets.
+The broker only ever reads this file; it contains no secrets. The file is TOML; JSON is not read, so
+convert an old JSON config once before upgrading.
 
 Top level:
 

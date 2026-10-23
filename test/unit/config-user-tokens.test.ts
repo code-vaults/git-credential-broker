@@ -11,6 +11,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
+import { stringify as stringifyToml } from 'smol-toml';
 
 import { refreshTokenPath } from '../../src/commands/authorize.ts';
 import { assertUserTokensReadable, loadConfig, userTokenPath } from '../../src/config.ts';
@@ -23,10 +24,10 @@ import { assertUserTokensReadable, loadConfig, userTokenPath } from '../../src/c
  * @returns the parsed configuration.
  */
 function configWith(dir: string, tokenPath: string): ReturnType<typeof loadConfig> {
-  const path = join(dir, 'broker.config.json');
+  const path = join(dir, 'broker.config.toml');
   writeFileSync(
     path,
-    JSON.stringify({
+    stringifyToml({
       socketPath: join(dir, 'broker.sock'),
       auditPath: join(dir, 'audit.jsonl'),
       hosts: {
@@ -50,7 +51,7 @@ describe('the configured user tokens', () => {
     // The sidecar keeps the configuration and the key in one directory, which is why the writer (beside the
     // configuration) and the reader (beside the key) have to land on the same file.
     const dir = '/etc/git-cred-broker';
-    assert.equal(refreshTokenPath(`${dir}/broker.config.json`), userTokenPath(`${dir}/app.pem`));
+    assert.equal(refreshTokenPath(`${dir}/broker.config.toml`), userTokenPath(`${dir}/app.pem`));
   });
 
   it('accepts one whose file is there', () => {
@@ -78,10 +79,10 @@ describe('the configured user tokens', () => {
 
   it('blames the field it is checking, not permissions', () => {
     const dir = mkdtempSync(join(tmpdir(), 'user-tokens-'));
-    const path = join(dir, 'broker.config.json');
+    const path = join(dir, 'broker.config.toml');
     writeFileSync(
       path,
-      JSON.stringify({
+      stringifyToml({
         socketPath: join(dir, 'broker.sock'),
         auditPath: join(dir, 'audit.jsonl'),
         hosts: {
@@ -111,10 +112,10 @@ describe('the configured user tokens', () => {
 
   it('says nothing about a host that has no tokens at all, which is the common case', () => {
     const dir = mkdtempSync(join(tmpdir(), 'user-tokens-'));
-    const path = join(dir, 'broker.config.json');
+    const path = join(dir, 'broker.config.toml');
     writeFileSync(
       path,
-      JSON.stringify({
+      stringifyToml({
         socketPath: join(dir, 'broker.sock'),
         auditPath: join(dir, 'audit.jsonl'),
         hosts: {

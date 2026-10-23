@@ -14,6 +14,7 @@
  * `--force` still exists, for regenerating from flags when the file is beyond editing.
  */
 import fs from 'node:fs';
+import { stringify as stringifyToml } from 'smol-toml';
 
 import {
   deploymentDir,
@@ -52,7 +53,7 @@ export interface InitInput {
   readonly cert?: string;
   /** Where the key, config and audit log live on the host. Must be outside every container mount. */
   readonly dir: string;
-  /** The configuration file itself. Defaults to `<dir>/broker.config.json`. */
+  /** The configuration file itself. Defaults to `<dir>/broker.config.toml`. */
   readonly configPath?: string;
   /** Repositories to ensure are in the allowlist. */
   readonly allow?: readonly string[];
@@ -297,7 +298,7 @@ export function performInit(input: InitInput): InitResult {
 
     const config = mergeBrokerConfig(previous, input, paths);
     fs.mkdirSync(artifacts.auditDir, { recursive: true });
-    writeSecretFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    writeSecretFile(configPath, `${stringifyToml(config)}\n`);
     return { keyPath: artifacts.keyPath, configPath, config, mode, previous };
   }
 
@@ -336,7 +337,7 @@ export function performInit(input: InitInput): InitResult {
   const config = buildBrokerConfig({ ...input, mode, cert: certPath, clientId, appId });
   writeSecretFile(artifacts.keyPath, pem);
   fs.mkdirSync(artifacts.auditDir, { recursive: true });
-  writeSecretFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  writeSecretFile(configPath, `${stringifyToml(config)}\n`);
   return { keyPath: artifacts.keyPath, configPath, config, mode };
 }
 
@@ -377,7 +378,7 @@ Every run:
   --app-id <id>         Change the App ID
   --permissions <list>  name=level pairs, e.g. contents=write,pull_requests=write
   --dir <path>          Where the key, config and audit log live (default: the config's directory)
-  --config <path>       Configuration file (default: $GIT_BROKER_CONFIG, else ./broker.config.json)
+  --config <path>       Configuration file (default: $GIT_BROKER_CONFIG, else ./broker.config.toml)
   --mode <host|sidecar> Which deployment the paths must suit (default: host; must match an
                         existing config, because it decides where the broker looks for things)
   --socket-path <path>  Socket path a host process uses (default: /run/git-cred-broker/broker.sock)

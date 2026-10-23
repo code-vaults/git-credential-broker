@@ -22,6 +22,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
+import { stringify as stringifyToml } from 'smol-toml';
 import { fileURLToPath } from 'node:url';
 
 import { createGitHttpServer } from '../lib/git-http-server.ts';
@@ -121,31 +122,27 @@ async function setupHarness(
 
   const socketPath = path.join(root, 'broker', 'broker.sock');
   const auditPath = path.join(root, 'broker', 'audit.jsonl');
-  const configPath = path.join(root, 'broker', 'broker.config.json');
+  const configPath = path.join(root, 'broker', 'broker.config.toml');
   fs.mkdirSync(path.dirname(socketPath), { recursive: true });
   fs.writeFileSync(
     configPath,
-    `${JSON.stringify(
-      {
-        socketPath,
-        auditPath,
-        tokenCacheSkewSeconds: 5,
-        hosts: {
-          [host]: {
-            provider: 'static',
-            allow,
-            // The local test server speaks plaintext http; the flag is the operator's
-            // explicit opt-in, and it lives host-side where the agent cannot reach it.
-            allowInsecureHttp,
-            username: USERNAME,
-            password: PASSWORD,
-            expiresInSeconds: 3600,
-          },
+    `${stringifyToml({
+      socketPath,
+      auditPath,
+      tokenCacheSkewSeconds: 5,
+      hosts: {
+        [host]: {
+          provider: 'static',
+          allow,
+          // The local test server speaks plaintext http; the flag is the operator's
+          // explicit opt-in, and it lives host-side where the agent cannot reach it.
+          allowInsecureHttp,
+          username: USERNAME,
+          password: PASSWORD,
+          expiresInSeconds: 3600,
         },
       },
-      null,
-      2,
-    )}\n`,
+    })}\n`,
   );
 
   const brokerLog: string[] = [];

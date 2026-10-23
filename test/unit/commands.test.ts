@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
+import { parse as parseToml, stringify as stringifyToml } from 'smol-toml';
 
 import { renderCompose } from '../../src/commands/compose.ts';
 import { runDiagnose } from '../../src/commands/diagnose.ts';
@@ -559,14 +560,14 @@ describe('init', () => {
     const target = path.join(root, 'deploy');
     performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
 
-    const file = path.join(target, 'broker.config.json');
-    const edited = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+    const file = path.join(target, 'broker.config.toml');
+    const edited = parseToml(fs.readFileSync(file, 'utf8')) as {
       hosts: Record<string, { permissions?: unknown }>;
     };
     const editedBlock = edited.hosts['github.com'];
     assert.ok(editedBlock, 'the config must have a github.com block');
     editedBlock.permissions = { contents: 'write', pull_requests: 'write' };
-    fs.writeFileSync(file, JSON.stringify(edited, null, 2));
+    fs.writeFileSync(file, `${stringifyToml(edited)}\n`);
 
     const updated = performInit({
       ...baseInput,
@@ -745,10 +746,10 @@ describe('diagnose', () => {
     // The case that produced this test: `diagnose` run on the host against a config written for the
     // sidecar, which died with a bare ENOENT about a path it could never have had.
     const root = dir(`diagnose-${Math.random().toString(36).slice(2)}`);
-    const configPath = path.join(root, 'broker.config.json');
+    const configPath = path.join(root, 'broker.config.toml');
     fs.writeFileSync(
       configPath,
-      JSON.stringify({
+      stringifyToml({
         socketPath: SIDECAR.socketPath,
         auditPath: SIDECAR.auditPath,
         hosts: {
@@ -809,14 +810,14 @@ describe('socket discovery', () => {
 });
 
 describe('config discovery', () => {
-  it('prefers --config, then GIT_BROKER_CONFIG, then ./broker.config.json', () => {
+  it('prefers --config, then GIT_BROKER_CONFIG, then ./broker.config.toml', () => {
     assert.equal(resolveConfigPath('/a/b.json', {}), '/a/b.json');
     assert.equal(resolveConfigPath(undefined, { GIT_BROKER_CONFIG: '/c/d.json' }), '/c/d.json');
-    assert.equal(resolveConfigPath(undefined, {}), path.resolve('broker.config.json'));
+    assert.equal(resolveConfigPath(undefined, {}), path.resolve('broker.config.toml'));
   });
 
   it('takes the deployment directory from the config path, so --dir is not needed', () => {
-    const found = resolveConfigPath(undefined, { GIT_BROKER_CONFIG: '/volume1/docker/git-cred-broker/broker.config.json' });
+    const found = resolveConfigPath(undefined, { GIT_BROKER_CONFIG: '/volume1/docker/git-cred-broker/broker.config.toml' });
     assert.equal(deploymentDir(found), '/volume1/docker/git-cred-broker');
   });
 
@@ -839,7 +840,7 @@ describe('config discovery', () => {
 
     assert.equal(result.configPath, custom);
     assert.equal(fs.existsSync(custom), true);
-    assert.equal(fs.existsSync(path.join(root, 'deploy', 'broker.config.json')), false, 'and not in --dir as well');
+    assert.equal(fs.existsSync(path.join(root, 'deploy', 'broker.config.toml')), false, 'and not in --dir as well');
   });
 });
 
@@ -855,7 +856,7 @@ describe('compose', () => {
 
   it('mounts the key read-only and publishes no ports', () => {
     assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/);
-    assert.match(rendered, /broker\.config\.json:\/etc\/git-cred-broker\/broker\.config\.json:ro/);
+    assert.match(rendered, /broker\.config\.toml:\/etc\/git-cred-broker\/broker\.config\.toml:ro/);
     assert.equal(/^\s+ports:/m.test(rendered), false, 'the socket is the only interface');
   });
 
@@ -918,7 +919,7 @@ describe('compose', () => {
     assert.equal(appHost(config).privateKeyPath, SIDECAR.keyPath);
     assert.equal(config.auditPath, SIDECAR.auditPath);
 
-    assert.equal(rendered.includes(`${deployDir}/broker.config.json:${SIDECAR.configPath}:ro`), true);
+    assert.equal(rendered.includes(`${deployDir}/broker.config.toml:${SIDECAR.configPath}:ro`), true);
     assert.equal(rendered.includes(`${deployDir}/app.pem:${SIDECAR.keyPath}:ro`), true);
     assert.equal(rendered.includes(`${deployDir}/log:${SIDECAR.auditDir}`), true);
     assert.equal(
