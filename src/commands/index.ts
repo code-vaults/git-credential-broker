@@ -8,6 +8,7 @@
  * Subcommands are imported lazily so the credential-helper path — which git runs on every
  * request — stays as small as possible.
  */
+import { platformRefusal } from '../platform.ts';
 import { packageVersion } from '../version.ts';
 import { say } from './support.ts';
 
@@ -65,6 +66,15 @@ export async function runCli(argv: readonly string[]): Promise<number> {
   if (command === 'version' || command === '--version' || command === '-v') {
     say(packageVersion());
     return 0;
+  }
+
+  // Refuse before the lazy import: every management command eventually imports the configuration
+  // layer, which imports smol-toml. Windows CI runs this path without installing dependencies, and
+  // the refusal must not turn into ERR_MODULE_NOT_FOUND.
+  const refusal = platformRefusal();
+  if (refusal !== null) {
+    process.stderr.write(`git-credential-broker: ${refusal}\n`);
+    return 1;
   }
 
   switch (command) {
