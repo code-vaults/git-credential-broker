@@ -31,9 +31,9 @@ clientId = "Iv23lifamTDN4XTLvLuk"
 appId = 5138420
 privateKeyPath = "/volume1/docker/git-cred-broker/app.pem"
 
-# Optional: fine-grained tokens keyed by owner, used only to create pull requests.
-[hosts."github.com".userTokens]
-an-org = "/volume1/docker/git-cred-broker/an-org.token"
+# Optional: fine-grained tokens keyed by owner, used only to create pull requests. Keep this inline:
+# a [hosts."github.com".userTokens] table header would scope the rest of the host keys under it.
+userTokens = { an-org = "/volume1/docker/git-cred-broker/an-org.token" }
 
 # Must not exceed the app's own grant. Grant "Pull requests: Read and write" in the app settings
 # first if you want the agent to open PRs.

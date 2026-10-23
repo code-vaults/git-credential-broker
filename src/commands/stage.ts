@@ -93,8 +93,8 @@ export function performStage(input: StageInput): StageResult {
   }
 
   // The deployment directory holds the key and the configuration. A `--to` typo pointing at it
-  // would clear both, so refuse before anything is removed.
-  const deploymentFiles = ['app.pem', 'broker.config.toml', 'log'].filter((name) =>
+  // would replace both, so refuse before anything is removed.
+  const deploymentFiles = ['app.pem', 'broker.config.toml', 'broker.config.json', 'log'].filter((name) =>
     fs.existsSync(path.join(to, name)),
   );
   if (deploymentFiles.length > 0) {
@@ -104,11 +104,11 @@ export function performStage(input: StageInput): StageResult {
     );
   }
 
-  const record = path.join(to, STAGED_RECORD);
+  const recordName = STAGED_RECORD;
   const entries = fs.existsSync(to) ? fs.readdirSync(to) : [];
-  if (entries.length > 0 && !fs.existsSync(record) && input.force !== true) {
+  if (entries.length > 0 && !fs.existsSync(path.join(to, recordName)) && input.force !== true) {
     throw new Error(
-      `${to} is not empty and does not carry a ${STAGED_RECORD} from a previous run, so it is not ` +
+      `${to} is not empty and does not carry a ${recordName} from a previous run, so it is not ` +
         'ours to clear. Remove it yourself, or pass --force to replace its contents.',
     );
   }
@@ -134,76 +134,118 @@ export function performStage(input: StageInput): StageResult {
     .split('\n')
     .filter((line) => line.length > 0).length;
 
-  // Exported with git alone. `git archive | tar` would add a dependency on a system `tar`, which is
-  // not a given on Windows, and there is no need for one: a temporary index can address the commit
-  // and `checkout-index` writes it out. The prefix is given with forward slashes because that is
-  // what git accepts on every platform.
-  const indexFile = path.join(os.tmpdir(), `git-credential-broker-stage-${process.pid}-${Date.now()}`);
-  const prefix = `${to.replace(/\\/g, '/')}/`;
+  // Build beside the destination and swap only after everything succeeded. A failed install or
+  // bundle must leave the previous stage — and the daemon that may be running from it — untouched.
+  const parent = path.dirname(to);
+  const temp = path.join(parent, `.${path.basename(to)}.tmp-${process.pid}-${Date.now()}`);
+  const old = path.join(parent, `.${path.basename(to)}.old-${process.pid}-${Date.now()}`);
+  let tempExists = false;
+  let oldExists = false;
   try {
-    git(['read-tree', sha], { GIT_INDEX_FILE: indexFile });
-    // Cleared rather than merely overwritten: a file deleted since the last stage must not linger
-    // and be imported by surprise.
-    if (entries.length > 0) fs.rmSync(to, { recursive: true, force: true });
-    fs.mkdirSync(to, { recursive: true, mode: 0o755 });
-    git(['checkout-index', '-a', '-f', `--prefix=${prefix}`], { GIT_INDEX_FILE: indexFile });
-  } finally {
-    fs.rmSync(indexFile, { force: true });
-  }
+    fs.mkdirSync(temp, { recursive: true, mode: 0o755 });
+    tempExists = true;
 
-  // The deployment has no node_modules and no build step. Build the self-contained bundles here,
-  // from the exported commit: install that commit's locked dependencies in the staged directory,
-  // run its own bundle script, record the hashes, then remove node_modules. The toolchain and the
-  // bundles therefore both come from the commit, not from this checkout.
-  const bundleScript = path.join(to, 'scripts', 'bundle.ts');
-  if (!fs.existsSync(bundleScript)) {
-    throw new Error(
-      'the staged commit has no scripts/bundle.ts; it predates the self-contained build. Restage a commit that has it.',
-    );
-  }
-  const installDependencies = input.installDependencies ?? true;
-  if (installDependencies) {
-    for (const required of ['package.json', 'yarn.lock']) {
-      if (!fs.existsSync(path.join(to, required))) {
-        throw new Error(`the staged commit has no ${required}; it cannot be installed and bundled`);
+    // Exported with git alone. `git archive | tar` would add a dependency on a system `tar`, which is
+    // not a given on Windows, and there is no need for one: a temporary index can address the commit
+    // and `checkout-index` writes it out. The prefix is given with forward slashes because that is
+    // what git accepts on every platform.
+    const indexFile = path.join(os.tmpdir(), `git-credential-broker-stage-${process.pid}-${Date.now()}`);
+    const prefix = `${temp.replace(/\\/g, '/')}/`;
+    try {
+      git(['read-tree', sha], { GIT_INDEX_FILE: indexFile });
+      git(['checkout-index', '-a', '-f', `--prefix=${prefix}`], { GIT_INDEX_FILE: indexFile });
+    } finally {
+      fs.rmSync(indexFile, { force: true });
+    }
+
+    // The deployment has no node_modules and no build step. Install the exported commit's locked
+    // dependencies here, run its own bundle script, record the hashes, then remove node_modules
+    // before the tree is swapped into place.
+    const bundleScript = path.join(temp, 'scripts', 'bundle.ts');
+    if (!fs.existsSync(bundleScript)) {
+      throw new Error(
+        'the staged commit has no scripts/bundle.ts; it predates the self-contained build. Restage a commit that has it.',
+      );
+    }
+    const installDependencies = input.installDependencies ?? true;
+    if (installDependencies) {
+      for (const required of ['package.json', 'yarn.lock']) {
+        if (!fs.existsSync(path.join(temp, required))) {
+          throw new Error(`the staged commit has no ${required}; it cannot be installed and bundled`);
+        }
+      }
+      const install = spawnSync('corepack', ['yarn', 'install', '--immutable'], {
+        cwd: temp,
+        encoding: 'utf8',
+      });
+      if (install.status !== 0) {
+        throw new Error(
+          `installing the staged commit failed: ${
+            (install.stderr ?? '').trim() ||
+            (install.error as Error | undefined)?.message ||
+            `exit ${String(install.status)}`
+          }`,
+        );
       }
     }
-    const install = spawnSync('corepack', ['yarn', 'install', '--immutable'], {
-      cwd: to,
-      encoding: 'utf8',
-    });
-    if (install.status !== 0) {
-      throw new Error(
-        `installing the staged commit failed: ${
-          (install.stderr ?? '').trim() || (install.error as Error | undefined)?.message || `exit ${String(install.status)}`
-        }`,
-      );
+    try {
+      const bundle = spawnSync(process.execPath, [bundleScript], { cwd: temp, encoding: 'utf8' });
+      if (bundle.status !== 0) {
+        throw new Error(
+          `bundling the staged commit failed: ${(bundle.stderr ?? '').trim() || `exit ${String(bundle.status)}`}`,
+        );
+      }
+    } finally {
+      fs.rmSync(path.join(temp, 'node_modules'), { recursive: true, force: true });
     }
-  }
-  try {
-    const bundle = spawnSync(process.execPath, [bundleScript], { cwd: to, encoding: 'utf8' });
-    if (bundle.status !== 0) {
-      throw new Error(
-        `bundling the staged commit failed: ${(bundle.stderr ?? '').trim() || `exit ${String(bundle.status)}`}`,
-      );
-    }
-  } finally {
-    fs.rmSync(path.join(to, 'node_modules'), { recursive: true, force: true });
-  }
-  const digest = (file: string): string =>
-    createHash('sha256').update(fs.readFileSync(path.join(to, file))).digest('hex');
-  const bundles = { gcb: digest('dist/gcb.js'), daemon: digest('dist/gcb-daemon.js') };
+    const digest = (file: string): string =>
+      createHash('sha256').update(fs.readFileSync(path.join(temp, file))).digest('hex');
+    const bundles = { gcb: digest('dist/gcb.js'), daemon: digest('dist/gcb-daemon.js') };
 
-  writeSecretFile(
-    record,
-    `${JSON.stringify(
-      { ref: input.ref, sha, subject, stagedAt: new Date().toISOString(), bundles },
-      null,
-      2,
-    )}\n`,
-    0o644,
-  );
-  return { to, sha, subject, files, dirtyWorkingTree, bundles };
+    writeSecretFile(
+      path.join(temp, recordName),
+      `${JSON.stringify(
+        { ref: input.ref, sha, subject, stagedAt: new Date().toISOString(), bundles },
+        null,
+        2,
+      )}\n`,
+      0o644,
+    );
+
+    // Swap. Renaming the old tree aside first keeps the window small and lets a failed second rename
+    // put it back; the old tree is only removed after the new one is in place.
+    if (fs.existsSync(to)) {
+      fs.renameSync(to, old);
+      oldExists = true;
+    }
+    try {
+      fs.renameSync(temp, to);
+      tempExists = false;
+    } catch (error) {
+      if (oldExists) {
+        try {
+          fs.renameSync(old, to);
+          oldExists = false;
+        } catch {
+          // The new tree could not be installed and the old one could not be restored; report the
+          // original failure and leave the old path visible for the operator.
+        }
+      }
+      throw error;
+    }
+    if (oldExists) {
+      try {
+        fs.rmSync(old, { recursive: true, force: true });
+        oldExists = false;
+      } catch {
+        // A leftover old tree is noise, not a failed stage: the new tree is already in place.
+      }
+    }
+
+    return { to, sha, subject, files, dirtyWorkingTree, bundles };
+  } finally {
+    if (tempExists) fs.rmSync(temp, { recursive: true, force: true });
+  }
 }
 
 /** Usage text for `stage`. */

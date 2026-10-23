@@ -68,10 +68,11 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 ## Rules that are not obvious from the code
 
 - **Runtime dependencies are bundled, not installed at the deployment.** `smol-toml` is the first;
-  `esbuild` produces self-contained `dist/gcb.js` and `dist/gcb-daemon.js`, and `stage` builds them from
-  the exported commit and records their hashes. `esbuild` lives in the source checkout's `node_modules`;
-  `stage` exposes it to the staged build with a temporary symlink, then removes it. A dependency that is
-  not bundled would still fail at the deployment, so keep the gate closed.
+  `esbuild` produces self-contained `dist/gcb.js` and `dist/gcb-daemon.js`. `stage` installs the
+  exported commit's locked dependencies in a temporary tree, runs that tree's bundle script, publishes
+  the result without `node_modules`, and records the hashes. Stage needs Corepack and registry access;
+  the deployment needs neither. A dependency that is not bundled would still fail at the deployment, so
+  keep the gate closed.
 
   The floor is checked at runtime, in both entry points, because `engines` is only a declaration here:
   measured, `yarn install` succeeds with `"node": ">=99"`, and `.npmrc` is not read by Yarn 4 at all — so

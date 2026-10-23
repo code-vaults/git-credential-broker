@@ -107,6 +107,51 @@ describe('stage', () => {
     );
   });
 
+  it('publishes no node_modules', () => {
+    const repo = makeRepo('no-modules');
+    const to = path.join(scratch, 'staged/no-modules');
+    stage({ repo, to, ref: 'HEAD', home: scratch });
+    assert.equal(fs.existsSync(path.join(to, 'node_modules')), false);
+    assert.equal(fs.existsSync(path.join(to, 'dist', 'gcb.js')), true);
+  });
+
+  it('keeps the previous stage when the next build fails', () => {
+    const repo = makeRepo('keep-old');
+    const to = path.join(scratch, 'staged/keep-old');
+    stage({ repo, to, ref: 'HEAD', home: scratch });
+    const bundle = fs.readFileSync(path.join(to, 'dist', 'gcb.js'), 'utf8');
+    const record = fs.readFileSync(path.join(to, STAGED_RECORD), 'utf8');
+
+    fs.writeFileSync(path.join(repo, 'scripts', 'bundle.ts'), 'process.exit(1);\n');
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync(
+      'git',
+      ['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'broken'],
+      { cwd: repo },
+    );
+
+    assert.throws(() => stage({ repo, to, ref: 'HEAD', home: scratch }), /bundling the staged commit failed/);
+    assert.equal(fs.readFileSync(path.join(to, 'dist', 'gcb.js'), 'utf8'), bundle, 'the old bundle survives');
+    assert.equal(fs.readFileSync(path.join(to, STAGED_RECORD), 'utf8'), record, 'and its record');
+    assert.deepEqual(
+      fs.readdirSync(path.dirname(to)).filter((name) => name.startsWith('.keep-old')),
+      [],
+      'the failed build leaves no temporary tree behind',
+    );
+  });
+
+  it('refuses a legacy deployment directory even with --force', () => {
+    const repo = makeRepo('legacy-deployment');
+    const to = path.join(scratch, 'legacy-deployment-dir');
+    fs.mkdirSync(to, { recursive: true });
+    fs.writeFileSync(path.join(to, 'broker.config.json'), '{}\n');
+    assert.throws(
+      () => stage({ repo, to, ref: 'HEAD', home: scratch, force: true }),
+      /deployment directory/,
+    );
+    assert.equal(fs.existsSync(path.join(to, 'broker.config.json')), true);
+  });
+
   it('replaces a tree it staged before, leaving nothing stale behind', () => {
     const repo = makeRepo('restage');
     const to = path.join(scratch, 'staged/restage');
