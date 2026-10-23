@@ -14,9 +14,7 @@
  * `--force` still exists, for regenerating from flags when the file is beyond editing.
  */
 import fs from 'node:fs';
-import { isDeepStrictEqual } from 'node:util';
-import { isMap, parseDocument, stringify } from 'yaml';
-import type { Document } from 'yaml';
+import { parseDocument, stringify } from 'yaml';
 
 import {
   deploymentDir,
@@ -198,6 +196,7 @@ export function mergeBrokerConfig(existing: BrokerConfig, input: InitInput, path
     socketPath: paths.socketPath,
     auditPath: paths.auditPath,
     hosts: {
+      ...existing.hosts,
       'github.com': {
         provider: 'github-app',
         allow: mergeAllowList(block.allow, input),
@@ -217,61 +216,32 @@ export function mergeBrokerConfig(existing: BrokerConfig, input: InitInput, path
  * @returns the configuration, or null when the file does not exist.
  * @throws {Error} when the file exists but is not a valid configuration.
  */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+/** One path whose value the user explicitly changed. */
+export interface ConfigChange {
+  readonly path: readonly (string | number)[];
+  readonly value: unknown;
 }
 
 /**
- * Apply a merged configuration to an existing YAML document, touching only changed nodes.
- *
- * Parsing to a plain object and serializing it back is what removes comments. The Document API
- * keeps the untouched nodes (and their comments) and replaces only the values that changed.
- *
- * @param document - the parsed document.
- * @param value - the merged plain object.
- * @param path - the current path, empty at the root.
- */
-function syncDocument(document: Document, value: unknown, path: (string | number)[] = []): void {
-  if (!isRecord(value)) {
-    const node = path.length === 0 ? document.contents : document.getIn(path, true);
-    const current = node && typeof (node as { toJSON?: () => unknown }).toJSON === 'function' ? (node as { toJSON: () => unknown }).toJSON() : node;
-    if (!isDeepStrictEqual(current, value)) {
-      if (path.length === 0) document.contents = document.createNode(value);
-      else document.setIn(path, value);
-    }
-    return;
-  }
-
-  const current = path.length === 0 ? document.contents : document.getIn(path, true);
-  if (!isMap(current)) {
-    if (path.length === 0) document.contents = document.createNode(value);
-    else document.setIn(path, value);
-    return;
-  }
-
-  for (const [key, child] of Object.entries(value)) syncDocument(document, child, [...path, key]);
-  const wanted = new Set(Object.keys(value));
-  const keys = current.items.map((item) => {
-    const keyNode = item.key as { value?: unknown } | null;
-    return keyNode && keyNode.value !== undefined ? String(keyNode.value) : '';
-  });
-  for (const key of keys) {
-    if (!wanted.has(key)) document.deleteIn([...path, key]);
-  }
-}
-
-/**
- * Write a configuration. An existing file is edited as a YAML document so comments survive;
- * a new file gets a short header and a fresh serialization.
+ * Write a configuration. A fresh file is serialized from the merged object; an existing file is
+ * edited only at the paths the user changed, so comments, other hosts and unknown keys survive.
  *
  * @param configPath - the destination.
- * @param config - the merged configuration.
+ * @param config - the configuration to write when the file is new or forced.
+ * @param force - replace the file instead of editing it.
+ * @param changes - explicit edits for the existing-document path.
  */
-function writeConfig(configPath: string, config: BrokerConfig, force = false): void {
+function writeConfig(
+  configPath: string,
+  config: BrokerConfig,
+  force: boolean,
+  changes: readonly ConfigChange[],
+): void {
   if (force || !fs.existsSync(configPath)) {
     writeSecretFile(configPath, `# Broker configuration for gcb. See README.md.\n${stringify(config, { lineWidth: 0 })}`);
     return;
   }
+  if (changes.length === 0) return;
   const document = parseDocument(fs.readFileSync(configPath, 'utf8'), {
     schema: 'core',
     uniqueKeys: true,
@@ -280,7 +250,7 @@ function writeConfig(configPath: string, config: BrokerConfig, force = false): v
   if (document.errors.length > 0) {
     throw new Error(`cannot update ${configPath}: ${document.errors.map((error) => error.message).join('; ')}`);
   }
-  syncDocument(document, config);
+  for (const change of changes) document.setIn(change.path, change.value);
   const text = document.toString();
   writeSecretFile(configPath, text.endsWith('\n') ? text : `${text}\n`);
 }
@@ -367,8 +337,28 @@ export function performInit(input: InitInput): InitResult {
     }
 
     const config = mergeBrokerConfig(previous, input, paths);
+    const block = appBlock(previous);
+    const mergedBlock = appBlock(config);
+    const allowChanged =
+      (input.allow?.length ?? 0) > 0 || (input.removeAllow?.length ?? 0) > 0 || input.replaceAllow === true;
+    const changes: ConfigChange[] = [];
+    if (paths.socketPath !== previous.socketPath) changes.push({ path: ['socketPath'], value: paths.socketPath });
+    if (paths.auditPath !== previous.auditPath) changes.push({ path: ['auditPath'], value: paths.auditPath });
+    if (paths.privateKeyPath !== block.privateKeyPath) {
+      changes.push({ path: ['hosts', 'github.com', 'privateKeyPath'], value: paths.privateKeyPath });
+    }
+    if (allowChanged) changes.push({ path: ['hosts', 'github.com', 'allow'], value: mergedBlock.allow });
+    if (input.clientId !== undefined) {
+      changes.push({ path: ['hosts', 'github.com', 'clientId'], value: input.clientId });
+    }
+    if (input.appId !== undefined) {
+      changes.push({ path: ['hosts', 'github.com', 'appId'], value: input.appId });
+    }
+    if (input.permissions !== undefined) {
+      changes.push({ path: ['hosts', 'github.com', 'permissions'], value: input.permissions });
+    }
     fs.mkdirSync(artifacts.auditDir, { recursive: true });
-    writeConfig(configPath, config, input.force);
+    writeConfig(configPath, config, input.force, changes);
     return { keyPath: artifacts.keyPath, configPath, config, mode, previous };
   }
 
@@ -407,7 +397,7 @@ export function performInit(input: InitInput): InitResult {
   const config = buildBrokerConfig({ ...input, mode, cert: certPath, clientId, appId });
   writeSecretFile(artifacts.keyPath, pem);
   fs.mkdirSync(artifacts.auditDir, { recursive: true });
-  writeConfig(configPath, config, input.force);
+  writeConfig(configPath, config, input.force, []);
   return { keyPath: artifacts.keyPath, configPath, config, mode };
 }
 

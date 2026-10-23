@@ -16,7 +16,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
 import { renderCompose } from '../../packages/host/src/commands/compose.ts';
 import { runDiagnose } from '../../packages/host/src/commands/diagnose.ts';
-import { SIDECAR, resolveConfigPath, deploymentDir } from '../../packages/host/src/config.ts';
+import { SIDECAR, loadConfig, resolveConfigPath, deploymentDir } from '../../packages/host/src/config.ts';
 import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit } from '../../packages/host/src/commands/init.ts';
 import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../packages/cli/src/support.ts';
 import { defaultHelperPath, performSetup } from '../../packages/client/src/commands/setup.ts';
@@ -603,6 +603,39 @@ describe('init', () => {
     assert.deepEqual(appBlock(updated.config).allow, ['a/one', 'b/two']);
   });
 
+  it('preserves other hosts when updating github.com', () => {
+    const root = dir(`init-hosts-${Math.random().toString(36).slice(2)}`);
+    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    const target = path.join(root, 'deploy');
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+
+    const file = path.join(target, 'broker.config.yml');
+    fs.appendFileSync(
+      file,
+      `
+  # keep this static host
+  "git.example.internal:8443":
+    provider: static
+    allowInsecureHttp: true
+    username: git
+    password: p
+    allow: [infra/*]
+`,
+    );
+
+    const updated = performInit({
+      ...baseInput,
+      cert: undefined,
+      dir: target,
+      allow: ['b/two'],
+    });
+
+    const reloaded = loadConfig(file);
+    assert.equal(reloaded.hosts['git.example.internal:8443']?.provider, 'static');
+    assert.equal(updated.config.hosts['git.example.internal:8443']?.provider, 'static');
+    assert.match(fs.readFileSync(file, 'utf8'), /# keep this static host/);
+  });
+
   it('removes and replaces entries only when asked', () => {
     const root = dir(`init-remove-${Math.random().toString(36).slice(2)}`);
     const cert = writeKey(path.join(root, 'downloaded.pem'));
@@ -881,6 +914,19 @@ describe('compose', () => {
     assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/);
     assert.match(rendered, /broker\.config\.yml:\/etc\/git-cred-broker\/broker\.config\.yml:ro/);
     assert.equal(/^\s+ports:/m.test(rendered), false, 'the socket is the only interface');
+  });
+
+  it('mounts an explicitly selected config file', () => {
+    const custom = renderCompose({
+      dir: '/volume1/docker/git-cred-broker',
+      configPath: '/srv/custom/broker.yml',
+      socketDir: '/srv/shared/git-broker',
+      user: '1026:100',
+      image: 'node:24-slim',
+      packageSpec: 'gcb-host@0.1.0',
+      name: 'git-cred-broker',
+    });
+    assert.match(custom, /\/srv\/custom\/broker\.yml:\/etc\/git-cred-broker\/broker\.config\.yml:ro/);
   });
 
   it('drops privileges and keeps the root filesystem read-only', () => {

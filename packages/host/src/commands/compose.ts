@@ -21,6 +21,8 @@ import { USER_TOKEN_FILE } from '../config.ts';
 export interface ComposeInput {
   /** Host directory holding broker.config.yml, app.pem and log/. */
   readonly dir: string;
+  /** Host configuration file; defaults to `${dir}/broker.config.yml`. */
+  readonly configPath?: string;
   /** Host directory the pushing container already mounts, where the socket will appear. */
   readonly socketDir: string;
   /** `uid:gid` the sidecar runs as; must match the container that needs the socket. */
@@ -50,6 +52,7 @@ export const CODE_DIR = '/opt/gcb';
  */
 export function renderCompose(input: ComposeInput): string {
   const socketDir = input.socketDir.replace(/\/+$/, '');
+  const configPath = input.configPath ?? `${input.dir}/broker.config.yml`;
   const fromCode = input.code !== undefined;
 
   const origin = fromCode
@@ -146,7 +149,7 @@ services:
     command:
 ${command}
     volumes:${codeMount}
-      - ${input.dir}/broker.config.yml:${SIDECAR.configPath}:ro
+      - ${configPath}:${SIDECAR.configPath}:ro
       - ${input.dir}/app.pem:${SIDECAR.keyPath}:ro
 ${userRefreshMount}
       - ${input.dir}/log:${SIDECAR.auditDir}
@@ -229,6 +232,7 @@ export function runCompose(argv: readonly string[]): number {
   say(
     renderCompose({
       dir,
+      configPath,
       socketDir,
       user,
       image: args.value('image') ?? 'node:24-slim',
