@@ -417,7 +417,9 @@ file.
 
 ## Configuration reference
 
-The broker only ever reads this file; it contains no secrets.
+The broker only ever reads this file; it contains no secrets. The file is YAML; JSON and TOML are
+not read. The default filename changed from `broker.config.json` to `broker.config.yml`: rename or
+convert an existing deployment, or pass `--config broker.config.json` explicitly (YAML accepts JSON).
 
 Top level:
 

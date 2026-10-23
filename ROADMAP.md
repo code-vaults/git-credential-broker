@@ -139,8 +139,8 @@ The configuration is the source of truth and must be comfortable to edit by hand
         atomic replace is visible;
       - `gcb doctor` reports the active config digest and the last reload result;
         `gcb config check` is the one-shot validation.
-- [ ] Keep JSON working for one release: `gcb config migrate` converts an existing
-      `broker.config.json` to TOML, preserving hand edits and comments where possible.
+- [ ] One-time migration: convert an existing `broker.config.json` to YAML before upgrade. The
+      loader does not read JSON after the switch; this phase adds no `config migrate` command.
 - [ ] Add `gcb config check` and `gcb config edit` (`$EDITOR`, validated on save).
 - [ ] Update `init`, `compose`, `stage`, and `deployment.ts` to the chosen format.
 

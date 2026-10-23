@@ -38,8 +38,8 @@ export PATH
 BIN=${GIT_BROKER_BIN:-$(command -v gcb || true)}
 GH=${GIT_BROKER_GH:-gh}
 ROOT=${GIT_BROKER_ROOT:-$HOME}
-LOG=${GIT_BROKER_OPENER_LOG:-$HOME/.git-credential-broker-opener.log}
-PIDFILE=${GIT_BROKER_OPENER_PID:-$HOME/.git-credential-broker-opener.pid}
+LOG=${GIT_BROKER_OPENER_LOG:-$HOME/.gcb-opener.log}
+PIDFILE=${GIT_BROKER_OPENER_PID:-$HOME/.gcb-opener.pid}
 
 if [ "$(id -u)" = 0 ]; then
   echo "host-opener: run this as the user whose gh credentials should be used, not as root" >&2
