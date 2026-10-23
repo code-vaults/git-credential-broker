@@ -42,17 +42,19 @@
     "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node scripts/postbuild.mjs",
+    "build": "tsc -p tsconfig.build.json && node scripts/postbuild.mjs && node scripts/bundle.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "yarn build && node --disable-warning=ExperimentalWarning --test test/unit/*.test.ts test/e2e/*.test.ts",
     "test:unit": "node --disable-warning=ExperimentalWarning --test test/unit/*.test.ts",
     "test:e2e": "yarn build && node --disable-warning=ExperimentalWarning --test test/e2e/*.test.ts",
     "check": "yarn typecheck && yarn test",
     "prepublishOnly": "yarn check",
-    "pack:check": "yarn build && npm pack --dry-run"
+    "pack:check": "yarn build && npm pack --dry-run",
+    "bundle": "node scripts/bundle.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.19.0",
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
   }
 }

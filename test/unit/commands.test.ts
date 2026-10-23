@@ -883,7 +883,7 @@ describe('compose', () => {
     });
 
     assert.match(fromCode, /- \/volume1\/docker\/git-cred-broker\/app:\/opt\/git-credential-broker:ro/);
-    assert.match(fromCode, /- node\n\s+- \/opt\/git-credential-broker\/src\/cli\/daemon\.ts/);
+    assert.match(fromCode, /- node\n\s+- \/opt\/git-credential-broker\/dist\/gcb-daemon\.js/);
     assert.equal(/npx/.test(fromCode), false, 'no registry access at start');
     assert.equal(/npm_config_cache/.test(fromCode), false, 'and so no cache to write');
     assert.match(fromCode, /STAGED\.json/, 'it points at the record of which commit this is');

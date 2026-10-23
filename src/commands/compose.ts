@@ -55,7 +55,7 @@ export function renderCompose(input: ComposeInput): string {
   const origin = fromCode
     ? `# It runs the code mounted read-only from ${input.code}, which is whatever \`stage\` put there —
 # see the STAGED.json beside it for the commit. Nothing is fetched at start and nothing is built:
-# Node 24 strips TypeScript types, so src/cli/daemon.ts runs as it is.`
+# stage runs the bundle from that commit, so dist/gcb-daemon.js is self-contained.`
     : `# The image fetches the published package at start:
 #
 #   npx --yes --package '${input.packageSpec}' git-credential-brokerd
@@ -92,7 +92,7 @@ export function renderCompose(input: ComposeInput): string {
       '\n      # for a path that does not exist would become a directory, and the broker would read that.';
   const command = fromCode
     ? `      - node
-      - ${CODE_DIR}/src/cli/daemon.ts
+      - ${CODE_DIR}/dist/gcb-daemon.js
       - --config
       - ${SIDECAR.configPath}`
     : `      - sh

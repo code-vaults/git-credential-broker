@@ -7,6 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -60,6 +61,39 @@ describe('stage', () => {
     const record = JSON.parse(fs.readFileSync(path.join(to, STAGED_RECORD), 'utf8')) as { sha: string; subject: string };
     assert.equal(record.sha, result.sha);
     assert.equal(record.subject, 'first');
+  });
+
+  it('bundles the staged commit and records both hashes', () => {
+    const repo = makeRepo('bundled');
+    fs.mkdirSync(path.join(repo, 'scripts'), { recursive: true });
+    fs.writeFileSync(
+      path.join(repo, 'scripts', 'bundle.mjs'),
+      `import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+const root = process.argv[process.argv.indexOf('--root') + 1];
+mkdirSync(path.join(root, 'dist'), { recursive: true });
+writeFileSync(path.join(root, 'dist', 'gcb.js'), '#!/usr/bin/env node\\nconsole.log("gcb");\\n');
+writeFileSync(path.join(root, 'dist', 'gcb-daemon.js'), '#!/usr/bin/env node\\nconsole.log("daemon");\\n');
+`,
+    );
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync(
+      'git',
+      ['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'bundle'],
+      { cwd: repo },
+    );
+
+    const to = path.join(scratch, 'staged/bundled');
+    const result = stage({ repo, to, ref: 'HEAD', home: scratch });
+    assert.ok(result.bundles, 'the bundle hashes are reported');
+    assert.equal(fs.existsSync(path.join(to, 'dist', 'gcb.js')), true);
+    assert.equal(fs.existsSync(path.join(to, 'dist', 'gcb-daemon.js')), true);
+    const record = JSON.parse(fs.readFileSync(path.join(to, STAGED_RECORD), 'utf8')) as {
+      bundles: { gcb: string; daemon: string };
+    };
+    assert.deepEqual(record.bundles, result.bundles);
+    const expected = createHash('sha256').update(fs.readFileSync(path.join(to, 'dist', 'gcb.js'))).digest('hex');
+    assert.equal(result.bundles?.gcb, expected);
   });
 
   it('replaces a tree it staged before, leaving nothing stale behind', () => {

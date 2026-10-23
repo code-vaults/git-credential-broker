@@ -17,6 +17,7 @@
  * have looked at, not merely whatever HEAD happens to be.
  */
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -51,6 +52,8 @@ export interface StageResult {
   readonly files: number;
   /** Uncommitted changes existed and are therefore *not* part of what was staged. */
   readonly dirtyWorkingTree: boolean;
+  /** SHA-256 of the self-contained bundles, when the commit carries the bundle script. */
+  readonly bundles?: { readonly gcb: string; readonly daemon: string };
 }
 
 /**
@@ -143,12 +146,39 @@ export function performStage(input: StageInput): StageResult {
     fs.rmSync(indexFile, { force: true });
   }
 
+  // The deployment has no node_modules and no build step. When the commit carries the bundle
+  // script, build the self-contained entry points from the exported source and record their hashes;
+  // older commits without the script keep the source-launch behaviour. esbuild and the parser come
+  // from the source checkout's node_modules, which is not part of the commit: the recorded hashes
+  // identify the result, but they do not independently prove the toolchain.
+  const bundleScript = path.join(to, 'scripts', 'bundle.mjs');
+  let bundles: { gcb: string; daemon: string } | undefined;
+  if (fs.existsSync(bundleScript)) {
+    const bundle = spawnSync(
+      process.execPath,
+      [bundleScript, '--root', to, '--node-modules', path.join(repo, 'node_modules')],
+      { cwd: to, encoding: 'utf8', env: { ...process.env, NODE_ENV: 'production' } },
+    );
+    if (bundle.status !== 0) {
+      throw new Error(
+        `bundling the staged commit failed: ${(bundle.stderr ?? '').trim() || `exit ${String(bundle.status)}`}`,
+      );
+    }
+    const digest = (file: string): string =>
+      createHash('sha256').update(fs.readFileSync(path.join(to, file))).digest('hex');
+    bundles = { gcb: digest('dist/gcb.js'), daemon: digest('dist/gcb-daemon.js') };
+  }
+
   writeSecretFile(
     record,
-    `${JSON.stringify({ ref: input.ref, sha, subject, stagedAt: new Date().toISOString() }, null, 2)}\n`,
+    `${JSON.stringify(
+      { ref: input.ref, sha, subject, stagedAt: new Date().toISOString(), bundles: bundles ?? null },
+      null,
+      2,
+    )}\n`,
     0o644,
   );
-  return { to, sha, subject, files, dirtyWorkingTree };
+  return { to, sha, subject, files, dirtyWorkingTree, ...(bundles === undefined ? {} : { bundles }) };
 }
 
 /** Usage text for `stage`. */
@@ -167,9 +197,9 @@ from a commit rather than copying the working tree is what makes the staged code
 sha is printed so you can check it against your own clone or the remote, because a repository the
 agent can write to is a repository whose commits the agent can rewrite.
 
-Then run it from there — Node strips types, so there is nothing to build:
+Then run the self-contained bundle from there:
 
-  node <to>/src/cli/daemon.ts --config <deployment directory>/broker.config.json
+  node <to>/dist/gcb-daemon.js --config <deployment directory>/broker.config.json
 `;
 
 /**
