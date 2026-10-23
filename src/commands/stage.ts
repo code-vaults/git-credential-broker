@@ -42,6 +42,11 @@ export interface StageInput {
   readonly mounts?: readonly string[];
   /** Replace a target that this command did not stage itself. */
   readonly force?: boolean;
+  /**
+   * Install the staged commit's locked dependencies before bundling. Defaults to true; tests and
+   * preinstalled toolchains may turn it off, but a deployment build should always install.
+   */
+  readonly installDependencies?: boolean;
 }
 
 /** What `stage` produced. */
@@ -146,43 +151,44 @@ export function performStage(input: StageInput): StageResult {
     fs.rmSync(indexFile, { force: true });
   }
 
-  // The deployment has no node_modules and no build step: build the self-contained entry points
-  // from the exported source and record their hashes. esbuild and the parser come from the source
-  // checkout's node_modules, which is not part of the commit; a temporary symlink lets the staged
-  // bundle script import esbuild normally. The recorded hashes identify the result, but they do not
-  // independently prove the toolchain.
+  // The deployment has no node_modules and no build step. Build the self-contained bundles here,
+  // from the exported commit: install that commit's locked dependencies in the staged directory,
+  // run its own bundle script, record the hashes, then remove node_modules. The toolchain and the
+  // bundles therefore both come from the commit, not from this checkout.
   const bundleScript = path.join(to, 'scripts', 'bundle.ts');
   if (!fs.existsSync(bundleScript)) {
     throw new Error(
       'the staged commit has no scripts/bundle.ts; it predates the self-contained build. Restage a commit that has it.',
     );
   }
-  const sourceModules = path.join(repo, 'node_modules');
-  if (!fs.existsSync(sourceModules)) {
-    throw new Error(`cannot bundle the staged commit: ${sourceModules} does not exist; install dependencies first`);
-  }
-  const stagedModules = path.join(to, 'node_modules');
-  if (fs.existsSync(stagedModules)) {
-    throw new Error(`refusing to bundle: ${stagedModules} already exists in the staged tree`);
-  }
-  fs.symlinkSync(sourceModules, stagedModules, 'dir');
-  try {
-    const bundle = spawnSync(process.execPath, [bundleScript, '--root', to], {
+  const installDependencies = input.installDependencies ?? true;
+  if (installDependencies) {
+    for (const required of ['package.json', 'yarn.lock']) {
+      if (!fs.existsSync(path.join(to, required))) {
+        throw new Error(`the staged commit has no ${required}; it cannot be installed and bundled`);
+      }
+    }
+    const install = spawnSync('corepack', ['yarn', 'install', '--immutable'], {
       cwd: to,
       encoding: 'utf8',
-      env: { ...process.env, NODE_ENV: 'production' },
     });
+    if (install.status !== 0) {
+      throw new Error(
+        `installing the staged commit failed: ${
+          (install.stderr ?? '').trim() || (install.error as Error | undefined)?.message || `exit ${String(install.status)}`
+        }`,
+      );
+    }
+  }
+  try {
+    const bundle = spawnSync(process.execPath, [bundleScript], { cwd: to, encoding: 'utf8' });
     if (bundle.status !== 0) {
       throw new Error(
         `bundling the staged commit failed: ${(bundle.stderr ?? '').trim() || `exit ${String(bundle.status)}`}`,
       );
     }
   } finally {
-    try {
-      fs.unlinkSync(stagedModules);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    }
+    fs.rmSync(path.join(to, 'node_modules'), { recursive: true, force: true });
   }
   const digest = (file: string): string =>
     createHash('sha256').update(fs.readFileSync(path.join(to, file))).digest('hex');
@@ -216,7 +222,9 @@ from a commit rather than copying the working tree is what makes the staged code
 sha is printed so you can check it against your own clone or the remote, because a repository the
 agent can write to is a repository whose commits the agent can rewrite.
 
-Then run the self-contained bundle from there:
+The staged commit is installed with \`corepack yarn install --immutable\`, bundled with its own
+script, and has \`node_modules\` removed afterwards. Stage therefore needs corepack and registry
+access; the deployment needs neither. Then run the self-contained bundle from there:
 
   node <to>/dist/gcb-daemon.js --config <deployment directory>/broker.config.toml
 `;

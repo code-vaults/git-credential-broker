@@ -1,16 +1,11 @@
 /**
  * Bundle the two entry points into self-contained ESM files.
  *
- * The broker runs from a staged commit with no install step, so every runtime dependency has to
- * be inside the bundle. `esbuild` is a build-time tool from this checkout's `node_modules`;
- * `stage` makes that directory visible to the staged build with a temporary `node_modules`
- * symlink, so this script can import esbuild normally and still bundle the exported source.
+ * This runs inside the tree being built: a normal `yarn bundle` from the checkout, or `stage` after
+ * it has installed that commit's dependencies in the staged directory. Everything resolves from
+ * this script's own repository, so there is no second root to pass around.
  *
- * Usage:
- *   node scripts/bundle.ts [--root <dir>]
- *
- * `--root` defaults to the repository containing this script. `nodePaths` points at that root's
- * `node_modules`, which is where `stage` puts the symlink and where a normal build finds it.
+ * `stage` removes `node_modules` after the build; the deployment runs only the bundles.
  */
 import { chmodSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -18,17 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 import esbuild from 'esbuild';
 
-const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-let root = scriptRoot;
-const argv = process.argv.slice(2);
-for (let index = 0; index < argv.length; index += 1) {
-  if (argv[index] === '--root') {
-    root = path.resolve(argv[++index] ?? '.');
-  } else {
-    throw new Error(`unknown bundle option: ${String(argv[index])}`);
-  }
-}
-
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const nodeModules = path.join(root, 'node_modules');
 mkdirSync(path.join(root, 'dist'), { recursive: true });
 

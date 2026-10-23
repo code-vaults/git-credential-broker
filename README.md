@@ -76,9 +76,9 @@ npm install -g git-credential-broker
 ```
 
 The package has one runtime dependency, `smol-toml`, and the build inlines it: `yarn bundle` produces
-self-contained `dist/gcb.js` and `dist/gcb-daemon.js`. `stage` exports a **commit**, builds those bundles
-from it, and records both hashes in `STAGED.json`, so a staged deployment needs no `node_modules` and no
-install step.
+self-contained `dist/gcb.js` and `dist/gcb-daemon.js`. `stage` exports a **commit**, installs that commit's locked dependencies,
+builds those bundles from it, records both hashes in `STAGED.json`, and removes `node_modules`; the
+staged deployment itself needs no install step.
 
 Or run it from a checkout. Node 24 strips TypeScript types, but the source still needs its dependencies:
 

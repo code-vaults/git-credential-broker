@@ -18,7 +18,7 @@ import { performStage, STAGED_RECORD } from '../../src/commands/stage.ts';
 /** A fake bundle step: enough for stage to run, without esbuild. */
 const BUNDLE_SCRIPT = `import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-const root = process.argv[process.argv.indexOf('--root') + 1];
+const root = process.cwd();
 mkdirSync(path.join(root, 'dist'), { recursive: true });
 writeFileSync(path.join(root, 'dist', 'gcb.js'), '#!/usr/bin/env node\\nconsole.log("gcb");\\n');
 writeFileSync(path.join(root, 'dist', 'gcb-daemon.js'), '#!/usr/bin/env node\\nconsole.log("daemon");\\n');
@@ -58,7 +58,8 @@ describe('stage', () => {
    * Resolving them for real asks the container runtime, which is right in production and noise here:
    * each case states its own list, and the mount cases pass theirs.
    */
-  const stage = (input: Parameters<typeof performStage>[0]) => performStage({ mounts: [], ...input });
+  const stage = (input: Parameters<typeof performStage>[0]) =>
+    performStage({ mounts: [], installDependencies: false, ...input });
 
   it('exports the commit, records where it came from, and ignores the working tree', () => {
     const repo = makeRepo('clean');
