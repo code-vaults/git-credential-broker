@@ -31,6 +31,10 @@ for (const [entry, output] of [
     target: 'node24',
     sourcemap: true,
     nodePaths: [nodeModules],
+    banner: {
+      js: `import { createRequire as __gcbCreateRequire } from 'node:module';
+const require = __gcbCreateRequire(import.meta.url);`,
+    },
     logLevel: 'warning',
   });
   chmodSync(path.join(root, output), 0o755);
