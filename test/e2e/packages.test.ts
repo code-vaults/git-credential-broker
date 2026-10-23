@@ -48,7 +48,7 @@ function pack(name: string): string {
 
 /** Find a package below a prefix. */
 function hasPackage(prefix: string, name: string): boolean {
-  const pending = [path.join(prefix, 'node_modules')];
+  const pending = [path.join(prefix, 'node_modules'), path.join(prefix, 'lib', 'node_modules')];
   while (pending.length > 0) {
     const dir = pending.pop();
     if (!dir || !fs.existsSync(dir)) continue;
@@ -65,7 +65,7 @@ function hasPackage(prefix: string, name: string): boolean {
 
 /** The installed bin. */
 function bin(prefix: string): string {
-  return path.join(prefix, 'node_modules', '.bin', 'gcb');
+  return path.join(prefix, 'bin', 'gcb');
 }
 
 describe('packed npm packages', () => {
@@ -75,8 +75,8 @@ describe('packed npm packages', () => {
     const client = pack('client');
     const host = pack('host');
 
-    run('npm', ['install', '--prefix', clientPrefix, '--no-audit', '--no-fund', cli, client]);
-    run('npm', ['install', '--prefix', hostPrefix, '--no-audit', '--no-fund', cli, host]);
+    run('npm', ['install', '-g', '--prefix', clientPrefix, '--no-audit', '--no-fund', cli, client]);
+    run('npm', ['install', '-g', '--prefix', hostPrefix, '--no-audit', '--no-fund', cli, host]);
   });
 
   it('installs a working client without the host parser', () => {
