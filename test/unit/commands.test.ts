@@ -950,6 +950,45 @@ describe('compose', () => {
     assert.equal(output.includes(`${target}/broker.config.yml:${SIDECAR.configPath}:ro`), true);
   });
 
+  it('honors GIT_BROKER_CONFIG when no --config or --dir is given', () => {
+    const target = dir(`compose-env-${Math.random().toString(36).slice(2)}`);
+    const configFile = path.join(target, 'custom.yml');
+    fs.writeFileSync(
+      configFile,
+      stringifyYaml({
+        socketPath: SIDECAR.socketPath,
+        auditPath: SIDECAR.auditPath,
+        hosts: {
+          'github.com': {
+            provider: 'github-app',
+            allow: ['a/one'],
+            clientId: 'Iv1.example',
+            appId: 1,
+            privateKeyPath: SIDECAR.keyPath,
+            permissions: { contents: 'write' },
+          },
+        },
+      }),
+    );
+
+    const previous = process.env['GIT_BROKER_CONFIG'];
+    process.env['GIT_BROKER_CONFIG'] = configFile;
+    let output = '';
+    const original = process.stdout.write;
+    process.stdout.write = ((chunk: unknown) => {
+      output += String(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      assert.equal(runCompose(['--socket-dir', '/srv/sock']), 0);
+    } finally {
+      process.stdout.write = original;
+      if (previous === undefined) delete process.env['GIT_BROKER_CONFIG'];
+      else process.env['GIT_BROKER_CONFIG'] = previous;
+    }
+    assert.equal(output.includes(`${configFile}:${SIDECAR.configPath}:ro`), true);
+  });
+
   it('mounts an explicitly selected config file', () => {
     const custom = renderCompose({
       dir: '/volume1/docker/git-cred-broker',
