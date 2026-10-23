@@ -30,7 +30,7 @@ in this plan are not implemented yet.
 - **No ruleset checks, pre-push hook, or ref interception.** Branch policy is a human-configured
   GitHub ruleset, enforced server-side. The broker's branch settings are advisory for the dsh plugin,
   not a boundary.
-- **Configuration becomes human-editable** (TOML, see Phase 1), with groups and globs. The parser is
+- **Configuration becomes human-editable** (YAML, see Phase 1), with groups and globs. The parser is
   bundled into the shipped artifact; no deployment-time dependency install.
 - **The dsh approval plugin lives in `../idsh`.** This repository only carries its roadmap item and
   the container-facing skill.
@@ -71,7 +71,7 @@ No code until these are settled.
 
 - [ ] Write the design note for host-side `gh` execution, including the trust boundary and the
       differences from the current broker-side API implementation.
-- [x] Decide the configuration format and the dependency strategy: TOML, `smol-toml`, esbuild
+- [x] Decide the configuration format and the dependency strategy: YAML, `yaml`, esbuild
       bundle (see Phase 1).
 - [ ] Decide the host-user flag name (recommendation: `--as-user <login>`; see Phase 3).
 - [ ] Decide the final built-in command list and the `gcb <gh-subcommand>` shorthand.
@@ -84,10 +84,11 @@ reading code.
 
 The configuration is the source of truth and must be comfortable to edit by hand.
 
-- [ ] Use TOML. `smol-toml` is the parser: small, permissive, no runtime dependency chain. YAML is
-      not chosen; the config has no multi-line prose requirement.
+- [ ] Use YAML. `yaml` is the parser: `parseDocument` preserves comments and formatting, it is pure
+      JavaScript, and esbuild bundles it. TOML was rejected because no maintained TOML parser exposes a
+      practical comment-preserving editor; JSONC was considered but keeps JSON's nested-object shape.
 - [ ] Close the dependency gate with **esbuild bundling**, not a deployment-time install:
-      - `smol-toml` is a normal dependency;
+      - `yaml` is a normal dependency;
       - `esbuild` is a dev dependency;
       - the build produces a self-contained `dist/gcb.js` (CLI) and `dist/gcb-daemon.js` (broker)
         with Node built-ins external;
@@ -140,52 +141,59 @@ The configuration is the source of truth and must be comfortable to edit by hand
         atomic replace is visible;
       - `gcb doctor` reports the active config digest and the last reload result;
         `gcb config check` is the one-shot validation.
-- [ ] Keep JSON working for one release: `gcb config migrate` converts an existing
-      `broker.config.json` to TOML, preserving hand edits and comments where possible.
+- [ ] One-time migration only: `gcb config migrate` converts an existing `broker.config.json` to
+      YAML. The loader does not read JSON after the switch.
 - [ ] Add `gcb config check` and `gcb config edit` (`$EDITOR`, validated on save).
 - [ ] Update `init`, `compose`, `stage`, and `deployment.ts` to the chosen format.
 
-Proposed TOML surface (subject to Phase 0 naming):
+Proposed YAML surface (subject to Phase 0 naming):
 
-```toml
-version = 1
+```yaml
+version: 1
 
-[hosts."github.com"]
-provider = "github-app"
-groups = ["maintainer", "reviewer"]
-max_permissions = { pull_requests = "write", contents = "read", issues = "write", checks = "read", statuses = "read", actions = "read" }
+hosts:
+  github.com:
+    provider: github-app
+    groups: [maintainer, reviewer]
+    max_permissions:
+      pull_requests: write
+      contents: read
+      issues: write
+      checks: read
+      statuses: read
+      actions: read
 
-[groups.maintainer]
-repos = ["acme/*", "code-vaults/git-*"]
-actions = ["pr:view", "pr:create", "pr:comment", "pr:review"]
-deny = ["pr:merge"]
+groups:
+  maintainer:
+    repos: ["acme/*", "code-vaults/git-*"]
+    actions: [pr:view, pr:create, pr:comment, pr:review]
+    deny: [pr:merge]
+    timeouts:
+      default: 120
+      "pr:create": 180
+      "logs:read": 300
+    branches:
+      advisory_push: ["agent/*"]   # not enforced by the broker; the dsh plugin may use it
+  reviewer:
+    repos: ["upstream/*"]
+    actions: [pr:view, pr:review, pr:comment]
 
-[groups.maintainer.timeouts]
-default = 120
-"pr:create" = 180
-"logs:read" = 300
+actions:
+  issue.close:
+    command: [issue, close]
+    positional: [number]
+    flags:
+      comment: string
+    permissions:
+      issues: write
 
-[groups.maintainer.branches]
-advisory_push = ["agent/*"]   # not enforced by the broker; the dsh plugin may use it
-
-[actions."issue.close"]
-command = ["issue", "close"]
-positional = ["number"]
-flags = { comment = "string" }
-permissions = { issues = "write" }
-
-[groups.reviewer]
-repos = ["upstream/*"]
-actions = ["pr:view", "pr:review", "pr:comment"]
-
-[host_broker]
-default = "main"
-
-[host_broker.accounts.main]
-config_dir = "/home/operator/.config/gh"
-
-[host_broker.accounts."agent"]
-config_dir = "/home/operator/.config/gh-agent"
+host_broker:
+  default: main
+  accounts:
+    main:
+      config_dir: /home/operator/.config/gh
+    agent:
+      config_dir: /home/operator/.config/gh-agent
 ```
 
 ## Phase 2 — `gcb gh` core

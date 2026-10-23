@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Writable } from 'node:stream';
 import { after, before, describe, it } from 'node:test';
-import { stringify as stringifyToml } from 'smol-toml';
+import { stringify as stringifyYaml } from 'yaml';
 
 import { runDaemon } from '../../src/daemon.ts';
 
@@ -48,8 +48,8 @@ function capture(): { stream: Writable; text: () => string } {
 function writeConfig(name: string, config: unknown): string {
   const dir = path.join(scratch, name);
   fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, 'broker.config.toml');
-  fs.writeFileSync(file, `${stringifyToml(config)}\n`);
+  const file = path.join(dir, 'broker.config.yml');
+  fs.writeFileSync(file, `${stringifyYaml(config)}\n`);
   return file;
 }
 
@@ -60,9 +60,9 @@ function githubAppHost(privateKeyPath: string) {
 
 describe('daemon start-up diagnostics', () => {
   // No --config is passed on purpose, and the default is resolved against the working directory: a
-  // broker.config.toml in this checkout — gitignored, so it happens — would be loaded instead of nothing.
+  // broker.config.yml in this checkout — gitignored, so it happens — would be loaded instead of nothing.
   before(() => {
-    process.env['GIT_BROKER_CONFIG'] = path.join(os.tmpdir(), 'git-credential-broker-no-such-config.toml');
+    process.env['GIT_BROKER_CONFIG'] = path.join(os.tmpdir(), 'git-credential-broker-no-such-config.yml');
   });
   it('refuses native Windows instead of coming up with nothing enforced', async () => {
     // Before the config is even read: on Windows the socket would be a named pipe and the mode bits

@@ -20,7 +20,7 @@ import type { BrokerConfig, Provider } from './types.ts';
 /** Usage text. */
 const USAGE =
   'usage: git-credential-brokerd [--config <path>] [--check]\n' +
-  '       --config defaults to $GIT_BROKER_CONFIG, then ./broker.config.toml\n' +
+  '       --config defaults to $GIT_BROKER_CONFIG, then ./broker.config.yml\n' +
   '       --check validates the configuration and the key, then exits without binding the socket';
 
 /** The daemon's parsed command line. */
@@ -104,7 +104,7 @@ export async function runDaemon(
     return 1;
   }
   // Same convention as the management commands: --config, else GIT_BROKER_CONFIG, else
-  // ./broker.config.toml. A wrong pick is loud, because it must load and validate to start at all.
+  // ./broker.config.yml. A wrong pick is loud, because it must load and validate to start at all.
   const resolved = resolveConfigPath(configPath);
 
   let config: BrokerConfig;

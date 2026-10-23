@@ -69,7 +69,7 @@ export async function runCli(argv: readonly string[]): Promise<number> {
   }
 
   // Refuse before the lazy import: every management command eventually imports the configuration
-  // layer, which imports smol-toml. Windows CI runs this path without installing dependencies, and
+  // layer, which imports yaml. Windows CI runs this path without installing dependencies, and
   // the refusal must not turn into ERR_MODULE_NOT_FOUND.
   const refusal = platformRefusal();
   if (refusal !== null) {

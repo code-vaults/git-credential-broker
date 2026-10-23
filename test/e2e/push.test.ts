@@ -22,7 +22,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { stringify as stringifyToml } from 'smol-toml';
+import { stringify as stringifyYaml } from 'yaml';
 import { fileURLToPath } from 'node:url';
 
 import { createGitHttpServer } from '../lib/git-http-server.ts';
@@ -122,11 +122,11 @@ async function setupHarness(
 
   const socketPath = path.join(root, 'broker', 'broker.sock');
   const auditPath = path.join(root, 'broker', 'audit.jsonl');
-  const configPath = path.join(root, 'broker', 'broker.config.toml');
+  const configPath = path.join(root, 'broker', 'broker.config.yml');
   fs.mkdirSync(path.dirname(socketPath), { recursive: true });
   fs.writeFileSync(
     configPath,
-    `${stringifyToml({
+    `${stringifyYaml({
       socketPath,
       auditPath,
       tokenCacheSkewSeconds: 5,

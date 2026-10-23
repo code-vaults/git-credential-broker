@@ -40,7 +40,7 @@ export const DIAGNOSE_USAGE = `Usage: git-credential-broker diagnose [options]
 Ask GitHub what this app can actually see: identity, permissions, installations and the
 repositories each installation can reach. Never prints a key or a token.
 
-  --config <path>  The broker configuration to inspect (default: $GIT_BROKER_CONFIG, else ./broker.config.toml)
+  --config <path>  The broker configuration to inspect (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   --host <host>    Which host block to inspect (default: the first github-app one)
   -h, --help       Show this help
 `;

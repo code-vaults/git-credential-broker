@@ -218,7 +218,7 @@ describe('stage', () => {
     const to = path.join(scratch, 'deployment-dir');
     fs.mkdirSync(to, { recursive: true });
     fs.writeFileSync(path.join(to, 'app.pem'), 'the key\n');
-    fs.writeFileSync(path.join(to, 'broker.config.toml'), '{}\n');
+    fs.writeFileSync(path.join(to, 'broker.config.yml'), '{}\n');
 
     assert.throws(() => stage({ repo, to, ref: 'HEAD', home: scratch, force: true }), /deployment directory/);
     assert.equal(fs.readFileSync(path.join(to, 'app.pem'), 'utf8'), 'the key\n', 'the key is untouched');

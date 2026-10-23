@@ -94,7 +94,14 @@ export function performStage(input: StageInput): StageResult {
 
   // The deployment directory holds the key and the configuration. A `--to` typo pointing at it
   // would replace both, so refuse before anything is removed.
-  const deploymentFiles = ['app.pem', 'broker.config.toml', 'broker.config.json', 'log'].filter((name) =>
+  const deploymentFiles = [
+    'app.pem',
+    'broker.config.yml',
+    'broker.config.yaml',
+    'broker.config.toml',
+    'broker.config.json',
+    'log',
+  ].filter((name) =>
     fs.existsSync(path.join(to, name)),
   );
   if (deploymentFiles.length > 0) {
@@ -268,7 +275,7 @@ The staged commit is installed with \`corepack yarn install --immutable\`, bundl
 script, and has \`node_modules\` removed afterwards. Stage therefore needs corepack and registry
 access; the deployment needs neither. Then run the self-contained bundle from there:
 
-  node <to>/dist/gcb-daemon.js --config <deployment directory>/broker.config.toml
+  node <to>/dist/gcb-daemon.js --config <deployment directory>/broker.config.yml
 `;
 
 /**

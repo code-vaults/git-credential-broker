@@ -40,17 +40,18 @@ describe('loadConfig', () => {
   const scratch = mkdtempSync(path.join(os.tmpdir(), 'gcb-config-'));
   after(() => rmSync(scratch, { recursive: true, force: true }));
 
-  it('parses TOML when the path names it', () => {
-    const file = path.join(scratch, 'broker.config.toml');
+  it('parses YAML', () => {
+    const file = path.join(scratch, 'broker.config.yml');
     writeFileSync(
       file,
       [
-        'socketPath = "/run/git-cred-broker/broker.sock"',
-        '',
-        '[hosts."github.com"]',
-        'provider = "static"',
-        'allow = ["acme/widget"]',
-        'password = "p"',
+        'socketPath: /run/git-cred-broker/broker.sock',
+        'hosts:',
+        '  github.com:',
+        '    provider: static',
+        '    allow:',
+        '      - acme/widget',
+        '    password: p',
         '',
       ].join('\n'),
     );
@@ -59,10 +60,16 @@ describe('loadConfig', () => {
     assert.equal(config.socketMode, 0o660);
   });
 
-  it('reports malformed TOML instead of falling back to JSON', () => {
-    const file = path.join(scratch, 'broken.toml');
-    writeFileSync(file, 'socketPath = [');
-    assert.throws(() => loadConfig(file), /not valid TOML/);
+  it('accepts the .yaml spelling too', () => {
+    const file = path.join(scratch, 'broker.config.yaml');
+    writeFileSync(file, 'socketPath: /run/x.sock\nhosts:\n  github.com:\n    provider: static\n    allow: [acme/widget]\n    password: p\n');
+    assert.deepEqual(loadConfig(file).hosts['github.com']?.allow, ['acme/widget']);
+  });
+
+  it('reports malformed YAML', () => {
+    const file = path.join(scratch, 'broken.yml');
+    writeFileSync(file, 'socketPath: [');
+    assert.throws(() => loadConfig(file), /not valid YAML/);
   });
 });
 

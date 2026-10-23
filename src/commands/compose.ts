@@ -7,7 +7,7 @@
  * is no checkout to copy and nothing to build on the host.
  *
  * The mount targets are constants from `deployment.ts`, shared with `init --mode sidecar`, so
- * the paths recorded in `broker.config.toml` and the paths this file mounts cannot drift apart.
+ * the paths recorded in `broker.config.yml` and the paths this file mounts cannot drift apart.
  */
 import fs from 'node:fs';
 
@@ -19,7 +19,7 @@ import { USER_TOKEN_FILE } from '../config.ts';
 
 /** Everything `compose` needs, resolved. */
 export interface ComposeInput {
-  /** Host directory holding broker.config.toml, app.pem and log/. */
+  /** Host directory holding broker.config.yml, app.pem and log/. */
   readonly dir: string;
   /** Host directory the pushing container already mounts, where the socket will appear. */
   readonly socketDir: string;
@@ -115,7 +115,7 @@ export function renderCompose(input: ComposeInput): string {
 #
 ${origin}
 #
-# IMPORTANT: this file fixes where the sidecar sees things, so broker.config.toml must have been
+# IMPORTANT: this file fixes where the sidecar sees things, so broker.config.yml must have been
 # written for it. Create it with:
 #
 #   git-credential-broker init --mode sidecar --cert <key.pem> --allow <owner/repo> \\
@@ -144,7 +144,7 @@ services:
     command:
 ${command}
     volumes:${codeMount}
-      - ${input.dir}/broker.config.toml:${SIDECAR.configPath}:ro
+      - ${input.dir}/broker.config.yml:${SIDECAR.configPath}:ro
       - ${input.dir}/app.pem:${SIDECAR.keyPath}:ro
 ${userRefreshMount}
       - ${input.dir}/log:${SIDECAR.auditDir}
@@ -161,9 +161,9 @@ export const COMPOSE_USAGE = `Usage: git-credential-broker compose [options]
 Print a Docker sidecar definition for the broker (to stdout). Pair it with a config written by
 \`init --mode sidecar\`, whose paths this file fixes.
 
-  --dir <path>        Host directory holding broker.config.toml, app.pem and log/ (default: the config's directory)
+  --dir <path>        Host directory holding broker.config.yml, app.pem and log/ (default: the config's directory)
   --config <path>     The sidecar's config, checked before anything is printed
-                      (default: $GIT_BROKER_CONFIG, else ./broker.config.toml)
+                      (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   --socket-dir <path> Host directory the pushing container already mounts
   --code <path>       Run code mounted from this host directory instead of fetching the package
                       at start (as \`stage\` exports it); nothing is fetched or built at boot

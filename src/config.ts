@@ -1,25 +1,25 @@
 /**
- * Broker configuration: loaded from a JSON or TOML file that lives on the host, outside every
+ * Broker configuration: loaded from a YAML file that lives on the host, outside every
  * mount the agent container can see, and validated eagerly so a broken or over-broad
  * configuration stops the daemon at startup instead of silently denying (or silently
  * allowing) at push time.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { parse as parseToml } from 'smol-toml';
+import { parseDocument } from 'yaml';
 import { posix } from 'node:path';
 
 import { parseAllowEntry } from './policy.ts';
 import type { BrokerConfig, GithubAppHostConfig, HostConfig, StaticHostConfig } from './types.ts';
 
 /** The file every command looks for when no configuration path is given. */
-export const DEFAULT_CONFIG_FILE = 'broker.config.toml';
+export const DEFAULT_CONFIG_FILE = 'broker.config.yml';
 
 /**
  * Where the configuration lives when nothing says otherwise.
  *
  * This convention is what makes the commands usable without repeating paths: run them from the
- * deployment directory and `./broker.config.toml` is found, or export `GIT_BROKER_CONFIG` once.
+ * deployment directory and `./broker.config.yml` is found, or export `GIT_BROKER_CONFIG` once.
  * An explicit `--config` always wins.
  *
  * @param explicit - the `--config` argument, if any.
@@ -74,7 +74,7 @@ export function userTokenPath(privateKeyPath: string): string {
 }
 
 export const SIDECAR = {
-  configPath: '/etc/git-cred-broker/broker.config.toml',
+  configPath: '/etc/git-cred-broker/broker.config.yml',
   keyPath: '/etc/git-cred-broker/app.pem',
   // Beside the key, because that is how the provider derives it without being told.
   // Derived from the key rather than written again: the mount target and the reader's path at once.
@@ -441,7 +441,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
 /**
  * Read and validate a configuration file.
  *
- * @param path - path to the TOML config.
+ * @param path - path to the YAML config.
  * @returns the validated configuration.
  */
 export function loadConfig(path: string): BrokerConfig {
@@ -451,11 +451,13 @@ export function loadConfig(path: string): BrokerConfig {
   } catch (error) {
     throw new Error(`cannot read config ${path}: ${(error as Error).message}`);
   }
-  let parsed: unknown;
-  try {
-    parsed = parseToml(text);
-  } catch (error) {
-    throw new Error(`config ${path} is not valid TOML: ${(error as Error).message}`);
+  const document = parseDocument(text, {
+    schema: 'core',
+    uniqueKeys: true,
+    prettyErrors: true,
+  });
+  if (document.errors.length > 0) {
+    throw new Error(`config ${path} is not valid YAML: ${document.errors.map((error) => error.message).join('; ')}`);
   }
-  return validateConfig(parsed, path);
+  return validateConfig(document.toJS({ maxAliasCount: 0 }), path);
 }

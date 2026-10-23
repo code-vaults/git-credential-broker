@@ -15,7 +15,7 @@ had reached 549 lines mostly by accumulating rationale; it is not the place for 
 ## Status and roadmap
 
 The action/CLI redesign (host-side `gh`, `gcb gh`, host-user delegation) is **planned, not
-implemented**. TOML configuration and the self-contained bundle are implemented; the host-side command
+implemented**. YAML configuration and the self-contained bundle are implemented; the host-side command
 redesign is not. [`ROADMAP.md`](ROADMAP.md) is authoritative for the target and the order; this file
 describes the current tree, which is the last green baseline. Do not
 implement a later phase to unblock an earlier one without updating the roadmap first. The target
@@ -58,7 +58,7 @@ The CLI runs from source too, so there is no need to build to try a command:
 
 ```sh
 node src/cli/helper.ts --help
-node src/cli/helper.ts compose --socket-dir /tmp/sock    # reads --config, $GIT_BROKER_CONFIG, else ./broker.config.toml
+node src/cli/helper.ts compose --socket-dir /tmp/sock    # reads --config, $GIT_BROKER_CONFIG, else ./broker.config.yml
 ```
 
 `yarn test` builds first because the end-to-end suite execs `dist/cli/helper.js` as a **real**
@@ -67,7 +67,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 
 ## Rules that are not obvious from the code
 
-- **Runtime dependencies are bundled, not installed at the deployment.** `smol-toml` is the first;
+- **Runtime dependencies are bundled, not installed at the deployment.** `yaml` is the first;
   `esbuild` produces self-contained `dist/gcb.js` and `dist/gcb-daemon.js`. `stage` installs the
   exported commit's locked dependencies in a temporary tree, runs that tree's bundle script, publishes
   the result without `node_modules`, and records the hashes. Stage needs Corepack and registry access;
@@ -242,12 +242,12 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   with a flag: acting as a person, from a checkout on the host that holds the person's own credentials,
   is the design.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
-  Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.toml`, and takes
+  Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.yml`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by
   the process that runs the broker, so `deployment.ts` holds one definition per deployment and
   both `init --mode` and `compose` read it; a config whose mode does not match the deployment is
-  refused rather than half-working. `/broker.config.toml` is gitignored here: a personal copy is
-  host-specific, the tracked reference is `examples/broker.config.example.toml`.
+  refused rather than half-working. `/broker.config.yml` is gitignored here: a personal copy is
+  host-specific, the tracked reference is `examples/broker.config.example.yml`.
 - **`init` merges; it never rewrites what you did not mention.** The configuration file is the
   source of truth, so updates preserve hand edits and `--allow` *adds*. Do not turn this back
   into "regenerate from flags": `--force` replacing the allowlist silently dropped repositories.

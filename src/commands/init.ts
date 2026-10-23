@@ -14,7 +14,9 @@
  * `--force` still exists, for regenerating from flags when the file is beyond editing.
  */
 import fs from 'node:fs';
-import { stringify as stringifyToml } from 'smol-toml';
+import { isDeepStrictEqual } from 'node:util';
+import { isMap, parseDocument, stringify } from 'yaml';
+import type { Document } from 'yaml';
 
 import {
   deploymentDir,
@@ -53,7 +55,7 @@ export interface InitInput {
   readonly cert?: string;
   /** Where the key, config and audit log live on the host. Must be outside every container mount. */
   readonly dir: string;
-  /** The configuration file itself. Defaults to `<dir>/broker.config.toml`. */
+  /** The configuration file itself. Defaults to `<dir>/broker.config.yml`. */
   readonly configPath?: string;
   /** Repositories to ensure are in the allowlist. */
   readonly allow?: readonly string[];
@@ -215,6 +217,70 @@ export function mergeBrokerConfig(existing: BrokerConfig, input: InitInput, path
  * @returns the configuration, or null when the file does not exist.
  * @throws {Error} when the file exists but is not a valid configuration.
  */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Apply a merged configuration to an existing YAML document, touching only changed nodes.
+ *
+ * Parsing to a plain object and serializing it back is what removes comments. The Document API
+ * keeps the untouched nodes (and their comments) and replaces only the values that changed.
+ *
+ * @param document - the parsed document.
+ * @param value - the merged plain object.
+ * @param path - the current path, empty at the root.
+ */
+function syncDocument(document: Document, value: unknown, path: (string | number)[] = []): void {
+  if (!isRecord(value)) {
+    if (!isDeepStrictEqual(document.getIn(path), value)) {
+      if (path.length === 0) document.contents = document.createNode(value);
+      else document.setIn(path, value);
+    }
+    return;
+  }
+
+  const current = path.length === 0 ? document.contents : document.getIn(path, true);
+  if (!isMap(current)) {
+    if (path.length === 0) document.contents = document.createNode(value);
+    else document.setIn(path, value);
+    return;
+  }
+
+  for (const [key, child] of Object.entries(value)) syncDocument(document, child, [...path, key]);
+  const wanted = new Set(Object.keys(value));
+  for (const item of current.items) {
+    const keyNode = item.key as { value?: unknown } | null;
+    const key = keyNode && keyNode.value !== undefined ? String(keyNode.value) : '';
+    if (!wanted.has(key)) document.deleteIn([...path, key]);
+  }
+}
+
+/**
+ * Write a configuration. An existing file is edited as a YAML document so comments survive;
+ * a new file gets a short header and a fresh serialization.
+ *
+ * @param configPath - the destination.
+ * @param config - the merged configuration.
+ */
+function writeConfig(configPath: string, config: BrokerConfig): void {
+  if (!fs.existsSync(configPath)) {
+    writeSecretFile(configPath, `# Broker configuration for git-credential-broker. See README.md.\n${stringify(config, { lineWidth: 0 })}`);
+    return;
+  }
+  const document = parseDocument(fs.readFileSync(configPath, 'utf8'), {
+    schema: 'core',
+    uniqueKeys: true,
+    prettyErrors: true,
+  });
+  if (document.errors.length > 0) {
+    throw new Error(`cannot update ${configPath}: ${document.errors.map((error) => error.message).join('; ')}`);
+  }
+  syncDocument(document, config);
+  const text = document.toString();
+  writeSecretFile(configPath, text.endsWith('\n') ? text : `${text}\n`);
+}
+
 function readExistingConfig(path: string): BrokerConfig | null {
   if (!fs.existsSync(path)) return null;
   return loadConfig(path);
@@ -298,7 +364,7 @@ export function performInit(input: InitInput): InitResult {
 
     const config = mergeBrokerConfig(previous, input, paths);
     fs.mkdirSync(artifacts.auditDir, { recursive: true });
-    writeSecretFile(configPath, `${stringifyToml(config)}\n`);
+    writeConfig(configPath, config);
     return { keyPath: artifacts.keyPath, configPath, config, mode, previous };
   }
 
@@ -337,7 +403,7 @@ export function performInit(input: InitInput): InitResult {
   const config = buildBrokerConfig({ ...input, mode, cert: certPath, clientId, appId });
   writeSecretFile(artifacts.keyPath, pem);
   fs.mkdirSync(artifacts.auditDir, { recursive: true });
-  writeSecretFile(configPath, `${stringifyToml(config)}\n`);
+  writeConfig(configPath, config);
   return { keyPath: artifacts.keyPath, configPath, config, mode };
 }
 
@@ -378,7 +444,7 @@ Every run:
   --app-id <id>         Change the App ID
   --permissions <list>  name=level pairs, e.g. contents=write,pull_requests=write
   --dir <path>          Where the key, config and audit log live (default: the config's directory)
-  --config <path>       Configuration file (default: $GIT_BROKER_CONFIG, else ./broker.config.toml)
+  --config <path>       Configuration file (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   --mode <host|sidecar> Which deployment the paths must suit (default: host; must match an
                         existing config, because it decides where the broker looks for things)
   --socket-path <path>  Socket path a host process uses (default: /run/git-cred-broker/broker.sock)

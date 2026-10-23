@@ -4,7 +4,7 @@ Short-lived, single-repository git credentials for a container, from a broker on
 the only long-lived secret. The GitHub App private key never enters the container, and `git push`
 still works.
 
-> **Roadmap:** the action/CLI redesign — host-side `gh`, `gcb gh`, host-user delegation, TOML
+> **Roadmap:** the action/CLI redesign — host-side `gh`, `gcb gh`, host-user delegation, YAML
 > configuration — is planned but not implemented. [`ROADMAP.md`](ROADMAP.md) is the target; this
 > README documents the current tree.
 
@@ -17,7 +17,7 @@ Two commands are installed:
 
 ```
 ┌─ HOST ──────────────────────────────────────────────────────────────────────┐
-│  broker.config.toml   allowlist, paths                                      │
+│  broker.config.yml   allowlist, paths                                      │
 │  app.pem              the only long-lived secret: 0600, outside every mount  │
 │  audit.jsonl          append-only, unreadable from the container             │
 │                                                                             │
@@ -75,7 +75,7 @@ CI runs the suite on Linux and inside WSL, and checks both refusals on native Wi
 npm install -g git-credential-broker
 ```
 
-The package has one runtime dependency, `smol-toml`, and the build inlines it: `yarn bundle` produces
+The package has one runtime dependency, `yaml`, and the build inlines it: `yarn bundle` produces
 self-contained `dist/gcb.js` and `dist/gcb-daemon.js`. `stage` exports a **commit**, installs that
 commit's locked dependencies in a temporary tree, builds those bundles, records both hashes in
 `STAGED.json`, and publishes the tree without `node_modules`. Staging therefore needs **Corepack and
@@ -107,7 +107,7 @@ Docker only; nothing to install on the host. The image is stock `node:24-slim`, 
 read-only mount, so nothing is fetched or built at boot.
 
 ```sh
-DEPLOY=/srv/git-cred-broker        # broker.config.toml, app.pem and log/ live here
+DEPLOY=/srv/git-cred-broker        # broker.config.yml, app.pem and log/ live here
 SOCKET_DIR=/srv/git-broker-socket  # a host directory the pushing container already mounts
 
 git-credential-broker init --mode sidecar --dir "$DEPLOY" \
@@ -195,13 +195,13 @@ git-credential-broker init --mode host --socket-path /run/git-cred-broker/broker
 
 `--socket-path` is required when moving to host mode, because the socket on file belongs to the
 sidecar. Commands find the configuration by convention — `--config`, else `$GIT_BROKER_CONFIG`, else
-`./broker.config.toml` — so run them from the deployment directory.
+`./broker.config.yml` — so run them from the deployment directory.
 
 ## Check it without pushing
 
 ```sh
 git-credential-broker probe --host github.com --repo owner/repo
-git-credential-broker diagnose --config /srv/git-cred-broker/broker.config.toml
+git-credential-broker diagnose --config /srv/git-cred-broker/broker.config.yml
 ```
 
 `probe` prints the broker's decision with the credential reduced to a fingerprint, so its output is
@@ -216,7 +216,7 @@ a sidecar it is inside the container:
 ```sh
 docker compose -f docker-compose.broker.yml exec git-cred-broker \
   node /opt/git-credential-broker/dist/gcb.js \
-  diagnose --config /etc/git-cred-broker/broker.config.toml
+  diagnose --config /etc/git-cred-broker/broker.config.yml
 ```
 
 ### Reading a CI log
@@ -344,7 +344,7 @@ A token per owner is one way to be the author; authorizing the app once is anoth
 token per owner, because GitHub issues it for the app *and* the person together. Run this on the host:
 
 ```sh
-git-credential-broker authorize --config /srv/git-cred-broker/broker.config.toml
+git-credential-broker authorize --config /srv/git-cred-broker/broker.config.yml
 ```
 
 It prints a code and asks you to open <https://github.com/login/device>, then waits. Type the code on
@@ -411,8 +411,8 @@ file.
 
 ## Configuration reference
 
-The broker only ever reads this file; it contains no secrets. The file is TOML; JSON is not read, so
-convert an old JSON config once before upgrading.
+The broker only ever reads this file; it contains no secrets. The file is YAML; JSON and TOML are
+not read, so convert an old JSON config once before upgrading.
 
 Top level:
 
