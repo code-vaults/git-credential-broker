@@ -417,9 +417,14 @@ file.
 
 ## Configuration reference
 
-The broker only ever reads this file; it contains no secrets. The file is YAML; JSON and TOML are
-not read. The default filename changed from `broker.config.json` to `broker.config.yml`: rename or
-convert an existing deployment, or pass `--config broker.config.json` explicitly (YAML accepts JSON).
+The broker only reads this file. It is YAML. The loader discovers `broker.config.yml` by default;
+the old `broker.config.json` name is no longer discovered, so rename or convert an existing
+deployment, or pass `--config broker.config.json` explicitly (the YAML parser accepts JSON). TOML is
+not read.
+
+The file normally contains no secrets, but it may: `privateKeyPem` and `static.password` are accepted
+inline. When either is used, treat the file as secret material — mode 0600, outside every container
+mount.
 
 Top level:
 
