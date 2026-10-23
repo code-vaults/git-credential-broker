@@ -1,17 +1,8 @@
 {
-  "name": "git-credential-broker",
+  "name": "gcb-workspace",
   "version": "0.1.0",
-  "description": "Give a container short-lived, single-repository git credentials from a host-side broker, so no long-lived secret ever enters it.",
-  "keywords": [
-    "git",
-    "credential-helper",
-    "github-app",
-    "installation-token",
-    "secrets",
-    "broker",
-    "unix-socket",
-    "container"
-  ],
+  "private": true,
+  "description": "Workspace for gcb-cli, gcb-client and gcb-host.",
   "license": "MIT",
   "author": "JounQin <admin@1stg.me>",
   "homepage": "https://github.com/code-vaults/git-credential-broker#readme",
@@ -27,29 +18,18 @@
   "engines": {
     "node": ">=24"
   },
-  "bin": {
-    "git-credential-broker": "dist/cli/helper.js",
-    "git-credential-brokerd": "dist/cli/daemon.js"
-  },
-  "files": [
-    "dist",
-    "src",
-    "README.md",
-    "LICENSE"
+  "workspaces": [
+    "packages/*"
   ],
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
-  },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node scripts/postbuild.mjs",
+    "build": "tsc -p packages/cli/tsconfig.build.json && tsc -p packages/client/tsconfig.build.json && tsc -p packages/host/tsconfig.build.json && node scripts/postbuild.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "yarn build && node --disable-warning=ExperimentalWarning --test test/unit/*.test.ts test/e2e/*.test.ts",
-    "test:unit": "node --disable-warning=ExperimentalWarning --test test/unit/*.test.ts",
-    "test:e2e": "yarn build && node --disable-warning=ExperimentalWarning --test test/e2e/*.test.ts",
+    "test": "yarn build && node --conditions=development --disable-warning=ExperimentalWarning --test test/unit/*.test.ts test/e2e/*.test.ts",
+    "test:unit": "node --conditions=development --disable-warning=ExperimentalWarning --test test/unit/*.test.ts",
+    "test:e2e": "yarn build && node --conditions=development --disable-warning=ExperimentalWarning --test test/e2e/*.test.ts",
     "check": "yarn typecheck && yarn test",
-    "prepublishOnly": "yarn check",
-    "pack:check": "yarn build && npm pack --dry-run"
+    "pack:check": "node scripts/pack-check.mjs",
+    "prepublishOnly": "yarn check"
   },
   "devDependencies": {
     "@types/node": "^24.19.0",

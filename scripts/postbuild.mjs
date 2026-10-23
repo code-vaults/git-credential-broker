@@ -1,23 +1,18 @@
 /**
- * Post-build fixups for the compiled CLI entry points.
+ * Post-build fixups for the two top-level bins.
  *
- * Two things `tsc` alone does not guarantee, and both matter because git execs these
- * files directly rather than through a shell:
- *   - the `#!` line must survive compilation, otherwise the file is not executable;
- *   - the executable bit must be set.
- *
- * This script is plain JavaScript on purpose: it runs before/independently of any
- * TypeScript compilation, so it cannot itself need compiling.
+ * tsc compiles the libraries; the bins are plain JavaScript checked in with their shebang. npm
+ * links them, but a checkout run needs the executable bit too.
  */
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 const SHEBANG = '#!/usr/bin/env node';
-const ENTRY_POINTS = ['dist/cli/helper.js', 'dist/cli/daemon.js'];
+const ENTRY_POINTS = ['packages/client/bin/gcb.js', 'packages/host/bin/gcb.js'];
 
 let failed = false;
 for (const file of ENTRY_POINTS) {
   if (!existsSync(file)) {
-    console.error(`postbuild: missing build output ${file}`);
+    console.error(`postbuild: missing bin ${file}`);
     failed = true;
     continue;
   }

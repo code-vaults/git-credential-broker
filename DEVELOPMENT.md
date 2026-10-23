@@ -13,7 +13,8 @@ How to build, test and run this from a local checkout, rather than from the publ
   without a build step. Verified on Node 24.
 - **Yarn 4**, through corepack. `corepack enable` once, or prefix every command with `corepack`.
   `packageManager` in `package.json` pins the version.
-- `git` and `tar` for the `stage` command.
+- `git` for the `stage` command. `stage` is export-only; a commit deployment installs its own
+  production dependencies.
 
 ## Get the source
 
@@ -23,23 +24,24 @@ cd git-credential-broker
 corepack yarn install
 ```
 
-The install pulls devDependencies only (TypeScript and the Node types). **The package itself has no
-runtime dependencies, and that is worth keeping**: the broker runs with a private key in reach, so
-every dependency would be code running with that key.
+The install links the three workspaces and pulls TypeScript, the Node types and `yaml` for `gcb-host`.
+`gcb-client` has no runtime dependencies; `gcb-host` owns `yaml`. The broker runs with a private key
+in reach, so keep host dependencies deliberate.
 
 ## Run it without building
 
-Node strips the types, so `src/` is directly runnable:
+Node strips the types, so the package sources are directly runnable with the development export
+condition:
 
 ```sh
-node src/cli/helper.ts --help
-node src/cli/helper.ts compose --socket-dir /tmp/sock --config /tmp/deploy/broker.config.json
-node src/cli/daemon.ts --config /tmp/deploy/broker.config.json --check
+node --conditions=development packages/client/bin/gcb.js --help
+node --conditions=development packages/host/bin/gcb.js compose --socket-dir /tmp/sock --config /tmp/deploy/broker.config.yml
+node --conditions=development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml --check
 ```
 
 Commands find the configuration by convention — `--config`, else `$GIT_BROKER_CONFIG`, else
-`./broker.config.json` — so pass `--config` explicitly when working inside the repository, or the CLI
-may read whatever personal configuration happens to be sitting in the working tree (`/broker.config.json`
+`broker.config.yml` — so pass `--config` explicitly when working inside the repository, or the CLI
+may read whatever personal configuration happens to be sitting in the working tree (`/broker.config.yml`
 is gitignored, so `git status` will not warn you).
 
 Two consequences:
@@ -48,9 +50,9 @@ Two consequences:
   properties), and relative imports carry the `.ts` extension — `rewriteRelativeImportExtensions`
   turns those into `.js` for `dist/`.
 - The `helper` path git invokes must be an executable file or a command with an interpreter. A bare
-  `.ts` is neither, which is why the built `dist/cli/helper.js` (shebang plus exec bit) is what
+  `.ts` is neither, which is why the built `packages/client/bin/gcb.js` (shebang plus exec bit) is what
   `setup` records, and why a source checkout has to spell the interpreter out:
-  `git config --global credential.helper '!node /path/src/cli/helper.ts'`.
+  `git config --global credential.helper '!node --conditions=development /path/packages/client/bin/gcb.js'`.
 
 ## Build
 
@@ -59,9 +61,9 @@ corepack yarn build        # tsc -p tsconfig.build.json && node scripts/postbuil
 corepack yarn typecheck    # tsc, no emit
 ```
 
-Output goes to `dist/`. `scripts/postbuild.mjs` exists for one reason: `dist/cli/helper.js` and
-`dist/cli/daemon.js` are the package's `bin` entries, so they need the `#!/usr/bin/env node` shebang
-and the executable bit. This repository cannot track that bit (the share it lives on defeats git's
+Output goes to `packages/*/dist/`. `scripts/postbuild.mjs` exists for one reason: the two
+`packages/*/bin/gcb.js` files are the package `bin` entries, so they need the
+`#!/usr/bin/env node` shebang and the executable bit. This repository cannot track that bit (the share it lives on defeats git's
 exec-bit detection), so the build applies it every time.
 
 ## Use your build
@@ -69,14 +71,14 @@ exec-bit detection), so the build applies it every time.
 As the CLI, without installing anything:
 
 ```sh
-node dist/cli/daemon.js --config /tmp/deploy/broker.config.json
+node --conditions=development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml
 ```
 
 As the commands a user of the package gets:
 
 ```sh
 npm install -g .           # or: npm link
-git-credential-broker --version
+gcb --version
 ```
 
 As an image, if you would rather pin a build than mount code or fetch at boot:
@@ -88,15 +90,15 @@ RUN cd /src && corepack yarn install && corepack yarn build && npm install -g .
 ```
 
 ```sh
-docker build -t git-credential-broker:local .
-git-credential-broker compose --image git-credential-broker:local > docker-compose.broker.yml
+docker build -t gcb-host:local .
+gcb compose --image gcb-host:local > docker-compose.broker.yml
 ```
 
 Then change the rendered `command:` to the binary the image installed, since the default one fetches
 the published package:
 
 ```yaml
-    command: ["git-credential-brokerd", "--config", "/etc/git-cred-broker/broker.config.json"]
+    command: ["gcb", "daemon", "--config", "/etc/git-cred-broker/broker.config.yml"]
 ```
 
 ## Tests
@@ -104,7 +106,7 @@ the published package:
 ```sh
 corepack yarn test         # builds, then unit + e2e
 corepack yarn test:unit    # the .ts sources directly, no build
-corepack yarn test:e2e     # needs dist/ — it execs dist/cli/helper.js as a real credential helper
+corepack yarn test:e2e     # needs the built client bin as a real credential helper
 corepack yarn check        # typecheck + build + everything; run this before claiming anything works
 ```
 
@@ -132,37 +134,36 @@ If you add tests, three traps are already paid for in this suite:
 ## Packaging
 
 ```sh
-corepack yarn pack:check   # builds, then shows exactly what npm would publish
-npm pack                   # the tarball itself
+corepack yarn pack:check   # shows exactly what each of the three packages would ship
+npm pack packages/cli      # the tarball itself
+npm pack packages/client
+npm pack packages/host
 ```
 
-`files` ships `dist/`, `src/`, `README.md` and `LICENSE`. The notes, the tests and `AGENTS.md` are
-not in the tarball, and neither is the git history. `src/` ships so that stack traces and source maps
-point at something readable.
+Each package ships `dist/` and `src/`, plus `bin/` for the client and host. The notes, the tests and
+`AGENTS.md` are not in the tarballs, and neither is the git history. `src/` ships so that stack
+traces and source maps point at something readable.
 
 ## Releasing
 
-1. Bump `version` in `package.json`.
+1. Bump the same `version` in all three package manifests and keep the exact `gcb-cli` dependency in
+   client/host in lockstep.
 2. `corepack yarn check`.
-3. `npm publish` — `prepublishOnly` runs the check again.
-4. Re-render any sidecar you generated: `compose` pins `git-credential-broker@<version>`, so it takes
+3. Publish in dependency order: `npm publish packages/cli`, then `packages/client` and `packages/host`.
+4. Re-render any sidecar you generated: `compose` pins `gcb-host@<version>`, so it takes
    the new version only when it is rendered again.
 
 ## Layout
 
 ```
-src/policy.ts         the authorization decision (default deny, exact segment matching)
-src/socket-protocol.ts the request and response shapes on the socket
-src/broker.ts         unix socket server, refusal codes, audit records
-src/helper.ts         the container-side credential helper
-src/audit.ts          append-only JSONL, with defensive redaction
-src/config.ts         strict configuration validation, deployment paths
-src/providers/        github-app (RS256 JWT, installation tokens) and static
-src/commands/         the CLI: setup, init, stage, compose, probe, diagnose
-src/cli/              the two executables (helper, daemon)
-scripts/postbuild.mjs the shebang and exec bit on the two binaries
-test/unit/            policy, JWT, provider, helper, broker, config, commands, stage, daemon
-test/e2e/push.test.ts a real push over authenticated smart HTTP
-examples/             configuration and compose snippets
-.agents/notes/        the design, its review, the verified record, environment facts
+packages/cli/src/      parser, help/version, protocol, types, platform and paths
+packages/client/src/   credential helper, setup, probe, logs and pr
+packages/host/src/     YAML config, providers, broker, daemon and host commands
+packages/*/bin/gcb.js  the two installed bins (client and host)
+scripts/postbuild.mjs  the shebang and exec bit on the two bins
+test/unit/             policy, JWT, provider, helper, broker, config, commands, stage, daemon
+test/e2e/push.test.ts  a real push over authenticated smart HTTP
+test/e2e/packages.test.ts  npm pack and install into separate client/host prefixes
+examples/              configuration and compose snippets
+.agents/notes/         the design, its review, the verified record, environment facts
 ```

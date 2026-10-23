@@ -1,0 +1,39 @@
+{
+  "name": "gcb-host",
+  "version": "0.1.0",
+  "description": "Host-side gcb broker, configuration, providers and administration commands.",
+  "license": "MIT",
+  "author": "JounQin <admin@1stg.me>",
+  "homepage": "https://github.com/code-vaults/git-credential-broker#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/code-vaults/git-credential-broker.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "gcb": "./bin/gcb.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "bin"
+  ],
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "gcb-cli": "0.1.0",
+    "yaml": "^2.9.1"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

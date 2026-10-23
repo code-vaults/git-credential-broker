@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { baseBranchFor, listRemotes, qualifiedBranch, remoteRepo } from '../../src/commands/remotes.ts';
+import { baseBranchFor, listRemotes, qualifiedBranch, remoteRepo } from '../../packages/client/src/commands/remotes.ts';
 
 describe('resolving a branch that names a remote', () => {
   let dir = '';

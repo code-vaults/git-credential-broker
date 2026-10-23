@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
-import { performStage, STAGED_RECORD } from '../../src/commands/stage.ts';
+import { performStage, STAGED_RECORD } from '../../packages/host/src/commands/stage.ts';
 
 /** Scratch space. */
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-stage-'));

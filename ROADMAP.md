@@ -30,8 +30,10 @@ in this plan are not implemented yet.
 - **No ruleset checks, pre-push hook, or ref interception.** Branch policy is a human-configured
   GitHub ruleset, enforced server-side. The broker's branch settings are advisory for the dsh plugin,
   not a boundary.
-- **Configuration becomes human-editable** (TOML, see Phase 1), with groups and globs. The parser is
-  bundled into the shipped artifact; no deployment-time dependency install.
+- **Configuration becomes human-editable** (YAML, see Phase 1), with groups and globs. `yaml` is a
+  dependency of the host package, not a bundled artifact.
+- **Three packages, one command.** `gcb-cli` is the shared runtime; `gcb-client` and `gcb-host` are the
+  installed entry points and both expose `gcb`. The container never installs host dependencies.
 - **The dsh approval plugin lives in `../idsh`.** This repository only carries its roadmap item and
   the container-facing skill.
 - **Tokens are minted per action and revoked in `finally`.** GitHub installation tokens have a fixed
@@ -84,18 +86,15 @@ reading code.
 
 The configuration is the source of truth and must be comfortable to edit by hand.
 
-- [ ] Use TOML. `smol-toml` is the parser: small, permissive, no runtime dependency chain. YAML is
-      not chosen; the config has no multi-line prose requirement.
-- [ ] Close the dependency gate with **esbuild bundling**, not a deployment-time install:
-      - `smol-toml` is a normal dependency;
-      - `esbuild` is a dev dependency;
-      - the build produces a self-contained `dist/gcb.js` (CLI) and `dist/gcb-daemon.js` (broker)
-        with Node built-ins external;
-      - the published package and the staged deployment both run the bundle, so no `node_modules`
-        is needed on the host;
-      - `stage` exports a commit, builds **from that commit** in a clean directory, records the
-        commit sha and the bundle hash, and refuses a bundle that does not match. A build from the
-        agent-writable working tree is not stageable.
+- [ ] Use YAML. `yaml` is the parser: `parseDocument` preserves comments and formatting, it is pure
+      JavaScript, and the Document API is what lets `init` update one value without rewriting the file.
+- [ ] Split the repository into Yarn workspaces under `packages/`:
+      - `gcb-cli`: shared argument parsing, help, protocol and types; no `yaml`;
+      - `gcb-client`: container side; depends on `gcb-cli`; no host dependencies;
+      - `gcb-host`: host side; depends on `gcb-cli` and `yaml`;
+      - both client and host expose the same `gcb` bin; only one is installed per environment.
+- [ ] Do **not** bundle. npm installs dependencies; remove esbuild and the staged bundle build.
+      `stage`, if kept, exports a commit and does not build a self-contained artifact.
 - [ ] Decide the global-install shape: `gcb` installed globally (`npm i -g` / `corepack`) is the
       only command skills and docs name. It must work from any checkout and from the container.
 - [ ] Development mode: the globally installed `gcb` detects an explicit dev pointer (e.g.
@@ -145,47 +144,54 @@ The configuration is the source of truth and must be comfortable to edit by hand
 - [ ] Add `gcb config check` and `gcb config edit` (`$EDITOR`, validated on save).
 - [ ] Update `init`, `compose`, `stage`, and `deployment.ts` to the chosen format.
 
-Proposed TOML surface (subject to Phase 0 naming):
+Proposed YAML surface (subject to Phase 0 naming):
 
-```toml
-version = 1
+```yaml
+version: 1
 
-[hosts."github.com"]
-provider = "github-app"
-groups = ["maintainer", "reviewer"]
-max_permissions = { pull_requests = "write", contents = "read", issues = "write", checks = "read", statuses = "read", actions = "read" }
+hosts:
+  github.com:
+    provider: github-app
+    groups: [maintainer, reviewer]
+    max_permissions:
+      pull_requests: write
+      contents: read
+      issues: write
+      checks: read
+      statuses: read
+      actions: read
 
-[groups.maintainer]
-repos = ["acme/*", "code-vaults/git-*"]
-actions = ["pr:view", "pr:create", "pr:comment", "pr:review"]
-deny = ["pr:merge"]
+groups:
+  maintainer:
+    repos: ["acme/*", "code-vaults/git-*"]
+    actions: [pr:view, pr:create, pr:comment, pr:review]
+    deny: [pr:merge]
+    timeouts:
+      default: 120
+      "pr:create": 180
+      "logs:read": 300
+    branches:
+      advisory_push: ["agent/*"]   # not enforced by the broker; the dsh plugin may use it
+  reviewer:
+    repos: ["upstream/*"]
+    actions: [pr:view, pr:review, pr:comment]
 
-[groups.maintainer.timeouts]
-default = 120
-"pr:create" = 180
-"logs:read" = 300
+actions:
+  issue.close:
+    command: [issue, close]
+    positional: [number]
+    flags:
+      comment: string
+    permissions:
+      issues: write
 
-[groups.maintainer.branches]
-advisory_push = ["agent/*"]   # not enforced by the broker; the dsh plugin may use it
-
-[actions."issue.close"]
-command = ["issue", "close"]
-positional = ["number"]
-flags = { comment = "string" }
-permissions = { issues = "write" }
-
-[groups.reviewer]
-repos = ["upstream/*"]
-actions = ["pr:view", "pr:review", "pr:comment"]
-
-[host_broker]
-default = "main"
-
-[host_broker.accounts.main]
-config_dir = "/home/operator/.config/gh"
-
-[host_broker.accounts."agent"]
-config_dir = "/home/operator/.config/gh-agent"
+host_broker:
+  default: main
+  accounts:
+    main:
+      config_dir: /home/operator/.config/gh
+    agent:
+      config_dir: /home/operator/.config/gh-agent
 ```
 
 ## Phase 2 — `gcb gh` core

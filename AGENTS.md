@@ -14,9 +14,10 @@ had reached 549 lines mostly by accumulating rationale; it is not the place for 
 
 ## Status and roadmap
 
-The action/CLI redesign (host-side `gh`, `gcb gh`, host-user delegation, TOML config) is
-**planned, not implemented**. [`ROADMAP.md`](ROADMAP.md) is authoritative for the target and the
-order; this file continues to describe the current tree, which is the last green baseline. Do not
+The action/CLI redesign (host-side `gh`, `gcb gh`, host-user delegation) is **planned, not
+implemented**. YAML configuration and the three-package split are implemented; the host-side command
+redesign is not. [`ROADMAP.md`](ROADMAP.md) is authoritative for the target and the order; this file
+describes the current tree, which is the last green baseline. Do not
 implement a later phase to unblock an earlier one without updating the roadmap first. The target
 brand is `gcb`: the CLI, container and service share the name, the main broker is `gcb app`, and
 the current `host-opener` becomes `gcb host` (typed host operations, not a shell; service name
@@ -56,25 +57,22 @@ corepack yarn pack:check # build, then show exactly what npm would publish
 The CLI runs from source too, so there is no need to build to try a command:
 
 ```sh
-node src/cli/helper.ts --help
-node src/cli/helper.ts compose --socket-dir /tmp/sock    # reads --config, $GIT_BROKER_CONFIG, else ./broker.config.json
+node packages/client/bin/gcb.js --help
+node --conditions=development packages/host/bin/gcb.js compose --socket-dir /tmp/sock    # reads --config, $GIT_BROKER_CONFIG, else ./broker.config.yml
 ```
 
-`yarn test` builds first because the end-to-end suite execs `dist/cli/helper.js` as a **real**
+`yarn test` builds first because the end-to-end suite execs `packages/client/bin/gcb.js` as a **real**
 credential helper. Unit tests run the `.ts` sources directly via Node's type stripping, so
 sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter properties).
 
 ## Rules that are not obvious from the code
 
-- **A runtime dependency needs a deployment step, and there is not one yet.** `stage` exports a **commit**
-  and nothing else, so a dependency that is not vendored or inlined never reaches the deployment: the
-  broker fails to resolve it and, under `Restart=always`, loops instead of reporting anything. That is
-  not an argument against dependencies — they are wanted and coming — it is a hole to close in `stage`
-  (install after staging, or build something self-contained) **before** the first one is taken. The
-  attempt that found it was a fetch wrapper for the proxy; the same ground is covered today by Node 24
-  and `NODE_USE_ENV_PROXY`, which is why that floor moved.
+- **Dependencies belong to the package that uses them.** `gcb-client` has no runtime dependencies;
+  `gcb-host` owns `yaml`. npm installs them; there is no esbuild/bundle step. `stage` is export-only
+  and does not install or build, so a commit deployment must install its production dependencies in
+  the exported tree before starting the broker.
 
-  The floor is checked at runtime, in both entry points, because `engines` is only a declaration here:
+  The Node floor is checked at runtime, in both entry points, because `engines` is only a declaration here:
   measured, `yarn install` succeeds with `"node": ">=99"`, and `.npmrc` is not read by Yarn 4 at all — so
   neither would catch a host on an older interpreter. A deployment runs from a checkout with no install
   step, which is exactly the case a runtime check covers and an install-time one does not.
@@ -175,7 +173,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   can therefore end as `cancelled` rather than red or green, and a verdict that looks missing is
   usually one a later push replaced: read the newest run for the commit, not the first.
 - **Open a pull request; the agent opens it, and can close or update it.**
-  `git-credential-broker pr` covers most of the lifecycle: `--head`/`--base`/`--title` to open,
+  `gcb pr` covers most of the lifecycle: `--head`/`--base`/`--title` to open,
   `--number` with `--close`, or `--number` with neither (which updates the title, body or base).
   The broker performs each action without the token leaving it, and prints the number, the URL and
   the state.
@@ -191,8 +189,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 
 - **A pull request authored by the app is one automated reviewers may skip, so a person can be the
   author instead — through the host opener, and only for creating.** `pr --via-host` writes a request
-  under `<git dir>/git-credential-broker/pr-requests` (shared with the host, and untracked, so it
-  dirties nothing) and waits for the answer; `git-credential-broker host-opener` on the host turns it
+  under `<git dir>/gcb/pr-requests` (shared with the host, and untracked, so it
+  dirties nothing) and waits for the answer; `gcb host-opener` on the host turns it
   into a pull request with the credentials of whoever runs it. That process is deliberately the only
   thing that acts as a person: it runs no shell, its program is configuration, and it cannot push,
   merge, close or read. Everything else stays on the socket, where the app is the only actor. Default
@@ -241,12 +239,12 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   with a flag: acting as a person, from a checkout on the host that holds the person's own credentials,
   is the design.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
-  Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.json`, and takes
+  Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.yml`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by
   the process that runs the broker, so `deployment.ts` holds one definition per deployment and
   both `init --mode` and `compose` read it; a config whose mode does not match the deployment is
-  refused rather than half-working. `/broker.config.json` is gitignored here: a personal copy is
-  host-specific, the tracked reference is `examples/broker.config.example.json`.
+  refused rather than half-working. `/broker.config.yml` is gitignored here: a personal copy is
+  host-specific, the tracked reference is `examples/broker.config.example.yml`.
 - **`init` merges; it never rewrites what you did not mention.** The configuration file is the
   source of truth, so updates preserve hand edits and `--allow` *adds*. Do not turn this back
   into "regenerate from flags": `--force` replacing the allowlist silently dropped repositories.
@@ -254,7 +252,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   `credential.helper = node /path/helper.ts` makes git look for a helper *named* `node` and fail
   with `'credential-node' is not a git command`; it must be `!node /path/helper.ts`. A value
   starting with `/` is executed directly and anything else resolves to `git-credential-<value>`,
-  which is why a built, executable `dist/cli/helper.js` can be recorded as a bare path and a `.ts`
+  which is why a built, executable `packages/client/bin/gcb.js` can be recorded as a bare path and a `.ts`
   cannot. Learned by getting it wrong.
 - **`exec 3<>file` creates the file.** Probing a unix socket for liveness that way writes an empty
   regular file once the socket is gone, and then blocks the broker from binding — it refuses to
@@ -263,7 +261,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   `src/providers/index.ts`. The broker, helper, socket protocol, allowlist and audit are
   provider-agnostic.
 - **The broker answers the container with generic errors by default**, because provider errors can
-  embed API responses. Real reasons go to the host-side log and audit; `git-credential-broker
+  embed API responses. Real reasons go to the host-side log and audit; `gcb
   diagnose` is how you read them. The deliberate exception is `ProviderConfigError`: errors composed
   from the configuration and a permission name, with nothing from a provider's response body. Those
   are passed through, so a failed push names the missing permission instead of sending the operator
@@ -294,15 +292,16 @@ Full detail and the measurements behind them:
 
 | Path | What |
 |---|---|
-| `src/broker.ts` | unix socket server, refusal codes, audit records |
-| `src/helper.ts` | the container-side credential helper |
-| `src/policy.ts` | the authorization decision (default deny, exact segment matching) |
-| `src/providers/github-app.ts` | RS256 JWT, installation lookup, permission pre-flight, token cache |
-| `src/host-request.ts` | the request channel between the container and a host-side opener |
-| `test/e2e/push.test.ts` | a real push over authenticated smart HTTP |
-| `src/commands/` | the management CLI: `setup`, `init`, `stage`, `compose`, `probe`, `logs`, `pr`, `host-opener`, `authorize`, `diagnose` |
-| `src/device-flow.ts` | the device flow: the three exchanges that turn an authorization into a token |
-| `src/cli/helper.ts` | the one command that is both the git helper and the CLI |
-| `scripts/postbuild.mjs` | build-time fixup: shebang and exec bit on the CLI entry points |
+| `packages/cli/src/` | shared parser, help/version, protocol, types, platform and paths |
+| `packages/client/src/helper.ts` | the container-side credential helper |
+| `packages/client/src/commands/` | setup, probe, logs, pr and remotes |
+| `packages/host/src/broker.ts` | unix socket server, refusal codes, audit records |
+| `packages/host/src/config.ts` | YAML configuration |
+| `packages/host/src/providers/github-app.ts` | RS256 JWT, installation lookup, permission pre-flight, token cache |
+| `packages/host/src/device-flow.ts` | the device flow: the three exchanges that turn an authorization into a token |
+| `packages/host/src/commands/` | init, stage, compose, diagnose, authorize and host-opener |
+| `packages/client/bin/gcb.js`, `packages/host/bin/gcb.js` | the two installed `gcb` bins |
+| `test/e2e/packages.test.ts` | npm pack and install into separate client/host prefixes |
+| `scripts/postbuild.mjs` | build-time fixup: shebang and exec bit on the bin files |
 | `.agents/notes/proposed/` | the original design and its review |
 | `.agents/notes/verified/` | what was built, and the measured environment facts |

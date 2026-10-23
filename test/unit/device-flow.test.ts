@@ -17,7 +17,7 @@ import {
   TOKEN_URL,
   type DeviceCode,
   type Fetcher,
-} from '../../src/device-flow.ts';
+} from '../../packages/host/src/device-flow.ts';
 
 /** One recorded call. */
 interface Call {
