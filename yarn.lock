@@ -187,6 +187,7 @@ __metadata:
   dependencies:
     "@types/node": "npm:^24.19.0"
     typescript: "npm:^7.0.2"
+    yaml: "npm:^2.9.1"
   languageName: unknown
   linkType: soft
 

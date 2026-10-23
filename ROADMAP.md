@@ -73,8 +73,8 @@ No code until these are settled.
 
 - [ ] Write the design note for host-side `gh` execution, including the trust boundary and the
       differences from the current broker-side API implementation.
-- [x] Decide the configuration format and the dependency strategy: TOML, `smol-toml`, esbuild
-      bundle (see Phase 1).
+- [x] Decide the configuration format and the dependency strategy: YAML, `yaml`, no bundle; three
+      workspace packages (see Phase 1).
 - [ ] Decide the host-user flag name (recommendation: `--as-user <login>`; see Phase 3).
 - [ ] Decide the final built-in command list and the `gcb <gh-subcommand>` shorthand.
 - [x] Update `AGENTS.md` and `README.md` to point at this roadmap and state the current baseline.

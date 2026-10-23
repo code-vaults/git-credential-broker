@@ -14,7 +14,7 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
-import { renderCompose } from '../../packages/host/src/commands/compose.ts';
+import { renderCompose, runCompose } from '../../packages/host/src/commands/compose.ts';
 import { runDiagnose } from '../../packages/host/src/commands/diagnose.ts';
 import { SIDECAR, loadConfig, resolveConfigPath, deploymentDir } from '../../packages/host/src/config.ts';
 import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit } from '../../packages/host/src/commands/init.ts';
@@ -914,6 +914,40 @@ describe('compose', () => {
     assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/);
     assert.match(rendered, /broker\.config\.yml:\/etc\/git-cred-broker\/broker\.config\.yml:ro/);
     assert.equal(/^\s+ports:/m.test(rendered), false, 'the socket is the only interface');
+  });
+
+  it('uses --dir for the default config lookup', () => {
+    const target = dir(`compose-dir-${Math.random().toString(36).slice(2)}`);
+    fs.writeFileSync(
+      path.join(target, 'broker.config.yml'),
+      stringifyYaml({
+        socketPath: SIDECAR.socketPath,
+        auditPath: SIDECAR.auditPath,
+        hosts: {
+          'github.com': {
+            provider: 'github-app',
+            allow: ['a/one'],
+            clientId: 'Iv1.example',
+            appId: 1,
+            privateKeyPath: SIDECAR.keyPath,
+            permissions: { contents: 'write' },
+          },
+        },
+      }),
+    );
+
+    let output = '';
+    const original = process.stdout.write;
+    process.stdout.write = ((chunk: unknown) => {
+      output += String(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      assert.equal(runCompose(['--dir', target, '--socket-dir', '/srv/sock']), 0);
+    } finally {
+      process.stdout.write = original;
+    }
+    assert.equal(output.includes(`${target}/broker.config.yml:${SIDECAR.configPath}:ro`), true);
   });
 
   it('mounts an explicitly selected config file', () => {

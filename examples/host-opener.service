@@ -1,6 +1,6 @@
 # A user service for the host-side opener, which creates pull requests as the person running it.
 #
-#   install:  npm i -g git-credential-broker      # the CLI is assumed to be on PATH
+#   install:  npm i -g gcb-host      # the CLI is assumed to be on PATH
 #             cp examples/host-opener.service ~/.config/systemd/user/
 #             systemctl --user daemon-reload
 #             systemctl --user enable --now host-opener
@@ -21,7 +21,7 @@ After=network-online.target
 # http_proxy / https_proxy / no_proxy in this file if this host needs a proxy to reach github.com.
 EnvironmentFile=-/etc/git-cred-broker/proxy.env
 Type=simple
-ExecStart=/usr/bin/env git-credential-broker host-opener --root %h
+ExecStart=/usr/bin/env gcb host-opener --root %h
 Restart=always
 RestartSec=10
 

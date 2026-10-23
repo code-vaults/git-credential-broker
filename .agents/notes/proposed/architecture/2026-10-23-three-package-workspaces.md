@@ -50,14 +50,14 @@ globally would race for the same `gcb` link; that is documented rather than work
 
 ## Command ownership
 
-- `gcb-client`: `git-credential-*`, `setup`, `gh`, and the socket-backed read commands until they
-  move to the host broker.
-- `gcb-host`: `app`, `host`, `init`, `stage`, `config`, `diagnose`, `authorize`, `probe`, and the
-  daemon entry point.
+- `gcb-client` (implemented): `git-credential-*`, `setup`, `probe`, `logs`, `pr`.
+- `gcb-host` (implemented): `app`, `host`, `daemon`, `init`, `stage`, `compose`, `diagnose`,
+  `authorize`, `host-opener`.
 - `gcb-cli`: help/version, argument parsing, command lookup, error formatting, and the shared
   wire/types.
 
-`gcb gh` bypasses the parser and forwards its raw arguments; it is not a normal subcommand tree.
+`gh` and `config` are roadmap commands, not implemented yet. When `gcb gh` lands it will bypass the
+parser and forward its raw arguments.
 
 ## No bundling
 
@@ -76,9 +76,9 @@ self-contained artifact. That is a separate decision from this package split.
 - Versions stay in lockstep; `gcb-client` and `gcb-host` depend on the exact `gcb-cli` version.
 - CI adds a real package test:
   1. `npm pack` all three;
-  2. install `gcb-client` into a temporary prefix, assert `gcb --help` and `gcb gh` work and
-     `yaml` is absent;
-  3. install `gcb-host` into another prefix, assert `gcb app --help` and `gcb config check` work
+  2. install `gcb-client` into a temporary prefix, assert `gcb --help` and `gcb setup --help`
+     work and `yaml` is absent;
+  3. install `gcb-host` into another prefix, assert `gcb app --help` and `gcb daemon --help` work
      and `yaml` is present.
 - Unit tests may continue to import `packages/*/src` through a development export condition; the
   packaged entry points use `dist`.

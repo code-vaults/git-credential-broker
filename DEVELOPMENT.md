@@ -57,7 +57,7 @@ Two consequences:
 ## Build
 
 ```sh
-corepack yarn build        # tsc -p tsconfig.build.json && node scripts/postbuild.mjs
+corepack yarn build        # tsc per package + scripts/postbuild.mjs
 corepack yarn typecheck    # tsc, no emit
 ```
 

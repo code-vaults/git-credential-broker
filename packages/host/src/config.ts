@@ -5,9 +5,8 @@
  * allowing) at push time.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import path from 'node:path';
+import path, { posix } from 'node:path';
 import { parseDocument } from 'yaml';
-import { posix } from 'node:path';
 
 import { parseAllowEntry } from './policy.ts';
 import type { BrokerConfig, GithubAppHostConfig, HostConfig, StaticHostConfig } from 'gcb-cli';
@@ -112,10 +111,10 @@ export function inferMode(config: BrokerConfig): DeploymentMode {
 export function assertUserTokensReadable(config: BrokerConfig): void {
   for (const [host, block] of Object.entries(config.hosts)) {
     if (block.provider !== 'github-app') continue;
-    for (const [owner, path] of Object.entries(block.userTokens ?? {})) {
-      if (existsSync(path)) continue;
-    throw new Error(
-      `cannot read the token for ${host}/${owner}: ${path} does not exist.\n` +
+    for (const [owner, tokenPath] of Object.entries(block.userTokens ?? {})) {
+      if (existsSync(tokenPath)) continue;
+      throw new Error(
+        `cannot read the token for ${host}/${owner}: ${tokenPath} does not exist.\n` +
         `       Create a fine-grained token with pull requests: read and write, contents: read and\n` +
         `       metadata: read, for the repositories the allowlist names, and put it there — or drop\n` +
         `       userTokens to keep opening pull requests as the app.`,

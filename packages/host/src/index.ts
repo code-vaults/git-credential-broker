@@ -22,7 +22,7 @@ Commands
   authorize    Authorize this app once for person-authored pull requests
   host-opener  Watch for the container's pull-request requests and create them
 
-Client commands such as setup/gh/probe/logs/pr are in gcb-client.`;
+Client commands such as setup/probe/logs/pr are in gcb-client.`;
 
 async function run(argv: readonly string[]): Promise<number> {
   const [command, ...rest] = argv;

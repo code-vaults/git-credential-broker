@@ -10,6 +10,7 @@
  * the paths recorded in `broker.config.yml` and the paths this file mounts cannot drift apart.
  */
 import fs from 'node:fs';
+import path from 'node:path';
 
 import { inferMode, loadConfig, resolveConfigPath, deploymentDir, SIDECAR } from '../config.ts';
 import { platformRefusal } from 'gcb-cli';
@@ -198,12 +199,14 @@ export function runCompose(argv: readonly string[]): number {
     fail(refusal);
   }
 
-  const configPath = resolveConfigPath(args.value('config'));
+  const explicitConfig = args.value('config');
+  const dir =
+    args.value('dir') ?? (explicitConfig !== undefined ? deploymentDir(resolveConfigPath(explicitConfig)) : process.cwd());
+  const configPath = explicitConfig !== undefined ? resolveConfigPath(explicitConfig) : path.join(dir, 'broker.config.yml');
   const socketDir = args.value('socket-dir');
   if (!socketDir) {
     fail('--socket-dir is required (a host directory the pushing container already mounts)');
   }
-  const dir = args.value('dir') ?? deploymentDir(configPath);
 
   // Check before emitting. A config written for the other deployment produces a sidecar that
   // starts and then cannot find its own private key, which is a confusing way to find out.

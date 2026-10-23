@@ -12,7 +12,7 @@ fi
 # the checkout means anything that can write the checkout — an agent with this repository mounted —
 # decides what your credentials do at boot. /usr/local/bin is a fine place; the file below it is the
 # one that matters.
-# The CLI is assumed to be installed globally: npm i -g git-credential-broker
+# The CLI is assumed to be installed globally: npm i -g gcb-host
 #
 # DSM: Control Panel → Task Scheduler → Create → Triggered Task → Boot-up
 #   User:     the user whose GitHub credentials should author the pull requests — *not* root, which
@@ -25,7 +25,7 @@ fi
 #                                    the tree to serve: the parent of every checkout the container
 #                                    sees. Not the default $HOME — under a boot task that is often
 #                                    /var/services/homes/<you>, which is not that tree.
-#   GIT_BROKER_BIN=/usr/local/bin/git-credential-broker
+#   GIT_BROKER_BIN=/usr/local/bin/gcb
 #                                    where the CLI is, when it is not on the PATH below
 #   GIT_BROKER_GH=/usr/local/bin/gh  where gh is, when it is not on that PATH
 set -u
@@ -35,7 +35,7 @@ set -u
 PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 export PATH
 
-BIN=${GIT_BROKER_BIN:-$(command -v git-credential-broker || true)}
+BIN=${GIT_BROKER_BIN:-$(command -v gcb || true)}
 GH=${GIT_BROKER_GH:-gh}
 ROOT=${GIT_BROKER_ROOT:-$HOME}
 LOG=${GIT_BROKER_OPENER_LOG:-$HOME/.git-credential-broker-opener.log}
@@ -46,7 +46,7 @@ if [ "$(id -u)" = 0 ]; then
   exit 1
 fi
 if [ ! -x "$BIN" ]; then
-  echo "host-opener: no git-credential-broker at ${BIN:-<empty>} — npm i -g git-credential-broker, or set GIT_BROKER_BIN=…" >&2
+  echo "host-opener: no gcb at ${BIN:-<empty>} — npm i -g gcb-host, or set GIT_BROKER_BIN=…" >&2
   exit 1
 fi
 
