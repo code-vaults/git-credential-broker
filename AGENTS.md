@@ -258,8 +258,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   `credential.helper = node /path/helper.ts` makes git look for a helper *named* `node` and fail
   with `'credential-node' is not a git command`; it must be `!node /path/helper.ts`. A value
   starting with `/` is executed directly and anything else resolves to `git-credential-<value>`,
-  which is why a built, executable `packages/client/bin/gcb.js` can be recorded as a bare path and a `.ts`
-  cannot. Learned by getting it wrong.
+  which is why `setup` records `!gcb` and lets PATH resolve the installed bin; a source checkout that
+  is not on PATH spells the interpreter out. Learned by getting it wrong.
 - **`exec 3<>file` creates the file.** Probing a unix socket for liveness that way writes an empty
   regular file once the socket is gone, and then blocks the broker from binding — it refuses to
   replace a non-socket — until someone removes it. Use `net.connect`, or `test -S` first.

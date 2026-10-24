@@ -72,25 +72,17 @@ export interface SetupResult {
 }
 
 /**
- * The helper path to record when the user did not choose one.
+ * The helper command to record when the user did not choose one.
  *
- * The real path of the running script, so the configuration keeps working regardless of PATH —
- * `npx` and global installs both land somewhere git would not otherwise look.
+ * `!gcb` is a shell command, so git resolves the installed bin through PATH every time. A global
+ * install, `npx` and a source-checkout shim can all use the same configuration, and moving the
+ * installation does not require rewriting the git config. The `!` is the part git needs to run a
+ * command rather than look for `git-credential-gcb`.
  *
- * A bare path is right because the built entry point carries a shebang and the executable bit. A
- * source checkout has neither, so it has to spell out the interpreter:
- * `git config --global credential.helper '!node /path/packages/client/bin/gcb.js'`.
- *
- * @returns the resolved path, or a bare `gcb` when it cannot be determined.
+ * @returns the helper command.
  */
 export function defaultHelperPath(): string {
-  const invoked = process.argv[1];
-  if (!invoked) return 'gcb';
-  try {
-    return fs.realpathSync(invoked);
-  } catch {
-    return path.resolve(invoked);
-  }
+  return '!gcb';
 }
 
 /**
