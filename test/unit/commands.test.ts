@@ -611,6 +611,12 @@ describe('init', () => {
     assert.equal(selection.configPath, file);
   });
 
+  it('resolves a relative --dir to an absolute path', () => {
+    const selection = resolveInitSelection({ dir: 'deploy' }, {});
+    assert.equal(selection.dir, path.resolve('deploy'));
+    assert.equal(selection.configPath, undefined);
+  });
+
   it('uses the default file inside --dir and ignores the environment for the target', () => {
     const root = dir(`init-select-dir-${Math.random().toString(36).slice(2)}`);
     const file = path.join(root, 'custom.yml');

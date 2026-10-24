@@ -14,6 +14,7 @@
  * `--force` still exists, for regenerating from flags when the file is beyond editing.
  */
 import fs from 'node:fs';
+import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { parseDocument, stringify } from 'yaml';
 
@@ -520,9 +521,13 @@ export function resolveInitSelection(
   args: { readonly config?: string; readonly dir?: string },
   env: NodeJS.ProcessEnv = process.env,
 ): { readonly dir: string; readonly configPath: string | undefined } {
-  const dir = args.dir ?? deploymentDir(resolveConfigPath(args.config, env));
+  const dir = path.resolve(args.dir ?? deploymentDir(resolveConfigPath(args.config, env)));
   const configPath =
-    args.config ?? (args.dir === undefined ? resolveConfigPath(undefined, env) : undefined);
+    args.config !== undefined
+      ? path.resolve(args.config)
+      : args.dir === undefined
+        ? resolveConfigPath(undefined, env)
+        : undefined;
   return { dir, configPath };
 }
 
@@ -551,7 +556,6 @@ export async function runInit(argv: readonly string[]): Promise<number> {
   }
 
   const selection = resolveInitSelection({ config: args.value('config'), dir: args.value('dir') });
-  const dir = selection.dir;
   try {
     const result = performInit({
       cert: args.value('cert'),
@@ -621,7 +625,7 @@ export async function runInit(argv: readonly string[]): Promise<number> {
       say('');
       if (result.mode === 'sidecar') {
         say('Then start the sidecar, which mounts those paths exactly as recorded:');
-        say(`  gcb compose --dir ${dir} --socket-dir <a directory the pusher mounts> \\`);
+        say(`  gcb compose --config ${result.configPath} --socket-dir <a directory the pusher mounts> \\`);
         say('    > docker-compose.broker.yml && docker compose -f docker-compose.broker.yml up -d');
       } else {
         say('Then start the broker as a host process:');
