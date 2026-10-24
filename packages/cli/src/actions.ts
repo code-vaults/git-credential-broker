@@ -230,6 +230,9 @@ export const GH_ACTION_NAMES = Object.freeze(Object.keys(GH_ACTIONS));
  * @throws {ActionError} when the action is not in the catalog.
  */
 export function getGhAction(name: string): GhAction {
+  if (!Object.hasOwn(GH_ACTIONS, name)) {
+    throw new ActionError(`unknown gh action ${JSON.stringify(name)}`);
+  }
   const action = GH_ACTIONS[name];
   if (action === undefined) throw new ActionError(`unknown gh action ${JSON.stringify(name)}`);
   return action;
@@ -305,9 +308,14 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
       continue;
     }
 
-    const list = flag.repeatable === true ? asStringList(value, flag.name) : [asString(value, flag.name)];
-    for (const item of list) {
-      argv.push(`--${flag.name}`, flag.type === 'number' ? String(asNumber(item, flag.name)) : item);
+    if (flag.repeatable === true) {
+      for (const item of asStringList(value, flag.name)) {
+        argv.push(`--${flag.name}`, flag.type === 'number' ? String(asNumber(item, flag.name)) : item);
+      }
+    } else if (flag.type === 'number') {
+      argv.push(`--${flag.name}`, String(asNumber(value, flag.name)));
+    } else {
+      argv.push(`--${flag.name}`, asString(value, flag.name));
     }
     present.add(flag.name);
   }

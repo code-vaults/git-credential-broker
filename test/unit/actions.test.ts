@@ -90,6 +90,17 @@ describe('buildGhArgv', () => {
     ]);
   });
 
+  it('accepts numeric flag values without stringifying them first', () => {
+    assert.deepEqual(buildGhArgv('pr:list', { limit: 10 }, 'acme/widget'), [
+      'pr',
+      'list',
+      '--limit',
+      '10',
+      '--repo',
+      'acme/widget',
+    ]);
+  });
+
   it('omits false booleans', () => {
     assert.deepEqual(
       buildGhArgv('pr:view', { number: 1, comments: false }, 'acme/widget'),
@@ -97,9 +108,10 @@ describe('buildGhArgv', () => {
     );
   });
 
-  it('refuses unknown keys, unknown actions and malformed repositories', () => {
+  it('refuses unknown keys, inherited action names and malformed repositories', () => {
     assert.throws(() => buildGhArgv('pr:view', { number: 1, web: true }, 'acme/widget'), ActionError);
     assert.throws(() => buildGhArgv('pr:merge', {}, 'acme/widget'), /unknown gh action/);
+    assert.throws(() => buildGhArgv('constructor', {}, 'acme/widget'), /unknown gh action/);
     assert.throws(() => buildGhArgv('pr:view', { number: 1 }, '../widget'), /invalid repository/);
   });
 

@@ -15,8 +15,8 @@ had reached 549 lines mostly by accumulating rationale; it is not the place for 
 ## Status and roadmap
 
 The action/CLI redesign (host-side `gh`, `gcb gh`, host-user delegation) is **underway**. YAML
-configuration and the three-package split are implemented; the host-side `gh` command and its typed
-action catalog are the next slice, with the Phase 2 design note in
+configuration and the three-package split are implemented. The typed `gh` action catalog is present;
+the host-side `gh` dispatch and execution are the next slice, with the Phase 2 design note in
 `.agents/notes/proposed/architecture/2026-10-25-host-side-gh.md`. [`ROADMAP.md`](ROADMAP.md) is authoritative for the target and the order; this file
 describes the current tree, which is the last green baseline. Do not
 implement a later phase to unblock an earlier one without updating the roadmap first. The target
