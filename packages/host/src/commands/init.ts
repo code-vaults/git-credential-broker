@@ -625,7 +625,9 @@ export async function runInit(argv: readonly string[]): Promise<number> {
       say('');
       if (result.mode === 'sidecar') {
         say('Then start the sidecar, which mounts those paths exactly as recorded:');
-        say(`  gcb compose --config ${result.configPath} --socket-dir <a directory the pusher mounts> \\`);
+        say(
+          `  gcb compose --dir ${path.dirname(result.keyPath)} --config ${result.configPath} --socket-dir <a directory the pusher mounts> \\`,
+        );
         say('    > docker-compose.broker.yml && docker compose -f docker-compose.broker.yml up -d');
       } else {
         say('Then start the broker as a host process:');
