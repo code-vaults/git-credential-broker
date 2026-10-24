@@ -70,6 +70,16 @@ jobs:
         with:
           node-version: '24'
 
+      # Workspace links are needed even for the refusal checks, because the bins import their
+      # packages by name. The parser is moved aside afterwards so a refusal that accidentally
+      # imports config.ts still fails on the missing yaml, as the dependency-free check intended.
+      - name: link the workspaces
+        run: corepack yarn install --immutable
+
+      - name: hide the host parser
+        shell: pwsh
+        run: Move-Item node_modules/yaml node_modules/yaml.hidden
+
       # The unit tests inject 'win32' into the guard. This runs the real thing on the real platform,
       # which is the only way to know the refusal fires before anything else happens.
       #
@@ -82,7 +92,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           $log = Join-Path $env:RUNNER_TEMP 'daemon.txt'
-          node src/cli/daemon.ts --check *> $log
+          node --conditions=development packages/host/bin/gcb.js daemon --check *> $log
           $code = $LASTEXITCODE
           $out = Get-Content $log -Raw
           Write-Host "exit=$code"
@@ -99,7 +109,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           $log = Join-Path $env:RUNNER_TEMP 'setup.txt'
-          node src/cli/helper.ts setup *> $log
+          node --conditions=development packages/client/bin/gcb.js setup *> $log
           $code = $LASTEXITCODE
           $out = Get-Content $log -Raw
           Write-Host "exit=$code"
@@ -116,7 +126,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           $log = Join-Path $env:RUNNER_TEMP 'compose.txt'
-          node src/cli/helper.ts compose --socket-dir C:\sock *> $log
+          node --conditions=development packages/host/bin/gcb.js compose --socket-dir C:\sock *> $log
           $code = $LASTEXITCODE
           $out = Get-Content $log -Raw
           Write-Host "exit=$code"
@@ -132,7 +142,7 @@ jobs:
 
       - name: help still works
         shell: pwsh
-        run: node src/cli/helper.ts --help
+        run: node --conditions=development packages/client/bin/gcb.js --help
 
   wsl:
     timeout-minutes: 20

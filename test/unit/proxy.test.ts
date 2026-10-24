@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { assertProxyEnabled } from '../../src/proxy.ts';
+import { assertProxyEnabled } from '../../packages/host/src/proxy.ts';
 
 describe('refusing a proxy this process would ignore', () => {
   it('says nothing when no proxy is configured, which is the direct case', () => {

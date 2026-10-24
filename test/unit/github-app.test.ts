@@ -31,9 +31,9 @@ import { join } from 'node:path';
 import { createVerify, generateKeyPairSync } from 'node:crypto';
 import { describe, it } from 'node:test';
 
-import { createGithubAppProvider, nextLink, signAppJwt } from '../../src/providers/github-app.ts';
-import type { FetchLike, FetchResponseLike, GithubAppHostConfig } from '../../src/types.ts';
-import { ProviderConfigError } from '../../src/errors.ts';
+import { createGithubAppProvider, nextLink, signAppJwt } from '../../packages/host/src/providers/github-app.ts';
+import type { FetchLike, FetchResponseLike, GithubAppHostConfig } from '../../packages/cli/src/types.ts';
+import { ProviderConfigError } from '../../packages/cli/src/errors.ts';
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const PRIVATE_PEM = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();

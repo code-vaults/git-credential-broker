@@ -154,15 +154,40 @@ __metadata:
   languageName: node
   linkType: hard
 
-"git-credential-broker@workspace:.":
+"gcb-cli@npm:0.1.0, gcb-cli@workspace:packages/cli":
   version: 0.0.0-use.local
-  resolution: "git-credential-broker@workspace:."
+  resolution: "gcb-cli@workspace:packages/cli"
+  languageName: unknown
+  linkType: soft
+
+"gcb-client@workspace:packages/client":
+  version: 0.0.0-use.local
+  resolution: "gcb-client@workspace:packages/client"
+  dependencies:
+    gcb-cli: "npm:0.1.0"
+  bin:
+    gcb: ./bin/gcb.js
+  languageName: unknown
+  linkType: soft
+
+"gcb-host@workspace:packages/host":
+  version: 0.0.0-use.local
+  resolution: "gcb-host@workspace:packages/host"
+  dependencies:
+    gcb-cli: "npm:0.1.0"
+    yaml: "npm:^2.9.1"
+  bin:
+    gcb: ./bin/gcb.js
+  languageName: unknown
+  linkType: soft
+
+"gcb-workspace@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "gcb-workspace@workspace:."
   dependencies:
     "@types/node": "npm:^24.19.0"
     typescript: "npm:^7.0.2"
-  bin:
-    git-credential-broker: dist/cli/helper.js
-    git-credential-brokerd: dist/cli/daemon.js
+    yaml: "npm:^2.9.1"
   languageName: unknown
   linkType: soft
 
@@ -312,5 +337,14 @@ __metadata:
   version: 7.24.6
   resolution: "undici-types@npm:7.24.6"
   checksum: 10c0/d9cd8befb643ac904615c280a095ba4240531f6bb4a5e75a22a7483630ca8d3f1016d2ab6ace6ceda1f63b3a2db2fe037fafe121d6917a0187573aa548ff78ca
+  languageName: node
+  linkType: hard
+
+"yaml@npm:^2.9.1":
+  version: 2.9.1
+  resolution: "yaml@npm:2.9.1"
+  bin:
+    yaml: bin.mjs
+  checksum: 10c0/9d06676ef02b89559a8b10a71882bd2cdae81e8393dc8dbc871615c3259475d9609ad973d19cb3c9e71e72d6206e3d1e7aa241c7e55f3d16fd2e77db305827d6
   languageName: node
   linkType: hard

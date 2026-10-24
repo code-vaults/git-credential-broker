@@ -14,8 +14,8 @@ import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { after, describe, it } from 'node:test';
 
-import { parseArgs, parseCredentialInput, resolveSocketPath, runHelper } from '../../src/helper.ts';
-import type { WireResponse } from '../../src/types.ts';
+import { parseArgs, parseCredentialInput, resolveSocketPath, runHelper } from '../../packages/client/src/helper.ts';
+import type { WireResponse } from '../../packages/cli/src/types.ts';
 
 const CLIENT_REQUEST = 'protocol=https\nhost=github.com\npath=acme/widget.git\n\n';
 

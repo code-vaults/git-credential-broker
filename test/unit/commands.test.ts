@@ -12,15 +12,16 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
-import { renderCompose } from '../../src/commands/compose.ts';
-import { runDiagnose } from '../../src/commands/diagnose.ts';
-import { SIDECAR, resolveConfigPath, deploymentDir } from '../../src/config.ts';
-import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit } from '../../src/commands/init.ts';
-import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../src/commands/support.ts';
-import { defaultHelperPath, performSetup } from '../../src/commands/setup.ts';
-import type { BrokerConfig, GithubAppHostConfig } from '../../src/types.ts';
-import { runProbe } from '../../src/commands/probe.ts';
+import { renderCompose, runCompose } from '../../packages/host/src/commands/compose.ts';
+import { runDiagnose } from '../../packages/host/src/commands/diagnose.ts';
+import { SIDECAR, loadConfig, resolveConfigPath, deploymentDir } from '../../packages/host/src/config.ts';
+import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit, resolveInitSelection } from '../../packages/host/src/commands/init.ts';
+import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../packages/cli/src/support.ts';
+import { defaultHelperPath, performSetup } from '../../packages/client/src/commands/setup.ts';
+import type { BrokerConfig, GithubAppHostConfig } from '../../packages/cli/src/types.ts';
+import { runProbe } from '../../packages/client/src/commands/probe.ts';
 
 /** Scratch space for the whole file. */
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-commands-'));
@@ -317,7 +318,7 @@ describe('setup', () => {
   function setupInput(overrides: Partial<Parameters<typeof performSetup>[0]> = {}) {
     const base = dir(`setup-${Math.random().toString(36).slice(2)}`);
     return {
-      helper: '/opt/git-credential-broker/dist/cli/helper.js',
+      helper: '/opt/git-credential-broker/packages/client/bin/gcb.js',
       socket: '/run/git-cred-broker/broker.sock',
       gitconfig: path.join(base, '.gitconfig'),
       envFile: path.join(base, '.git-broker.env'),
@@ -559,14 +560,14 @@ describe('init', () => {
     const target = path.join(root, 'deploy');
     performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
 
-    const file = path.join(target, 'broker.config.json');
-    const edited = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+    const file = path.join(target, 'broker.config.yml');
+    const edited = parseYaml(fs.readFileSync(file, 'utf8')) as {
       hosts: Record<string, { permissions?: unknown }>;
     };
     const editedBlock = edited.hosts['github.com'];
     assert.ok(editedBlock, 'the config must have a github.com block');
     editedBlock.permissions = { contents: 'write', pull_requests: 'write' };
-    fs.writeFileSync(file, JSON.stringify(edited, null, 2));
+    fs.writeFileSync(file, `${stringifyYaml(edited)}\n`);
 
     const updated = performInit({
       ...baseInput,
@@ -577,6 +578,84 @@ describe('init', () => {
     });
     assert.deepEqual(appBlock(updated.config).permissions, { contents: 'write', pull_requests: 'write' });
     assert.deepEqual(appBlock(updated.config).allow, ['a/one', 'c/three']);
+  });
+
+  it('preserves comments when updating the YAML document', () => {
+    const root = dir(`init-comments-${Math.random().toString(36).slice(2)}`);
+    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    const target = path.join(root, 'deploy');
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+
+    const file = path.join(target, 'broker.config.yml');
+    const text = fs.readFileSync(file, 'utf8').replace('socketPath:', '# keep this comment\nsocketPath:');
+    fs.writeFileSync(file, text);
+
+    const updated = performInit({
+      ...baseInput,
+      cert: undefined,
+      dir: target,
+      allow: ['b/two'],
+    });
+
+    const after = fs.readFileSync(file, 'utf8');
+    assert.match(after, /# keep this comment/, 'the unrelated comment survives the merge');
+    assert.match(after, /b\/two/);
+    assert.deepEqual(appBlock(updated.config).allow, ['a/one', 'b/two']);
+  });
+
+  it('selects GIT_BROKER_CONFIG when neither --config nor --dir is given', () => {
+    const root = dir(`init-select-env-${Math.random().toString(36).slice(2)}`);
+    const file = path.join(root, 'custom.yml');
+    const selection = resolveInitSelection({}, { GIT_BROKER_CONFIG: file });
+    assert.equal(selection.dir, root);
+    assert.equal(selection.configPath, file);
+  });
+
+  it('resolves a relative --dir to an absolute path', () => {
+    const selection = resolveInitSelection({ dir: 'deploy' }, {});
+    assert.equal(selection.dir, path.resolve('deploy'));
+    assert.equal(selection.configPath, undefined);
+  });
+
+  it('uses the default file inside --dir and ignores the environment for the target', () => {
+    const root = dir(`init-select-dir-${Math.random().toString(36).slice(2)}`);
+    const file = path.join(root, 'custom.yml');
+    const selection = resolveInitSelection({ dir: root }, { GIT_BROKER_CONFIG: file });
+    assert.equal(selection.dir, root);
+    assert.equal(selection.configPath, undefined);
+  });
+
+  it('preserves other hosts when updating github.com', () => {
+    const root = dir(`init-hosts-${Math.random().toString(36).slice(2)}`);
+    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    const target = path.join(root, 'deploy');
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+
+    const file = path.join(target, 'broker.config.yml');
+    fs.appendFileSync(
+      file,
+      `
+  # keep this static host
+  "git.example.internal:8443":
+    provider: static
+    allowInsecureHttp: true
+    username: git
+    password: p
+    allow: [infra/*]
+`,
+    );
+
+    const updated = performInit({
+      ...baseInput,
+      cert: undefined,
+      dir: target,
+      allow: ['b/two'],
+    });
+
+    const reloaded = loadConfig(file);
+    assert.equal(reloaded.hosts['git.example.internal:8443']?.provider, 'static');
+    assert.equal(updated.config.hosts['git.example.internal:8443']?.provider, 'static');
+    assert.match(fs.readFileSync(file, 'utf8'), /# keep this static host/);
   });
 
   it('removes and replaces entries only when asked', () => {
@@ -722,6 +801,17 @@ describe('mergeAllowList', () => {
     );
   });
 
+  it('treats whitespace-padded entries as the same key and deduplicates replace mode', () => {
+    assert.deepEqual(
+      mergeAllowList([' a/one', 'b/two'], { dir: '/x', removeAllow: ['a/one'], force: false }),
+      ['b/two'],
+    );
+    assert.deepEqual(
+      mergeAllowList([], { dir: '/x', allow: ['a/one', 'A/ONE'], replaceAllow: true, force: false }),
+      ['a/one'],
+    );
+  });
+
   it('removes, and replaces only when told to', () => {
     assert.deepEqual(
       mergeAllowList(['a/one', 'b/two'], { dir: '/x', removeAllow: ['A/ONE'], force: false }),
@@ -745,10 +835,10 @@ describe('diagnose', () => {
     // The case that produced this test: `diagnose` run on the host against a config written for the
     // sidecar, which died with a bare ENOENT about a path it could never have had.
     const root = dir(`diagnose-${Math.random().toString(36).slice(2)}`);
-    const configPath = path.join(root, 'broker.config.json');
+    const configPath = path.join(root, 'broker.config.yml');
     fs.writeFileSync(
       configPath,
-      JSON.stringify({
+      stringifyYaml({
         socketPath: SIDECAR.socketPath,
         auditPath: SIDECAR.auditPath,
         hosts: {
@@ -809,14 +899,14 @@ describe('socket discovery', () => {
 });
 
 describe('config discovery', () => {
-  it('prefers --config, then GIT_BROKER_CONFIG, then ./broker.config.json', () => {
+  it('prefers --config, then GIT_BROKER_CONFIG, then ./broker.config.yml', () => {
     assert.equal(resolveConfigPath('/a/b.json', {}), '/a/b.json');
     assert.equal(resolveConfigPath(undefined, { GIT_BROKER_CONFIG: '/c/d.json' }), '/c/d.json');
-    assert.equal(resolveConfigPath(undefined, {}), path.resolve('broker.config.json'));
+    assert.equal(resolveConfigPath(undefined, {}), path.resolve('broker.config.yml'));
   });
 
   it('takes the deployment directory from the config path, so --dir is not needed', () => {
-    const found = resolveConfigPath(undefined, { GIT_BROKER_CONFIG: '/volume1/docker/git-cred-broker/broker.config.json' });
+    const found = resolveConfigPath(undefined, { GIT_BROKER_CONFIG: '/volume1/docker/git-cred-broker/broker.config.yml' });
     assert.equal(deploymentDir(found), '/volume1/docker/git-cred-broker');
   });
 
@@ -839,7 +929,7 @@ describe('config discovery', () => {
 
     assert.equal(result.configPath, custom);
     assert.equal(fs.existsSync(custom), true);
-    assert.equal(fs.existsSync(path.join(root, 'deploy', 'broker.config.json')), false, 'and not in --dir as well');
+    assert.equal(fs.existsSync(path.join(root, 'deploy', 'broker.config.yml')), false, 'and not in --dir as well');
   });
 });
 
@@ -849,14 +939,100 @@ describe('compose', () => {
     socketDir: '/srv/shared/git-broker',
     user: '1026:100',
     image: 'node:24-slim',
-    packageSpec: 'git-credential-broker@0.1.0',
+    packageSpec: 'gcb-host@0.1.0',
     name: 'git-cred-broker',
   });
 
   it('mounts the key read-only and publishes no ports', () => {
     assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/);
-    assert.match(rendered, /broker\.config\.json:\/etc\/git-cred-broker\/broker\.config\.json:ro/);
+    assert.match(rendered, /broker\.config\.yml:\/etc\/git-cred-broker\/broker\.config\.yml:ro/);
     assert.equal(/^\s+ports:/m.test(rendered), false, 'the socket is the only interface');
+  });
+
+  it('uses --dir for the default config lookup', () => {
+    const target = dir(`compose-dir-${Math.random().toString(36).slice(2)}`);
+    fs.writeFileSync(
+      path.join(target, 'broker.config.yml'),
+      stringifyYaml({
+        socketPath: SIDECAR.socketPath,
+        auditPath: SIDECAR.auditPath,
+        hosts: {
+          'github.com': {
+            provider: 'github-app',
+            allow: ['a/one'],
+            clientId: 'Iv1.example',
+            appId: 1,
+            privateKeyPath: SIDECAR.keyPath,
+            permissions: { contents: 'write' },
+          },
+        },
+      }),
+    );
+
+    let output = '';
+    const original = process.stdout.write;
+    process.stdout.write = ((chunk: unknown) => {
+      output += String(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      assert.equal(runCompose(['--dir', target, '--socket-dir', '/srv/sock']), 0);
+    } finally {
+      process.stdout.write = original;
+    }
+    assert.equal(output.includes(`${target}/broker.config.yml:${SIDECAR.configPath}:ro`), true);
+  });
+
+  it('honors GIT_BROKER_CONFIG when no --config or --dir is given', () => {
+    const target = dir(`compose-env-${Math.random().toString(36).slice(2)}`);
+    const configFile = path.join(target, 'custom.yml');
+    fs.writeFileSync(
+      configFile,
+      stringifyYaml({
+        socketPath: SIDECAR.socketPath,
+        auditPath: SIDECAR.auditPath,
+        hosts: {
+          'github.com': {
+            provider: 'github-app',
+            allow: ['a/one'],
+            clientId: 'Iv1.example',
+            appId: 1,
+            privateKeyPath: SIDECAR.keyPath,
+            permissions: { contents: 'write' },
+          },
+        },
+      }),
+    );
+
+    const previous = process.env['GIT_BROKER_CONFIG'];
+    process.env['GIT_BROKER_CONFIG'] = configFile;
+    let output = '';
+    const original = process.stdout.write;
+    process.stdout.write = ((chunk: unknown) => {
+      output += String(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      assert.equal(runCompose(['--socket-dir', '/srv/sock']), 0);
+    } finally {
+      process.stdout.write = original;
+      if (previous === undefined) delete process.env['GIT_BROKER_CONFIG'];
+      else process.env['GIT_BROKER_CONFIG'] = previous;
+    }
+    assert.equal(output.includes(`${configFile}:${SIDECAR.configPath}:ro`), true);
+  });
+
+  it('mounts an explicitly selected config file', () => {
+    const custom = renderCompose({
+      dir: '/volume1/docker/git-cred-broker',
+      configPath: '/srv/custom/broker.yml',
+      socketDir: '/srv/shared/git-broker',
+      user: '1026:100',
+      image: 'node:24-slim',
+      packageSpec: 'gcb-host@0.1.0',
+      name: 'git-cred-broker',
+    });
+    assert.match(custom, /\/srv\/custom\/broker\.yml:\/etc\/git-cred-broker\/broker\.config\.yml:ro/);
   });
 
   it('drops privileges and keeps the root filesystem read-only', () => {
@@ -867,7 +1043,7 @@ describe('compose', () => {
   });
 
   it('runs the daemon from the published package, not from a copied checkout', () => {
-    assert.match(rendered, /npx --yes --package 'git-credential-broker@0\.1\.0' git-credential-brokerd/);
+    assert.match(rendered, /npx --yes --package 'gcb-host@0\.1\.0' gcb daemon/);
     assert.match(rendered, new RegExp(`--config ${SIDECAR.configPath}`));
   });
 
@@ -877,13 +1053,13 @@ describe('compose', () => {
       socketDir: '/srv/shared/git-broker',
       user: '1026:100',
       image: 'node:24-slim',
-      packageSpec: 'git-credential-broker@0.1.0',
+      packageSpec: 'gcb-host@0.1.0',
       name: 'git-cred-broker',
       code: '/volume1/docker/git-cred-broker/app',
     });
 
-    assert.match(fromCode, /- \/volume1\/docker\/git-cred-broker\/app:\/opt\/git-credential-broker:ro/);
-    assert.match(fromCode, /- node\n\s+- \/opt\/git-credential-broker\/src\/cli\/daemon\.ts/);
+    assert.match(fromCode, /- \/volume1\/docker\/git-cred-broker\/app:\/opt\/gcb:ro/);
+    assert.match(fromCode, /- node\n\s+- --conditions=development\n\s+- \/opt\/gcb\/packages\/host\/bin\/gcb\.js\n\s+- daemon/);
     assert.equal(/npx/.test(fromCode), false, 'no registry access at start');
     assert.equal(/npm_config_cache/.test(fromCode), false, 'and so no cache to write');
     assert.match(fromCode, /STAGED\.json/, 'it points at the record of which commit this is');
@@ -894,7 +1070,7 @@ describe('compose', () => {
   });
 
   it('states the config paths it requires, so --mode sidecar is discoverable', () => {
-    assert.match(rendered, /git-credential-broker init --mode sidecar/);
+    assert.match(rendered, /gcb init --mode sidecar/);
     assert.match(rendered, new RegExp(`privateKeyPath ${SIDECAR.keyPath.replace(/[/.]/g, '\\$&')}`));
   });
 
@@ -918,7 +1094,7 @@ describe('compose', () => {
     assert.equal(appHost(config).privateKeyPath, SIDECAR.keyPath);
     assert.equal(config.auditPath, SIDECAR.auditPath);
 
-    assert.equal(rendered.includes(`${deployDir}/broker.config.json:${SIDECAR.configPath}:ro`), true);
+    assert.equal(rendered.includes(`${deployDir}/broker.config.yml:${SIDECAR.configPath}:ro`), true);
     assert.equal(rendered.includes(`${deployDir}/app.pem:${SIDECAR.keyPath}:ro`), true);
     assert.equal(rendered.includes(`${deployDir}/log:${SIDECAR.auditDir}`), true);
     assert.equal(
@@ -948,7 +1124,7 @@ describe('the anchor flags, at the CLI boundary', () => {
 
   const cli = (args: readonly string[]): { status: number; stderr: string } => {
     try {
-      execFileSync('node', ['src/cli/helper.ts', 'pr', ...args], {
+      execFileSync('node', ['--conditions=development', 'packages/client/bin/gcb.js', 'pr', ...args], {
         cwd: path.resolve('.'),
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],

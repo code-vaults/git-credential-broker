@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, it } from 'node:test';
 
-import { pullRequestUrl } from '../../src/commands/host-opener.ts';
+import { pullRequestUrl } from '../../packages/host/src/commands/host-opener.ts';
 import {
   channelDir,
   clearOpener,
@@ -30,7 +30,7 @@ import {
   writeOpener,
   writeRequest,
   writeResult,
-} from '../../src/host-request.ts';
+} from '../../packages/cli/src/host-request.ts';
 
 /** A good request, which each test varies one field of. */
 const GOOD = { head: 'feat/thing', base: 'main', title: 'a title', body: 'a body' };

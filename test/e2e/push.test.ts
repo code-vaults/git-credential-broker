@@ -22,6 +22,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
+import { stringify as stringifyYaml } from 'yaml';
 import { fileURLToPath } from 'node:url';
 
 import { createGitHttpServer } from '../lib/git-http-server.ts';
@@ -29,8 +30,8 @@ import type { GitHttpServer } from '../lib/git-http-server.ts';
 import { runAsync, tryRunAsync, waitFor } from '../lib/run.ts';
 
 /** The shipped artifacts, resolved next to this file rather than from the cwd. */
-const HELPER_BIN = fileURLToPath(new URL('../../dist/cli/helper.js', import.meta.url));
-const DAEMON_BIN = fileURLToPath(new URL('../../dist/cli/daemon.js', import.meta.url));
+const HELPER_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));
+const DAEMON_BIN = fileURLToPath(new URL('../../packages/host/bin/gcb.js', import.meta.url));
 
 const USERNAME = 'x-access-token';
 const PASSWORD = 'e2e-static-secret';
@@ -121,31 +122,27 @@ async function setupHarness(
 
   const socketPath = path.join(root, 'broker', 'broker.sock');
   const auditPath = path.join(root, 'broker', 'audit.jsonl');
-  const configPath = path.join(root, 'broker', 'broker.config.json');
+  const configPath = path.join(root, 'broker', 'broker.config.yml');
   fs.mkdirSync(path.dirname(socketPath), { recursive: true });
   fs.writeFileSync(
     configPath,
-    `${JSON.stringify(
-      {
-        socketPath,
-        auditPath,
-        tokenCacheSkewSeconds: 5,
-        hosts: {
-          [host]: {
-            provider: 'static',
-            allow,
-            // The local test server speaks plaintext http; the flag is the operator's
-            // explicit opt-in, and it lives host-side where the agent cannot reach it.
-            allowInsecureHttp,
-            username: USERNAME,
-            password: PASSWORD,
-            expiresInSeconds: 3600,
-          },
+    `${stringifyYaml({
+      socketPath,
+      auditPath,
+      tokenCacheSkewSeconds: 5,
+      hosts: {
+        [host]: {
+          provider: 'static',
+          allow,
+          // The local test server speaks plaintext http; the flag is the operator's
+          // explicit opt-in, and it lives host-side where the agent cannot reach it.
+          allowInsecureHttp,
+          username: USERNAME,
+          password: PASSWORD,
+          expiresInSeconds: 3600,
         },
       },
-      null,
-      2,
-    )}\n`,
+    })}\n`,
   );
 
   const brokerLog: string[] = [];
@@ -155,7 +152,7 @@ async function setupHarness(
     // An explicit environment: the daemon refuses to start with a proxy variable and no switch, so a
     // machine that exports one would fail this suite for a reason that has nothing to do with the change,
     // and no_proxy keeps its own local git server off whatever proxy it does use.
-    broker = spawn(process.execPath, [DAEMON_BIN, '--config', configPath], {
+    broker = spawn(process.execPath, [DAEMON_BIN, 'daemon', '--config', configPath], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, NODE_USE_ENV_PROXY: '1', no_proxy: 'localhost,127.0.0.1' },
     });

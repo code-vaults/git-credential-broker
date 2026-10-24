@@ -11,11 +11,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
-import { redact, tokenFingerprint } from '../../src/audit.ts';
-import { CODES, createRequestHandler, prepareSocketPath } from '../../src/broker.ts';
-import { createStaticProvider } from '../../src/providers/static.ts';
-import type { AuditSink, BrokerConfig, Provider, StaticHostConfig, WireResponse } from '../../src/types.ts';
-import { ProviderConfigError } from '../../src/errors.ts';
+import { redact } from '../../packages/host/src/audit.ts';
+import { tokenFingerprint } from '../../packages/cli/src/fingerprint.ts';
+import { CODES, createRequestHandler, prepareSocketPath } from '../../packages/host/src/broker.ts';
+import { createStaticProvider } from '../../packages/host/src/providers/static.ts';
+import type { AuditSink, BrokerConfig, Provider, StaticHostConfig, WireResponse } from '../../packages/cli/src/types.ts';
+import { ProviderConfigError } from '../../packages/cli/src/errors.ts';
 
 const HOST = 'github.com';
 const SECRET = 'unit-secret-value';

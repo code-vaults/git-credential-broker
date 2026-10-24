@@ -5,9 +5,12 @@
  * denial, so the interesting cases are the malformed ones.
  */
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { after, describe, it } from 'node:test';
 
-import { validateConfig } from '../../src/config.ts';
+import { loadConfig, validateConfig } from '../../packages/host/src/config.ts';
 
 /**
  * A minimal valid configuration, with overrides applied on top.
@@ -32,6 +35,43 @@ function base(overrides: Record<string, unknown> = {}): Record<string, unknown> 
 function withHost(host: Record<string, unknown>): Record<string, unknown> {
   return base({ hosts: { 'github.com': host } });
 }
+
+describe('loadConfig', () => {
+  const scratch = mkdtempSync(path.join(os.tmpdir(), 'gcb-config-'));
+  after(() => rmSync(scratch, { recursive: true, force: true }));
+
+  it('parses YAML', () => {
+    const file = path.join(scratch, 'broker.config.yml');
+    writeFileSync(
+      file,
+      [
+        'socketPath: /run/git-cred-broker/broker.sock',
+        'hosts:',
+        '  github.com:',
+        '    provider: static',
+        '    allow:',
+        '      - acme/widget',
+        '    password: p',
+        '',
+      ].join('\n'),
+    );
+    const config = loadConfig(file);
+    assert.deepEqual(config.hosts['github.com']?.allow, ['acme/widget']);
+    assert.equal(config.socketMode, 0o660);
+  });
+
+  it('accepts the .yaml spelling too', () => {
+    const file = path.join(scratch, 'broker.config.yaml');
+    writeFileSync(file, 'socketPath: /run/x.sock\nhosts:\n  github.com:\n    provider: static\n    allow: [acme/widget]\n    password: p\n');
+    assert.deepEqual(loadConfig(file).hosts['github.com']?.allow, ['acme/widget']);
+  });
+
+  it('reports malformed YAML', () => {
+    const file = path.join(scratch, 'broken.yml');
+    writeFileSync(file, 'socketPath: [');
+    assert.throws(() => loadConfig(file), /not valid YAML/);
+  });
+});
 
 describe('validateConfig', () => {
   it('applies defaults and accepts a minimal configuration', () => {

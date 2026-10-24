@@ -1,27 +1,27 @@
-# git-credential-broker
+# gcb
 
 Short-lived, single-repository git credentials for a container, from a broker on the host that holds
 the only long-lived secret. The GitHub App private key never enters the container, and `git push`
 still works.
 
-> **Roadmap:** the action/CLI redesign — host-side `gh`, `gcb gh`, host-user delegation, TOML
+> **Roadmap:** the action/CLI redesign — host-side `gh`, `gcb gh`, host-user delegation, YAML
 > configuration — is planned but not implemented. [`ROADMAP.md`](ROADMAP.md) is the target; this
 > README documents the current tree.
 
 Two commands are installed:
 
-- **`git-credential-broker`** — the credential helper git calls, and the CLI that sets everything up
-- **`git-credential-brokerd`** — the broker (a host process, or a Docker sidecar)
+- **`gcb`** — the credential helper git calls, and the CLI that sets everything up
+- **`gcb daemon`** — the broker (a host process, or a Docker sidecar)
 
 ## How it works
 
 ```
 ┌─ HOST ──────────────────────────────────────────────────────────────────────┐
-│  broker.config.json   allowlist, paths                                      │
+│  broker.config.yml   allowlist, paths                                      │
 │  app.pem              the only long-lived secret: 0600, outside every mount  │
 │  audit.jsonl          append-only, unreadable from the container             │
 │                                                                             │
-│  git-credential-brokerd                                                      │
+│  gcb daemon                                                      │
 │    · signs an RS256 app JWT with the private key                             │
 │    · resolves owner → installation, mints ONE repository, narrowed           │
 │      permissions, one hour                                                   │
@@ -29,7 +29,7 @@ Two commands are installed:
 └───────────────────────────────────┬─────────────────────────────────────────┘
                                     │ unix socket (broker uid == container uid)
 ┌───────────────────────────────────▼─ CONTAINER ─────────────────────────────┐
-│  git-credential-broker                                                       │
+│  gcb                                                       │
 │    get           → ask the broker, print the credential                      │
 │    store, erase  → no-ops; nothing is ever persisted                         │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -58,7 +58,7 @@ that is the point: there is no listening port to authenticate and no traffic to 
 
 **Native Windows is refused, not half-supported.** There the socket would be a named pipe and the
 mode bits would enforce nothing, so a broker that started would look healthy while every local process
-could ask it for credentials. `git-credential-brokerd`, `setup` and `compose` exit with that
+could ask it for credentials. `gcb daemon`, `setup` and `compose` exit with that
 explanation — the three commands whose result is specific to the machine running them. `--help` still
 works.
 
@@ -71,24 +71,32 @@ CI runs the suite on Linux and inside WSL, and checks both refusals on native Wi
 
 ## Install
 
+There are two installed packages, because the container and the host need different dependencies.
+Both provide the same `gcb` command; install one per environment.
+
 ```sh
-npm install -g git-credential-broker
+# container (client)
+npm install -g gcb-client
+
+# host (broker and administration)
+npm install -g gcb-host
 ```
 
-This package has no runtime dependencies today. That is a state, not a rule: `stage` exports a **commit**
-and nothing else, so a dependency needs a deployment step that does not exist yet, and until it does the
-broker fails to resolve it and restarts in a loop rather than saying so. Dependencies are wanted; the
-step has to land first — install after staging, or build something self-contained.
+`gcb-client` has no runtime dependencies. `gcb-host` depends on `yaml`; npm installs it there. Do not
+install both globally on the same machine: they race for the same `gcb` bin.
 
-Or run it from a checkout. Node 24 strips TypeScript types, so there is nothing to build and no
-dependencies to install:
+Or run from a checkout. Node 24 strips TypeScript types, but the workspaces still need their
+dependencies:
 
 ```sh
-git clone https://github.com/code-vaults/git-credential-broker /opt/git-credential-broker
-node /opt/git-credential-broker/src/cli/helper.ts --help
+git clone https://github.com/code-vaults/git-credential-broker /opt/gcb
+cd /opt/gcb && corepack yarn install
+node --conditions=development packages/client/bin/gcb.js --help
+node --conditions=development packages/host/bin/gcb.js --help
 ```
 
 Keep the checkout outside every container mount.
+
 
 ## Set up the GitHub App first
 
@@ -102,19 +110,19 @@ Keep the checkout outside every container mount.
 
 ## Quick start: sidecar
 
-Docker only; nothing to install on the host. The image is stock `node:24-slim`, and the code is a
-read-only mount, so nothing is fetched or built at boot.
+Docker only. Run `init` and `compose` from an installed `gcb-host`. The image is stock `node:24-slim`;
+the default sidecar fetches `gcb-host` with `npx` at start, while `--code` runs a staged commit with no
+registry access at boot.
 
 ```sh
-DEPLOY=/srv/git-cred-broker        # broker.config.json, app.pem and log/ live here
+DEPLOY=/srv/git-cred-broker        # broker.config.yml, app.pem and log/ live here
 SOCKET_DIR=/srv/git-broker-socket  # a host directory the pushing container already mounts
 
-git-credential-broker init --mode sidecar --dir "$DEPLOY" \
+gcb init --mode sidecar --dir "$DEPLOY" \
   --cert ~/Downloads/app.private-key.pem \
   --allow owner/repo --client-id Iv23li… --app-id 123456
 
-git-credential-broker stage --to "$DEPLOY/app"
-git-credential-broker compose --code "$DEPLOY/app" --socket-dir "$SOCKET_DIR" \
+gcb compose --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" \
   > "$DEPLOY/docker-compose.broker.yml"
 docker compose -f "$DEPLOY/docker-compose.broker.yml" up -d
 ```
@@ -128,11 +136,13 @@ guess. The runtime route is deliberately a superset: a directory bind-mounted in
 counts as shared, because any container that can rewrite the broker's code is as good a reason not to
 stage there as the agent is.
 
-`stage` prints the commit it exported; check that sha against your own clone or the remote before
-trusting it, since the repository you export from is one an agent can write to. It leaves a
-`STAGED.json` beside the code recording where it came from.
-
-Drop `--code` to get a sidecar that fetches the published package with `npx` at start instead.
+The sidecar fetches the published `gcb-host` package with `npx` at start. To pin a reviewed commit
+instead, run `gcb stage --to "$DEPLOY/app"`, install its dependencies in that directory with
+`corepack yarn install`, and pass `--code "$DEPLOY/app"` to `compose`. Run `stage` from the repository
+root you intend to export, or pass `--repo <path>`: it defaults to the current directory and exports
+that repository's `HEAD`, never the working tree. `stage` is export-only: it does not install
+dependencies or build, and it never runs the commit's code. It leaves `STAGED.json` beside the code
+recording the commit.
 
 ## Quick start: host process
 
@@ -141,12 +151,12 @@ Use this when the host has Node 24 or newer.
 ```sh
 cd /srv/git-cred-broker
 
-git-credential-broker init \
+gcb init \
   --cert ~/Downloads/app.private-key.pem \
   --allow owner/repo --client-id Iv23li… --app-id 123456
 
-git-credential-brokerd --check    # validates the config and the key, binds nothing
-git-credential-brokerd            # run it under systemd, or a scheduled task
+gcb daemon --check    # validates the config and the key, binds nothing
+gcb daemon            # run it under systemd, or a scheduled task
 ```
 
 Run it as the user that owns the deployment directory: it must read `app.pem` and write the socket
@@ -157,7 +167,7 @@ directory and the audit log.
 ```sh
 export GIT_BROKER_SOCKET=/run/git-broker/broker.sock
 export GIT_BROKER_REQUIRE=1        # fail closed instead of falling back to another helper
-git-credential-broker setup
+gcb setup
 ```
 
 `setup` records `credential.helper` and `credential.useHttpPath` (without the latter, git sends no
@@ -176,11 +186,11 @@ when the image has none. In compose:
 ## Everyday changes
 
 ```sh
-git-credential-broker init --allow owner/another-repo         # add a repository
-git-credential-broker init --remove-allow owner/old-repo      # remove one
-git-credential-broker init --replace-allow --allow a/one,b/two
-git-credential-broker init --permissions contents=write,pull_requests=write
-git-credential-broker init --cert ~/Downloads/new-key.pem     # rotate the key
+gcb init --allow owner/another-repo         # add a repository
+gcb init --remove-allow owner/old-repo      # remove one
+gcb init --replace-allow --allow a/one,b/two
+gcb init --permissions contents=write,pull_requests=write
+gcb init --cert ~/Downloads/new-key.pem     # rotate the key
 ```
 
 No `--cert`, `--client-id` or `--app-id` is needed once the file exists: `init` changes only what you
@@ -189,18 +199,18 @@ pass, prints the before/after allowlist, and leaves hand edits alone. Restart th
 Moving between deployments rewrites the recorded paths in place, keeping the allowlist:
 
 ```sh
-git-credential-broker init --mode host --socket-path /run/git-cred-broker/broker.sock
+gcb init --mode host --socket-path /run/git-cred-broker/broker.sock
 ```
 
 `--socket-path` is required when moving to host mode, because the socket on file belongs to the
 sidecar. Commands find the configuration by convention — `--config`, else `$GIT_BROKER_CONFIG`, else
-`./broker.config.json` — so run them from the deployment directory.
+`./broker.config.yml` — so run them from the deployment directory.
 
 ## Check it without pushing
 
 ```sh
-git-credential-broker probe --host github.com --repo owner/repo
-git-credential-broker diagnose --config /srv/git-cred-broker/broker.config.json
+gcb probe --host github.com --repo owner/repo
+gcb diagnose --config /srv/git-cred-broker/broker.config.yml
 ```
 
 `probe` prints the broker's decision with the credential reduced to a fingerprint, so its output is
@@ -214,8 +224,8 @@ a sidecar it is inside the container:
 
 ```sh
 docker compose -f docker-compose.broker.yml exec git-cred-broker \
-  node /opt/git-credential-broker/src/cli/helper.ts \
-  diagnose --config /etc/git-cred-broker/broker.config.json
+  npx --yes --package gcb-host gcb \
+  diagnose --config /etc/git-cred-broker/broker.config.yml
 ```
 
 ### Reading a CI log
@@ -225,7 +235,7 @@ nothing else: the broker mints a short-lived token narrowed to that permission, 
 returns only the text, so no credential reaches this side. The job id is the check run id:
 
 ```sh
-git-credential-broker logs --host github.com --repo owner/repo --job 1234567890
+gcb logs --host github.com --repo owner/repo --job 1234567890
 ```
 
 It talks to the socket, so it runs wherever `probe` runs. Off the container there is neither
@@ -234,7 +244,7 @@ path, because a relative one is resolved against the current directory, which is
 checkout:
 
 ```sh
-node /srv/git-cred-broker/src/cli/helper.ts logs \
+node --conditions=development /srv/git-cred-broker/packages/client/bin/gcb.js logs \
   --socket /srv/git-cred-broker/broker.sock \
   --host github.com --repo owner/repo --job 1234567890
 ```
@@ -247,7 +257,7 @@ prints the number and the URL. No credential reaches this side, so the agent can
 without being able to push to the branch it targets.
 
 ```sh
-git-credential-broker pr --host github.com --repo owner/repo \
+gcb pr --host github.com --repo owner/repo \
   --head feature --base main --title "a title" --body-file pr.md
   # say it about one line rather than about the pull request
   # --number 7 --comment --file Dockerfile --line 4 --side right --body "why this marker exists"
@@ -256,7 +266,7 @@ git-credential-broker pr --host github.com --repo owner/repo \
   # --number 7 --reply-to 123456 --body "good point"
   # --edit 123456 --body "corrected: it is the other branch"
   # from your fork into an upstream: a remote name instead of a repository typed by hand
-  git-credential-broker pr --repo code-vaults/repo --head origin:feature --base upstream:main --title "a title" \
+  gcb pr --repo code-vaults/repo --head origin:feature --base upstream:main --title "a title" \
     --body-file pr.md
 ```
 
@@ -281,7 +291,7 @@ same checkout, and ask for it from the container:
 
 ```sh
 # on the host, once — it serves every checkout below $HOME and does nothing else
-git-credential-broker host-opener          # --root <dir> to narrow it, repeatable
+gcb host-opener          # --root <dir> to narrow it, repeatable
 # or, at boot and for good: examples/host-opener-boot.sh (see below)
 ```
 
@@ -290,7 +300,7 @@ checkout would let anything that can write the checkout decide what your credent
 
 ```sh
 # in the container
-git-credential-broker pr --via-host --repo owner/repo --head feature --base main \
+gcb pr --via-host --repo owner/repo --head feature --base main \
   --title "a title" --body-file pr.md
 ```
 
@@ -343,7 +353,7 @@ A token per owner is one way to be the author; authorizing the app once is anoth
 token per owner, because GitHub issues it for the app *and* the person together. Run this on the host:
 
 ```sh
-git-credential-broker authorize --config /srv/git-cred-broker/broker.config.json
+gcb authorize --config /srv/git-cred-broker/broker.config.yml
 ```
 
 It prints a code and asks you to open <https://github.com/login/device>, then waits. Type the code on
@@ -392,7 +402,7 @@ reads those variables itself (it is Go), so it only needs them to arrive.
 On a host with user services, `examples/host-opener.service` is a unit for it:
 
 ```sh
-npm i -g git-credential-broker                          # the unit calls the installed CLI
+npm i -g gcb-host                     # the unit calls the installed CLI
 cp examples/host-opener.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now host-opener
@@ -410,7 +420,14 @@ file.
 
 ## Configuration reference
 
-The broker only ever reads this file; it contains no secrets.
+The broker only reads this file. It is YAML. The loader discovers `broker.config.yml` by default;
+the old `broker.config.json` name is no longer discovered, so rename or convert an existing
+deployment, or pass `--config broker.config.json` explicitly (the YAML parser accepts JSON). TOML is
+not read.
+
+The file normally contains no secrets, but it may: `privateKeyPem` and `static.password` are accepted
+inline. When either is used, treat the file as secret material — mode 0600, outside every container
+mount.
 
 Top level:
 
@@ -447,7 +464,7 @@ there looking like configuration while doing nothing. Only top-level `_comment*`
 | `... exists only inside the sidecar container` | The config suits the other deployment. `init --mode sidecar` or `--mode host`. |
 | `denied [repo-not-allowed]` | Not in the allowlist: `init --allow owner/repo`. |
 | `refusing to replace <path>: something that is not a socket is in the way` | A leftover file sits on the socket path. Remove it and start again. |
-| `'credential-node' is not a git command` | The helper value is `node x.ts` without the `!` git needs: `git config --global credential.helper '!node /path/src/cli/helper.ts'`. |
+| `'credential-node' is not a git command` | The helper value is `node x.ts` without the `!` git needs: `git config --global credential.helper '!node /path/packages/client/bin/gcb.js'`. |
 | `could not mint a credential` | Deliberately generic, because provider errors can embed API responses. `diagnose --config …` for the real reason. |
 | `server certificate verification failed. CAfile: none` | The image has no CA bundle. `setup` writes one; better, add `ca-certificates` to the image. |
 | A host's HTTPS push suddenly asks for a password | The helper stays silent when unconfigured, so the next helper runs; it only refuses (`quit=1`) when `GIT_BROKER_SOCKET` is set or `GIT_BROKER_REQUIRE=1`. |
@@ -486,12 +503,10 @@ this working, and the traps it already paid for, are in [AGENTS.md](AGENTS.md).
 ## Layout
 
 ```
-src/policy.ts            the authorization decision (default deny, exact segment matching)
-src/broker.ts            unix socket server, refusal codes, audit records
-src/helper.ts            the container-side credential helper
-src/providers/           github-app (RS256 JWT, installation tokens) and static
-src/commands/            the CLI: setup, init, stage, compose, probe, diagnose
-src/cli/                 the two executables (helper, daemon)
+packages/cli/src/        shared parser, protocol, types and platform helpers
+packages/client/src/     credential helper, setup, probe, logs, pr
+packages/host/src/       YAML config, providers, broker, daemon and host commands
+packages/*/bin/          the two installed gcb bins (client and host)
 test/                    unit tests, plus an end-to-end push over authenticated smart HTTP
 examples/                configuration and compose snippets
 DEVELOPMENT.md           building from source, tests, releasing

@@ -22,7 +22,13 @@
 
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "noEmit": true
+    "noEmit": true,
+
+    "paths": {
+      "gcb-cli": ["./packages/cli/src/index.ts"],
+      "gcb-client": ["./packages/client/src/index.ts"],
+      "gcb-host": ["./packages/host/src/index.ts"]
+    }
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
+  "include": ["packages/*/src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
 }
