@@ -5,6 +5,7 @@
  * parts that must not drift: version/help dispatch, the "wrong package" error, and the shared
  * wire/types used by both sides. It never imports `yaml` or a host implementation.
  */
+export * from './actions.ts';
 export * from './errors.ts';
 export * from './fingerprint.ts';
 export * from './host-request.ts';

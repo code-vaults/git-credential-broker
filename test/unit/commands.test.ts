@@ -332,8 +332,8 @@ describe('setup', () => {
     };
   }
 
-  it('records the running script, and refuses to configure native Windows at all', async () => {
-    assert.equal(defaultHelperPath(), fs.realpathSync(process.argv[1] as string));
+  it('records the PATH-resolved helper, and refuses to configure native Windows at all', async () => {
+    assert.equal(defaultHelperPath(), '!gcb');
 
     // On native Windows the broker's socket cannot be reached, so writing a helper there would look
     // like success and never work. Nothing should be written on the way to the refusal.

@@ -4,9 +4,9 @@ Short-lived, single-repository git credentials for a container, from a broker on
 the only long-lived secret. The GitHub App private key never enters the container, and `git push`
 still works.
 
-> **Roadmap:** the action/CLI redesign — host-side `gh`, `gcb gh`, host-user delegation, YAML
-> configuration — is planned but not implemented. [`ROADMAP.md`](ROADMAP.md) is the target; this
-> README documents the current tree.
+> **Roadmap:** YAML configuration and the three-package split are implemented. Host-side `gh`
+> (`gcb gh`), host-user delegation and live reload are planned but not implemented.
+> [`ROADMAP.md`](ROADMAP.md) is the target; this README documents the current tree.
 
 Two commands are installed:
 
@@ -170,8 +170,9 @@ export GIT_BROKER_REQUIRE=1        # fail closed instead of falling back to anot
 gcb setup
 ```
 
-`setup` records `credential.helper` and `credential.useHttpPath` (without the latter, git sends no
-repository path and the broker can only authorize host-wide), rewrites `git@github.com:` remotes to
+`setup` records `credential.helper = !gcb` (PATH-resolved, so the same config works for a global
+install and a dev shim) and `credential.useHttpPath` (without the latter, git sends no repository
+path and the broker can only authorize host-wide), rewrites `git@github.com:` remotes to
 https **inside the container only** so the host's SSH workflow is untouched, and writes a CA bundle
 when the image has none. In compose:
 

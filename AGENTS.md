@@ -14,9 +14,10 @@ had reached 549 lines mostly by accumulating rationale; it is not the place for 
 
 ## Status and roadmap
 
-The action/CLI redesign (host-side `gh`, `gcb gh`, host-user delegation) is **planned, not
-implemented**. YAML configuration and the three-package split are implemented; the host-side command
-redesign is not. [`ROADMAP.md`](ROADMAP.md) is authoritative for the target and the order; this file
+The action/CLI redesign (host-side `gh`, `gcb gh`, host-user delegation) is **underway**. YAML
+configuration and the three-package split are implemented. The typed `gh` action catalog is present;
+the host-side `gh` dispatch and execution are the next slice, with the Phase 2 design note in
+`.agents/notes/proposed/architecture/2026-10-25-host-side-gh.md`. [`ROADMAP.md`](ROADMAP.md) is authoritative for the target and the order; this file
 describes the current tree, which is the last green baseline. Do not
 implement a later phase to unblock an earlier one without updating the roadmap first. The target
 brand is `gcb`: the CLI, container and service share the name, the main broker is `gcb app`, and
@@ -67,6 +68,11 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 
 ## Rules that are not obvious from the code
 
+- **The gh action catalog is the one source for an action.** `packages/cli/src/actions.ts`
+  defines its command, flags, positionals, permissions and timeout; the token mint, the creation
+  preflight, the command table and the docs must read it rather than keep a second list. The broker
+  rebuilds a canonical argv from validated values and never forwards the caller’s argv. Add an
+  action only with that command’s GitHub endpoint documentation and a test.
 - **Dependencies belong to the package that uses them.** `gcb-client` has no runtime dependencies;
   `gcb-host` owns `yaml`. npm installs them; there is no esbuild/bundle step. `stage` is export-only
   and does not install or build, so a commit deployment must install its production dependencies in
@@ -252,8 +258,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   `credential.helper = node /path/helper.ts` makes git look for a helper *named* `node` and fail
   with `'credential-node' is not a git command`; it must be `!node /path/helper.ts`. A value
   starting with `/` is executed directly and anything else resolves to `git-credential-<value>`,
-  which is why a built, executable `packages/client/bin/gcb.js` can be recorded as a bare path and a `.ts`
-  cannot. Learned by getting it wrong.
+  which is why `setup` records `!gcb` and lets PATH resolve the installed bin; a source checkout that
+  is not on PATH spells the interpreter out. Learned by getting it wrong.
 - **`exec 3<>file` creates the file.** Probing a unix socket for liveness that way writes an empty
   regular file once the socket is gone, and then blocks the broker from binding — it refuses to
   replace a non-socket — until someone removes it. Use `net.connect`, or `test -S` first.
@@ -292,7 +298,7 @@ Full detail and the measurements behind them:
 
 | Path | What |
 |---|---|
-| `packages/cli/src/` | shared parser, help/version, protocol, types, platform and paths |
+| `packages/cli/src/` | shared parser, help/version, protocol, types, platform, paths and the gh action catalog |
 | `packages/client/src/helper.ts` | the container-side credential helper |
 | `packages/client/src/commands/` | setup, probe, logs, pr and remotes |
 | `packages/host/src/broker.ts` | unix socket server, refusal codes, audit records |
