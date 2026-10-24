@@ -4,9 +4,9 @@ Short-lived, single-repository git credentials for a container, from a broker on
 the only long-lived secret. The GitHub App private key never enters the container, and `git push`
 still works.
 
-> **Roadmap:** the action/CLI redesign — host-side `gh`, `gcb gh`, host-user delegation, YAML
-> configuration — is planned but not implemented. [`ROADMAP.md`](ROADMAP.md) is the target; this
-> README documents the current tree.
+> **Roadmap:** YAML configuration and the three-package split are implemented. Host-side `gh`
+> (`gcb gh`), host-user delegation and live reload are planned but not implemented.
+> [`ROADMAP.md`](ROADMAP.md) is the target; this README documents the current tree.
 
 Two commands are installed:
 
