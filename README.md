@@ -138,9 +138,11 @@ stage there as the agent is.
 
 The sidecar fetches the published `gcb-host` package with `npx` at start. To pin a reviewed commit
 instead, run `gcb stage --to "$DEPLOY/app"`, install its dependencies in that directory with
-`corepack yarn install`, and pass `--code "$DEPLOY/app"` to `compose`. `stage` is export-only: it does
-not install dependencies or build, and it never runs the commit's code. It leaves `STAGED.json`
-beside the code recording the commit.
+`corepack yarn install`, and pass `--code "$DEPLOY/app"` to `compose`. Run `stage` from the repository
+root you intend to export, or pass `--repo <path>`: it defaults to the current directory and exports
+that repository's `HEAD`, never the working tree. `stage` is export-only: it does not install
+dependencies or build, and it never runs the commit's code. It leaves `STAGED.json` beside the code
+recording the commit.
 
 ## Quick start: host process
 

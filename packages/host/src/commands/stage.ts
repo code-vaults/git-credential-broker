@@ -163,14 +163,15 @@ export const STAGE_USAGE = `Usage: gcb stage [options]
 
 Export the broker from a reviewed commit into the directory it will run from.
 
-  --repo <path>    Repository to export from (default: the one containing this directory)
+  --repo <path>    Repository to export from (default: the current directory)
   --to <path>      Where the broker will run from   [required: outside every container mount]
   --ref <commit>   Commit to export (default: HEAD; never the working tree)
   --force          Replace a target this command did not stage itself
   -h, --help       Show this help
 
-The broker reads the App private key, so it must not execute code the agent can rewrite. Exporting
-from a commit rather than copying the working tree is what makes the staged code reviewable; the
+Run this from the repository root you intend to export, or pass --repo. The broker reads the App
+private key, so it must not execute code the agent can rewrite. Exporting from a commit rather than
+copying the working tree is what makes the staged code reviewable; the
 sha is printed so you can check it against your own clone or the remote, because a repository the
 agent can write to is a repository whose commits the agent can rewrite.
 
