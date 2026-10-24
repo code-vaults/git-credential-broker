@@ -122,7 +122,7 @@ gcb init --mode sidecar --dir "$DEPLOY" \
   --cert ~/Downloads/app.private-key.pem \
   --allow owner/repo --client-id Iv23li… --app-id 123456
 
-gcb compose --socket-dir "$SOCKET_DIR" \
+gcb compose --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" \
   > "$DEPLOY/docker-compose.broker.yml"
 docker compose -f "$DEPLOY/docker-compose.broker.yml" up -d
 ```
