@@ -68,6 +68,14 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 
 ## Rules that are not obvious from the code
 
+- **Only cover the deployment shapes this project actually supports.** The supported shapes are
+  the installed `gcb-client` in the container, the installed `gcb-host` (or a staged commit with
+  its production dependencies) on the host, the rendered sidecar, and a source checkout with a
+  `gcb` shim for development. Do not add guards, probes, commands or tests for one-off `npx`
+  setup, direct imports of command modules, arbitrary later PATH changes, or native Windows.
+  `setup` cannot know the PATH of a later git process; do not pretend a setup-time check is a
+  guarantee. If a review finding depends on an unsupported shape, answer it in the PR and leave
+  the code alone.
 - **The gh action catalog is the one source for an action.** `packages/cli/src/actions.ts`
   defines its command, flags, positionals, permissions and timeout; the token mint, the creation
   preflight, the command table and the docs must read it rather than keep a second list. The broker

@@ -83,7 +83,8 @@ npm install -g gcb-host
 ```
 
 `gcb-client` has no runtime dependencies. `gcb-host` depends on `yaml`; npm installs it there. Do not
-install both globally on the same machine: they race for the same `gcb` bin.
+install both globally on the same machine: they race for the same `gcb` bin. Run `setup` from the
+installed client; one-off `npx` execution is not a supported installation shape.
 
 Or run from a checkout. Node 24 strips TypeScript types, but the workspaces still need their
 dependencies:
