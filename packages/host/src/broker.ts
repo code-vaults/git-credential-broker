@@ -510,7 +510,7 @@ export async function startBroker(options: StartBrokerOptions): Promise<RunningB
       },
       onOverflow: () => {
         log(`request exceeded ${MAX_MESSAGE_BYTES} bytes`);
-        if (!socket.destroyed) {
+        if (!socket.writableEnded && !socket.destroyed) {
           socket.end(
             encodeMessage({
               ok: false,
