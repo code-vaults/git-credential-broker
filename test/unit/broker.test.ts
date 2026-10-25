@@ -578,5 +578,6 @@ describe('broker actions', () => {
     assert.equal(response.ok, false);
     assert.equal(response.code, CODES.BAD_REQUEST);
     assert.equal(called, false);
+    assert.equal(harness.events.at(-1)?.['event'], 'action');
   });
 });

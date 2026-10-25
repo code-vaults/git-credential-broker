@@ -154,9 +154,10 @@ export function createRequestHandler(
     // reaches the audit record and the log line and nowhere else, because this function is what decides
     // what the caller is told — a property on an error cannot make that decision.
     hostDetail?: string,
+    event: 'credential' | 'action' = 'credential',
   ): WireResponse {
     const detail = hostDetail === undefined || hostDetail === '' ? '' : ` | ${hostDetail}`;
-    audit.record({ event: 'credential', decision: 'deny', ...context, code, reason: reason + detail });
+    audit.record({ event, decision: 'deny', ...context, code, reason: reason + detail });
     log(`deny ${code} host=${context.host ?? '-'} repo=${context.repo ?? '-'} reason=${reason}${detail}`);
     return { ok: false, code, reason: message };
   }
@@ -237,21 +238,22 @@ export function createRequestHandler(
     if (message['op'] === 'action') {
       const ghAction = message['ghAction'];
       const values = message['values'];
+      const denyAction = (code: string, reason: string, message: string, hostDetail?: string): WireResponse =>
+        deny(context, code, reason, message, hostDetail, 'action');
       if (typeof ghAction !== 'string' || values === null || typeof values !== 'object' || Array.isArray(values)) {
-        return deny(context, CODES.BAD_REQUEST, 'bad action request', 'the request carries no usable action');
+        return denyAction(CODES.BAD_REQUEST, 'bad action request', 'the request carries no usable action');
       }
       try {
         getGhAction(ghAction);
         buildGhArgv(ghAction, values as ActionValues, repo.full);
       } catch (error) {
         if (error instanceof ActionError) {
-          return deny(context, CODES.BAD_REQUEST, error.message, error.message);
+          return denyAction(CODES.BAD_REQUEST, error.message, error.message);
         }
         throw error;
       }
       if (typeof provider.runAction !== 'function') {
-        return deny(
-          context,
+        return denyAction(
           CODES.PROVIDER_ERROR,
           `provider ${provider.name} cannot run actions`,
           "this host's provider cannot run GitHub actions",
@@ -267,7 +269,7 @@ export function createRequestHandler(
           values: values as ActionValues,
         });
         if (result.error !== undefined) {
-          return deny(context, CODES.PROVIDER_ERROR, result.error, 'the host could not start gh');
+          return denyAction(CODES.PROVIDER_ERROR, result.error, 'the host could not start gh');
         }
         audit.record({
           event: 'action',
@@ -292,7 +294,7 @@ export function createRequestHandler(
         const hostDetail = (error as { hostDetail?: string }).hostDetail;
         const callerMessage =
           error instanceof ProviderConfigError ? reason : 'the broker could not run that action; see the broker log';
-        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail);
+        return denyAction(CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail);
       }
     }
 
