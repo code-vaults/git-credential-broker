@@ -267,9 +267,10 @@ export function createRequestHandler(
       if (typeof ghAction !== 'string' || values === null || typeof values !== 'object' || Array.isArray(values)) {
         return denyAction(CODES.BAD_REQUEST, 'bad action request', 'the request carries no usable action');
       }
+      const actionValues = values as ActionValues;
       try {
         getGhAction(ghAction);
-        buildGhArgv(ghAction, values as ActionValues, repo.full);
+        buildGhArgv(ghAction, actionValues, repo.full);
       } catch (error) {
         if (error instanceof ActionError) {
           return denyAction(CODES.BAD_REQUEST, error.message, error.message);
@@ -290,7 +291,7 @@ export function createRequestHandler(
           repo: repo.repo,
           full: repo.full,
           action: ghAction,
-          values: values as ActionValues,
+          values: actionValues,
         });
         if (result.error !== undefined) {
           return denyAction(CODES.PROVIDER_ERROR, result.error, 'the host could not start gh');

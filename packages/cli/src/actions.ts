@@ -9,6 +9,8 @@
  * mapping. Adding an action requires the GitHub endpoint documentation for its command and a test.
  */
 
+import { MAX_BODY_CHARS, MAX_TITLE_CHARS } from './host-request.ts';
+
 /** The installation permissions these actions may need. */
 export type GhPermission =
   | 'actions'
@@ -342,6 +344,18 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
     if (present.has(flag) && (typeof values.body !== 'string' || values.body.trim() === '')) {
       throw new ActionError(`${name} needs a non-empty --body with --${flag}`);
     }
+  }
+
+  if (typeof values['title'] === 'string') {
+    if (values['title'].trim() === '') {
+      throw new ActionError('the title must not be empty');
+    }
+    if (values['title'].length > MAX_TITLE_CHARS) {
+      throw new ActionError(`the title must be at most ${MAX_TITLE_CHARS} characters`);
+    }
+  }
+  if (typeof values['body'] === 'string' && values['body'].length > MAX_BODY_CHARS) {
+    throw new ActionError(`the body must be at most ${MAX_BODY_CHARS} characters`);
   }
 
   argv.push('--repo', repo);

@@ -14,6 +14,7 @@ import { after, describe, it } from 'node:test';
 import { redact } from '../../packages/host/src/audit.ts';
 import { tokenFingerprint } from '../../packages/cli/src/fingerprint.ts';
 import { CODES, createRequestHandler, prepareSocketPath } from '../../packages/host/src/broker.ts';
+import { MAX_BODY_CHARS } from '../../packages/cli/src/host-request.ts';
 import { createStaticProvider } from '../../packages/host/src/providers/static.ts';
 import type { AuditSink, BrokerConfig, Provider, StaticHostConfig, WireResponse } from '../../packages/cli/src/types.ts';
 import { ProviderConfigError } from '../../packages/cli/src/errors.ts';
@@ -605,5 +606,30 @@ describe('broker action refusals', () => {
     assert.equal(response.code, CODES.REPO_NOT_ALLOWED);
     assert.equal(called, false);
     assert.equal(harness.events.at(-1)?.['event'], 'action');
+  });
+});
+
+describe('broker action limits', () => {
+  it('refuses a body over the configured limit before the provider', async () => {
+    let called = false;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async () => {
+        called = true;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(undefined, provider);
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'pr:comment',
+      values: { number: 1, body: 'x'.repeat(MAX_BODY_CHARS + 1) },
+    });
+    assert.equal(response.ok, false);
+    assert.equal(response.code, CODES.BAD_REQUEST);
+    assert.equal(called, false);
   });
 });
