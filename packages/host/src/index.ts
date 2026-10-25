@@ -4,7 +4,6 @@
  * This is the only side that imports `yaml` (through config.ts) and holds the App key.
  */
 import type { CommandBackend } from 'gcb-cli';
-import { platformRefusal } from 'gcb-cli';
 import { assertProxyEnabled } from './proxy.ts';
 
 export const HOST_HELP = `gcb-host — host-side gcb broker and administration commands.
@@ -24,28 +23,11 @@ Commands
 
 Client commands such as setup/probe/logs/pr are in gcb-client.`;
 
-const NEEDS_YAML = new Set(['app', 'daemon', 'init', 'compose', 'diagnose', 'authorize']);
-
 async function run(argv: readonly string[]): Promise<number> {
   const [command, ...rest] = argv;
-  // Refuse before importing a command that reads config.ts, and therefore yaml. On a native
-  // Windows host the socket is unusable anyway; this keeps the error a refusal rather than a
-  // missing-dependency failure.
-  if (command !== undefined && NEEDS_YAML.has(command)) {
-    const refusal = platformRefusal();
-    if (refusal !== null) {
-      process.stderr.write(`gcb: ${refusal}\n`);
-      return 1;
-    }
-  }
   switch (command) {
     case 'app':
     case 'daemon': {
-      const refusal = platformRefusal();
-      if (refusal !== null) {
-        process.stderr.write(`gcb: ${refusal}\n`);
-        return 1;
-      }
       assertProxyEnabled();
       const { runDaemon } = await import('./daemon.ts');
       return runDaemon(rest);

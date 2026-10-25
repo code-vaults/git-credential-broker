@@ -332,14 +332,6 @@ describe('setup', () => {
     };
   }
 
-  it('refuses to configure native Windows at all', async () => {
-    // On native Windows the broker's socket cannot be reached, so writing a helper there would look
-    // like success and never work. Nothing should be written on the way to the refusal.
-    const input = setupInput();
-    await assert.rejects(() => performSetup({ ...input, platform: 'win32' }), /native Windows is not supported/);
-    assert.equal(fs.existsSync(input.gitconfig), false);
-  });
-
   it('writes the three settings git needs, and both socket-path records', async () => {
     const input = setupInput();
     const result = await performSetup(input);

@@ -20,7 +20,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { platformRefusal } from 'gcb-cli';
 import {
   fail,
   findSystemCaBundle,
@@ -58,8 +57,6 @@ export interface SetupInput {
   readonly home?: string;
   /** The directories the container shares, when the caller already has them. */
   readonly mounts?: readonly string[];
-  /** Platform to answer for; injectable so the refusal is testable. */
-  readonly platform?: NodeJS.Platform;
 }
 
 /** What `setup` did. */
@@ -80,12 +77,6 @@ export interface SetupResult {
  * @throws {Error} when the target config is a symlink, or inside a directory the container shares.
  */
 export async function performSetup(input: SetupInput): Promise<SetupResult> {
-  // Refuse on native Windows: configuring git there would look like success and never work, because
-  // no Windows process can reach the broker's unix socket.
-  const refusal = platformRefusal(input.platform);
-  if (refusal !== null) {
-    throw new Error(refusal);
-  }
   // Writing through a symlink would edit whatever it points at, and a config that lives in a directory
   // the container shares is one the container can rewrite.
   if (fs.existsSync(input.gitconfig) && fs.lstatSync(input.gitconfig).isSymbolicLink()) {

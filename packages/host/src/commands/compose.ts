@@ -13,7 +13,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { inferMode, loadConfig, resolveConfigPath, deploymentDir, SIDECAR } from '../config.ts';
-import { platformRefusal } from 'gcb-cli';
 import { packageVersion } from 'gcb-cli';
 import { fail, parseArgs, say, warn } from 'gcb-cli';
 import { USER_TOKEN_FILE } from '../config.ts';
@@ -192,13 +191,6 @@ export function runCompose(argv: readonly string[]): number {
     say(COMPOSE_USAGE);
     return 0;
   }
-  // Refused rather than printed wrong: the file binds host paths and a socket directory, so a
-  // version rendered on Windows would either not resolve or put the socket somewhere it cannot live.
-  const refusal = platformRefusal();
-  if (refusal !== null) {
-    fail(refusal);
-  }
-
   const explicitConfig = args.value('config');
   const dirArg = args.value('dir');
   const configPath = path.resolve(
