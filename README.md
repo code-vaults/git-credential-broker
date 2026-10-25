@@ -102,7 +102,10 @@ Keep the checkout outside every container mount.
 
 1. **Settings → Developer settings → GitHub Apps → New GitHub App.**
 2. Permissions: **Contents: Read and write**, plus **Pull requests: Read and write** if the agent
-   should open pull requests. Grant them in the app, not only in the request.
+   should open pull requests. Grant them in the app, not only in the request. The planned `gcb gh`
+   actions will also ask for **Checks: Read**, **Statuses: Read**, **Actions: Read**, and
+   **Issues: Read and write** as those actions are enabled; the current commands need only the first
+   two.
 3. Install the app on the account that owns the repositories, granting access to those alone.
 4. Download the **private key**; note the **App ID** and **Client ID**.
 5. Ignore the client secret — this tool never uses it. Installation tokens are obtained by signing a

@@ -65,6 +65,7 @@ export class ActionError extends Error {
   }
 }
 
+// GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number}
 const PR_VIEW: GhAction = {
   name: 'pr:view',
   command: ['pr', 'view'],
@@ -79,6 +80,7 @@ const PR_VIEW: GhAction = {
   hostUser: false,
 };
 
+// GitHub: GET /repos/{owner}/{repo}/pulls
 const PR_LIST: GhAction = {
   name: 'pr:list',
   command: ['pr', 'list'],
@@ -100,6 +102,7 @@ const PR_LIST: GhAction = {
   hostUser: false,
 };
 
+// GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number} (diff media type)
 const PR_DIFF: GhAction = {
   name: 'pr:diff',
   command: ['pr', 'diff'],
@@ -114,6 +117,7 @@ const PR_DIFF: GhAction = {
   hostUser: false,
 };
 
+// GitHub: POST /repos/{owner}/{repo}/pulls
 const PR_CREATE: GhAction = {
   name: 'pr:create',
   command: ['pr', 'create'],
@@ -133,6 +137,7 @@ const PR_CREATE: GhAction = {
   hostUser: true,
 };
 
+// GitHub: POST /repos/{owner}/{repo}/issues/{issue_number}/comments
 const PR_COMMENT: GhAction = {
   name: 'pr:comment',
   command: ['pr', 'comment'],
@@ -143,6 +148,7 @@ const PR_COMMENT: GhAction = {
   hostUser: true,
 };
 
+// GitHub: POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
 const PR_REVIEW: GhAction = {
   name: 'pr:review',
   command: ['pr', 'review'],
@@ -159,6 +165,7 @@ const PR_REVIEW: GhAction = {
   hostUser: true,
 };
 
+// GitHub: POST /repos/{owner}/{repo}/issues
 const ISSUE_CREATE: GhAction = {
   name: 'issue:create',
   command: ['issue', 'create'],
@@ -174,6 +181,7 @@ const ISSUE_CREATE: GhAction = {
   hostUser: true,
 };
 
+// GitHub: GET /repos/{owner}/{repo}/actions/runs/{run_id}
 const RUN_VIEW: GhAction = {
   name: 'run:view',
   command: ['run', 'view'],
@@ -190,6 +198,7 @@ const RUN_VIEW: GhAction = {
   hostUser: false,
 };
 
+// GitHub: GET /repos/{owner}/{repo}/actions/runs
 const RUN_LIST: GhAction = {
   name: 'run:list',
   command: ['run', 'list'],

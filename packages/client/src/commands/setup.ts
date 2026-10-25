@@ -15,7 +15,6 @@
  *  - records the socket path in a file as well as in the environment, because git is often
  *    spawned from a non-login shell that never sources a profile.
  */
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -188,6 +187,40 @@ Configure this environment's git to obtain credentials from the broker.
   -h, --help           Show this help
 `;
 
+/** Where an npm/npx one-off puts a bin: present for the setup process, gone for later git runs. */
+const EPHEMERAL_HELPER = /(?:^|\/)(?:node_modules\/\.bin|_npx)(?:\/|$)/;
+
+/**
+ * Find `gcb` on a PATH.
+ *
+ * @param env - the environment to search; injectable for tests.
+ * @returns the executable path, or undefined.
+ */
+export function findGcbOnPath(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  for (const dir of (env['PATH'] ?? '').split(path.delimiter)) {
+    if (dir === '') continue;
+    const candidate = path.join(dir, process.platform === 'win32' ? 'gcb.cmd' : 'gcb');
+    try {
+      if (!fs.statSync(candidate).isFile()) continue;
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {
+      // Not here, or not executable.
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Whether a resolved helper is an npm/npx one-off rather than a stable install.
+ *
+ * @param candidate - the path found on PATH.
+ * @returns true when a later process is not expected to see the same path.
+ */
+export function isEphemeralGcb(candidate: string): boolean {
+  return EPHEMERAL_HELPER.test(candidate.split(path.sep).join('/'));
+}
+
 /**
  * Run the `setup` command.
  *
@@ -205,13 +238,19 @@ export async function runSetup(argv: readonly string[]): Promise<number> {
   const socket = args.value('socket') ?? process.env['GIT_BROKER_SOCKET'] ?? '/run/git-cred-broker/broker.sock';
   const helper = args.value('helper');
   if (helper === undefined) {
-    try {
-      execFileSync('gcb', ['--version'], { stdio: 'ignore' });
-    } catch {
-      fail(
-        'gcb is not on PATH. A later git invocation would not find !gcb. Install gcb-client globally, or pass\n' +
-          "  --helper '!node /absolute/path/to/packages/client/bin/gcb.js'.",
-      );
+    const found = findGcbOnPath();
+    const problem =
+      found === undefined
+        ? 'gcb is not on PATH. A later git invocation would not find !gcb.'
+        : isEphemeralGcb(found)
+          ? `gcb on PATH is an ephemeral npx/package-manager bin (${found}); later git runs will not see it.`
+          : undefined;
+    if (problem !== undefined) {
+      if (args.has('dry-run')) warn(problem);
+      else
+        fail(
+          `${problem} Install gcb-client globally, or pass\n  --helper '!node /absolute/path/to/packages/client/bin/gcb.js'.`,
+        );
     }
   }
   try {

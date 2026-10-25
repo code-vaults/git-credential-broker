@@ -46,8 +46,8 @@ The container controls a request, not a command line.
   before a token is minted or `gh` is started.
 - The broker injects `--repo` after validating it against the effective allowlist. It never trusts
   a caller-supplied hostname; `GH_HOST` comes from the broker.
-- There is no shell, no `eval`, no pass-through of `--body-file`, `--web`, `--hostname`, `--input`, or
-  `--template-file`. A body file is read by the client and sent as `--body`.
+- There is no shell, no `eval`, no pass-through of `--body-file`, `--web`, `--hostname`, `--template`, or
+  `--input`. A body file is read by the client and sent as `--body`.
 - `gh` runs with a temporary `HOME`/`GH_CONFIG_DIR`, a minimal environment, a hard output cap and a
   per-action timeout. A timed-out write may have completed, and the result says so.
 

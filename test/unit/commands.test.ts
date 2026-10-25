@@ -19,7 +19,7 @@ import { runDiagnose } from '../../packages/host/src/commands/diagnose.ts';
 import { SIDECAR, loadConfig, resolveConfigPath, deploymentDir } from '../../packages/host/src/config.ts';
 import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit, resolveInitSelection } from '../../packages/host/src/commands/init.ts';
 import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../packages/cli/src/support.ts';
-import { performSetup } from '../../packages/client/src/commands/setup.ts';
+import { findGcbOnPath, isEphemeralGcb, performSetup } from '../../packages/client/src/commands/setup.ts';
 import type { BrokerConfig, GithubAppHostConfig } from '../../packages/cli/src/types.ts';
 import { runProbe } from '../../packages/client/src/commands/probe.ts';
 
@@ -331,6 +331,24 @@ describe('setup', () => {
       ...overrides,
     };
   }
+
+  it('finds a stable gcb on PATH and names the npx shape', () => {
+    const bin = dir(`setup-path-${Math.random().toString(36).slice(2)}`);
+    const executable = path.join(bin, 'gcb');
+    fs.writeFileSync(executable, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(executable, 0o755);
+    assert.equal(findGcbOnPath({ PATH: bin }), executable);
+    assert.equal(findGcbOnPath({ PATH: '' }), undefined);
+    assert.equal(isEphemeralGcb(executable), false);
+    assert.equal(
+      isEphemeralGcb(path.join(bin, '_npx', 'hash', 'node_modules', '.bin', 'gcb')),
+      true,
+    );
+    assert.equal(
+      isEphemeralGcb(path.join(bin, 'node_modules', '.bin', 'gcb')),
+      true,
+    );
+  });
 
   it('writes the three settings git needs, and both socket-path records', async () => {
     const input = setupInput();
