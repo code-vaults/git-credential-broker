@@ -113,8 +113,11 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         settled = true;
         if (timer !== undefined) clearTimeout(timer);
         if (killTimer !== undefined) clearInterval(killTimer);
-        stdout += stdoutDecoder.end();
-        stderr += stderrDecoder.end();
+        const fullStdout = stdout + stdoutDecoder.end();
+        const fullStderr = stderr + stderrDecoder.end();
+        stdout = clampUtf8(fullStdout, maxBytes);
+        stderr = clampUtf8(fullStderr, maxBytes);
+        if (stdout !== fullStdout || stderr !== fullStderr) truncated = true;
         resolve({ ...result, stdout, stderr, truncated, timedOut });
       };
 
@@ -172,4 +175,24 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
+}
+
+/**
+ * Keep a decoded string within a UTF-8 byte budget without splitting a code point.
+ *
+ * @param text - the decoded text.
+ * @param maxBytes - the byte budget.
+ * @returns the prefix that fits.
+ */
+function clampUtf8(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text) <= maxBytes) return text;
+  let used = 0;
+  let kept = '';
+  for (const character of text) {
+    const size = Buffer.byteLength(character);
+    if (used + size > maxBytes) break;
+    kept += character;
+    used += size;
+  }
+  return kept;
 }

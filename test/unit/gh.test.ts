@@ -117,3 +117,20 @@ describe('runGhAction stream boundaries', { skip: onWindows }, () => {
     }
   });
 });
+
+describe('runGhAction decoded output cap', { skip: onWindows }, () => {
+  it('keeps decoded text within the byte budget when invalid bytes expand', async () => {
+    const gh = shim("printf '\\377%.0s' $(seq 1 4)");
+    const result = await runGhAction({
+      action: 'pr:view',
+      values: { number: 1 },
+      repo: 'acme/widget',
+      token: 't',
+      ghPath: gh,
+      maxOutputBytes: 4,
+      env: { PATH: process.env.PATH },
+    });
+    assert.equal(result.truncated, true);
+    assert.ok(Buffer.byteLength(result.stdout) <= 4);
+  });
+});
