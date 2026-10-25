@@ -163,6 +163,7 @@ export function createRequestHandler(
   }
 
   return async function handle(message: Record<string, unknown>): Promise<WireResponse> {
+    const auditEvent = message['op'] === 'action' ? 'action' : 'credential';
     const context: DecisionContext = {
       host: typeof message['host'] === 'string' ? message['host'] : null,
       repo: null,
@@ -192,7 +193,14 @@ export function createRequestHandler(
     // not of the request, so the protocol can only be judged once the host is known.
     const block = hostConfig(config, message['host']);
     if (!block) {
-      return deny(context, CODES.HOST_NOT_ALLOWED, 'no configuration for this host', 'host is not configured');
+      return deny(
+        context,
+        CODES.HOST_NOT_ALLOWED,
+        'no configuration for this host',
+        'host is not configured',
+        undefined,
+        auditEvent,
+      );
     }
     context.host = block.host;
 
@@ -222,17 +230,33 @@ export function createRequestHandler(
         CODES.PATH_REQUIRED,
         reason,
         'the request carries no usable repository path, so a single-repository credential cannot be issued; enable `git config --global credential.useHttpPath true`',
+        undefined,
+        auditEvent,
       );
     }
     context.repo = repo.full;
 
     if (!repoAllowed(block.allow, repo.full)) {
-      return deny(context, CODES.REPO_NOT_ALLOWED, 'repository not in allowlist', 'repository is not allowlisted');
+      return deny(
+        context,
+        CODES.REPO_NOT_ALLOWED,
+        'repository not in allowlist',
+        'repository is not allowlisted',
+        undefined,
+        auditEvent,
+      );
     }
 
     const provider = providers.get(block.host);
     if (!provider) {
-      return deny(context, CODES.PROVIDER_ERROR, 'no provider instance for this host', 'provider unavailable');
+      return deny(
+        context,
+        CODES.PROVIDER_ERROR,
+        'no provider instance for this host',
+        'provider unavailable',
+        undefined,
+        auditEvent,
+      );
     }
 
     if (message['op'] === 'action') {

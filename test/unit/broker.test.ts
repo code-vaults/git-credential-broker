@@ -581,3 +581,29 @@ describe('broker actions', () => {
     assert.equal(harness.events.at(-1)?.['event'], 'action');
   });
 });
+
+describe('broker action refusals', () => {
+  it('audits a non-allowlisted action as an action event', async () => {
+    let called = false;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async () => {
+        called = true;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(undefined, provider);
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'other/repo',
+      ghAction: 'pr:view',
+      values: { number: 1 },
+    });
+    assert.equal(response.ok, false);
+    assert.equal(response.code, CODES.REPO_NOT_ALLOWED);
+    assert.equal(called, false);
+    assert.equal(harness.events.at(-1)?.['event'], 'action');
+  });
+});
