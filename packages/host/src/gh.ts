@@ -49,6 +49,10 @@ export interface GhRunOptions {
  * @returns the bounded process result.
  */
 export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
+  const maxBytes = options.maxOutputBytes ?? DEFAULT_GH_OUTPUT_BYTES;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+    throw new Error('maxOutputBytes must be a non-negative safe integer');
+  }
   const argv = buildGhArgv(options.action, options.values, options.repo);
   const home = mkdtempSync(path.join(tmpdir(), 'gcb-gh-'));
   const configDir = path.join(home, 'gh');
@@ -81,7 +85,6 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   }
 
   const timeoutMs = options.timeoutMs ?? getGhAction(options.action).timeoutSeconds * 1000;
-  const maxBytes = options.maxOutputBytes ?? DEFAULT_GH_OUTPUT_BYTES;
 
   try {
     return await new Promise<GhRunResult>((resolve) => {

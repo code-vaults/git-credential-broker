@@ -134,3 +134,21 @@ describe('runGhAction decoded output cap', { skip: onWindows }, () => {
     assert.ok(Buffer.byteLength(result.stdout) <= 4);
   });
 });
+
+describe('runGhAction options', { skip: onWindows }, () => {
+  it('rejects an invalid output ceiling before creating anything', async () => {
+    for (const maxOutputBytes of [Number.POSITIVE_INFINITY, Number.NaN, -1, 1.5]) {
+      await assert.rejects(
+        runGhAction({
+          action: 'pr:view',
+          values: { number: 1 },
+          repo: 'acme/widget',
+          token: 't',
+          maxOutputBytes,
+          env: { PATH: process.env.PATH },
+        }),
+        /non-negative safe integer/,
+      );
+    }
+  });
+});
