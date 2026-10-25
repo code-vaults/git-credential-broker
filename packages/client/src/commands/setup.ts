@@ -72,20 +72,6 @@ export interface SetupResult {
 }
 
 /**
- * The helper command to record when the user did not choose one.
- *
- * `!gcb` is a shell command, so git resolves the installed bin through PATH every time. A global
- * install, `npx` and a source-checkout shim can all use the same configuration, and moving the
- * installation does not require rewriting the git config. The `!` is the part git needs to run a
- * command rather than look for `git-credential-gcb`.
- *
- * @returns the helper command.
- */
-export function defaultHelperPath(): string {
-  return '!gcb';
-}
-
-/**
  * Apply the configuration.
  *
  * @param input - the resolved options.
@@ -227,7 +213,9 @@ export async function runSetup(argv: readonly string[]): Promise<number> {
   const socket = args.value('socket') ?? process.env['GIT_BROKER_SOCKET'] ?? '/run/git-cred-broker/broker.sock';
   try {
     const result = await performSetup({
-      helper: args.value('helper') ?? defaultHelperPath(),
+      // !gcb is a shell command, so git resolves the installed bin through PATH; a global
+      // install and a source shim can share one configuration.
+      helper: args.value('helper') ?? '!gcb',
       socket,
       gitconfig: args.value('gitconfig') ?? path.join(home, '.gitconfig'),
       envFile: args.value('env-file') ?? path.join(home, '.git-broker.env'),

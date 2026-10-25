@@ -19,7 +19,7 @@ import { runDiagnose } from '../../packages/host/src/commands/diagnose.ts';
 import { SIDECAR, loadConfig, resolveConfigPath, deploymentDir } from '../../packages/host/src/config.ts';
 import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit, resolveInitSelection } from '../../packages/host/src/commands/init.ts';
 import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../packages/cli/src/support.ts';
-import { defaultHelperPath, performSetup } from '../../packages/client/src/commands/setup.ts';
+import { performSetup } from '../../packages/client/src/commands/setup.ts';
 import type { BrokerConfig, GithubAppHostConfig } from '../../packages/cli/src/types.ts';
 import { runProbe } from '../../packages/client/src/commands/probe.ts';
 
@@ -332,9 +332,7 @@ describe('setup', () => {
     };
   }
 
-  it('records the PATH-resolved helper, and refuses to configure native Windows at all', async () => {
-    assert.equal(defaultHelperPath(), '!gcb');
-
+  it('refuses to configure native Windows at all', async () => {
     // On native Windows the broker's socket cannot be reached, so writing a helper there would look
     // like success and never work. Nothing should be written on the way to the refusal.
     const input = setupInput();
