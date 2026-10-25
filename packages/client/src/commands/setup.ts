@@ -15,7 +15,6 @@
  *  - records the socket path in a file as well as in the environment, because git is often
  *    spawned from a non-login shell that never sources a profile.
  */
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -188,40 +187,6 @@ Configure this environment's git to obtain credentials from the broker.
   -h, --help           Show this help
 `;
 
-/** Where an npm/npx one-off puts a bin: present for the setup process, gone for later git runs. */
-const EPHEMERAL_HELPER = /(?:^|\/)(?:node_modules\/\.bin|_npx)(?:\/|$)/;
-
-/**
- * Find `gcb` on a PATH.
- *
- * @param env - the environment to search; injectable for tests.
- * @returns the executable path, or undefined.
- */
-export function findGcbOnPath(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  for (const dir of (env['PATH'] ?? '').split(path.delimiter)) {
-    if (dir === '') continue;
-    const candidate = path.join(dir, process.platform === 'win32' ? 'gcb.cmd' : 'gcb');
-    try {
-      if (!fs.statSync(candidate).isFile()) continue;
-      fs.accessSync(candidate, fs.constants.X_OK);
-      return candidate;
-    } catch {
-      // Not here, or not executable.
-    }
-  }
-  return undefined;
-}
-
-/**
- * Whether a resolved helper is an npm/npx one-off rather than a stable install.
- *
- * @param candidate - the path found on PATH.
- * @returns true when a later process is not expected to see the same path.
- */
-export function isEphemeralGcb(candidate: string): boolean {
-  return EPHEMERAL_HELPER.test(candidate.split(path.sep).join('/'));
-}
-
 /**
  * Run the `setup` command.
  *
@@ -237,36 +202,12 @@ export async function runSetup(argv: readonly string[]): Promise<number> {
 
   const home = os.homedir();
   const socket = args.value('socket') ?? process.env['GIT_BROKER_SOCKET'] ?? '/run/git-cred-broker/broker.sock';
-  const helper = args.value('helper');
-  if (helper === undefined) {
-    const found = findGcbOnPath();
-    let problem =
-      found === undefined
-        ? 'gcb is not on PATH. A later git invocation would not find !gcb.'
-        : isEphemeralGcb(found)
-          ? `gcb on PATH is an ephemeral npx/package-manager bin (${found}); later git runs will not see it.`
-          : undefined;
-    if (problem === undefined && found !== undefined && !args.has('dry-run')) {
-      try {
-        const role = execFileSync(found, ['role'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-        if (role !== 'client') problem = `gcb on PATH is ${role}, not gcb-client.`;
-      } catch {
-        problem = 'gcb on PATH could not answer `gcb role`; it is not a working gcb-client.';
-      }
-    }
-    if (problem !== undefined) {
-      if (args.has('dry-run')) warn(problem);
-      else
-        fail(
-          `${problem} Install gcb-client globally, or pass\n  --helper '!node /absolute/path/to/packages/client/bin/gcb.js'.`,
-        );
-    }
-  }
   try {
     const result = await performSetup({
-      // !gcb is a shell command, so git resolves the installed bin through PATH; a global
-      // install and a source shim can share one configuration.
-      helper: helper ?? '!gcb',
+      // !gcb is a shell command, so the git process that later runs the helper resolves it
+      // through its own PATH. setup cannot know that future environment; this is why the
+      // README says the installed gcb must be on the PATH of the processes that call git.
+      helper: args.value('helper') ?? '!gcb',
       socket,
       gitconfig: args.value('gitconfig') ?? path.join(home, '.gitconfig'),
       envFile: args.value('env-file') ?? path.join(home, '.git-broker.env'),

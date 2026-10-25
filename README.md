@@ -174,8 +174,9 @@ gcb setup
 
 `setup` records `credential.helper = !gcb` (PATH-resolved, so the same config works for a global
 install and a dev shim) and `credential.useHttpPath` (without the latter, git sends no repository
-path and the broker can only authorize host-wide). Because the helper is resolved later, `setup`
-refuses when `gcb` is not on PATH; with `npx` and no global install, pass `--helper` explicitly.
+path and the broker can only authorize host-wide). The helper is resolved by the git process later,
+not by `setup`: that process must have `gcb` on its PATH. With `npx` and no persistent install,
+pass `--helper` explicitly.
 
 It also rewrites `git@github.com:` remotes to
 https **inside the container only** so the host's SSH workflow is untouched, and writes a CA bundle
