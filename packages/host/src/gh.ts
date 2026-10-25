@@ -11,10 +11,7 @@ import { tmpdir } from 'node:os';
 import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 
-import { buildGhArgv, type ActionValues } from 'gcb-cli';
-
-/** The default action timeout. */
-export const DEFAULT_GH_TIMEOUT_MS = 120_000;
+import { buildGhArgv, getGhAction, type ActionValues } from 'gcb-cli';
 
 /** The default stdout/stderr ceiling, in bytes per stream. */
 export const DEFAULT_GH_OUTPUT_BYTES = 200_000;
@@ -83,7 +80,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
     if (value !== undefined && value !== '') env[key] = value;
   }
 
-  const timeoutMs = options.timeoutMs ?? DEFAULT_GH_TIMEOUT_MS;
+  const timeoutMs = options.timeoutMs ?? getGhAction(options.action).timeoutSeconds * 1000;
   const maxBytes = options.maxOutputBytes ?? DEFAULT_GH_OUTPUT_BYTES;
 
   try {
