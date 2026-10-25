@@ -42,16 +42,14 @@ describe('startBroker oversized request', () => {
         const chunks: Buffer[] = [];
         socket.on('data', (chunk: Buffer) => chunks.push(chunk));
         socket.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-        socket.on('error', (error) => {
-          if (chunks.length === 0) reject(error);
-        });
+        socket.on('error', reject);
         socket.write('x'.repeat(MAX_MESSAGE_BYTES + 1) + '\n');
       });
       socket.destroy();
       const parsed = JSON.parse(response.trim()) as WireResponse;
       assert.equal(parsed.ok, false);
       assert.equal(parsed.code, CODES.BAD_REQUEST);
-      assert.match(parsed.reason ?? '', /request exceeds 524288 bytes/);
+      assert.equal(parsed.reason, `request exceeds ${MAX_MESSAGE_BYTES} bytes`);
     } finally {
       await broker.close();
       fs.rmSync(root, { recursive: true, force: true });
