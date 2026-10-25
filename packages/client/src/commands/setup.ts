@@ -15,6 +15,7 @@
  *  - records the socket path in a file as well as in the environment, because git is often
  *    spawned from a non-login shell that never sources a profile.
  */
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -184,7 +185,7 @@ export const SETUP_USAGE = `Usage: gcb setup [options]
 
 Configure this environment's git to obtain credentials from the broker.
 
-  --helper <cmd>       Credential helper to record (default: this script's real path)
+  --helper <cmd>       Credential helper to record (default: !gcb, resolved through PATH)
   --socket <path>      Broker socket path (default: $GIT_BROKER_SOCKET, else /run/git-cred-broker/broker.sock)
   --gitconfig <path>   Git config to write (default: $HOME/.gitconfig)
   --rewrite-ssh <host> Rewrite git@<host>: remotes to https (default: github.com)
@@ -211,11 +212,22 @@ export async function runSetup(argv: readonly string[]): Promise<number> {
 
   const home = os.homedir();
   const socket = args.value('socket') ?? process.env['GIT_BROKER_SOCKET'] ?? '/run/git-cred-broker/broker.sock';
+  const helper = args.value('helper');
+  if (helper === undefined && process.platform !== 'win32') {
+    try {
+      execFileSync('gcb', ['--version'], { stdio: 'ignore' });
+    } catch {
+      fail(
+        'gcb is not on PATH. A later git invocation would not find !gcb. Install gcb-client globally, or pass\n' +
+          "  --helper '!node /absolute/path/to/packages/client/bin/gcb.js'.",
+      );
+    }
+  }
   try {
     const result = await performSetup({
       // !gcb is a shell command, so git resolves the installed bin through PATH; a global
       // install and a source shim can share one configuration.
-      helper: args.value('helper') ?? '!gcb',
+      helper: helper ?? '!gcb',
       socket,
       gitconfig: args.value('gitconfig') ?? path.join(home, '.gitconfig'),
       envFile: args.value('env-file') ?? path.join(home, '.git-broker.env'),
