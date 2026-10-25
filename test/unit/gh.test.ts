@@ -100,7 +100,7 @@ describe('runGhAction stream boundaries', { skip: onWindows }, () => {
 
   it('keeps signalling the group when a forked child holds stdout', async () => {
     for (let run = 0; run < 4; run++) {
-      const gh = shim('sleep 30 & echo start');
+      const gh = shim('dd if=/dev/zero bs=1 count=8 2>/dev/null; sleep 30 &');
       const started = Date.now();
       const result = await runGhAction({
         action: 'pr:view',
