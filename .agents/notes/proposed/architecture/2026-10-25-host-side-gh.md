@@ -51,6 +51,13 @@ The container controls a request, not a command line.
 - `gh` runs with a temporary `HOME`/`GH_CONFIG_DIR`, a minimal environment, a hard output cap and a
   per-action timeout. A timed-out write may have completed, and the result says so.
 
+## Where gh runs
+
+The executor lives beside the app broker, not in the agent container. The sidecar image installs a
+pinned `gh`; the broker calls it with the action's installation token in `GH_TOKEN`, a temporary
+`HOME` and `GH_CONFIG_DIR`, and no host gh configuration. The host user's gh login is never read
+or used. The host broker remains the separate person/`--as-user` path.
+
 ## The catalog is the single source
 
 One declarative table owns, per action:

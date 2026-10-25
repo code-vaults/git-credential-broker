@@ -312,6 +312,7 @@ Full detail and the measurements behind them:
 | `packages/client/src/commands/` | setup, probe, logs, pr and remotes |
 | `packages/host/src/broker.ts` | unix socket server, refusal codes, audit records |
 | `packages/host/src/config.ts` | YAML configuration |
+| `packages/host/src/gh.ts` | the isolated gh action executor |
 | `packages/host/src/providers/github-app.ts` | RS256 JWT, installation lookup, permission pre-flight, token cache |
 | `packages/host/src/device-flow.ts` | the device flow: the three exchanges that turn an authorization into a token |
 | `packages/host/src/commands/` | init, stage, compose, diagnose, authorize and host-opener |

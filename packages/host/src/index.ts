@@ -6,6 +6,8 @@
 import type { CommandBackend } from 'gcb-cli';
 import { assertProxyEnabled } from './proxy.ts';
 
+export * from './gh.ts';
+
 export const HOST_HELP = `gcb-host — host-side gcb broker and administration commands.
 
 Usage: gcb <command> [options]
