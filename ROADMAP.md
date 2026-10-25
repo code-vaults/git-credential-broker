@@ -1,8 +1,9 @@
 # ROADMAP
 
 This is the staged plan for the next version. `README.md` documents the tree as it exists today;
-this file documents where it is going. The tree is at the last green baseline; the runtime changes
-in this plan are not implemented yet.
+this file documents where it is going. YAML configuration, the three-package split and the typed
+action catalog are implemented; host-side `gh` execution, host-user delegation and live reload are
+not.
 
 ## Locked decisions
 
