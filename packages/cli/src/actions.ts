@@ -47,6 +47,8 @@ export interface GhAction {
   readonly flags: readonly FlagSpec[];
   /** Exactly one of these flags must be present, when set. */
   readonly exactlyOneOf?: readonly string[];
+  /** This body must be present when any of these flags is present. */
+  readonly bodyRequiredWith?: readonly string[];
   readonly permissions: Readonly<Partial<Record<GhPermission, PermissionLevel>>>;
   /** The default per-action timeout, in seconds. */
   readonly timeoutSeconds: number;
@@ -160,6 +162,7 @@ const PR_REVIEW: GhAction = {
     { name: 'body', type: 'string' },
   ],
   exactlyOneOf: ['approve', 'request-changes', 'comment'],
+  bodyRequiredWith: ['comment', 'request-changes'],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
   hostUser: true,
@@ -333,6 +336,11 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
     const chosen = action.exactlyOneOf.filter((flag) => present.has(flag));
     if (chosen.length !== 1) {
       throw new ActionError(`${name} needs exactly one of ${action.exactlyOneOf.map((flag) => `--${flag}`).join(', ')}`);
+    }
+  }
+  for (const flag of action.bodyRequiredWith ?? []) {
+    if (present.has(flag) && values.body === undefined) {
+      throw new ActionError(`${name} needs --body with --${flag}`);
     }
   }
 
