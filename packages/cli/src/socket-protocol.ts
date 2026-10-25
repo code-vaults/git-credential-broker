@@ -62,24 +62,30 @@ export interface LineReaderOptions {
 export function createLineReader(options: LineReaderOptions): (chunk: Buffer | string) => void {
   const { onLine, onOverflow, maxBytes = MAX_MESSAGE_BYTES } = options;
   let buffer = Buffer.alloc(0);
+  let stopped = false;
 
   return (chunk: Buffer | string): void => {
+    if (stopped) return;
     buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
     let start = 0;
     for (;;) {
       const newline = buffer.indexOf(0x0a, start);
       if (newline < 0) break;
-      // The byte offset is the line's length; check it before onLine sees it.
+      // The byte offset is the line's length; check it before onLine sees it. An oversized line
+      // invalidates the rest of the stream: never hand a later line to the broker after this.
       if (newline - start > maxBytes) {
+        stopped = true;
+        buffer = Buffer.alloc(0);
         onOverflow?.();
-      } else {
-        const line = buffer.subarray(start, newline).toString('utf8');
-        if (line.trim()) onLine(line);
+        return;
       }
+      const line = buffer.subarray(start, newline).toString('utf8');
+      if (line.trim()) onLine(line);
       start = newline + 1;
     }
     buffer = buffer.subarray(start);
     if (buffer.length > maxBytes) {
+      stopped = true;
       buffer = Buffer.alloc(0);
       onOverflow?.();
     }
