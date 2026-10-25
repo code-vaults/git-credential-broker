@@ -47,7 +47,7 @@ export function parseMessage(line: string): Record<string, unknown> | null {
 export interface LineReaderOptions {
   /** Called once per complete, non-empty line. */
   onLine(line: string): void;
-  /** Called when a single line exceeds the ceiling. */
+  /** Called once when a line exceeds the ceiling; the reader then stops permanently. */
   onOverflow?(): void;
   /** Ceiling for one line, in bytes. */
   maxBytes?: number;
