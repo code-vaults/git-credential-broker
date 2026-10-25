@@ -101,7 +101,17 @@ Keep the checkout outside every container mount.
 ## GitHub actions
 
 The action path is wired through the broker; the host image must include `gh` before these commands
-can run. The container never receives the token.
+can run. The container never receives the token. Build the image and pass it to `compose`:
+
+```sh
+docker build -f examples/Dockerfile.host -t gcb-host:gh .
+gcb compose --image gcb-host:gh --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" \
+  > "$DEPLOY/docker-compose.broker.yml"
+```
+
+Debian bookworm's own `gh` is 2.23.0, while the action catalog targets current gh. The image
+therefore installs from GitHub's stable apt repository, not the Debian package.
+
 
 ```sh
 gcb gh pr view 12 --repo owner/name
