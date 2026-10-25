@@ -25,7 +25,7 @@ function recordedBody(body: string | undefined): Record<string, unknown> | null 
 }
 
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createVerify, generateKeyPairSync } from 'node:crypto';
@@ -259,6 +259,7 @@ describe('createGithubAppProvider', () => {
   function providerFor(
     stub: { calls: RecordedCall[]; fetchImpl: FetchLike },
     overrides: Partial<GithubAppHostConfig> = {},
+    ghPath?: string,
   ) {
     const cfg: GithubAppHostConfig = {
       provider: 'github-app',
@@ -268,8 +269,41 @@ describe('createGithubAppProvider', () => {
       permissions: { contents: 'write', pull_requests: 'write' },
       ...overrides,
     };
-    return createGithubAppProvider({ host: 'github.com', cfg, fetchImpl: stub.fetchImpl, now: () => nowMs });
+    return createGithubAppProvider({ host: 'github.com', cfg, fetchImpl: stub.fetchImpl, now: () => nowMs, ghPath });
   }
+
+  it('runs an action with an action token and revokes it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-action-'));
+    const gh = join(dir, 'gh');
+    writeFileSync(gh, '#!/bin/sh\nprintf "ARGV=%s\\nTOKEN=%s\\n" "$*" "$GH_TOKEN"\n');
+    chmodSync(gh, 0o755);
+    const permissions = { pull_requests: 'read', contents: 'read', checks: 'read', statuses: 'read' };
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'Acme' } }],
+      nowMs,
+      appPermissions: permissions,
+      installationPermissions: permissions,
+    });
+    const provider = providerFor(stub, {}, gh);
+    try {
+      const result = await provider.runAction?.({
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        full: 'acme/widget',
+        action: 'pr:view',
+        values: { number: 7 },
+      });
+      assert.ok(result);
+      assert.equal(result.code, 0);
+      assert.match(result.stdout, /ARGV=pr view 7 --repo acme\/widget/);
+      assert.match(result.stdout, /TOKEN=ghs_stub_token_value/);
+      assert.ok(stub.calls.some((call) => call.method === 'POST' && call.url.includes('/access_tokens')));
+      assert.ok(stub.calls.some((call) => call.method === 'DELETE' && call.url.endsWith('/installation/token')));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
   it('resolves the installation by account login and scopes the token to one named repository', async () => {
     const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'Acme' } }], nowMs });

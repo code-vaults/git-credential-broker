@@ -19,10 +19,13 @@
  */
 import fs from 'node:fs';
 import {
+  buildGhArgv,
+  getGhAction,
   MAX_BODY_CHARS,
   MAX_MESSAGE_BYTES,
   MAX_TITLE_CHARS,
   ProviderConfigError,
+  ActionError,
   BRANCH,
   createLineReader,
   encodeMessage,
@@ -34,7 +37,7 @@ import net from 'node:net';
 import path from 'node:path';
 
 import { hostConfig, normalizeRepoPath, repoAllowed } from './policy.ts';
-import type { MergeMethod, AuditSink, BrokerConfig, Provider, WireResponse } from 'gcb-cli';
+import type { ActionValues, MergeMethod, AuditSink, BrokerConfig, Provider, WireResponse } from 'gcb-cli';
 
 /** Reported by the `ping` operation so the container side can prove what it reached. */
 export const BROKER_VERSION = '0.1.0';
@@ -173,7 +176,8 @@ export function createRequestHandler(
     if (
       message['op'] !== 'credential' &&
       message['op'] !== 'logs' &&
-      message['op'] !== 'pull-request'
+      message['op'] !== 'pull-request' &&
+      message['op'] !== 'action'
     ) {
       return deny(
         context,
@@ -228,6 +232,68 @@ export function createRequestHandler(
     const provider = providers.get(block.host);
     if (!provider) {
       return deny(context, CODES.PROVIDER_ERROR, 'no provider instance for this host', 'provider unavailable');
+    }
+
+    if (message['op'] === 'action') {
+      const ghAction = message['ghAction'];
+      const values = message['values'];
+      if (typeof ghAction !== 'string' || values === null || typeof values !== 'object' || Array.isArray(values)) {
+        return deny(context, CODES.BAD_REQUEST, 'bad action request', 'the request carries no usable action');
+      }
+      try {
+        getGhAction(ghAction);
+        buildGhArgv(ghAction, values as ActionValues, repo.full);
+      } catch (error) {
+        if (error instanceof ActionError) {
+          return deny(context, CODES.BAD_REQUEST, error.message, error.message);
+        }
+        throw error;
+      }
+      if (typeof provider.runAction !== 'function') {
+        return deny(
+          context,
+          CODES.PROVIDER_ERROR,
+          `provider ${provider.name} cannot run actions`,
+          "this host's provider cannot run GitHub actions",
+        );
+      }
+      try {
+        const result = await provider.runAction({
+          host: block.host,
+          owner: repo.owner,
+          repo: repo.repo,
+          full: repo.full,
+          action: ghAction,
+          values: values as ActionValues,
+        });
+        if (result.error !== undefined) {
+          return deny(context, CODES.PROVIDER_ERROR, result.error, 'the host could not start gh');
+        }
+        audit.record({
+          event: 'action',
+          decision: 'allow',
+          ...context,
+          action: ghAction,
+          exit_code: result.code,
+          truncated: result.truncated === true,
+          timed_out: result.timedOut === true,
+          bytes: Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr),
+        });
+        return {
+          ok: true,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          exitCode: result.code,
+          truncated: result.truncated,
+          timedOut: result.timedOut,
+        };
+      } catch (error) {
+        const reason = String((error as Error).message ?? error).slice(0, 300);
+        const hostDetail = (error as { hostDetail?: string }).hostDetail;
+        const callerMessage =
+          error instanceof ProviderConfigError ? reason : 'the broker could not run that action; see the broker log';
+        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail);
+      }
     }
 
     if (message['op'] === 'logs') {
@@ -496,6 +562,13 @@ export async function startBroker(options: StartBrokerOptions): Promise<RunningB
     const reader = createLineReader({
       onLine: (line) => {
         const message = parseMessage(line);
+        if (message?.['op'] === 'action' && typeof message['ghAction'] === 'string') {
+          try {
+            socket.setTimeout(getGhAction(message['ghAction']).timeoutSeconds * 1000 + 5_000);
+          } catch {
+            // The action branch returns the named refusal.
+          }
+        }
         const respond = (response: WireResponse): void => {
           if (!socket.destroyed) socket.write(encodeMessage(response));
         };

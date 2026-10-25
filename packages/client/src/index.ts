@@ -16,6 +16,7 @@ Commands
   probe      Ask the broker what it would do for a repository, without pushing
   logs       Read a workflow job's log through the broker
   pr         Use the broker's pull-request operations
+  gh         Run a catalogued GitHub action through the broker
 
 As a git credential helper
   gcb get|store|erase    # what git calls; store and erase are no-ops
@@ -38,6 +39,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return (await import('./commands/logs.ts')).runLogs(rest);
     case 'pr':
       return (await import('./commands/pr.ts')).runPr(rest);
+    case 'gh':
+      return (await import('./commands/gh.ts')).runGh(rest);
     default:
       process.stderr.write(`gcb: unknown client command \`${command ?? ''}\`.\n`);
       return 1;
@@ -46,7 +49,7 @@ async function run(argv: readonly string[]): Promise<number> {
 
 export const clientBackend: CommandBackend = {
   role: 'client',
-  commands: ['setup', 'probe', 'logs', 'pr'],
+  commands: ['setup', 'probe', 'logs', 'pr', 'gh'],
   help: CLIENT_HELP,
   run,
 };

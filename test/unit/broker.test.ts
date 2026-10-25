@@ -525,3 +525,58 @@ describe('audit redaction', () => {
     assert.match(tokenFingerprint('abc'), /^[0-9a-f]{12}$/);
   });
 });
+
+describe('broker actions', () => {
+  it('validates and audits a catalogued action through the provider', async () => {
+    const calls: unknown[] = [];
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async (request) => {
+        calls.push(request);
+        return { stdout: 'viewed', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(undefined, provider);
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'pr:view',
+      values: { number: 7 },
+    });
+    assert.deepEqual(response, {
+      ok: true,
+      stdout: 'viewed',
+      stderr: '',
+      exitCode: 0,
+      truncated: false,
+      timedOut: false,
+    });
+    assert.equal(calls.length, 1);
+    assert.deepEqual(harness.events.at(-1)?.['event'], 'action');
+  });
+
+  it('refuses an undeclared flag before the provider', async () => {
+    let called = false;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async () => {
+        called = true;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(undefined, provider);
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'pr:view',
+      values: { number: 7, web: true },
+    });
+    assert.equal(response.ok, false);
+    assert.equal(response.code, CODES.BAD_REQUEST);
+    assert.equal(called, false);
+  });
+});

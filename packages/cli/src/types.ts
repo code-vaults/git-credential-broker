@@ -15,6 +15,28 @@ export interface RepoRef {
 }
 
 /** One credential, as handed to git by the helper. */
+/** What the broker asks a provider to run. */
+export interface ActionRequest {
+  readonly host: string;
+  readonly owner: string;
+  readonly repo: string;
+  /** The normalized owner/repo form. */
+  readonly full: string;
+  readonly action: string;
+  readonly values: Readonly<Record<string, string | number | boolean | readonly string[] | undefined>>;
+}
+
+/** The bounded result of one action. */
+export interface ActionRunResult {
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly code: number | null;
+  readonly signal: NodeJS.Signals | null;
+  readonly truncated: boolean;
+  readonly timedOut: boolean;
+  readonly error?: string;
+}
+
 export interface Credential {
   readonly username: string;
   readonly password: string;
@@ -35,6 +57,13 @@ export interface CredentialRequest {
 
 /** A credential source for exactly one host. */
 export interface Provider {
+  /**
+   * Run one catalogued `gh` action as the provider's identity.
+   *
+   * The broker has already validated the action name, repository and values; this method owns the
+   * token and the host process.
+   */
+  runAction?(request: ActionRequest): Promise<ActionRunResult>;
   readonly name: string;
   getCredential(request: CredentialRequest): Promise<Credential>;
   /**
@@ -204,6 +233,10 @@ export interface WireRequest {
   readonly pid?: number;
   /** Workflow job id, for `op: "logs"`. */
   readonly jobId?: number;
+  /** For `op: "action"`: a catalogued gh action. */
+  readonly ghAction?: string;
+  /** For `op: "action"`: validated value names. */
+  readonly values?: Record<string, unknown>;
   /** For `op: "pull-request"`. */
   readonly action?: string;
   readonly number?: number;
@@ -237,6 +270,11 @@ export interface WireResponse {
   readonly prMerged?: boolean;
   /** The report, for `action: "status"`. */
   readonly prStatus?: string;
+  /** For `op: "action"`. */
+  readonly stdout?: string;
+  readonly stderr?: string;
+  readonly exitCode?: number | null;
+  readonly timedOut?: boolean;
 }
 
 /** Where audit records go. */
