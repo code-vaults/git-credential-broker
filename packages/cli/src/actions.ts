@@ -82,7 +82,7 @@ const PR_VIEW: GhAction = {
   hostUser: false,
 };
 
-// GitHub: GET /repos/{owner}/{repo}/pulls
+// GitHub: GraphQL repository.pullRequests (gh pr list uses GraphQL)
 const PR_LIST: GhAction = {
   name: 'pr:list',
   command: ['pr', 'list'],

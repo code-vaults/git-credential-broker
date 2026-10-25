@@ -59,18 +59,20 @@ export function createLineReader(options: LineReaderOptions): (chunk: Buffer | s
 
   return (chunk: Buffer | string): void => {
     buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
-    let newline = buffer.indexOf(0x0a);
-    if (newline < 0 && buffer.length > maxBytes) {
-      buffer = Buffer.alloc(0);
-      onOverflow?.();
-      return;
+    let start = 0;
+    for (;;) {
+      const newline = buffer.indexOf(0x0a, start);
+      if (newline < 0) break;
+      // The byte offset is the line's length; check it before onLine sees it.
+      if (newline - start > maxBytes) {
+        onOverflow?.();
+      } else {
+        const line = buffer.subarray(start, newline).toString('utf8');
+        if (line.trim()) onLine(line);
+      }
+      start = newline + 1;
     }
-    while (newline >= 0) {
-      const line = buffer.subarray(0, newline).toString('utf8');
-      buffer = buffer.subarray(newline + 1);
-      if (line.trim()) onLine(line);
-      newline = buffer.indexOf(0x0a);
-    }
+    buffer = buffer.subarray(start);
     if (buffer.length > maxBytes) {
       buffer = Buffer.alloc(0);
       onOverflow?.();
