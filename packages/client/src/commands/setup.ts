@@ -15,6 +15,7 @@
  *  - records the socket path in a file as well as in the environment, because git is often
  *    spawned from a non-login shell that never sources a profile.
  */
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -239,12 +240,20 @@ export async function runSetup(argv: readonly string[]): Promise<number> {
   const helper = args.value('helper');
   if (helper === undefined) {
     const found = findGcbOnPath();
-    const problem =
+    let problem =
       found === undefined
         ? 'gcb is not on PATH. A later git invocation would not find !gcb.'
         : isEphemeralGcb(found)
           ? `gcb on PATH is an ephemeral npx/package-manager bin (${found}); later git runs will not see it.`
           : undefined;
+    if (problem === undefined && found !== undefined && !args.has('dry-run')) {
+      try {
+        const role = execFileSync(found, ['role'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+        if (role !== 'client') problem = `gcb on PATH is ${role}, not gcb-client.`;
+      } catch {
+        problem = 'gcb on PATH could not answer `gcb role`; it is not a working gcb-client.';
+      }
+    }
     if (problem !== undefined) {
       if (args.has('dry-run')) warn(problem);
       else

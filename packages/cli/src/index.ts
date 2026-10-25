@@ -74,6 +74,11 @@ export async function runCli(argv: readonly string[], backend: CommandBackend): 
     process.stdout.write(`${packageVersion()}\n`);
     return 0;
   }
+  // A diagnostic for setup: version strings are identical on both sides, but the role is not.
+  if (command === 'role') {
+    process.stdout.write(`${backend.role}\n`);
+    return 0;
+  }
 
   // Refuse before the backend imports its command modules: the host ones import yaml, and the
   // Windows job removes it on purpose.
