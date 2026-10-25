@@ -20,6 +20,7 @@
 import fs from 'node:fs';
 import {
   MAX_BODY_CHARS,
+  MAX_MESSAGE_BYTES,
   MAX_TITLE_CHARS,
   ProviderConfigError,
   BRANCH,
@@ -507,7 +508,18 @@ export async function startBroker(options: StartBrokerOptions): Promise<RunningB
           log(`internal error: ${String((error as Error).message ?? error)}`);
         });
       },
-      onOverflow: () => socket.destroy(),
+      onOverflow: () => {
+        log(`request exceeded ${MAX_MESSAGE_BYTES} bytes`);
+        if (!socket.destroyed) {
+          socket.end(
+            encodeMessage({
+              ok: false,
+              code: CODES.BAD_REQUEST,
+              reason: `request exceeds ${MAX_MESSAGE_BYTES} bytes`,
+            }),
+          );
+        }
+      },
     });
     socket.on('data', reader);
     socket.on('timeout', () => socket.destroy());
