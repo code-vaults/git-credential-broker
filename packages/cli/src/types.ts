@@ -7,6 +7,8 @@
  */
 
 /** A repository reference, normalized out of git's `path=` field. */
+import type { ActionValues } from './actions.ts';
+
 export interface RepoRef {
   readonly owner: string;
   readonly repo: string;
@@ -14,7 +16,6 @@ export interface RepoRef {
   readonly full: string;
 }
 
-/** One credential, as handed to git by the helper. */
 /** What the broker asks a provider to run. */
 export interface ActionRequest {
   readonly host: string;
@@ -23,7 +24,7 @@ export interface ActionRequest {
   /** The normalized owner/repo form. */
   readonly full: string;
   readonly action: string;
-  readonly values: Readonly<Record<string, string | number | boolean | readonly string[] | undefined>>;
+  readonly values: ActionValues;
 }
 
 /** The bounded result of one action. */
@@ -37,6 +38,7 @@ export interface ActionRunResult {
   readonly error?: string;
 }
 
+/** One credential, as handed to git by the helper. */
 export interface Credential {
   readonly username: string;
   readonly password: string;

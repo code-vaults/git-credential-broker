@@ -14,7 +14,7 @@ import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { after, describe, it } from 'node:test';
 
-import { parseArgs, parseCredentialInput, resolveSocketPath, runHelper } from '../../packages/client/src/helper.ts';
+import { parseArgs, parseCredentialInput, requestOverSocket, resolveSocketPath, runHelper } from '../../packages/client/src/helper.ts';
 import type { WireResponse } from '../../packages/cli/src/types.ts';
 
 const CLIENT_REQUEST = 'protocol=https\nhost=github.com\npath=acme/widget.git\n\n';
@@ -254,6 +254,30 @@ describe('runHelper: configured means fail-closed', () => {
       assert.match(io.stderrText(), /repo-not-allowed/);
     } finally {
       await broker.close();
+    }
+  });
+});
+
+
+describe('requestOverSocket decoding', () => {
+  it('does not corrupt a code point split across socket chunks', async () => {
+    const socketPath = path.join(tempDir, `broker-split-${Math.random().toString(36).slice(2)}.sock`);
+    const response = Buffer.from(JSON.stringify({ ok: true, stdout: 'a😀b' }) + '\n');
+    const emoji = Buffer.from('😀');
+    const split = response.indexOf(emoji) + 2;
+    const server = net.createServer((socket) => {
+      socket.on('data', () => {
+        socket.write(response.subarray(0, split));
+        setTimeout(() => socket.write(response.subarray(split)), 10);
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, () => resolve()));
+    try {
+      const message = await requestOverSocket(socketPath, { op: 'ping' });
+      assert.equal(message.ok, true);
+      assert.equal(message.stdout, 'a😀b');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 });

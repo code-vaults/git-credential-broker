@@ -4,12 +4,24 @@
  * The action catalog defines the command, flags, positionals and permissions. The client only
  * parses names and values; the broker rebuilds the canonical argv and runs gh with its own token.
  */
-import { getGhAction, parseArgs, say, fail, type ActionValues } from 'gcb-cli';
+import { GH_ACTIONS, getGhAction, parseArgs, say, fail, type ActionValues } from 'gcb-cli';
 
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 
+const ACTION_LINES = Object.values(GH_ACTIONS)
+  .map((action) => {
+    const positionals = action.positionals
+      .map((positional) => (positional.required === true ? `<${positional.name}>` : `[${positional.name}]`))
+      .join(' ');
+    const flags = action.flags
+      .map((flag) => `[--${flag.name}${flag.type === 'boolean' ? '' : ` <${flag.type}>`}]`)
+      .join(' ');
+    return `  ${action.command.join(' ')}${positionals ? ` ${positionals}` : ''}${flags ? ` ${flags}` : ''}`;
+  })
+  .join('\n');
+
 /** Usage text for `gh`. */
-export const GH_USAGE = `Usage: gcb gh <pr|issue|run> <command> [options]
+export const GH_USAGE = `Usage: gcb gh <domain> <command> [options]
 
 Run a catalogued GitHub action through the broker.
 
@@ -19,17 +31,8 @@ Common
   --socket <path>      Broker socket (default: GIT_BROKER_SOCKET)
   -h, --help           Show this help
 
-Commands
-  pr view <number> [--json fields] [--jq expr] [--comments]
-  pr list [--state state] [--limit n] [--head branch] [--base branch] [--label label]
-  pr diff <number> [--name-only] [--patch]
-  pr create --head branch --title title --body text [--base branch] [--draft]
-  pr comment <number> --body text
-  pr review <number> (--approve | --request-changes | --comment) [--body text]
-  issue create --title title --body text [--label label]
-  run view <run-id> [--log] [--job id] [--json fields] [--jq expr]
-  run list [--limit n] [--workflow name] [--branch branch]
-`;
+Commands, from the action catalog
+${ACTION_LINES}`;
 
 /**
  * Run the `gh` command.
@@ -104,8 +107,8 @@ export async function runGh(argv: readonly string[]): Promise<number> {
   try {
     response = await requestOverSocket(
       socketPath,
-      { op: 'action', host, path: repo, ghAction: actionName, values: values as ActionValues },
-      action.timeoutSeconds * 1000 + 5_000,
+      { op: 'action', host, path: repo, ghAction: actionName, values: values as ActionValues, session: 'gh', pid: process.pid },
+      action.timeoutSeconds * 1000 + 30_000,
     );
   } catch (error) {
     fail((error as Error).message);
@@ -115,6 +118,14 @@ export async function runGh(argv: readonly string[]): Promise<number> {
   }
   if (response.stdout) process.stdout.write(response.stdout);
   if (response.stderr) process.stderr.write(response.stderr);
-  if (response.timedOut === true) fail(`the action timed out after ${action.timeoutSeconds}s`);
+  if (response.truncated === true) {
+    process.stderr.write('warning: the action output was truncated at the broker\x27s limit\n');
+  }
+  if (response.timedOut === true) {
+    process.stderr.write(
+      `warning: the action timed out after ${action.timeoutSeconds}s; a write may have completed before it was killed\n`,
+    );
+    return 1;
+  }
   return response.exitCode === 0 ? 0 : 1;
 }

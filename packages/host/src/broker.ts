@@ -564,7 +564,7 @@ export async function startBroker(options: StartBrokerOptions): Promise<RunningB
         const message = parseMessage(line);
         if (message?.['op'] === 'action' && typeof message['ghAction'] === 'string') {
           try {
-            socket.setTimeout(getGhAction(message['ghAction']).timeoutSeconds * 1000 + 5_000);
+            socket.setTimeout(getGhAction(message['ghAction']).timeoutSeconds * 1000 + 30_000);
           } catch {
             // The action branch returns the named refusal.
           }

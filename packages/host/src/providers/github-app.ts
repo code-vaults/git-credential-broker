@@ -590,7 +590,7 @@ function pullRequestNumber(value: unknown): number | undefined {
         });
       } finally {
         try {
-          await fetchImpl(`${api}/installation/token`, {
+          const response = await fetchImpl(`${api}/installation/token`, {
             method: 'DELETE',
             headers: {
               accept: 'application/vnd.github+json',
@@ -599,6 +599,15 @@ function pullRequestNumber(value: unknown): number | undefined {
               'user-agent': 'gcb',
             },
           });
+          if (!response.ok) {
+            let detail = '';
+            try {
+              detail = (await response.text()).replace(/\s+/g, ' ').trim().slice(0, 200);
+            } catch {
+              // The status is enough; a body that cannot be read is still not a successful revoke.
+            }
+            log(`could not revoke the action token: GitHub answered ${response.status}${detail ? ` ${detail}` : ''}`);
+          }
         } catch (error) {
           log(`could not revoke the action token: ${String((error as Error).message ?? error)}`);
         }
