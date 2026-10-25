@@ -1,8 +1,9 @@
 # ROADMAP
 
 This is the staged plan for the next version. `README.md` documents the tree as it exists today;
-this file documents where it is going. The tree is at the last green baseline; the runtime changes
-in this plan are not implemented yet.
+this file documents where it is going. YAML configuration, the three-package split and the typed
+action catalog are implemented; host-side `gh` execution, host-user delegation and live reload are
+not.
 
 ## Locked decisions
 
@@ -71,11 +72,12 @@ against npm before publishing. If it is taken, use a scope rather than a second 
 
 No code until these are settled.
 
-- [ ] Write the design note for host-side `gh` execution, including the trust boundary and the
-      differences from the current broker-side API implementation.
+- [x] Write the design note for host-side `gh` execution, including the trust boundary and the
+      differences from the current broker-side API implementation
+      (`../notes/proposed/architecture/2026-10-25-host-side-gh.md`).
 - [x] Decide the configuration format and the dependency strategy: YAML, `yaml`, no bundle; three
       workspace packages (see Phase 1).
-- [ ] Decide the host-user flag name (recommendation: `--as-user <login>`; see Phase 3).
+- [x] Decide the host-user flag name: `--as-user <login>`; `--as-app` is the explicit default.
 - [ ] Decide the final built-in command list and the `gcb <gh-subcommand>` shorthand.
 - [x] Update `AGENTS.md` and `README.md` to point at this roadmap and state the current baseline.
 
@@ -86,16 +88,16 @@ reading code.
 
 The configuration is the source of truth and must be comfortable to edit by hand.
 
-- [ ] Use YAML. `yaml` is the parser: `parseDocument` preserves comments and formatting, it is pure
+- [x] Use YAML. `yaml` is the parser: `parseDocument` preserves comments and formatting, it is pure
       JavaScript, and the Document API is what lets `init` update one value without rewriting the file.
-- [ ] Split the repository into Yarn workspaces under `packages/`:
+- [x] Split the repository into Yarn workspaces under `packages/`:
       - `gcb-cli`: shared argument parsing, help, protocol and types; no `yaml`;
       - `gcb-client`: container side; depends on `gcb-cli`; no host dependencies;
       - `gcb-host`: host side; depends on `gcb-cli` and `yaml`;
       - both client and host expose the same `gcb` bin; only one is installed per environment.
-- [ ] Do **not** bundle. npm installs dependencies; remove esbuild and the staged bundle build.
+- [x] Do **not** bundle. npm installs dependencies; remove esbuild and the staged bundle build.
       `stage`, if kept, exports a commit and does not build a self-contained artifact.
-- [ ] Decide the global-install shape: `gcb` installed globally (`npm i -g` / `corepack`) is the
+- [x] Decide the global-install shape: `gcb` installed globally (`npm i -g` / `corepack`) is the
       only command skills and docs name. It must work from any checkout and from the container.
 - [ ] Development mode: the globally installed `gcb` detects an explicit dev pointer (e.g.
       `GCB_DEV=1` plus `~/.config/gcb/dev.json`, written by `gcb dev use <checkout>`) and re-execs
@@ -139,10 +141,11 @@ The configuration is the source of truth and must be comfortable to edit by hand
         atomic replace is visible;
       - `gcb doctor` reports the active config digest and the last reload result;
         `gcb config check` is the one-shot validation.
-- [ ] One-time migration: convert an existing `broker.config.json` to YAML before upgrade. The
-      loader does not read JSON after the switch; this phase adds no `config migrate` command.
+- [x] One-time migration: convert an existing `broker.config.json` to YAML before upgrade. The
+      old `broker.config.json` filename is no longer discovered; an explicitly passed JSON file is
+      still accepted because the YAML parser parses JSON. This phase adds no `config migrate` command.
 - [ ] Add `gcb config check` and `gcb config edit` (`$EDITOR`, validated on save).
-- [ ] Update `init`, `compose`, `stage`, and `deployment.ts` to the chosen format.
+- [x] Update `init`, `compose`, `stage`, and `deployment.ts` to the chosen format.
 
 Proposed YAML surface (subject to Phase 0 naming):
 

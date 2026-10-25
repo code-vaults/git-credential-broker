@@ -8,8 +8,14 @@
  */
 import type { WireResponse } from './types.ts';
 
-/** Hard ceiling for one protocol line. */
-export const MAX_MESSAGE_BYTES = 16 * 1024;
+/**
+ * Hard ceiling for one inbound request line.
+ *
+ * A legal pull-request body is 65,536 UTF-16 code units. JSON escaping can cost six bytes per unit
+ * (`\u0000`), so the request ceiling must cover that plus the envelope; 512 KiB does. Responses are
+ * bounded by the log limit instead.
+ */
+export const MAX_MESSAGE_BYTES = 512 * 1024;
 
 /**
  * Encode one protocol message.
@@ -41,7 +47,7 @@ export function parseMessage(line: string): Record<string, unknown> | null {
 export interface LineReaderOptions {
   /** Called once per complete, non-empty line. */
   onLine(line: string): void;
-  /** Called when a single line exceeds the ceiling. */
+  /** Called once when a line exceeds the ceiling; the reader then stops permanently. */
   onOverflow?(): void;
   /** Ceiling for one line, in bytes. */
   maxBytes?: number;
@@ -55,25 +61,48 @@ export interface LineReaderOptions {
  */
 export function createLineReader(options: LineReaderOptions): (chunk: Buffer | string) => void {
   const { onLine, onOverflow, maxBytes = MAX_MESSAGE_BYTES } = options;
-  let buffer = Buffer.alloc(0);
+  let chunks: Buffer[] = [];
+  let pendingBytes = 0;
+  let stopped = false;
+
+  const stop = (): void => {
+    stopped = true;
+    chunks = [];
+    pendingBytes = 0;
+    onOverflow?.();
+  };
 
   return (chunk: Buffer | string): void => {
-    buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
-    let newline = buffer.indexOf(0x0a);
-    if (newline < 0 && buffer.length > maxBytes) {
-      buffer = Buffer.alloc(0);
-      onOverflow?.();
-      return;
-    }
-    while (newline >= 0) {
-      const line = buffer.subarray(0, newline).toString('utf8');
-      buffer = buffer.subarray(newline + 1);
-      if (line.trim()) onLine(line);
-      newline = buffer.indexOf(0x0a);
-    }
-    if (buffer.length > maxBytes) {
-      buffer = Buffer.alloc(0);
-      onOverflow?.();
+    if (stopped) return;
+    const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    let start = 0;
+    for (;;) {
+      const newline = data.indexOf(0x0a, start);
+      if (newline < 0) {
+        const rest = data.subarray(start);
+        if (pendingBytes + rest.length > maxBytes) {
+          stop();
+          return;
+        }
+        if (rest.length > 0) {
+          chunks.push(Buffer.from(rest));
+          pendingBytes += rest.length;
+        }
+        return;
+      }
+
+      const piece = data.subarray(start, newline);
+      if (pendingBytes + piece.length > maxBytes) {
+        stop();
+        return;
+      }
+      const line = pendingBytes === 0 ? piece : Buffer.concat([...chunks, piece], pendingBytes + piece.length);
+      chunks = [];
+      pendingBytes = 0;
+      const text = line.toString('utf8');
+      if (text.trim()) onLine(text);
+      start = newline + 1;
+      if (start >= data.length) return;
     }
   };
 }

@@ -4,9 +4,9 @@ Short-lived, single-repository git credentials for a container, from a broker on
 the only long-lived secret. The GitHub App private key never enters the container, and `git push`
 still works.
 
-> **Roadmap:** the action/CLI redesign — host-side `gh`, `gcb gh`, host-user delegation, YAML
-> configuration — is planned but not implemented. [`ROADMAP.md`](ROADMAP.md) is the target; this
-> README documents the current tree.
+> **Roadmap:** YAML configuration and the three-package split are implemented. Host-side `gh`
+> (`gcb gh`), host-user delegation and live reload are planned but not implemented.
+> [`ROADMAP.md`](ROADMAP.md) is the target; this README documents the current tree.
 
 Two commands are installed:
 
@@ -83,7 +83,8 @@ npm install -g gcb-host
 ```
 
 `gcb-client` has no runtime dependencies. `gcb-host` depends on `yaml`; npm installs it there. Do not
-install both globally on the same machine: they race for the same `gcb` bin.
+install both globally on the same machine: they race for the same `gcb` bin. Run `setup` from the
+installed client; one-off `npx` execution is not a supported installation shape.
 
 Or run from a checkout. Node 24 strips TypeScript types, but the workspaces still need their
 dependencies:
@@ -102,7 +103,9 @@ Keep the checkout outside every container mount.
 
 1. **Settings → Developer settings → GitHub Apps → New GitHub App.**
 2. Permissions: **Contents: Read and write**, plus **Pull requests: Read and write** if the agent
-   should open pull requests. Grant them in the app, not only in the request.
+   should open pull requests, and **Actions: Read** for `logs`. Grant them in the app, not only in the
+   request. The per-action source of truth, including the planned `gcb gh` actions, is the catalog in
+   [`packages/cli/src/actions.ts`](packages/cli/src/actions.ts).
 3. Install the app on the account that owns the repositories, granting access to those alone.
 4. Download the **private key**; note the **App ID** and **Client ID**.
 5. Ignore the client secret — this tool never uses it. Installation tokens are obtained by signing a
@@ -170,8 +173,13 @@ export GIT_BROKER_REQUIRE=1        # fail closed instead of falling back to anot
 gcb setup
 ```
 
-`setup` records `credential.helper` and `credential.useHttpPath` (without the latter, git sends no
-repository path and the broker can only authorize host-wide), rewrites `git@github.com:` remotes to
+`setup` records `credential.helper = !gcb` (PATH-resolved, so the same config works for a global
+install and a dev shim) and `credential.useHttpPath` (without the latter, git sends no repository
+path and the broker can only authorize host-wide). The helper is resolved by the git process later,
+not by `setup`: that process must have `gcb` on its PATH. Run setup from the installed client, not
+a one-off `npx` process.
+
+It also rewrites `git@github.com:` remotes to
 https **inside the container only** so the host's SSH workflow is untouched, and writes a CA bundle
 when the image has none. In compose:
 
@@ -503,7 +511,7 @@ this working, and the traps it already paid for, are in [AGENTS.md](AGENTS.md).
 ## Layout
 
 ```
-packages/cli/src/        shared parser, protocol, types and platform helpers
+packages/cli/src/        shared parser, protocol, types, platform helpers and the gh action catalog
 packages/client/src/     credential helper, setup, probe, logs, pr
 packages/host/src/       YAML config, providers, broker, daemon and host commands
 packages/*/bin/          the two installed gcb bins (client and host)

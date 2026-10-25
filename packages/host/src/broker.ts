@@ -18,7 +18,18 @@
  *    already a socket, and refuses to follow a symlink.
  */
 import fs from 'node:fs';
-import { ProviderConfigError, BRANCH, createLineReader, encodeMessage, parseMessage, socketPathRefusal, tokenFingerprint } from 'gcb-cli';
+import {
+  MAX_BODY_CHARS,
+  MAX_MESSAGE_BYTES,
+  MAX_TITLE_CHARS,
+  ProviderConfigError,
+  BRANCH,
+  createLineReader,
+  encodeMessage,
+  parseMessage,
+  socketPathRefusal,
+  tokenFingerprint,
+} from 'gcb-cli';
 import net from 'node:net';
 import path from 'node:path';
 
@@ -303,11 +314,11 @@ export function createRequestHandler(
       if ((action === 'open' || action === 'update') && base !== undefined && !usable(base)) {
         return deny(context, CODES.BAD_REQUEST, `bad base ${JSON.stringify(base)}`, 'the base branch name is not usable');
       }
-      if (action === 'open' && (typeof title !== 'string' || title.trim() === '' || title.length > 256)) {
-        return deny(context, CODES.BAD_REQUEST, 'bad title', 'a pull request needs a title of at most 256 characters');
+      if (action === 'open' && (typeof title !== 'string' || title.trim() === '' || title.length > MAX_TITLE_CHARS)) {
+        return deny(context, CODES.BAD_REQUEST, 'bad title', `a pull request needs a title of at most ${MAX_TITLE_CHARS} characters`);
       }
-      if (body !== undefined && (typeof body !== 'string' || body.length > 65_536)) {
-        return deny(context, CODES.BAD_REQUEST, 'bad body', 'the body must be text of at most 65536 characters');
+      if (body !== undefined && (typeof body !== 'string' || body.length > MAX_BODY_CHARS)) {
+        return deny(context, CODES.BAD_REQUEST, 'bad body', `the body must be text of at most ${MAX_BODY_CHARS} characters`);
       }
 
       // An anchored comment: both halves or neither, only on a comment, and never outside the repository.
@@ -497,7 +508,18 @@ export async function startBroker(options: StartBrokerOptions): Promise<RunningB
           log(`internal error: ${String((error as Error).message ?? error)}`);
         });
       },
-      onOverflow: () => socket.destroy(),
+      onOverflow: () => {
+        log(`request exceeded ${MAX_MESSAGE_BYTES} bytes`);
+        if (!socket.writableEnded && !socket.destroyed) {
+          socket.end(
+            encodeMessage({
+              ok: false,
+              code: CODES.BAD_REQUEST,
+              reason: `request exceeds ${MAX_MESSAGE_BYTES} bytes`,
+            }),
+          );
+        }
+      },
     });
     socket.on('data', reader);
     socket.on('timeout', () => socket.destroy());

@@ -49,9 +49,9 @@ Two consequences:
 - The sources must stay **erasable**: `erasableSyntaxOnly` is on (no enums, no parameter
   properties), and relative imports carry the `.ts` extension — `rewriteRelativeImportExtensions`
   turns those into `.js` for `dist/`.
-- The `helper` path git invokes must be an executable file or a command with an interpreter. A bare
-  `.ts` is neither, which is why the built `packages/client/bin/gcb.js` (shebang plus exec bit) is what
-  `setup` records, and why a source checkout has to spell the interpreter out:
+- The `helper` command must resolve to an executable. `setup` records `!gcb`, so git resolves the
+  globally installed bin through PATH; a source checkout can use the same config if it has a `gcb`
+  shim on PATH, or spell the interpreter out explicitly with
   `git config --global credential.helper '!node --conditions=development /path/packages/client/bin/gcb.js'`.
 
 ## Build

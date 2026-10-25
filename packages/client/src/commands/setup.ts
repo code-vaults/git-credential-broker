@@ -19,7 +19,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { platformRefusal } from 'gcb-cli';
 import {
   fail,
   findSystemCaBundle,
@@ -57,8 +56,6 @@ export interface SetupInput {
   readonly home?: string;
   /** The directories the container shares, when the caller already has them. */
   readonly mounts?: readonly string[];
-  /** Platform to answer for; injectable so the refusal is testable. */
-  readonly platform?: NodeJS.Platform;
 }
 
 /** What `setup` did. */
@@ -72,28 +69,6 @@ export interface SetupResult {
 }
 
 /**
- * The helper path to record when the user did not choose one.
- *
- * The real path of the running script, so the configuration keeps working regardless of PATH —
- * `npx` and global installs both land somewhere git would not otherwise look.
- *
- * A bare path is right because the built entry point carries a shebang and the executable bit. A
- * source checkout has neither, so it has to spell out the interpreter:
- * `git config --global credential.helper '!node /path/packages/client/bin/gcb.js'`.
- *
- * @returns the resolved path, or a bare `gcb` when it cannot be determined.
- */
-export function defaultHelperPath(): string {
-  const invoked = process.argv[1];
-  if (!invoked) return 'gcb';
-  try {
-    return fs.realpathSync(invoked);
-  } catch {
-    return path.resolve(invoked);
-  }
-}
-
-/**
  * Apply the configuration.
  *
  * @param input - the resolved options.
@@ -101,12 +76,6 @@ export function defaultHelperPath(): string {
  * @throws {Error} when the target config is a symlink, or inside a directory the container shares.
  */
 export async function performSetup(input: SetupInput): Promise<SetupResult> {
-  // Refuse on native Windows: configuring git there would look like success and never work, because
-  // no Windows process can reach the broker's unix socket.
-  const refusal = platformRefusal(input.platform);
-  if (refusal !== null) {
-    throw new Error(refusal);
-  }
   // Writing through a symlink would edit whatever it points at, and a config that lives in a directory
   // the container shares is one the container can rewrite.
   if (fs.existsSync(input.gitconfig) && fs.lstatSync(input.gitconfig).isSymbolicLink()) {
@@ -206,7 +175,7 @@ export const SETUP_USAGE = `Usage: gcb setup [options]
 
 Configure this environment's git to obtain credentials from the broker.
 
-  --helper <cmd>       Credential helper to record (default: this script's real path)
+  --helper <cmd>       Credential helper to record (default: !gcb, resolved through PATH)
   --socket <path>      Broker socket path (default: $GIT_BROKER_SOCKET, else /run/git-cred-broker/broker.sock)
   --gitconfig <path>   Git config to write (default: $HOME/.gitconfig)
   --rewrite-ssh <host> Rewrite git@<host>: remotes to https (default: github.com)
@@ -235,7 +204,10 @@ export async function runSetup(argv: readonly string[]): Promise<number> {
   const socket = args.value('socket') ?? process.env['GIT_BROKER_SOCKET'] ?? '/run/git-cred-broker/broker.sock';
   try {
     const result = await performSetup({
-      helper: args.value('helper') ?? defaultHelperPath(),
+      // !gcb is a shell command, so the git process that later runs the helper resolves it
+      // through its own PATH. setup cannot know that future environment; this is why the
+      // README says the installed gcb must be on the PATH of the processes that call git.
+      helper: args.value('helper') ?? '!gcb',
       socket,
       gitconfig: args.value('gitconfig') ?? path.join(home, '.gitconfig'),
       envFile: args.value('env-file') ?? path.join(home, '.git-broker.env'),

@@ -12,7 +12,6 @@ import type { Writable } from 'node:stream';
 import { createAudit } from './audit.ts';
 import { startBroker } from './broker.ts';
 import { assertKeysReadable, assertUserTokensReadable, loadConfig, resolveConfigPath } from './config.ts';
-import { platformRefusal } from 'gcb-cli';
 import { createProvider } from './providers/index.ts';
 import type { ProviderDeps } from './providers/index.ts';
 import type { BrokerConfig, Provider } from 'gcb-cli';
@@ -87,21 +86,13 @@ export function buildProviders(config: BrokerConfig, deps: ProviderDeps = {}): M
  */
 export async function runDaemon(
   argv: readonly string[],
-  io: { stderr?: Writable; stdout?: Writable; platform?: NodeJS.Platform } = {},
+  io: { stderr?: Writable; stdout?: Writable } = {},
 ): Promise<number> {
   const { stderr = process.stderr, stdout = process.stdout } = io;
   const { configPath, checkOnly, help } = parseArgs(argv);
   if (help) {
     stdout.write(`${USAGE}\n`);
     return 0;
-  }
-  // Refuse before doing anything else: on native Windows the socket would be a named pipe and the
-  // mode bits would enforce nothing, so a broker that came up would look healthy and be open to
-  // every local process. WSL is fine — it is Linux — except for the mount trap checked below.
-  const refusal = platformRefusal(io.platform);
-  if (refusal !== null) {
-    stderr.write(`gcb daemon: ${refusal}\n`);
-    return 1;
   }
   // Same convention as the management commands: --config, else GIT_BROKER_CONFIG, else
   // ./broker.config.yml. A wrong pick is loud, because it must load and validate to start at all.
