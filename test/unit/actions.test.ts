@@ -190,3 +190,14 @@ describe('action value limits', () => {
     );
   });
 });
+
+describe('action title content', () => {
+  it('refuses an empty or whitespace-only title', () => {
+    for (const title of ['', '   ', '\n\t']) {
+      assert.throws(
+        () => buildGhArgv('issue:create', { title, body: '' }, 'acme/widget'),
+        /must not be empty/,
+      );
+    }
+  });
+});

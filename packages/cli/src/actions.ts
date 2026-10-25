@@ -346,8 +346,13 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
     }
   }
 
-  if (typeof values['title'] === 'string' && values['title'].length > MAX_TITLE_CHARS) {
-    throw new ActionError(`the title must be at most ${MAX_TITLE_CHARS} characters`);
+  if (typeof values['title'] === 'string') {
+    if (values['title'].trim() === '') {
+      throw new ActionError('the title must not be empty');
+    }
+    if (values['title'].length > MAX_TITLE_CHARS) {
+      throw new ActionError(`the title must be at most ${MAX_TITLE_CHARS} characters`);
+    }
   }
   if (typeof values['body'] === 'string' && values['body'].length > MAX_BODY_CHARS) {
     throw new ActionError(`the body must be at most ${MAX_BODY_CHARS} characters`);
