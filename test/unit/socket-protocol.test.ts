@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { createLineReader } from '../../packages/cli/src/socket-protocol.ts';
+import { MAX_BODY_CHARS } from '../../packages/cli/src/host-request.ts';
+import { MAX_MESSAGE_BYTES, createLineReader } from '../../packages/cli/src/socket-protocol.ts';
 
 describe('createLineReader', () => {
   it('splits lines across chunks and ignores blank lines', () => {
@@ -29,5 +30,21 @@ describe('createLineReader', () => {
     write('ok\n');
     assert.deepEqual(lines, ['ok']);
     assert.equal(overflow, 1);
+  });
+});
+
+describe('protocol message ceiling', () => {
+  it('covers the largest legal pull-request body after JSON escaping', () => {
+    const body = '\u0000'.repeat(MAX_BODY_CHARS);
+    const line = JSON.stringify({ op: 'pull-request', body });
+    assert.ok(Buffer.byteLength(line) + 1 <= MAX_MESSAGE_BYTES);
+    assert.ok(MAX_MESSAGE_BYTES >= MAX_BODY_CHARS * 6 + 1024);
+
+    const lines: string[] = [];
+    let overflow = 0;
+    const write = createLineReader({ onLine: (value) => lines.push(value), onOverflow: () => overflow++ });
+    write(`${line}\n`);
+    assert.equal(lines.length, 1);
+    assert.equal(overflow, 0);
   });
 });

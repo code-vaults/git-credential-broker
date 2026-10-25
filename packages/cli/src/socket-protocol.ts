@@ -8,8 +8,14 @@
  */
 import type { WireResponse } from './types.ts';
 
-/** Hard ceiling for one protocol line. */
-export const MAX_MESSAGE_BYTES = 16 * 1024;
+/**
+ * Hard ceiling for one inbound request line.
+ *
+ * A legal pull-request body is 65,536 UTF-16 code units. JSON escaping can cost six bytes per unit
+ * (`\u0000`), so the request ceiling must cover that plus the envelope; 512 KiB does. Responses are
+ * bounded by the log limit instead.
+ */
+export const MAX_MESSAGE_BYTES = 512 * 1024;
 
 /**
  * Encode one protocol message.
