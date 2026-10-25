@@ -85,7 +85,7 @@ export function createLineReader(options: LineReaderOptions): (chunk: Buffer | s
           return;
         }
         if (rest.length > 0) {
-          chunks.push(rest);
+          chunks.push(Buffer.from(rest));
           pendingBytes += rest.length;
         }
         return;

@@ -59,3 +59,16 @@ describe('protocol message ceiling', () => {
     assert.equal(overflow, 0);
   });
 });
+
+describe('line reader ownership', () => {
+  it('copies a partial chunk so a reused caller buffer cannot rewrite it', () => {
+    const lines: string[] = [];
+    const write = createLineReader({ onLine: (line) => lines.push(line) });
+    const scratch = Buffer.alloc(3);
+    scratch.write('abc');
+    write(scratch);
+    scratch.write('XYZ');
+    write(Buffer.from('def\n'));
+    assert.deepEqual(lines, ['abcdef']);
+  });
+});
