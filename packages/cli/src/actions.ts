@@ -339,8 +339,8 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
     }
   }
   for (const flag of action.bodyRequiredWith ?? []) {
-    if (present.has(flag) && values.body === undefined) {
-      throw new ActionError(`${name} needs --body with --${flag}`);
+    if (present.has(flag) && (typeof values.body !== 'string' || values.body.trim() === '')) {
+      throw new ActionError(`${name} needs a non-empty --body with --${flag}`);
     }
   }
 

@@ -143,6 +143,14 @@ describe('buildGhArgv', () => {
       () => buildGhArgv('pr:review', { number: 1, comment: true }, 'acme/widget'),
       /--body with --comment/,
     );
+    assert.throws(
+      () => buildGhArgv('pr:review', { number: 1, comment: true, body: '' }, 'acme/widget'),
+      /non-empty/,
+    );
+    assert.throws(
+      () => buildGhArgv('pr:review', { number: 1, 'request-changes': true, body: '  ' }, 'acme/widget'),
+      /non-empty/,
+    );
     assert.deepEqual(
       buildGhArgv('pr:review', { number: 1, approve: true, body: 'ok' }, 'acme/widget'),
       ['pr', 'review', '1', '--approve', '--body', 'ok', '--repo', 'acme/widget'],
