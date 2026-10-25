@@ -14,9 +14,18 @@ const ACTION_LINES = Object.values(GH_ACTIONS)
       .map((positional) => (positional.required === true ? `<${positional.name}>` : `[${positional.name}]`))
       .join(' ');
     const flags = action.flags
-      .map((flag) => `[--${flag.name}${flag.type === 'boolean' ? '' : ` <${flag.type}>`}]`)
+      .map((flag) => {
+        const spelling = `--${flag.name}${flag.type === 'boolean' ? '' : ` <${flag.type}>`}`;
+        return flag.required === true ? spelling : `[${spelling}]`;
+      })
       .join(' ');
-    return `  ${action.command.join(' ')}${positionals ? ` ${positionals}` : ''}${flags ? ` ${flags}` : ''}`;
+    const modes = action.exactlyOneOf === undefined
+      ? ''
+      : ` (one of ${action.exactlyOneOf.map((flag) => `--${flag}`).join(', ')})`;
+    const body = action.bodyRequiredWith === undefined
+      ? ''
+      : ` (--body required with ${action.bodyRequiredWith.map((flag) => `--${flag}`).join(', ')})`;
+    return `  ${action.command.join(' ')}${positionals ? ` ${positionals}` : ''}${flags ? ` ${flags}` : ''}${modes}${body}`;
   })
   .join('\n');
 

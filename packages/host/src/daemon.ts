@@ -104,7 +104,9 @@ export async function runDaemon(
     config = loadConfig(resolved);
     assertKeysReadable(config);
     assertUserTokensReadable(config);
-    providers = buildProviders(config);
+    providers = buildProviders(config, {
+      log: (message) => stderr.write(`gcb daemon: ${message}\n`),
+    });
   } catch (error) {
     stderr.write(`gcb daemon: ${(error as Error).message}\n`);
     return 1;

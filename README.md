@@ -86,6 +86,20 @@ npm install -g gcb-host
 install both globally on the same machine: they race for the same `gcb` bin. Run `setup` from the
 installed client; one-off `npx` execution is not a supported installation shape.
 
+## GitHub actions
+
+The action path is wired through the broker; the host image must include `gh` before these commands
+can run. The container never receives the token.
+
+```sh
+gcb gh pr view 12 --repo owner/name
+gcb gh pr create --repo owner/name --head feat/x --title "A title" --body "A body"
+gcb gh run view 123456 --log --repo owner/name
+```
+
+The exact command, flags and required values come from
+[`packages/cli/src/actions.ts`](packages/cli/src/actions.ts); `gcb gh --help` renders that catalog.
+
 Or run from a checkout. Node 24 strips TypeScript types, but the workspaces still need their
 dependencies:
 

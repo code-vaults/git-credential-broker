@@ -6,9 +6,9 @@
  * and `tsc` produces the shipped JavaScript without any runtime helper.
  */
 
-/** A repository reference, normalized out of git's `path=` field. */
 import type { ActionValues } from './actions.ts';
 
+/** A repository reference, normalized out of git's `path=` field. */
 export interface RepoRef {
   readonly owner: string;
   readonly repo: string;

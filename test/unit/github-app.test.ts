@@ -32,6 +32,7 @@ import { createVerify, generateKeyPairSync } from 'node:crypto';
 import { describe, it } from 'node:test';
 
 import { createGithubAppProvider, nextLink, signAppJwt } from '../../packages/host/src/providers/github-app.ts';
+import { createProvider } from '../../packages/host/src/providers/index.ts';
 import type { FetchLike, FetchResponseLike, GithubAppHostConfig } from '../../packages/cli/src/types.ts';
 import { ProviderConfigError } from '../../packages/cli/src/errors.ts';
 
@@ -292,7 +293,19 @@ describe('createGithubAppProvider', () => {
       revokeStatus: 500,
     });
     const logs: string[] = [];
-    const provider = providerFor(stub, {}, gh, (message) => logs.push(message));
+    const cfg: GithubAppHostConfig = {
+      provider: 'github-app',
+      allow: ['acme/widget'],
+      clientId: 'Iv1.clientid',
+      privateKeyPem: PRIVATE_PEM,
+      permissions,
+    };
+    const provider = createProvider('github.com', cfg, {
+      fetchImpl: stub.fetchImpl,
+      now: () => nowMs,
+      ghPath: gh,
+      log: (message) => logs.push(message),
+    });
     try {
       const result = await provider.runAction?.({
         host: 'github.com',
