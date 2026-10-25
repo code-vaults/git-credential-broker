@@ -8,6 +8,7 @@
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 
 import { buildGhArgv, type ActionValues } from 'gcb-cli';
@@ -63,6 +64,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
     GH_HOST: options.host ?? 'github.com',
     NO_COLOR: '1',
     GH_PROMPT_DISABLED: '1',
+    GH_NO_UPDATE_NOTIFIER: '1',
     GIT_TERMINAL_PROMPT: '0',
     PATH: source['PATH'] ?? '',
   };
@@ -88,10 +90,15 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
     return await new Promise<GhRunResult>((resolve) => {
       let stdout = '';
       let stderr = '';
+      let stdoutBytes = 0;
+      let stderrBytes = 0;
+      const stdoutDecoder = new StringDecoder('utf8');
+      const stderrDecoder = new StringDecoder('utf8');
       let truncated = false;
       let timedOut = false;
       let settled = false;
       let timer: NodeJS.Timeout | undefined;
+      let killTimer: NodeJS.Timeout | undefined;
 
       const child = spawn(options.ghPath ?? 'gh', argv, {
         cwd: home,
@@ -105,10 +112,13 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         if (settled) return;
         settled = true;
         if (timer !== undefined) clearTimeout(timer);
+        if (killTimer !== undefined) clearInterval(killTimer);
+        stdout += stdoutDecoder.end();
+        stderr += stderrDecoder.end();
         resolve({ ...result, stdout, stderr, truncated, timedOut });
       };
 
-      const kill = (): void => {
+      const signalGroup = (): void => {
         if (child.pid === undefined) return;
         try {
           // The child is its own process-group leader; kill the group so a gh-spawned helper does
@@ -119,17 +129,30 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         }
       };
 
+      const kill = (): void => {
+        signalGroup();
+        // A child forked between the signal and the process-group scan can retain the pipe. Keep
+        // signalling until close, then finish clears this interval.
+        if (killTimer === undefined && !settled) killTimer = setInterval(signalGroup, 100);
+      };
+
       const take = (stream: 'stdout' | 'stderr', chunk: Buffer): void => {
-        const current = stream === 'stdout' ? stdout : stderr;
-        if (Buffer.byteLength(current) >= maxBytes) {
+        if (truncated || timedOut) return;
+        const used = stream === 'stdout' ? stdoutBytes : stderrBytes;
+        if (used >= maxBytes) {
           truncated = true;
           kill();
           return;
         }
-        const room = maxBytes - Buffer.byteLength(current);
-        const text = chunk.subarray(0, room).toString('utf8');
-        if (stream === 'stdout') stdout += text;
-        else stderr += text;
+        const room = maxBytes - used;
+        const piece = chunk.subarray(0, room);
+        if (stream === 'stdout') {
+          stdout += stdoutDecoder.write(piece);
+          stdoutBytes += piece.length;
+        } else {
+          stderr += stderrDecoder.write(piece);
+          stderrBytes += piece.length;
+        }
         if (chunk.length > room) {
           truncated = true;
           kill();

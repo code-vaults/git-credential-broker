@@ -82,3 +82,38 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.match(result.error ?? '', /ENOENT/);
   });
 });
+
+describe('runGhAction stream boundaries', { skip: onWindows }, () => {
+  it('decodes a UTF-8 character split across pipe reads', async () => {
+    const gh = shim("printf '\\360\\237'; sleep 0.05; printf '\\230\\200'");
+    const result = await runGhAction({
+      action: 'pr:view',
+      values: { number: 1 },
+      repo: 'acme/widget',
+      token: 't',
+      ghPath: gh,
+      env: { PATH: process.env.PATH },
+    });
+    assert.equal(result.stdout, '😀');
+    assert.equal(result.truncated, false);
+  });
+
+  it('keeps signalling the group when a forked child holds stdout', async () => {
+    for (let run = 0; run < 4; run++) {
+      const gh = shim('sleep 30 & echo start');
+      const started = Date.now();
+      const result = await runGhAction({
+        action: 'pr:view',
+        values: { number: 1 },
+        repo: 'acme/widget',
+        token: 't',
+        ghPath: gh,
+        maxOutputBytes: 4,
+        timeoutMs: 5000,
+        env: { PATH: process.env.PATH },
+      });
+      assert.equal(result.truncated, true);
+      assert.ok(Date.now() - started < 2000, `run ${run} took too long`);
+    }
+  });
+});
