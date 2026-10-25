@@ -109,8 +109,12 @@ gcb compose --image gcb-host:gh --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" \
   > "$DEPLOY/docker-compose.broker.yml"
 ```
 
-Debian bookworm's own `gh` is 2.23.0, while the action catalog targets current gh. The image
-therefore installs from GitHub's stable apt repository, not the Debian package.
+Debian packages use the Aliyun mirror by default in this image; pass
+`--build-arg APT_MIRROR=<host>` to build against another mirror.
+
+The image installs `gh` from GitHub's stable apt repository; the version comparison and why the
+Debian package is not used are recorded in
+[the image note](.agents/notes/verified/environment/2026-10-26-gh-image.md).
 
 
 ```sh
