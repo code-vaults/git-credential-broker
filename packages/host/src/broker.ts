@@ -277,12 +277,6 @@ export function createRequestHandler(
         }
         throw error;
       }
-      if (typeof actionValues['title'] === 'string' && actionValues['title'].length > MAX_TITLE_CHARS) {
-        return denyAction(CODES.BAD_REQUEST, 'bad title', `the title must be at most ${MAX_TITLE_CHARS} characters`);
-      }
-      if (typeof actionValues['body'] === 'string' && actionValues['body'].length > MAX_BODY_CHARS) {
-        return denyAction(CODES.BAD_REQUEST, 'bad body', `the body must be at most ${MAX_BODY_CHARS} characters`);
-      }
       if (typeof provider.runAction !== 'function') {
         return denyAction(
           CODES.PROVIDER_ERROR,

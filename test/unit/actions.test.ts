@@ -8,6 +8,7 @@ import {
   buildGhArgv,
   getGhAction,
 } from '../../packages/cli/src/actions.ts';
+import { MAX_BODY_CHARS, MAX_TITLE_CHARS } from '../../packages/cli/src/host-request.ts';
 
 describe('gh action catalog', () => {
   it('has the roadmap actions and no merge action', () => {
@@ -163,6 +164,29 @@ describe('buildGhArgv', () => {
     assert.throws(
       () => buildGhArgv('pr:list', { label: [1] as unknown as string[] }, 'acme/widget'),
       /list of strings/,
+    );
+  });
+});
+
+describe('action value limits', () => {
+  it('accepts the exact title/body limits and refuses one more', () => {
+    assert.doesNotThrow(() =>
+      buildGhArgv(
+        'issue:create',
+        { title: 'x'.repeat(MAX_TITLE_CHARS), body: '' },
+        'acme/widget',
+      ),
+    );
+    assert.throws(
+      () => buildGhArgv('issue:create', { title: 'x'.repeat(MAX_TITLE_CHARS + 1), body: '' }, 'acme/widget'),
+      /at most 256 characters/,
+    );
+    assert.doesNotThrow(() =>
+      buildGhArgv('pr:comment', { number: 1, body: 'x'.repeat(MAX_BODY_CHARS) }, 'acme/widget'),
+    );
+    assert.throws(
+      () => buildGhArgv('pr:comment', { number: 1, body: 'x'.repeat(MAX_BODY_CHARS + 1) }, 'acme/widget'),
+      /at most 65536 characters/,
     );
   });
 });
