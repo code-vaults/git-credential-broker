@@ -6,12 +6,36 @@
  * and `tsc` produces the shipped JavaScript without any runtime helper.
  */
 
+import type { ActionValues } from './actions.ts';
+
 /** A repository reference, normalized out of git's `path=` field. */
 export interface RepoRef {
   readonly owner: string;
   readonly repo: string;
   /** The normalized `owner/repo` form used for allowlist matching and audit records. */
   readonly full: string;
+}
+
+/** What the broker asks a provider to run. */
+export interface ActionRequest {
+  readonly host: string;
+  readonly owner: string;
+  readonly repo: string;
+  /** The normalized owner/repo form. */
+  readonly full: string;
+  readonly action: string;
+  readonly values: ActionValues;
+}
+
+/** The bounded result of one action. */
+export interface ActionRunResult {
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly code: number | null;
+  readonly signal: NodeJS.Signals | null;
+  readonly truncated: boolean;
+  readonly timedOut: boolean;
+  readonly error?: string;
 }
 
 /** One credential, as handed to git by the helper. */
@@ -35,6 +59,13 @@ export interface CredentialRequest {
 
 /** A credential source for exactly one host. */
 export interface Provider {
+  /**
+   * Run one catalogued `gh` action as the provider's identity.
+   *
+   * The broker has already validated the action name, repository and values; this method owns the
+   * token and the host process.
+   */
+  runAction?(request: ActionRequest): Promise<ActionRunResult>;
   readonly name: string;
   getCredential(request: CredentialRequest): Promise<Credential>;
   /**
@@ -204,6 +235,10 @@ export interface WireRequest {
   readonly pid?: number;
   /** Workflow job id, for `op: "logs"`. */
   readonly jobId?: number;
+  /** For `op: "action"`: a catalogued gh action. */
+  readonly ghAction?: string;
+  /** For `op: "action"`: validated value names. */
+  readonly values?: Record<string, unknown>;
   /** For `op: "pull-request"`. */
   readonly action?: string;
   readonly number?: number;
@@ -237,6 +272,11 @@ export interface WireResponse {
   readonly prMerged?: boolean;
   /** The report, for `action: "status"`. */
   readonly prStatus?: string;
+  /** For `op: "action"`. */
+  readonly stdout?: string;
+  readonly stderr?: string;
+  readonly exitCode?: number | null;
+  readonly timedOut?: boolean;
 }
 
 /** Where audit records go. */

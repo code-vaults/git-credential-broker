@@ -19,7 +19,8 @@
  */
 import { userTokenPath } from '../config.ts';
 import { createSign } from 'node:crypto';
-import { ProviderConfigError } from 'gcb-cli';
+import { getGhAction, ProviderConfigError } from 'gcb-cli';
+import { runGhAction } from '../gh.ts';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { refreshUserToken } from '../device-flow.ts';
@@ -54,6 +55,10 @@ export interface GithubAppProviderOptions {
   readonly fetchImpl?: FetchLike;
   /** Clock, injectable for tests. */
   readonly now?: () => number;
+  /** gh executable, injectable for tests. */
+  readonly ghPath?: string;
+  /** Host-side diagnostics. */
+  readonly log?: (message: string) => void;
 }
 
 /** Options for {@link signAppJwt}. */
@@ -131,7 +136,15 @@ export function nextLink(linkHeader: string | null): string | null {
  * @throws {Error} when the private key or app identity is missing (fail fast).
  */
 export function createGithubAppProvider(options: GithubAppProviderOptions): Provider {
-  const { host, cfg, skewSeconds = 300, fetchImpl = globalThis.fetch, now = () => Date.now() } = options;
+  const {
+    host,
+    cfg,
+    skewSeconds = 300,
+    fetchImpl = globalThis.fetch,
+    now = () => Date.now(),
+    ghPath,
+    log = () => {},
+  } = options;
 
   const privateKeyPem = cfg.privateKeyPem
     ? cfg.privateKeyPem
@@ -551,6 +564,55 @@ function pullRequestNumber(value: unknown): number | undefined {
 
   return {
     name: 'github-app',
+
+    async runAction(request) {
+      const spec = getGhAction(request.action);
+      const wanted: Record<string, string> = { ...spec.permissions };
+      await ensurePermissions(request.owner, wanted);
+      const installationId = await resolveInstallationId(request.owner);
+      const { json } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
+        repositories: [request.repo],
+        permissions: wanted,
+      });
+      const token = (json as { token?: unknown } | null)?.token;
+      if (typeof token !== 'string' || !token) {
+        throw new ProviderConfigError('GitHub returned no installation token for the action');
+      }
+      try {
+        return await runGhAction({
+          action: request.action,
+          values: request.values,
+          repo: request.full,
+          token,
+          host: request.host,
+          ghPath,
+          env: process.env,
+        });
+      } finally {
+        try {
+          const response = await fetchImpl(`${api}/installation/token`, {
+            method: 'DELETE',
+            headers: {
+              accept: 'application/vnd.github+json',
+              authorization: `Bearer ${token}`,
+              'x-github-api-version': apiVersion,
+              'user-agent': 'gcb',
+            },
+          });
+          if (!response.ok) {
+            let detail = '';
+            try {
+              detail = (await response.text()).replace(/\s+/g, ' ').trim().slice(0, 200);
+            } catch {
+              // The status is enough; a body that cannot be read is still not a successful revoke.
+            }
+            log(`could not revoke the action token: GitHub answered ${response.status}${detail ? ` ${detail}` : ''}`);
+          }
+        } catch (error) {
+          log(`could not revoke the action token: ${String((error as Error).message ?? error)}`);
+        }
+      }
+    },
 
     async getCredential(request): Promise<Credential> {
       const cached = tokens.get(request.full);

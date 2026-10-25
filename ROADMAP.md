@@ -1,9 +1,10 @@
 # ROADMAP
 
 This is the staged plan for the next version. `README.md` documents the tree as it exists today;
-this file documents where it is going. YAML configuration, the three-package split and the typed
-action catalog are implemented; host-side `gh` execution, host-user delegation and live reload are
-not.
+this file documents where it is going. YAML configuration, the three-package split, the typed action
+catalog, the executor and the `gcb gh` broker/client path are implemented. The sidecar image does not
+install `gh` yet; the old `pr`/`logs` commands remain, and host-user delegation/live reload are not
+implemented.
 
 ## Locked decisions
 
@@ -203,15 +204,16 @@ host_broker:
       - built-ins first (`setup`, `init`, `stage`, `compose`, `probe`, `diagnose`, `authorize`,
         `app`, `host`, `config`, `version`, `help`);
       - `gcb gh …` explicit;
-      - `gcb pr view …`, `gcb run view …` etc. resolve to the `gh` subcommand.
+      - `gcb pr view …`, `gcb run view …` etc. resolve to the `gh` subcommand. (Explicit
+        `gcb gh pr view` is wired; the shorthand is not.)
 - [ ] Remove the built-in `pr` and `logs` commands. `gcb run view --job <id> --log` replaces `logs`.
-- [ ] Build the command table. Every entry has:
+- [x] Build the command table. Every entry has:
       - canonical subcommand (no aliases, no abbreviations);
       - allowed flags and their types;
       - required fields;
       - action name and permission set;
       - whether host-user execution is possible.
-- [ ] Rebuild the argv from parsed values; never forward the caller's argv.
+- [x] Rebuild the argv from parsed values; never forward the caller's argv.
 - [ ] Deny rules evaluated before allow. Unknown command, unknown flag, or missing whitelist entry
       is refused.
 - [ ] Built-in hard denies (not configurable on): `api`, `auth`, `extension`, `alias`, `config`,
@@ -238,18 +240,20 @@ host_broker:
       - no shell, no `--body-file` host reads;
       - capture stdout/stderr with a hard cap;
       - per-action total timeout, `SIGTERM` then `SIGKILL`, kill the process group;
-      - no automatic retry. A timed-out write reports that it may have completed.
+      - no automatic retry. A timed-out write reports that it may have completed. (Current
+        executor sends SIGKILL only; its timeout starts after preflight/token mint.)
 - [ ] Token lifecycle:
       - mint per action with only that action's permissions;
       - never cache;
       - `finally`-revoke on success, failure, and timeout;
-      - if revoke fails, log host-side and report that the token expires on its own.
+      - if revoke fails, log host-side and report that the token expires on its own. (The host log is
+        now wired; the caller is not yet told.)
 - [ ] Single-source action catalog (table below): one declarative table drives the permission
       preflight, token mint, command table and docs; configured actions extend it under the Phase 1
       rules. A test rejects drift between catalog, preflight, mint and docs, and rejects any built-in
       override that widens a permission. The command→permission mapping is curated because `gh`
       exposes no machine-readable source for it, so review and tests replace a second hand-maintained
-      list.
+      list. (Built-ins are covered; configured actions and permission-widening checks are Phase 1.)
 - [ ] Action permissions (initial table):
 
   | Action | Command | Permissions |
@@ -266,7 +270,8 @@ host_broker:
 
   Add rows only with the GitHub endpoint documentation for that command in the commit or note.
 - [ ] Audit: action, repo, command, permissions, duration, exit status, truncated flag, fingerprint.
-      Never output contents, never a token.
+      Never output contents, never a token. (Current action record has action/repo/exit/truncated/timed_out/bytes;
+      command, permissions, duration and fingerprint are still missing.)
 - [ ] Error boundary: provider response bodies stay in the host log; only broker-composed errors
       cross the socket. A failed `gh` returns a bounded, sanitized reason.
 - [ ] Rename `host-opener` to `gcb host` and keep the person-authored route; wire it to the new flag in Phase 3.

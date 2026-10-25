@@ -30,6 +30,7 @@
  */
 import { readFileSync } from 'node:fs';
 import net from 'node:net';
+import { StringDecoder } from 'node:string_decoder';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
@@ -128,6 +129,7 @@ export function requestOverSocket(
 ): Promise<WireResponse> {
   return new Promise((resolve, reject) => {
     const socket = net.connect({ path: socketPath });
+    const decoder = new StringDecoder('utf8');
     let buffer = '';
     let settled = false;
 
@@ -143,7 +145,7 @@ export function requestOverSocket(
     });
     socket.on('connect', () => socket.write(encodeMessage(request)));
     socket.on('data', (chunk: Buffer) => {
-      buffer += chunk.toString('utf8');
+      buffer += decoder.write(chunk);
       const newline = buffer.indexOf('\n');
       if (newline < 0) return;
       const message = parseMessage(buffer.slice(0, newline));

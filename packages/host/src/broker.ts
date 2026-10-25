@@ -19,10 +19,13 @@
  */
 import fs from 'node:fs';
 import {
+  buildGhArgv,
+  getGhAction,
   MAX_BODY_CHARS,
   MAX_MESSAGE_BYTES,
   MAX_TITLE_CHARS,
   ProviderConfigError,
+  ActionError,
   BRANCH,
   createLineReader,
   encodeMessage,
@@ -34,7 +37,7 @@ import net from 'node:net';
 import path from 'node:path';
 
 import { hostConfig, normalizeRepoPath, repoAllowed } from './policy.ts';
-import type { MergeMethod, AuditSink, BrokerConfig, Provider, WireResponse } from 'gcb-cli';
+import type { ActionValues, MergeMethod, AuditSink, BrokerConfig, Provider, WireResponse } from 'gcb-cli';
 
 /** Reported by the `ping` operation so the container side can prove what it reached. */
 export const BROKER_VERSION = '0.1.0';
@@ -151,14 +154,16 @@ export function createRequestHandler(
     // reaches the audit record and the log line and nowhere else, because this function is what decides
     // what the caller is told — a property on an error cannot make that decision.
     hostDetail?: string,
+    event: 'credential' | 'action' = 'credential',
   ): WireResponse {
     const detail = hostDetail === undefined || hostDetail === '' ? '' : ` | ${hostDetail}`;
-    audit.record({ event: 'credential', decision: 'deny', ...context, code, reason: reason + detail });
+    audit.record({ event, decision: 'deny', ...context, code, reason: reason + detail });
     log(`deny ${code} host=${context.host ?? '-'} repo=${context.repo ?? '-'} reason=${reason}${detail}`);
     return { ok: false, code, reason: message };
   }
 
   return async function handle(message: Record<string, unknown>): Promise<WireResponse> {
+    const auditEvent = message['op'] === 'action' ? 'action' : 'credential';
     const context: DecisionContext = {
       host: typeof message['host'] === 'string' ? message['host'] : null,
       repo: null,
@@ -173,7 +178,8 @@ export function createRequestHandler(
     if (
       message['op'] !== 'credential' &&
       message['op'] !== 'logs' &&
-      message['op'] !== 'pull-request'
+      message['op'] !== 'pull-request' &&
+      message['op'] !== 'action'
     ) {
       return deny(
         context,
@@ -187,7 +193,14 @@ export function createRequestHandler(
     // not of the request, so the protocol can only be judged once the host is known.
     const block = hostConfig(config, message['host']);
     if (!block) {
-      return deny(context, CODES.HOST_NOT_ALLOWED, 'no configuration for this host', 'host is not configured');
+      return deny(
+        context,
+        CODES.HOST_NOT_ALLOWED,
+        'no configuration for this host',
+        'host is not configured',
+        undefined,
+        auditEvent,
+      );
     }
     context.host = block.host;
 
@@ -217,17 +230,96 @@ export function createRequestHandler(
         CODES.PATH_REQUIRED,
         reason,
         'the request carries no usable repository path, so a single-repository credential cannot be issued; enable `git config --global credential.useHttpPath true`',
+        undefined,
+        auditEvent,
       );
     }
     context.repo = repo.full;
 
     if (!repoAllowed(block.allow, repo.full)) {
-      return deny(context, CODES.REPO_NOT_ALLOWED, 'repository not in allowlist', 'repository is not allowlisted');
+      return deny(
+        context,
+        CODES.REPO_NOT_ALLOWED,
+        'repository not in allowlist',
+        'repository is not allowlisted',
+        undefined,
+        auditEvent,
+      );
     }
 
     const provider = providers.get(block.host);
     if (!provider) {
-      return deny(context, CODES.PROVIDER_ERROR, 'no provider instance for this host', 'provider unavailable');
+      return deny(
+        context,
+        CODES.PROVIDER_ERROR,
+        'no provider instance for this host',
+        'provider unavailable',
+        undefined,
+        auditEvent,
+      );
+    }
+
+    if (message['op'] === 'action') {
+      const ghAction = message['ghAction'];
+      const values = message['values'];
+      const denyAction = (code: string, reason: string, message: string, hostDetail?: string): WireResponse =>
+        deny(context, code, reason, message, hostDetail, 'action');
+      if (typeof ghAction !== 'string' || values === null || typeof values !== 'object' || Array.isArray(values)) {
+        return denyAction(CODES.BAD_REQUEST, 'bad action request', 'the request carries no usable action');
+      }
+      try {
+        getGhAction(ghAction);
+        buildGhArgv(ghAction, values as ActionValues, repo.full);
+      } catch (error) {
+        if (error instanceof ActionError) {
+          return denyAction(CODES.BAD_REQUEST, error.message, error.message);
+        }
+        throw error;
+      }
+      if (typeof provider.runAction !== 'function') {
+        return denyAction(
+          CODES.PROVIDER_ERROR,
+          `provider ${provider.name} cannot run actions`,
+          "this host's provider cannot run GitHub actions",
+        );
+      }
+      try {
+        const result = await provider.runAction({
+          host: block.host,
+          owner: repo.owner,
+          repo: repo.repo,
+          full: repo.full,
+          action: ghAction,
+          values: values as ActionValues,
+        });
+        if (result.error !== undefined) {
+          return denyAction(CODES.PROVIDER_ERROR, result.error, 'the host could not start gh');
+        }
+        audit.record({
+          event: 'action',
+          decision: 'allow',
+          ...context,
+          action: ghAction,
+          exit_code: result.code,
+          truncated: result.truncated === true,
+          timed_out: result.timedOut === true,
+          bytes: Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr),
+        });
+        return {
+          ok: true,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          exitCode: result.code,
+          truncated: result.truncated,
+          timedOut: result.timedOut,
+        };
+      } catch (error) {
+        const reason = String((error as Error).message ?? error).slice(0, 300);
+        const hostDetail = (error as { hostDetail?: string }).hostDetail;
+        const callerMessage =
+          error instanceof ProviderConfigError ? reason : 'the broker could not run that action; see the broker log';
+        return denyAction(CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail);
+      }
     }
 
     if (message['op'] === 'logs') {
@@ -496,6 +588,13 @@ export async function startBroker(options: StartBrokerOptions): Promise<RunningB
     const reader = createLineReader({
       onLine: (line) => {
         const message = parseMessage(line);
+        if (message?.['op'] === 'action' && typeof message['ghAction'] === 'string') {
+          try {
+            socket.setTimeout(getGhAction(message['ghAction']).timeoutSeconds * 1000 + 30_000);
+          } catch {
+            // The action branch returns the named refusal.
+          }
+        }
         const respond = (response: WireResponse): void => {
           if (!socket.destroyed) socket.write(encodeMessage(response));
         };

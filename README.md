@@ -4,8 +4,8 @@ Short-lived, single-repository git credentials for a container, from a broker on
 the only long-lived secret. The GitHub App private key never enters the container, and `git push`
 still works.
 
-> **Roadmap:** YAML configuration and the three-package split are implemented. Host-side `gh`
-> (`gcb gh`), host-user delegation and live reload are planned but not implemented.
+> **Roadmap:** YAML configuration, the three-package split and the `gcb gh` broker/client path are
+> implemented; the sidecar image still needs `gh`. Host-user delegation and live reload are planned.
 > [`ROADMAP.md`](ROADMAP.md) is the target; this README documents the current tree.
 
 Two commands are installed:
@@ -98,13 +98,28 @@ node --conditions=development packages/host/bin/gcb.js --help
 
 Keep the checkout outside every container mount.
 
+## GitHub actions
+
+The action path is wired through the broker; the host image must include `gh` before these commands
+can run. The container never receives the token.
+
+```sh
+gcb gh pr view 12 --repo owner/name
+gcb gh pr create --repo owner/name --head feat/x --title "A title" --body "A body"
+gcb gh run view 123456 --log --repo owner/name
+```
+
+The exact command, flags and required values come from
+[`packages/cli/src/actions.ts`](packages/cli/src/actions.ts); `gcb gh --help` renders that catalog.
+
 
 ## Set up the GitHub App first
 
 1. **Settings → Developer settings → GitHub Apps → New GitHub App.**
 2. Permissions: **Contents: Read and write**, plus **Pull requests: Read and write** if the agent
-   should open pull requests, and **Actions: Read** for `logs`. Grant them in the app, not only in the
-   request. The per-action source of truth, including the planned `gcb gh` actions, is the catalog in
+   should open pull requests, **Actions: Read** for `logs`, and **Checks: Read** / **Statuses: Read** /
+   **Issues: Read and write** for the corresponding `gcb gh` actions. Grant them in the app, not only
+   in the request. The per-action source of truth is the catalog in
    [`packages/cli/src/actions.ts`](packages/cli/src/actions.ts).
 3. Install the app on the account that owns the repositories, granting access to those alone.
 4. Download the **private key**; note the **App ID** and **Client ID**.
@@ -512,7 +527,7 @@ this working, and the traps it already paid for, are in [AGENTS.md](AGENTS.md).
 
 ```
 packages/cli/src/        shared parser, protocol, types, platform helpers and the gh action catalog
-packages/client/src/     credential helper, setup, probe, logs, pr
+packages/client/src/     credential helper, setup, probe, logs, pr, gh
 packages/host/src/       YAML config, providers, broker, daemon and host commands
 packages/*/bin/          the two installed gcb bins (client and host)
 test/                    unit tests, plus an end-to-end push over authenticated smart HTTP

@@ -14,6 +14,10 @@ export interface ProviderDeps {
   readonly skewSeconds?: number;
   readonly fetchImpl?: FetchLike;
   readonly now?: () => number;
+  /** gh executable, injectable for tests. */
+  readonly ghPath?: string;
+  /** Host-side diagnostics. */
+  readonly log?: (message: string) => void;
 }
 
 /**
@@ -34,6 +38,8 @@ export function createProvider(host: string, cfg: HostConfig, deps: ProviderDeps
         skewSeconds: deps.skewSeconds,
         fetchImpl: deps.fetchImpl,
         now: deps.now,
+        ghPath: deps.ghPath,
+        log: deps.log,
       });
     case 'static':
       return createStaticProvider({ host, cfg, now: deps.now });
