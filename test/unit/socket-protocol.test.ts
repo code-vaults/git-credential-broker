@@ -22,6 +22,17 @@ describe('createLineReader', () => {
     assert.equal(overflow, 1);
   });
 
+  it('accepts a line delivered one byte at a time', () => {
+    const line = 'x'.repeat(4096);
+    const lines: string[] = [];
+    let overflow = 0;
+    const write = createLineReader({ maxBytes: line.length, onLine: (value) => lines.push(value), onOverflow: () => overflow++ });
+    for (const character of line) write(character);
+    write('\n');
+    assert.deepEqual(lines, [line]);
+    assert.equal(overflow, 0);
+  });
+
   it('reports an oversized unterminated buffer and stops reading', () => {
     const lines: string[] = [];
     let overflow = 0;

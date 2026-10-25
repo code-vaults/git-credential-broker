@@ -61,33 +61,48 @@ export interface LineReaderOptions {
  */
 export function createLineReader(options: LineReaderOptions): (chunk: Buffer | string) => void {
   const { onLine, onOverflow, maxBytes = MAX_MESSAGE_BYTES } = options;
-  let buffer = Buffer.alloc(0);
+  let chunks: Buffer[] = [];
+  let pendingBytes = 0;
   let stopped = false;
+
+  const stop = (): void => {
+    stopped = true;
+    chunks = [];
+    pendingBytes = 0;
+    onOverflow?.();
+  };
 
   return (chunk: Buffer | string): void => {
     if (stopped) return;
-    buffer = Buffer.concat([buffer, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
+    const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     let start = 0;
     for (;;) {
-      const newline = buffer.indexOf(0x0a, start);
-      if (newline < 0) break;
-      // The byte offset is the line's length; check it before onLine sees it. An oversized line
-      // invalidates the rest of the stream: never hand a later line to the broker after this.
-      if (newline - start > maxBytes) {
-        stopped = true;
-        buffer = Buffer.alloc(0);
-        onOverflow?.();
+      const newline = data.indexOf(0x0a, start);
+      if (newline < 0) {
+        const rest = data.subarray(start);
+        if (pendingBytes + rest.length > maxBytes) {
+          stop();
+          return;
+        }
+        if (rest.length > 0) {
+          chunks.push(rest);
+          pendingBytes += rest.length;
+        }
         return;
       }
-      const line = buffer.subarray(start, newline).toString('utf8');
-      if (line.trim()) onLine(line);
+
+      const piece = data.subarray(start, newline);
+      if (pendingBytes + piece.length > maxBytes) {
+        stop();
+        return;
+      }
+      const line = pendingBytes === 0 ? piece : Buffer.concat([...chunks, piece], pendingBytes + piece.length);
+      chunks = [];
+      pendingBytes = 0;
+      const text = line.toString('utf8');
+      if (text.trim()) onLine(text);
       start = newline + 1;
-    }
-    buffer = buffer.subarray(start);
-    if (buffer.length > maxBytes) {
-      stopped = true;
-      buffer = Buffer.alloc(0);
-      onOverflow?.();
+      if (start >= data.length) return;
     }
   };
 }
