@@ -607,3 +607,28 @@ describe('broker action refusals', () => {
     assert.equal(harness.events.at(-1)?.['event'], 'action');
   });
 });
+
+describe('broker action limits', () => {
+  it('refuses a body over the configured limit before the provider', async () => {
+    let called = false;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async () => {
+        called = true;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(undefined, provider);
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'pr:comment',
+      values: { number: 1, body: 'x'.repeat(65_537) },
+    });
+    assert.equal(response.ok, false);
+    assert.equal(response.code, CODES.BAD_REQUEST);
+    assert.equal(called, false);
+  });
+});
