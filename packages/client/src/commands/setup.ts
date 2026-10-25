@@ -213,8 +213,6 @@ export async function runSetup(argv: readonly string[]): Promise<number> {
   const home = os.homedir();
   const socket = args.value('socket') ?? process.env['GIT_BROKER_SOCKET'] ?? '/run/git-cred-broker/broker.sock';
   const helper = args.value('helper');
-  const refusal = platformRefusal();
-  if (refusal !== null) fail(refusal);
   if (helper === undefined) {
     try {
       execFileSync('gcb', ['--version'], { stdio: 'ignore' });
