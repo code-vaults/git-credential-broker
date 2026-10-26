@@ -113,7 +113,8 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         settled = true;
         if (timer !== undefined) clearTimeout(timer);
         // A closed parent does not prove the process group is gone; the repeat-kill interval below
-        // keeps going until signalGroup reports that the group no longer exists.
+        // chases a fork created between the group signal and its delivery. Keep it until the group
+        // no longer exists.
         const fullStdout = stdout + stdoutDecoder.end();
         const fullStderr = stderr + stderrDecoder.end();
         stdout = clampUtf8(fullStdout, maxBytes);
@@ -130,12 +131,8 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
           process.kill(-child.pid, 'SIGKILL');
           return true;
         } catch {
-          try {
-            child.kill('SIGKILL');
-            return true;
-          } catch {
-            return false;
-          }
+          // child.kill returns false rather than throwing once the child has gone.
+          return child.kill('SIGKILL');
         }
       };
 

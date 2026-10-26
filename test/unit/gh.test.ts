@@ -155,36 +155,28 @@ describe('runGhAction options', { skip: onWindows }, () => {
 
 describe('runGhAction orphan cleanup', { skip: onWindows }, () => {
   it('kills a forked child after the parent closes', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-orphan-'));
-    const pidFile = path.join(dir, 'child.pid');
     const gh = shim(
       [
         '( exec >/dev/null 2>&1; sleep 5 ) &',
-        'echo $! > "$GH_TOKEN"',
+        'echo $!',
         'sleep 5',
       ].join('\n'),
     );
-    try {
-      const result = await runGhAction({
-        action: 'pr:view',
-        values: { number: 1 },
-        repo: 'acme/widget',
-        token: pidFile,
-        ghPath: gh,
-        timeoutMs: 100,
-        env: { PATH: process.env.PATH },
-      });
-      assert.equal(result.timedOut, true);
-      let pid = 0;
-      for (let i = 0; i < 20 && pid === 0; i += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-        if (fs.existsSync(pidFile)) pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
-      }
-      assert.ok(pid > 0, 'the orphan wrote its pid');
-      await new Promise((resolve) => setTimeout(resolve, 300));
-      assert.throws(() => process.kill(pid, 0), /ESRCH/);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const result = await runGhAction({
+      action: 'pr:view',
+      values: { number: 1 },
+      repo: 'acme/widget',
+      token: 't',
+      ghPath: gh,
+      timeoutMs: 2000,
+      env: { PATH: process.env.PATH },
+    });
+    assert.equal(result.timedOut, true);
+    const pid = Number(result.stdout.trim());
+    assert.ok(pid > 0, 'the shim reported the forked pid');
+    // With immediate SIGKILL, the group signal reaches the fork too; this is a smoke test that
+    // close does not leave a child behind, not a deterministic reproduction of the fork-vs-scan race.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.throws(() => process.kill(pid, 0), /ESRCH/);
   });
 });
