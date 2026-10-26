@@ -3,7 +3,8 @@
 This is the staged plan for the next version. `README.md` documents the tree as it exists today;
 this file documents where it is going. YAML configuration, the three-package split, the typed action
 catalog, the `gcb gh` broker/client path and a host image with `gh` are implemented. The executor
-exists, but several Phase 2 items remain incomplete; the old `pr`/`logs` commands remain, and host-user delegation/live reload are not implemented.
+exists, but several Phase 2 items remain incomplete; the old `pr`/`logs` commands remain, and
+host-user delegation/live reload are not implemented.
 
 ## Locked decisions
 
