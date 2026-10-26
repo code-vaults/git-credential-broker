@@ -38,7 +38,7 @@ export interface ActionRunResult {
   readonly error?: string;
   /** SHA-256 prefix of the action token, for the audit record only. */
   readonly tokenFingerprint?: string;
-  /** Set when the action succeeded but its token could not be revoked. */
+  /** Set when the token could not be revoked and so expires on its own. */
   readonly warning?: string;
 }
 
