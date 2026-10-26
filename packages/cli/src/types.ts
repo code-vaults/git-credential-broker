@@ -38,6 +38,8 @@ export interface ActionRunResult {
   readonly error?: string;
   /** SHA-256 prefix of the action token, for the audit record only. */
   readonly tokenFingerprint?: string;
+  /** Set when the action succeeded but its token could not be revoked. */
+  readonly warning?: string;
 }
 
 /** One credential, as handed to git by the helper. */
@@ -279,6 +281,8 @@ export interface WireResponse {
   readonly stderr?: string;
   readonly exitCode?: number | null;
   readonly timedOut?: boolean;
+  /** A non-fatal action warning, for example a failed token revoke. */
+  readonly warning?: string;
 }
 
 /** Where audit records go. */

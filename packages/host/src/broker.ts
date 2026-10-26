@@ -319,6 +319,7 @@ export function createRequestHandler(
           exitCode: result.code,
           truncated: result.truncated,
           timedOut: result.timedOut,
+          ...(result.warning === undefined ? {} : { warning: result.warning }),
         };
       } catch (error) {
         const reason = String((error as Error).message ?? error).slice(0, 300);

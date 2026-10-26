@@ -242,12 +242,11 @@ host_broker:
       - per-action total timeout, `SIGTERM` then `SIGKILL`, kill the process group;
       - no automatic retry. A timed-out write reports that it may have completed. (Current
         executor sends SIGKILL only; its timeout starts after preflight/token mint.)
-- [ ] Token lifecycle:
+- [x] Token lifecycle:
       - mint per action with only that action's permissions;
       - never cache;
       - `finally`-revoke on success, failure, and timeout;
-      - if revoke fails, log host-side and report that the token expires on its own. (The host log is
-        now wired; the caller is not yet told.)
+      - if revoke fails, log host-side and report that the token expires on its own.
 - [ ] Single-source action catalog (table below): one declarative table drives the permission
       preflight, token mint, command table and docs; configured actions extend it under the Phase 1
       rules. A test rejects drift between catalog, preflight, mint and docs, and rejects any built-in

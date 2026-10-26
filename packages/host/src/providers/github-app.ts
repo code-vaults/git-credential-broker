@@ -578,8 +578,10 @@ function pullRequestNumber(value: unknown): number | undefined {
       if (typeof token !== 'string' || !token) {
         throw new ProviderConfigError('GitHub returned no installation token for the action');
       }
+      let result!: Awaited<ReturnType<typeof runGhAction>>;
+      let warning: string | undefined;
       try {
-        const result = await runGhAction({
+        result = await runGhAction({
           action: request.action,
           values: request.values,
           repo: request.full,
@@ -588,7 +590,6 @@ function pullRequestNumber(value: unknown): number | undefined {
           ghPath,
           env: process.env,
         });
-        return { ...result, tokenFingerprint: tokenFingerprint(token) };
       } finally {
         try {
           const response = await fetchImpl(`${api}/installation/token`, {
@@ -608,11 +609,14 @@ function pullRequestNumber(value: unknown): number | undefined {
               // The status is enough; a body that cannot be read is still not a successful revoke.
             }
             log(`could not revoke the action token: GitHub answered ${response.status}${detail ? ` ${detail}` : ''}`);
+            warning = 'the action token could not be revoked; it expires on its own';
           }
         } catch (error) {
           log(`could not revoke the action token: ${String((error as Error).message ?? error)}`);
+          warning = 'the action token could not be revoked; it expires on its own';
         }
       }
+      return { ...result, tokenFingerprint: tokenFingerprint(token), ...(warning === undefined ? {} : { warning }) };
     },
 
     async getCredential(request): Promise<Credential> {

@@ -319,6 +319,7 @@ describe('createGithubAppProvider', () => {
       assert.equal(result?.code, 0);
       assert.ok(logs.some((line) => line.includes('could not revoke the action token')));
       assert.ok(logs.some((line) => line.includes('500')));
+      assert.match(result?.warning ?? '', /expires on its own/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
