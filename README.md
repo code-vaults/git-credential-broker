@@ -5,7 +5,7 @@ the only long-lived secret. The GitHub App private key never enters the containe
 still works.
 
 > **Roadmap:** YAML configuration, the three-package split and the `gcb gh` broker/client path are
-> implemented; the sidecar image still needs `gh`. Host-user delegation and live reload are planned.
+> implemented; the host image with `gh` is available. Host-user delegation and live reload are planned.
 > [`ROADMAP.md`](ROADMAP.md) is the target; this README documents the current tree.
 
 Two commands are installed:

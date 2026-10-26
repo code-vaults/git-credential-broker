@@ -15,8 +15,9 @@ had reached 549 lines mostly by accumulating rationale; it is not the place for 
 ## Status and roadmap
 
 The action/CLI redesign (host-side `gh`, `gcb gh`, host-user delegation) is **underway**. YAML
-configuration and the three-package split are implemented. The typed action catalog, executor and
-`gcb gh` broker/client path are present; the sidecar image still needs `gh`, and the old `pr`/`logs`
+configuration and the three-package split are implemented. The typed action catalog and
+`gcb gh` broker/client path are present; the executor exists but several Phase 2 items remain
+incomplete. `examples/Dockerfile.host` builds the host image with `gh`, and the old `pr`/`logs`
 commands are not removed yet. The Phase 2 design note is in
 `.agents/notes/proposed/architecture/2026-10-25-host-side-gh.md`. [`ROADMAP.md`](ROADMAP.md) is authoritative for the target and the order; this file
 describes the current tree, which is the last green baseline. Do not
