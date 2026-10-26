@@ -54,6 +54,36 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.ok(Date.now() - started < 2000);
   });
 
+  it('stops repeating the group kill once the group is gone', async () => {
+    const gh = shim('sleep 5');
+    const realKill = process.kill;
+    const kills: number[] = [];
+    process.kill = ((pid: number, signal?: string | number) => {
+      kills.push(Date.now());
+      return realKill.call(process, pid, signal);
+    }) as typeof process.kill;
+    try {
+      const result = await runGhAction({
+        action: 'pr:view',
+        values: { number: 1 },
+        repo: 'acme/widget',
+        token: 't',
+        ghPath: gh,
+        timeoutMs: 50,
+        env: { PATH: process.env.PATH },
+      });
+      assert.equal(result.timedOut, true);
+      const atResolve = kills.length;
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      assert.ok(
+        kills.length - atResolve <= 2,
+        `kept killing: ${kills.length - atResolve} attempts in 400ms`,
+      );
+    } finally {
+      process.kill = realKill;
+    }
+  });
+
   it('caps output and reports truncation', async () => {
     const gh = shim('printf "0123456789"');
     const result = await runGhAction({
