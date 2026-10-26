@@ -37,8 +37,6 @@ export interface GhRunOptions {
   readonly host?: string;
   readonly ghPath?: string;
   readonly timeoutMs?: number;
-  /** How long SIGTERM gets before the process group is SIGKILLed. */
-  readonly killGraceMs?: number;
   readonly maxOutputBytes?: number;
   /** Environment to copy only the proxy and PATH values from. */
   readonly env?: NodeJS.ProcessEnv;
@@ -87,7 +85,6 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   }
 
   const timeoutMs = options.timeoutMs ?? getGhAction(options.action).timeoutSeconds * 1000;
-  const killGraceMs = options.killGraceMs ?? 500;
 
   try {
     return await new Promise<GhRunResult>((resolve) => {
@@ -100,9 +97,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
       let truncated = false;
       let timedOut = false;
       let settled = false;
-      let terminating = false;
       let timer: NodeJS.Timeout | undefined;
-      let termTimer: NodeJS.Timeout | undefined;
       let killTimer: NodeJS.Timeout | undefined;
 
       const child = spawn(options.ghPath ?? 'gh', argv, {
@@ -124,9 +119,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
       };
 
       const stopEscalation = (): void => {
-        if (termTimer !== undefined) clearTimeout(termTimer);
         if (killTimer !== undefined) clearInterval(killTimer);
-        termTimer = undefined;
         killTimer = undefined;
       };
 
@@ -136,7 +129,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         if (timer !== undefined) clearTimeout(timer);
         // A closed parent does not prove the process group is gone: a forked gh helper can keep
         // running after the parent's stdio closes. Keep SIGKILLing until the group has exited.
-        if (!terminating || !groupAlive()) stopEscalation();
+        if (killTimer === undefined || !groupAlive()) stopEscalation();
         const fullStdout = stdout + stdoutDecoder.end();
         const fullStderr = stderr + stderrDecoder.end();
         stdout = clampUtf8(fullStdout, maxBytes);
@@ -145,39 +138,30 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         resolve({ ...result, stdout, stderr, truncated, timedOut });
       };
 
-      const signalGroup = (signal: NodeJS.Signals): void => {
+      const signalGroup = (): void => {
         if (child.pid === undefined) return;
         try {
-          // The child is its own process-group leader; signal the group so a gh-spawned helper does
+          // The child is its own process-group leader; kill the group so a gh-spawned helper does
           // not keep the pipe open after timeout or output overflow.
-          process.kill(-child.pid, signal);
+          process.kill(-child.pid, 'SIGKILL');
         } catch {
-          child.kill(signal);
+          child.kill('SIGKILL');
         }
       };
 
       const kill = (): void => {
-        terminating = true;
-        signalGroup('SIGTERM');
-        // Give gh a chance to exit cleanly, then keep SIGKILLing the group until it is gone: a child
-        // forked between the signal and the process-group scan can otherwise retain the pipe forever.
-        if (termTimer === undefined && killTimer === undefined) {
-          termTimer = setTimeout(() => {
+        signalGroup();
+        // Keep SIGKILLing the group after the parent closes; close does not prove a forked helper
+        // is gone. The interval stops itself once the group is empty.
+        if (killTimer === undefined && !settled) {
+          killTimer = setInterval(() => {
             if (!groupAlive()) {
               stopEscalation();
               return;
             }
-            signalGroup('SIGKILL');
-            killTimer = setInterval(() => {
-              if (!groupAlive()) {
-                stopEscalation();
-                return;
-              }
-              signalGroup('SIGKILL');
-            }, 100);
-            killTimer.unref();
-          }, killGraceMs);
-          termTimer.unref();
+            signalGroup();
+          }, 100);
+          killTimer.unref();
         }
       };
 

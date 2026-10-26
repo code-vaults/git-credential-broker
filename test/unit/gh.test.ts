@@ -54,23 +54,6 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.ok(Date.now() - started < 2000);
   });
 
-  it('sends SIGTERM before SIGKILL', async () => {
-    const gh = shim('trap "exit 0" TERM; sleep 5');
-    const result = await runGhAction({
-      action: 'pr:view',
-      values: { number: 1 },
-      repo: 'acme/widget',
-      token: 't',
-      ghPath: gh,
-      timeoutMs: 50,
-      killGraceMs: 250,
-      env: { PATH: process.env.PATH },
-    });
-    assert.equal(result.timedOut, true);
-    assert.equal(result.code, 0);
-    assert.equal(result.signal, null);
-  });
-
   it('caps output and reports truncation', async () => {
     const gh = shim('printf "0123456789"');
     const result = await runGhAction({
@@ -171,12 +154,12 @@ describe('runGhAction options', { skip: onWindows }, () => {
 });
 
 describe('runGhAction orphan cleanup', { skip: onWindows }, () => {
-  it('keeps killing the group after the parent has closed', async () => {
+  it('kills a forked child after the parent closes', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-orphan-'));
     const pidFile = path.join(dir, 'child.pid');
     const gh = shim(
       [
-        '( trap "" TERM; exec >/dev/null 2>&1; sleep 5 ) &',
+        '( exec >/dev/null 2>&1; sleep 5 ) &',
         'echo $! > "$GH_TOKEN"',
         'trap "exit 0" TERM',
         'sleep 5',
@@ -190,7 +173,6 @@ describe('runGhAction orphan cleanup', { skip: onWindows }, () => {
         token: pidFile,
         ghPath: gh,
         timeoutMs: 100,
-        killGraceMs: 50,
         env: { PATH: process.env.PATH },
       });
       assert.equal(result.timedOut, true);
