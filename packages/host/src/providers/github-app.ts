@@ -190,6 +190,8 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
    * a token minted for git should not also be able to open a pull request.
    */
   const PULL_REQUEST_PERMISSIONS: Record<string, string> = { pull_requests: 'write', contents: 'read' };
+  /** The result of an action that never reached the executor. */
+  const NO_RUN = { stdout: '', stderr: '', code: null, signal: null, truncated: false, timedOut: false };
   const REVOKE_WARNING = 'the action token could not be revoked; it expires on its own';
 
   /** owner login (lowercased) -> installation */
@@ -592,15 +594,7 @@ function pullRequestNumber(value: unknown): number | undefined {
           env: process.env,
         });
       } catch (error) {
-        result = {
-          stdout: '',
-          stderr: '',
-          code: null,
-          signal: null,
-          truncated: false,
-          timedOut: false,
-          error: error instanceof Error ? error.message : String(error),
-        };
+        result = { ...NO_RUN, error: error instanceof Error ? error.message : String(error) };
       } finally {
         try {
           const response = await fetchImpl(`${api}/installation/token`, {
