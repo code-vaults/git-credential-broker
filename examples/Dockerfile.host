@@ -1,0 +1,31 @@
+# Host-side gcb image with gh from the GitHub CLI apt repository.
+#
+# The app broker runs gh as the App, using the token it mints for one action. It must not rely on
+# the host user's gh installation or credentials.
+#
+# Debian bookworm's own gh is 2.23.0, frozen at the release; the action catalog targets current gh,
+# so this image uses GitHub's stable apt repository instead.
+FROM node:24-slim
+
+ARG APT_MIRROR=mirrors.aliyun.com
+
+# Keep the apt archives and lists across builds; docker-clean would empty the cache after every
+# dpkg run.
+RUN --mount=type=cache,id=apt_cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=apt_lists,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+ && echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache \
+ && for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; do \
+      if [ -f "$f" ]; then sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" "$f"; fi; \
+    done \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+ && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends gh
+
+RUN gh --version

@@ -101,7 +101,19 @@ Keep the checkout outside every container mount.
 ## GitHub actions
 
 The action path is wired through the broker; the host image must include `gh` before these commands
-can run. The container never receives the token.
+can run. The container never receives the token. Build the image, then pass `--image gcb-host:gh` to
+the compose command in [Quick start](#quick-start-sidecar):
+
+```sh
+docker build -f examples/Dockerfile.host -t gcb-host:gh .
+```
+
+Debian packages use the Aliyun mirror by default in this image; pass
+`--build-arg APT_MIRROR=<host>` to build against another mirror.
+
+The image installs `gh` from GitHub's stable apt repository; the version comparison and why the
+Debian package is not used are recorded in
+[the image note](.agents/notes/verified/environment/2026-10-26-gh-image.md).
 
 ```sh
 gcb gh pr view 12 --repo owner/name
@@ -111,7 +123,6 @@ gcb gh run view 123456 --log --repo owner/name
 
 The exact command, flags and required values come from
 [`packages/cli/src/actions.ts`](packages/cli/src/actions.ts); `gcb gh --help` renders that catalog.
-
 
 ## Set up the GitHub App first
 
