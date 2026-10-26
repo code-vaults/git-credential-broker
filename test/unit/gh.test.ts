@@ -161,7 +161,6 @@ describe('runGhAction orphan cleanup', { skip: onWindows }, () => {
       [
         '( exec >/dev/null 2>&1; sleep 5 ) &',
         'echo $! > "$GH_TOKEN"',
-        'trap "exit 0" TERM',
         'sleep 5',
       ].join('\n'),
     );
