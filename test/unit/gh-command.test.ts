@@ -4,30 +4,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 
-import { runGh } from '../../packages/client/src/commands/gh.ts';
 import { startBroker } from '../../packages/host/src/broker.ts';
+import { tryRunAsync, type RunResult } from '../lib/run.ts';
 import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../packages/cli/src/types.ts';
 
-/** Capture stdout for one command. */
-async function capture(run: () => Promise<number>): Promise<{ code: number; stdout: string; stderr: string }> {
-  let stdout = '';
-  let stderr = '';
-  const originalOut = process.stdout.write;
-  const originalErr = process.stderr.write;
-  process.stdout.write = ((chunk: unknown) => {
-    stdout += String(chunk);
-    return true;
-  }) as typeof process.stdout.write;
-  process.stderr.write = ((chunk: unknown) => {
-    stderr += String(chunk);
-    return true;
-  }) as typeof process.stderr.write;
-  try {
-    return { code: await run(), stdout, stderr };
-  } finally {
-    process.stdout.write = originalOut;
-    process.stderr.write = originalErr;
-  }
+/** Run the installed client as a child, so its output never replaces the test reporter. */
+function runGhCli(args: readonly string[]): Promise<RunResult> {
+  return tryRunAsync(
+    process.execPath,
+    ['--conditions=development', 'packages/client/bin/gcb.js', 'gh', ...args],
+    { env: process.env, timeoutMs: 5000 },
+  );
 }
 
 describe('gcb gh', () => {
@@ -57,10 +44,8 @@ describe('gcb gh', () => {
     };
     const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
     try {
-      const result = await capture(() =>
-        runGh(['pr', 'create', '--head', 'feat/x', '--title', 'x', '--body', 'b', '--repo', 'acme/widget', '--socket', socketPath]),
-      );
-      assert.equal(result.code, 1);
+      const result = await runGhCli(['pr', 'create', '--head', 'feat/x', '--title', 'x', '--body', 'b', '--repo', 'acme/widget', '--socket', socketPath]);
+      assert.equal(result.status, 1);
       assert.ok(result.stdout.endsWith('partial output\n'));
       assert.match(result.stderr, /output was truncated/);
       assert.match(result.stderr, /may have completed/);
@@ -97,10 +82,8 @@ describe('gcb gh', () => {
     };
     const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
     try {
-      const result = await capture(() =>
-        runGh(['pr', 'view', '7', '--repo', 'acme/widget', '--socket', socketPath]),
-      );
-      assert.equal(result.code, 0);
+      const result = await runGhCli(['pr', 'view', '7', '--repo', 'acme/widget', '--socket', socketPath]);
+      assert.equal(result.status, 0);
       assert.match(result.stderr, /expires on its own/);
     } finally {
       await broker.close();
@@ -131,10 +114,8 @@ describe('gcb gh', () => {
     };
     const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
     try {
-      const result = await capture(() =>
-        runGh(['pr', 'view', '7', '--repo', 'acme/widget', '--socket', socketPath]),
-      );
-      assert.equal(result.code, 0);
+      const result = await runGhCli(['pr', 'view', '7', '--repo', 'acme/widget', '--socket', socketPath]);
+      assert.equal(result.status, 0);
       assert.ok(result.stdout.endsWith('the viewed PR\n'));
     } finally {
       await broker.close();
