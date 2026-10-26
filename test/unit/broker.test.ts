@@ -520,7 +520,7 @@ describe('audit redaction', () => {
     assert.equal(record['client_secret'], '<redacted>');
   });
 
-  it('fingerprints deterministically and reversibly for the operator', () => {
+  it('produces a deterministic short fingerprint', () => {
     assert.equal(tokenFingerprint('abc'), tokenFingerprint('abc'));
     assert.notEqual(tokenFingerprint('abc'), tokenFingerprint('abd'));
     assert.match(tokenFingerprint('abc'), /^[0-9a-f]{12}$/);
@@ -565,14 +565,15 @@ describe('broker actions', () => {
     assert.equal(calls.length, 1);
     const record = harness.events.at(-1);
     assert.equal(record?.['event'], 'action');
-    assert.equal(record?.['command'], 'pr view');
+    assert.equal(record?.['command'], 'gh pr view');
     assert.deepEqual(record?.['permissions'], {
       pull_requests: 'read',
       contents: 'read',
       checks: 'read',
       statuses: 'read',
     });
-    assert.equal(typeof record?.['duration_ms'], 'number');
+    const duration = record?.['duration_ms'];
+    assert.ok(typeof duration === 'number' && duration >= 0);
     assert.equal(record?.['token_fingerprint'], 'action-fingerprint');
   });
 

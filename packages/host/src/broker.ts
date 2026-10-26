@@ -303,7 +303,7 @@ export function createRequestHandler(
           decision: 'allow',
           ...context,
           action: ghAction,
-          command: spec.command.join(' '),
+          command: `gh ${spec.command.join(' ')}`,
           permissions: spec.permissions,
           duration_ms: Date.now() - startedAt,
           token_fingerprint: result.tokenFingerprint,
