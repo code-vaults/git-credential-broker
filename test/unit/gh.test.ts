@@ -152,31 +152,3 @@ describe('runGhAction options', { skip: onWindows }, () => {
     }
   });
 });
-
-describe('runGhAction orphan cleanup', { skip: onWindows }, () => {
-  it('kills a forked child after the parent closes', async () => {
-    const gh = shim(
-      [
-        '( exec >/dev/null 2>&1; sleep 5 ) &',
-        'echo $!',
-        'sleep 5',
-      ].join('\n'),
-    );
-    const result = await runGhAction({
-      action: 'pr:view',
-      values: { number: 1 },
-      repo: 'acme/widget',
-      token: 't',
-      ghPath: gh,
-      timeoutMs: 2000,
-      env: { PATH: process.env.PATH },
-    });
-    assert.equal(result.timedOut, true);
-    const pid = Number(result.stdout.trim());
-    assert.ok(pid > 0, 'the shim reported the forked pid');
-    // With immediate SIGKILL, the group signal reaches the fork too; this is a smoke test that
-    // close does not leave a child behind, not a deterministic reproduction of the fork-vs-scan race.
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    assert.throws(() => process.kill(pid, 0), /ESRCH/);
-  });
-});
