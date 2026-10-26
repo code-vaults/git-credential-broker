@@ -2,17 +2,21 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import { startBroker } from '../../packages/host/src/broker.ts';
 import { tryRunAsync, type RunResult } from '../lib/run.ts';
 import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../packages/cli/src/types.ts';
 
+/** Run the client from source, next to this file rather than from the cwd. */
+const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));
+
 /** Run the installed client as a child, so its output never replaces the test reporter. */
 function runGhCli(args: readonly string[]): Promise<RunResult> {
   return tryRunAsync(
     process.execPath,
-    ['--conditions=development', 'packages/client/bin/gcb.js', 'gh', ...args],
+    ['--conditions=development', CLIENT_BIN, 'gh', ...args],
     { env: process.env, timeoutMs: 5000 },
   );
 }
