@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -57,11 +58,16 @@ describe('runGhAction', { skip: onWindows }, () => {
   it('stops repeating the group kill once the group is gone', async () => {
     const gh = shim('sleep 5');
     const realKill = process.kill;
+    const realChildKill = ChildProcess.prototype.kill;
     const kills: number[] = [];
     process.kill = ((pid: number, signal?: string | number) => {
       kills.push(Date.now());
       return realKill.call(process, pid, signal);
     }) as typeof process.kill;
+    ChildProcess.prototype.kill = function (signal?: NodeJS.Signals | number): boolean {
+      kills.push(Date.now());
+      return realChildKill.call(this, signal);
+    };
     try {
       const result = await runGhAction({
         action: 'pr:view',
@@ -81,6 +87,7 @@ describe('runGhAction', { skip: onWindows }, () => {
       );
     } finally {
       process.kill = realKill;
+      ChildProcess.prototype.kill = realChildKill;
     }
   });
 

@@ -130,9 +130,11 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
           // not keep the pipe open after timeout or output overflow.
           process.kill(-child.pid, 'SIGKILL');
           return true;
-        } catch {
-          // child.kill returns false rather than throwing once the child has gone.
-          return child.kill('SIGKILL');
+        } catch (error) {
+          // ESRCH means the group itself is gone; do not fall back to the parent handle, which can
+          // report success while only a zombie remains.
+          if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+          return child.exitCode === null && child.signalCode === null ? child.kill('SIGKILL') : false;
         }
       };
 
