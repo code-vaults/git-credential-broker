@@ -577,6 +577,33 @@ describe('broker actions', () => {
     assert.equal(record?.['token_fingerprint'], 'action-fingerprint');
   });
 
+  it('passes a warning with a failed start', async () => {
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async () => ({
+        stdout: '',
+        stderr: '',
+        code: null,
+        signal: null,
+        truncated: false,
+        timedOut: false,
+        error: 'spawn failed',
+        warning: 'the action token could not be revoked; it expires on its own',
+      }),
+    };
+    const harness = makeHarness(undefined, provider);
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'pr:view',
+      values: { number: 7 },
+    });
+    assert.equal(response.ok, false);
+    assert.match(String(response.warning), /expires on its own/);
+  });
+
   it('passes a provider warning to the caller', async () => {
     const provider: Provider = {
       name: 'static',
