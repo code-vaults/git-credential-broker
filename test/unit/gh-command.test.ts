@@ -70,6 +70,44 @@ describe('gcb gh', () => {
     }
   });
 
+  it('prints a provider warning to stderr', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-warning-'));
+    const socketPath = path.join(root, 'broker.sock');
+    const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] };
+    const config: BrokerConfig = {
+      socketPath,
+      socketMode: 0o600,
+      auditPath: null,
+      tokenCacheSkewSeconds: 300,
+      hosts: { 'github.com': block },
+    };
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() };
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async () => ({
+        stdout: 'viewed\n',
+        stderr: '',
+        code: 0,
+        signal: null,
+        truncated: false,
+        timedOut: false,
+        warning: 'the action token could not be revoked; it expires on its own',
+      }),
+    };
+    const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
+    try {
+      const result = await capture(() =>
+        runGh(['pr', 'view', '7', '--repo', 'acme/widget', '--socket', socketPath]),
+      );
+      assert.equal(result.code, 0);
+      assert.match(result.stderr, /expires on its own/);
+    } finally {
+      await broker.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('sends a typed action to the broker and prints its stdout', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-command-'));
     const socketPath = path.join(root, 'broker.sock');
