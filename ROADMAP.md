@@ -269,9 +269,8 @@ host_broker:
   | `run:list` | `gh run list` | `actions: read` |
 
   Add rows only with the GitHub endpoint documentation for that command in the commit or note.
-- [ ] Audit: action, repo, command, permissions, duration, exit status, truncated flag, fingerprint.
-      Never output contents, never a token. (Current action record has action/repo/exit/truncated/timed_out/bytes;
-      command, permissions, duration and fingerprint are still missing.)
+- [x] Audit: action, repo, command, permissions, duration, exit status, truncated flag, fingerprint.
+      Never output contents, never a token.
 - [ ] Error boundary: provider response bodies stay in the host log; only broker-composed errors
       cross the socket. A failed `gh` returns a bounded, sanitized reason.
 - [ ] Rename `host-opener` to `gcb host` and keep the person-authored route; wire it to the new flag in Phase 3.

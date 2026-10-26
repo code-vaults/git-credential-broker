@@ -535,7 +535,15 @@ describe('broker actions', () => {
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       runAction: async (request) => {
         calls.push(request);
-        return { stdout: 'viewed', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        return {
+          stdout: 'viewed',
+          stderr: '',
+          code: 0,
+          signal: null,
+          truncated: false,
+          timedOut: false,
+          tokenFingerprint: 'action-fingerprint',
+        };
       },
     };
     const harness = makeHarness(undefined, provider);
@@ -555,7 +563,17 @@ describe('broker actions', () => {
       timedOut: false,
     });
     assert.equal(calls.length, 1);
-    assert.deepEqual(harness.events.at(-1)?.['event'], 'action');
+    const record = harness.events.at(-1);
+    assert.equal(record?.['event'], 'action');
+    assert.equal(record?.['command'], 'pr view');
+    assert.deepEqual(record?.['permissions'], {
+      pull_requests: 'read',
+      contents: 'read',
+      checks: 'read',
+      statuses: 'read',
+    });
+    assert.equal(typeof record?.['duration_ms'], 'number');
+    assert.equal(record?.['token_fingerprint'], 'action-fingerprint');
   });
 
   it('refuses an undeclared flag before the provider', async () => {
