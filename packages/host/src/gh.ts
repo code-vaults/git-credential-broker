@@ -100,6 +100,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
       let truncated = false;
       let timedOut = false;
       let settled = false;
+      let terminating = false;
       let timer: NodeJS.Timeout | undefined;
       let termTimer: NodeJS.Timeout | undefined;
       let killTimer: NodeJS.Timeout | undefined;
@@ -112,12 +113,30 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
+      const groupAlive = (): boolean => {
+        if (child.pid === undefined) return false;
+        try {
+          process.kill(-child.pid, 0);
+          return true;
+        } catch (error) {
+          return (error as NodeJS.ErrnoException).code === 'EPERM';
+        }
+      };
+
+      const stopEscalation = (): void => {
+        if (termTimer !== undefined) clearTimeout(termTimer);
+        if (killTimer !== undefined) clearInterval(killTimer);
+        termTimer = undefined;
+        killTimer = undefined;
+      };
+
       const finish = (result: Omit<GhRunResult, 'stdout' | 'stderr' | 'truncated' | 'timedOut'>): void => {
         if (settled) return;
         settled = true;
         if (timer !== undefined) clearTimeout(timer);
-        if (termTimer !== undefined) clearTimeout(termTimer);
-        if (killTimer !== undefined) clearInterval(killTimer);
+        // A closed parent does not prove the process group is gone: a forked gh helper can keep
+        // running after the parent's stdio closes. Keep SIGKILLing until the group has exited.
+        if (!terminating || !groupAlive()) stopEscalation();
         const fullStdout = stdout + stdoutDecoder.end();
         const fullStderr = stderr + stderrDecoder.end();
         stdout = clampUtf8(fullStdout, maxBytes);
@@ -138,15 +157,27 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
       };
 
       const kill = (): void => {
+        terminating = true;
         signalGroup('SIGTERM');
-        // Give gh a chance to exit cleanly, then keep SIGKILLing the group until close: a child forked
-        // between the signal and the process-group scan can otherwise retain the pipe forever.
-        if (termTimer === undefined && killTimer === undefined && !settled) {
+        // Give gh a chance to exit cleanly, then keep SIGKILLing the group until it is gone: a child
+        // forked between the signal and the process-group scan can otherwise retain the pipe forever.
+        if (termTimer === undefined && killTimer === undefined) {
           termTimer = setTimeout(() => {
-            if (settled) return;
+            if (!groupAlive()) {
+              stopEscalation();
+              return;
+            }
             signalGroup('SIGKILL');
-            killTimer = setInterval(() => signalGroup('SIGKILL'), 100);
+            killTimer = setInterval(() => {
+              if (!groupAlive()) {
+                stopEscalation();
+                return;
+              }
+              signalGroup('SIGKILL');
+            }, 100);
+            killTimer.unref();
           }, killGraceMs);
+          termTimer.unref();
         }
       };
 

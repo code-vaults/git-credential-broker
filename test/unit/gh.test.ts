@@ -169,3 +169,41 @@ describe('runGhAction options', { skip: onWindows }, () => {
     }
   });
 });
+
+describe('runGhAction orphan cleanup', { skip: onWindows }, () => {
+  it('keeps killing the group after the parent has closed', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-orphan-'));
+    const pidFile = path.join(dir, 'child.pid');
+    const gh = shim(
+      [
+        '( trap "" TERM; exec >/dev/null 2>&1; sleep 5 ) &',
+        'echo $! > "$GH_TOKEN"',
+        'trap "exit 0" TERM',
+        'sleep 5',
+      ].join('\n'),
+    );
+    try {
+      const result = await runGhAction({
+        action: 'pr:view',
+        values: { number: 1 },
+        repo: 'acme/widget',
+        token: pidFile,
+        ghPath: gh,
+        timeoutMs: 100,
+        killGraceMs: 50,
+        env: { PATH: process.env.PATH },
+      });
+      assert.equal(result.timedOut, true);
+      let pid = 0;
+      for (let i = 0; i < 20 && pid === 0; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        if (fs.existsSync(pidFile)) pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+      }
+      assert.ok(pid > 0, 'the orphan wrote its pid');
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      assert.throws(() => process.kill(pid, 0), /ESRCH/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
