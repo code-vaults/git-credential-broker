@@ -54,6 +54,23 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.ok(Date.now() - started < 2000);
   });
 
+  it('sends SIGTERM before SIGKILL', async () => {
+    const gh = shim('trap "exit 0" TERM; sleep 5');
+    const result = await runGhAction({
+      action: 'pr:view',
+      values: { number: 1 },
+      repo: 'acme/widget',
+      token: 't',
+      ghPath: gh,
+      timeoutMs: 50,
+      killGraceMs: 250,
+      env: { PATH: process.env.PATH },
+    });
+    assert.equal(result.timedOut, true);
+    assert.equal(result.code, 0);
+    assert.equal(result.signal, null);
+  });
+
   it('caps output and reports truncation', async () => {
     const gh = shim('printf "0123456789"');
     const result = await runGhAction({

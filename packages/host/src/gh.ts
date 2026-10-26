@@ -37,6 +37,8 @@ export interface GhRunOptions {
   readonly host?: string;
   readonly ghPath?: string;
   readonly timeoutMs?: number;
+  /** How long SIGTERM gets before the process group is SIGKILLed. */
+  readonly killGraceMs?: number;
   readonly maxOutputBytes?: number;
   /** Environment to copy only the proxy and PATH values from. */
   readonly env?: NodeJS.ProcessEnv;
@@ -85,6 +87,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   }
 
   const timeoutMs = options.timeoutMs ?? getGhAction(options.action).timeoutSeconds * 1000;
+  const killGraceMs = options.killGraceMs ?? 500;
 
   try {
     return await new Promise<GhRunResult>((resolve) => {
@@ -98,6 +101,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
       let timedOut = false;
       let settled = false;
       let timer: NodeJS.Timeout | undefined;
+      let termTimer: NodeJS.Timeout | undefined;
       let killTimer: NodeJS.Timeout | undefined;
 
       const child = spawn(options.ghPath ?? 'gh', argv, {
@@ -112,6 +116,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         if (settled) return;
         settled = true;
         if (timer !== undefined) clearTimeout(timer);
+        if (termTimer !== undefined) clearTimeout(termTimer);
         if (killTimer !== undefined) clearInterval(killTimer);
         const fullStdout = stdout + stdoutDecoder.end();
         const fullStderr = stderr + stderrDecoder.end();
@@ -121,22 +126,28 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         resolve({ ...result, stdout, stderr, truncated, timedOut });
       };
 
-      const signalGroup = (): void => {
+      const signalGroup = (signal: NodeJS.Signals): void => {
         if (child.pid === undefined) return;
         try {
-          // The child is its own process-group leader; kill the group so a gh-spawned helper does
+          // The child is its own process-group leader; signal the group so a gh-spawned helper does
           // not keep the pipe open after timeout or output overflow.
-          process.kill(-child.pid, 'SIGKILL');
+          process.kill(-child.pid, signal);
         } catch {
-          child.kill('SIGKILL');
+          child.kill(signal);
         }
       };
 
       const kill = (): void => {
-        signalGroup();
-        // A child forked between the signal and the process-group scan can retain the pipe. Keep
-        // signalling until close, then finish clears this interval.
-        if (killTimer === undefined && !settled) killTimer = setInterval(signalGroup, 100);
+        signalGroup('SIGTERM');
+        // Give gh a chance to exit cleanly, then keep SIGKILLing the group until close: a child forked
+        // between the signal and the process-group scan can otherwise retain the pipe forever.
+        if (termTimer === undefined && killTimer === undefined && !settled) {
+          termTimer = setTimeout(() => {
+            if (settled) return;
+            signalGroup('SIGKILL');
+            killTimer = setInterval(() => signalGroup('SIGKILL'), 100);
+          }, killGraceMs);
+        }
       };
 
       const take = (stream: 'stdout' | 'stderr', chunk: Buffer): void => {
