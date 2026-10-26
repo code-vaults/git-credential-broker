@@ -104,6 +104,8 @@ The action path is wired through the broker; the host image must include `gh` be
 can run. The container never receives the token. Build the image and pass it to `compose`:
 
 ```sh
+DEPLOY=/srv/git-cred-broker
+SOCKET_DIR=/srv/git-broker-socket
 docker build -f examples/Dockerfile.host -t gcb-host:gh .
 gcb compose --image gcb-host:gh --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" \
   > "$DEPLOY/docker-compose.broker.yml"
