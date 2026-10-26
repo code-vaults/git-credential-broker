@@ -36,6 +36,8 @@ export interface ActionRunResult {
   readonly truncated: boolean;
   readonly timedOut: boolean;
   readonly error?: string;
+  /** SHA-256 prefix of the action token, for the audit record only. */
+  readonly tokenFingerprint?: string;
 }
 
 /** One credential, as handed to git by the helper. */

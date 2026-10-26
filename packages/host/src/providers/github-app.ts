@@ -19,7 +19,7 @@
  */
 import { userTokenPath } from '../config.ts';
 import { createSign } from 'node:crypto';
-import { getGhAction, ProviderConfigError } from 'gcb-cli';
+import { getGhAction, ProviderConfigError, tokenFingerprint } from 'gcb-cli';
 import { runGhAction } from '../gh.ts';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
@@ -579,7 +579,7 @@ function pullRequestNumber(value: unknown): number | undefined {
         throw new ProviderConfigError('GitHub returned no installation token for the action');
       }
       try {
-        return await runGhAction({
+        const result = await runGhAction({
           action: request.action,
           values: request.values,
           repo: request.full,
@@ -588,6 +588,7 @@ function pullRequestNumber(value: unknown): number | undefined {
           ghPath,
           env: process.env,
         });
+        return { ...result, tokenFingerprint: tokenFingerprint(token) };
       } finally {
         try {
           const response = await fetchImpl(`${api}/installation/token`, {

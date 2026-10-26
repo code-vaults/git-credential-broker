@@ -33,6 +33,7 @@ import { describe, it } from 'node:test';
 
 import { createGithubAppProvider, nextLink, signAppJwt } from '../../packages/host/src/providers/github-app.ts';
 import { createProvider } from '../../packages/host/src/providers/index.ts';
+import { tokenFingerprint } from '../../packages/cli/src/fingerprint.ts';
 import type { FetchLike, FetchResponseLike, GithubAppHostConfig } from '../../packages/cli/src/types.ts';
 import { ProviderConfigError } from '../../packages/cli/src/errors.ts';
 
@@ -347,6 +348,7 @@ describe('createGithubAppProvider', () => {
       });
       assert.ok(result);
       assert.equal(result.code, 0);
+      assert.equal(result.tokenFingerprint, tokenFingerprint('ghs_stub_token_value'));
       assert.match(result.stdout, /ARGV=pr view 7 --repo acme\/widget/);
       assert.match(result.stdout, /TOKEN=ghs_stub_token_value/);
       const minted = stub.calls.find((call) => call.method === 'POST' && call.url.includes('/access_tokens'));

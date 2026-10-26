@@ -268,8 +268,9 @@ export function createRequestHandler(
         return denyAction(CODES.BAD_REQUEST, 'bad action request', 'the request carries no usable action');
       }
       const actionValues = values as ActionValues;
+      let spec: ReturnType<typeof getGhAction>;
       try {
-        getGhAction(ghAction);
+        spec = getGhAction(ghAction);
         buildGhArgv(ghAction, actionValues, repo.full);
       } catch (error) {
         if (error instanceof ActionError) {
@@ -284,6 +285,7 @@ export function createRequestHandler(
           "this host's provider cannot run GitHub actions",
         );
       }
+      const startedAt = Date.now();
       try {
         const result = await provider.runAction({
           host: block.host,
@@ -301,6 +303,10 @@ export function createRequestHandler(
           decision: 'allow',
           ...context,
           action: ghAction,
+          command: spec.command.join(' '),
+          permissions: spec.permissions,
+          duration_ms: Date.now() - startedAt,
+          token_fingerprint: result.tokenFingerprint,
           exit_code: result.code,
           truncated: result.truncated === true,
           timed_out: result.timedOut === true,
