@@ -565,7 +565,7 @@ describe('broker actions', () => {
     assert.equal(calls.length, 1);
     const record = harness.events.at(-1);
     assert.equal(record?.['event'], 'action');
-    assert.equal(record?.['command'], 'gh pr view');
+    assert.equal(record?.['command'], 'pr view');
     assert.deepEqual(record?.['permissions'], {
       pull_requests: 'read',
       contents: 'read',
