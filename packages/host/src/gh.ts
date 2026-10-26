@@ -112,7 +112,9 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         if (settled) return;
         settled = true;
         if (timer !== undefined) clearTimeout(timer);
-        if (killTimer !== undefined) clearInterval(killTimer);
+        // A closed parent does not prove the process group is gone; the repeat-kill interval below
+        // chases a fork created between the group signal and its delivery. Keep it until the group
+        // no longer exists.
         const fullStdout = stdout + stdoutDecoder.end();
         const fullStderr = stderr + stderrDecoder.end();
         stdout = clampUtf8(fullStdout, maxBytes);
@@ -121,22 +123,33 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         resolve({ ...result, stdout, stderr, truncated, timedOut });
       };
 
-      const signalGroup = (): void => {
-        if (child.pid === undefined) return;
+      const signalGroup = (): boolean => {
+        if (child.pid === undefined) return false;
         try {
           // The child is its own process-group leader; kill the group so a gh-spawned helper does
           // not keep the pipe open after timeout or output overflow.
           process.kill(-child.pid, 'SIGKILL');
-        } catch {
-          child.kill('SIGKILL');
+          return true;
+        } catch (error) {
+          // ESRCH means the group itself is gone; do not fall back to the parent handle, which can
+          // report success while only a zombie remains.
+          if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+          return child.exitCode === null && child.signalCode === null ? child.kill('SIGKILL') : false;
         }
       };
 
       const kill = (): void => {
-        signalGroup();
-        // A child forked between the signal and the process-group scan can retain the pipe. Keep
-        // signalling until close, then finish clears this interval.
-        if (killTimer === undefined && !settled) killTimer = setInterval(signalGroup, 100);
+        // Keep SIGKILLing after the parent closes: close does not prove a forked helper is gone.
+        // The interval stops itself when signalGroup can no longer find the group.
+        if (settled || killTimer !== undefined) return;
+        if (!signalGroup()) return;
+        const handle = setInterval(() => {
+          if (signalGroup()) return;
+          clearInterval(handle);
+          if (killTimer === handle) killTimer = undefined;
+        }, 100);
+        handle.unref();
+        killTimer = handle;
       };
 
       const take = (stream: 'stdout' | 'stderr', chunk: Buffer): void => {

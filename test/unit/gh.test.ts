@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -52,6 +53,42 @@ describe('runGhAction', { skip: onWindows }, () => {
     });
     assert.equal(result.timedOut, true);
     assert.ok(Date.now() - started < 2000);
+  });
+
+  it('stops repeating the group kill once the group is gone', async () => {
+    const gh = shim('sleep 5');
+    const realKill = process.kill;
+    const realChildKill = ChildProcess.prototype.kill;
+    const kills: number[] = [];
+    process.kill = ((pid: number, signal?: string | number) => {
+      kills.push(Date.now());
+      return realKill.call(process, pid, signal);
+    }) as typeof process.kill;
+    ChildProcess.prototype.kill = function (signal?: NodeJS.Signals | number): boolean {
+      kills.push(Date.now());
+      return realChildKill.call(this, signal);
+    };
+    try {
+      const result = await runGhAction({
+        action: 'pr:view',
+        values: { number: 1 },
+        repo: 'acme/widget',
+        token: 't',
+        ghPath: gh,
+        timeoutMs: 50,
+        env: { PATH: process.env.PATH },
+      });
+      assert.equal(result.timedOut, true);
+      const atResolve = kills.length;
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      assert.ok(
+        kills.length - atResolve <= 2,
+        `kept killing: ${kills.length - atResolve} attempts in 400ms`,
+      );
+    } finally {
+      process.kill = realKill;
+      ChildProcess.prototype.kill = realChildKill;
+    }
   });
 
   it('caps output and reports truncation', async () => {
