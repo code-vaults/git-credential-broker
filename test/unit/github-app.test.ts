@@ -358,6 +358,30 @@ describe('createGithubAppProvider', () => {
     }
   });
 
+  it('returns setup failures and a failed-revoke warning together', async () => {
+    const permissions = { pull_requests: 'read', contents: 'read', checks: 'read', statuses: 'read' };
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'Acme' } }],
+      nowMs,
+      appPermissions: permissions,
+      installationPermissions: permissions,
+      revokeStatus: 500,
+    });
+    const logs: string[] = [];
+    const provider = providerFor(stub, {}, undefined, (message) => logs.push(message));
+    const result = await provider.runAction?.({
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      full: 'acme/widget',
+      action: 'pr:view',
+      values: {},
+    });
+    assert.ok(result?.error);
+    assert.match(result?.warning ?? '', /expires on its own/);
+    assert.ok(logs.some((line) => line.includes('could not revoke the action token')));
+  });
+
   it('runs an action with an action token and revokes it', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'gcb-action-'));
     const gh = join(dir, 'gh');

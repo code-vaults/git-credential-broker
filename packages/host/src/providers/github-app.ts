@@ -591,6 +591,16 @@ function pullRequestNumber(value: unknown): number | undefined {
           ghPath,
           env: process.env,
         });
+      } catch (error) {
+        result = {
+          stdout: '',
+          stderr: '',
+          code: null,
+          signal: null,
+          truncated: false,
+          timedOut: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
       } finally {
         try {
           const response = await fetchImpl(`${api}/installation/token`, {
