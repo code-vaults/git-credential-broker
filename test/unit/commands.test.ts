@@ -1112,7 +1112,7 @@ describe('the anchor flags, at the CLI boundary', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-pr-home-'));
   after(() => fs.rmSync(home, { recursive: true, force: true }));
 
-  const cli = (args: readonly string[]): { status: number; stderr: string } => {
+  const cli = (args: readonly string[]): { status: number; stdout: string; stderr: string } => {
     try {
       execFileSync('node', ['--conditions=development', 'packages/client/bin/gcb.js', 'pr', ...args], {
         cwd: path.resolve('.'),
@@ -1123,10 +1123,14 @@ describe('the anchor flags, at the CLI boundary', () => {
         // reach a broker someone happens to have running.
         env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
       });
-      return { status: 0, stderr: '' };
+      return { status: 0, stdout: '', stderr: '' };
     } catch (error) {
       const failed = error as { status?: number | null; stderr?: string };
-      return { status: failed.status ?? -1, stderr: String(failed.stderr ?? '') };
+      return {
+        status: failed.status ?? -1,
+        stdout: String((failed as { stdout?: string }).stdout ?? ''),
+        stderr: String(failed.stderr ?? ''),
+      };
     }
   };
 
@@ -1146,6 +1150,20 @@ describe('the anchor flags, at the CLI boundary', () => {
     const closed = cli([...base, '--merge', '--file', 'Dockerfile', '--line', '4', '--body', 'x']);
     assert.equal(closed.status, 1);
     assert.match(closed.stderr, /only go with --comment/);
+  });
+
+  it('refuses --close with a value too', () => {
+    for (const argv of [['--close', '7'], ['--close=7']]) {
+      const moved = cli([...base, ...argv]);
+      assert.equal(moved.status, 1);
+      assert.match(moved.stderr, /gcb gh pr close/);
+    }
+  });
+
+  it('shows help for bare gcb pr', () => {
+    const result = cli([]);
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /Usage: gcb gh/);
   });
 
   it('points --close at the gh action', () => {

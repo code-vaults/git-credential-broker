@@ -112,7 +112,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     return 0;
   }
   // Before --repo: the point of the message is to name the command that does it now.
-  if (args.has('close')) fail('--close moved to: gcb gh pr close <number> --repo owner/name');
+  if (args.has('close') || args.value('close') !== undefined) {
+    fail('--close moved to: gcb gh pr close <number> --repo owner/name');
+  }
 
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const host = args.value('host');

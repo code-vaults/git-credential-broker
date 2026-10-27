@@ -152,7 +152,7 @@ const PR_COMMENT: GhAction = {
   hostUser: true,
 };
 
-// GitHub: PATCH /repos/{owner}/{repo}/pulls/{pull_number}
+// GitHub GraphQL: closePullRequest
 const PR_CLOSE: GhAction = {
   name: 'pr:close',
   command: ['pr', 'close'],

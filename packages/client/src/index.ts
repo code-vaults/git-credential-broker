@@ -52,6 +52,10 @@ async function run(argv: readonly string[]): Promise<number> {
     case 'pr': {
       // The catalog is the one source for an action, so the shorthand asks it rather than keeping a
       // second list: a subcommand the catalog does not have stays with the flag-only lifecycle.
+      if (rest.length === 0) {
+        await (await import('./commands/gh.ts')).runGh(['pr', '--help']);
+        return 1;
+      }
       const sub = rest[0];
       if (sub !== undefined && Object.hasOwn(GH_ACTIONS, `pr:${sub}`)) {
         return (await import('./commands/gh.ts')).runGh(['pr', ...rest]);
