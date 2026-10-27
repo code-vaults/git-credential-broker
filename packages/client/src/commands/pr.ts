@@ -116,8 +116,8 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (args.has('close') || args.value('close') !== undefined) {
     fail('--close moved to: gcb gh pr close <number> --repo owner/name');
   }
-  // Before --repo too, for the same reason: the message names the command that does it now. An
-  // anchored comment (--file and --line) is still this command's to post.
+  // Before --repo too: a bare `gcb pr --comment` should hear what the flag needs, not that --repo
+  // is missing. An anchored comment (--file and --line) is still this command's to post.
   if (args.has('comment') && args.value('file') === undefined && args.value('line') === undefined) {
     fail('--comment only posts an anchored review comment; pass --file and --line');
   }
