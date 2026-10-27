@@ -34,11 +34,6 @@ export interface ComposeInput {
   /** Compose service and container name. */
   readonly name: string;
   /**
-   * Egress proxy: a URL, or null for a direct connection. Omitted keeps the host's proxy
-   * environment references in the rendered file.
-   */
-  readonly proxy?: string | null;
-  /**
    * Host directory holding the broker's code, as `stage` exports it. When given, the sidecar runs
    * that code with the image's Node instead of fetching the package at start: no registry access
    * at boot, and the commit that runs is the one you reviewed.
@@ -73,33 +68,21 @@ export function renderCompose(input: ComposeInput): string {
 # package installed, and change \`command\` to the binary in it:
 #   ["gcb", "daemon", "--config", "${SIDECAR.configPath}"]`;
 
-  // The egress lines belong to both renders: a --code deployment is a sidecar too, and without them it
-  // would carry no proxy variables at all. An explicit choice is literal, so the rendered file does not
-  // silently change when the shell that runs `docker compose` has different proxy variables.
-  const egress =
-    input.proxy === null
-      ? `
-      # --no-proxy: the broker reaches GitHub directly.`
-      : input.proxy !== undefined
-        ? `
-      # --proxy: the broker reaches GitHub through this proxy.
-      - http_proxy=${input.proxy}
-      - https_proxy=${input.proxy}
-      - no_proxy=localhost,127.0.0.1
-      # The daemon refuses to start with a proxy variable and without this one.
-      - NODE_USE_ENV_PROXY=1`
-        : `
+  // GCB_PROXY is read at `docker compose up` time: set it to a URL to pin a proxy, set it empty to
+  // go direct, or leave it unset to keep the host's variables. The wrapper in `command` applies it
+  // inside the container, so changing the choice does not mean rendering this file again.
+  const egress = `
       # Egress. The socket needs no proxy; the broker's calls to api.github.com and github.com do.
       - http_proxy=\${http_proxy:-\${HTTP_PROXY:-}}
       - https_proxy=\${https_proxy:-\${HTTPS_PROXY:-}}
       - no_proxy=\${no_proxy:-\${NO_PROXY:-}}
       # The daemon refuses to start with a proxy variable and without this one.
-      - NODE_USE_ENV_PROXY=1`;
+      - NODE_USE_ENV_PROXY=1
+      # Runtime override: a URL pins a proxy, an empty value goes direct, unset keeps the above.
+      - GCB_PROXY=\${GCB_PROXY-default}`;
 
   const environment = fromCode
-    ? input.proxy === null
-      ? ''
-      : `
+    ? `
     environment:${egress}`
     : `
     environment:
@@ -113,16 +96,20 @@ export function renderCompose(input: ComposeInput): string {
     ? `\n      # The authorized person's refresh token: the only secret mounted writable, because GitHub\n      # rotates it on every exchange.\n      - ${input.dir}/${USER_TOKEN_FILE}:${SIDECAR.userTokenPath}:rw`
     : '\n      # No user.refresh yet: run `gcb authorize` and render this again. A mount' +
       '\n      # for a path that does not exist would become a directory, and the broker would read that.';
-  const command = fromCode
-    ? `      - node
-      - --conditions=development
-      - ${CODE_DIR}/packages/host/bin/gcb.js
-      - daemon
-      - --config
-      - ${SIDECAR.configPath}`
-    : `      - sh
+  const start = fromCode
+    ? `exec node --conditions=development ${CODE_DIR}/packages/host/bin/gcb.js daemon --config ${SIDECAR.configPath}`
+    : `exec npx --yes --package '${input.packageSpec}' gcb daemon --config ${SIDECAR.configPath}`;
+  // The wrapper is the runtime half of the override: compose substitutes GCB_PROXY before the
+  // process starts, then this decides whether the Node/gh children see a proxy at all.
+  const command = `      - sh
       - -c
-      - exec npx --yes --package '${input.packageSpec}' gcb daemon --config ${SIDECAR.configPath}`;
+      - |
+        case "\${GCB_PROXY-default}" in
+          default) ;;
+          "") unset http_proxy https_proxy no_proxy NODE_USE_ENV_PROXY ;;
+          *) export http_proxy="$GCB_PROXY" https_proxy="$GCB_PROXY" no_proxy=localhost,127.0.0.1 NODE_USE_ENV_PROXY=1 ;;
+        esac
+        ${start}`;
 
   const codeMount = fromCode
     ? `
@@ -196,8 +183,6 @@ Print a Docker sidecar definition for the broker (to stdout). Pair it with a con
   --image <name>      Base image (default: node:24-slim)
   --package <spec>    npm spec to run (default: gcb-host@<version>)
   --name <name>       Service and container name (default: git-cred-broker)
-  --proxy <url>       Egress proxy URL, rendered literally into the sidecar
-  --no-proxy          Reach GitHub directly; omit all proxy variables
   -h, --help          Show this help
 `;
 
@@ -208,12 +193,7 @@ Print a Docker sidecar definition for the broker (to stdout). Pair it with a con
  * @returns the process exit code.
  */
 export function runCompose(argv: readonly string[]): number {
-  const args = parseArgs(argv, { booleans: ['help', 'no-proxy'] });
-  if (args.has('no-proxy') && args.value('proxy') !== undefined) {
-    fail('--proxy and --no-proxy are mutually exclusive');
-  }
-  const proxy = args.has('no-proxy') ? null : args.value('proxy');
-  if (proxy !== undefined && proxy !== null && proxy.trim() === '') fail('--proxy needs a URL');
+  const args = parseArgs(argv, { booleans: ['help'] });
   if (args.has('help') || args.has('h')) {
     say(COMPOSE_USAGE);
     return 0;
@@ -267,7 +247,6 @@ export function runCompose(argv: readonly string[]): number {
       packageSpec: args.value('package') ?? `gcb-host@${PACKAGE_VERSION}`,
       name: args.value('name') ?? 'git-cred-broker',
       code: args.value('code'),
-      proxy,
     }),
   );
   return 0;

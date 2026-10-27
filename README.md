@@ -163,8 +163,8 @@ gcb init --mode sidecar --dir "$DEPLOY" \
 
 gcb compose --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" \
   > "$DEPLOY/docker-compose.broker.yml"
-# Add --no-proxy when this host reaches GitHub directly, or --proxy <url> to fix
-# the sidecar to one proxy instead of inheriting the shell than renders it.
+# At start time: GCB_PROXY= goes direct, GCB_PROXY=<url> pins one proxy, unset
+# inherits the shell's http_proxy/https_proxy.
 docker compose -f "$DEPLOY/docker-compose.broker.yml" up -d
 ```
 
@@ -432,16 +432,14 @@ no_proxy=localhost,127.0.0.1
 NODE_USE_ENV_PROXY=1
 ```
 
-For a sidecar, pass them in its `environment:` (compose only forwards what the file names), or let
-`compose` write the choice down:
+For a sidecar, compose forwards the host's proxy variables, and `GCB_PROXY` overrides the choice at
+start time without rendering the file again:
 
 ```sh
-gcb compose ... --proxy http://proxy.example:7890   # literal, independent of the shell
-gcb compose ... --no-proxy                          # direct, with no proxy variables
-```
-
-The default render still refers to the host's `http_proxy` / `https_proxy` / `no_proxy` at
-`docker compose up` time; an explicit flag is for the deployment whose proxy is optional. For the host
+GCB_PROXY= docker compose -f docker-compose.broker.yml up -d          # direct
+GCB_PROXY=http://proxy.example:7890 docker compose ... up -d          # pin a proxy
+docker compose -f docker-compose.broker.yml up -d                     # inherit the shell
+``` For the host
 process, `EnvironmentFile=` in the unit and the boot wrapper, both of which already read
 `/etc/git-cred-broker/proxy.env` if it exists.
 
