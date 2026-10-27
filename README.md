@@ -121,8 +121,8 @@ gcb gh pr create --repo owner/name --head feat/x --title "A title" --body "A bod
 gcb gh run view 123456 --log --repo owner/name
 ```
 
-Inside a checkout, `--repo` can be omitted only when `origin` names a usable GitHub repository; its
-host must also match `--host`. Anything else requires an explicit `--repo` or `--host`.
+Inside a checkout, `--repo` can be omitted only when `origin` names a usable GitHub repository whose
+host matches `--host`; otherwise pass `--repo`, or the matching `--host`.
 
 The exact command, flags and required values come from
 [`packages/cli/src/actions.ts`](packages/cli/src/actions.ts); `gcb gh --help` renders that catalog.

@@ -7,7 +7,7 @@
 import { GH_ACTIONS, getGhAction, parseArgs, say, fail, type ActionValues } from 'gcb-cli';
 
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
-import { listRemotes, remoteRepo } from './remotes.ts';
+import { remoteRepo } from './remotes.ts';
 
 const ACTION_LINES = Object.values(GH_ACTIONS)
   .map((action) => {
@@ -40,8 +40,6 @@ const ACTION_LINES = Object.values(GH_ACTIONS)
  * @returns the normalized repository, or undefined when no remote names one.
  */
 function repoFromCheckout(cwd: string): { repo: string; host: string } | undefined {
-  const remotes = listRemotes(cwd);
-  if (!remotes.includes('origin')) return undefined;
   const found = remoteRepo('origin', cwd);
   return found === undefined ? undefined : { repo: `${found.owner}/${found.repo}`, host: found.host };
 }
