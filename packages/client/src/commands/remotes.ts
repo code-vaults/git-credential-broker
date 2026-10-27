@@ -12,10 +12,11 @@
  */
 import { execFileSync } from 'node:child_process';
 
-/** What a remote's URL says: the owner and the repository, for a GitHub-shaped URL. */
+/** What a remote's URL says: the owner, repository and host key, for a GitHub-shaped URL. */
 export interface RemoteRepo {
   readonly owner: string;
   readonly repo: string;
+  /** The host key: `host:port` for HTTP(S), or the host alone for SSH and git URLs. */
   readonly host: string;
 }
 
@@ -73,7 +74,7 @@ export function listRemotes(cwd: string): string[] {
  *
  * @param name - the remote name.
  * @param cwd - the directory to ask.
- * @returns the owner and repository, or undefined when there is no such remote or the URL is not one.
+ * @returns the owner, repository and host, or undefined when there is no such remote or the URL is not one.
  */
 export function remoteRepo(name: string, cwd: string, push = false): RemoteRepo | undefined {
   // `--push` for a head: git lets a remote fetch from one place and push to another, and the branch a
@@ -86,12 +87,17 @@ export function remoteRepo(name: string, cwd: string, push = false): RemoteRepo 
   // port number or a directory name.
   let path: string | undefined;
   let host: string | undefined;
-  if (/^[a-z+]+:\/\//i.test(url)) {
+  const scheme = /^([a-z+]+):\/\//i.exec(url)?.[1]?.toLowerCase();
+  if (scheme !== undefined) {
     const rest = url.replace(/^[a-z+]+:\/\//i, '').replace(/^[^@/]*@/, '');
     const slash = rest.indexOf('/');
     const authority = slash < 0 ? '' : rest.slice(0, slash);
-    host = authority.split(':')[0] ?? '';
-    if (slash >= 0 && host.includes('.')) path = rest.slice(slash + 1);
+    const hostname = authority.split(':')[0] ?? '';
+    if (slash >= 0 && hostname.includes('.')) {
+      // An HTTP(S) port is part of the host key the broker matches; an SSH or git port is not.
+      host = scheme === 'http' || scheme === 'https' ? authority : hostname;
+      path = rest.slice(slash + 1);
+    }
   } else {
     const scp = /^(?:[^@/]+@)?([^/:]+\.[^/:]+):(.+)$/.exec(url);
     if (scp !== null && scp[1] !== undefined && scp[2] !== undefined) {

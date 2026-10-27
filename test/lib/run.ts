@@ -37,6 +37,32 @@ export function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * The process environment without variables that point git at another repository.
+ *
+ * A test that runs git in a temporary checkout must not inherit `GIT_DIR`, `GIT_WORK_TREE` and
+ * friends from the process that started it; otherwise `cwd` is ignored.
+ *
+ * @returns a copy of the environment with the repository-location variables removed.
+ */
+export function cleanGitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const key of [
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_INDEX_FILE',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_COMMON_DIR',
+    'GIT_NAMESPACE',
+    'GIT_CEILING_DIRECTORIES',
+    'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+  ]) {
+    delete env[key];
+  }
+  return env;
+}
+
+/**
  * Run a command without blocking the event loop, returning its result without throwing.
  *
  * @param command - the program.

@@ -13,26 +13,7 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { baseBranchFor, listRemotes, qualifiedBranch, remoteRepo } from '../../packages/client/src/commands/remotes.ts';
-
-/** Git must not inherit a GIT_DIR/GIT_WORK_TREE that redirects it away from the temp checkout. */
-function cleanGitEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  for (const key of [
-    'GIT_DIR',
-    'GIT_WORK_TREE',
-    'GIT_INDEX_FILE',
-    'GIT_OBJECT_DIRECTORY',
-    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-    'GIT_COMMON_DIR',
-    'GIT_NAMESPACE',
-    'GIT_CEILING_DIRECTORIES',
-    'GIT_DISCOVERY_ACROSS_FILESYSTEM',
-  ]) {
-    delete env[key];
-  }
-  return env;
-}
-
+import { cleanGitEnv } from '../lib/run.ts';
 
 describe('resolving a branch that names a remote', () => {
   let dir = '';
@@ -89,6 +70,7 @@ describe('what a remote URL is allowed to look like', () => {
     const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: cleanGitEnv(), stdio: 'ignore' });
     git('init', '-q');
     git('remote', 'add', 'ported', 'https://git.example.com:8443/me/thing.git');
+    git('remote', 'add', 'ssh-ported', 'ssh://git@git.example.com:2222/me/thing.git');
     git('remote', 'add', 'prefixed', 'https://git.example.com/gitlab/group/thing.git');
     git('remote', 'add', 'local', '/srv/git/thing.git');
     git('remote', 'add', 'files', 'file:///srv/git/thing.git');
@@ -98,8 +80,12 @@ describe('what a remote URL is allowed to look like', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('does not read a port as an owner', () => {
-    assert.deepEqual(remoteRepo('ported', dir), { owner: 'me', repo: 'thing', host: 'git.example.com' });
+  it('does not read a port as an owner, and keeps it in an HTTP(S) host', () => {
+    assert.deepEqual(remoteRepo('ported', dir), { owner: 'me', repo: 'thing', host: 'git.example.com:8443' });
+  });
+
+  it('drops an SSH port, because the API host has none', () => {
+    assert.deepEqual(remoteRepo('ssh-ported', dir), { owner: 'me', repo: 'thing', host: 'git.example.com' });
   });
 
   it('does not read a directory as a host', () => {

@@ -7,27 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import { startBroker } from '../../packages/host/src/broker.ts';
-import { tryRunAsync, type RunResult } from '../lib/run.ts';
-
-/** Git must not inherit a GIT_DIR/GIT_WORK_TREE that redirects it away from the temp checkout. */
-function cleanGitEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  for (const key of [
-    'GIT_DIR',
-    'GIT_WORK_TREE',
-    'GIT_INDEX_FILE',
-    'GIT_OBJECT_DIRECTORY',
-    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-    'GIT_COMMON_DIR',
-    'GIT_NAMESPACE',
-    'GIT_CEILING_DIRECTORIES',
-    'GIT_DISCOVERY_ACROSS_FILESYSTEM',
-  ]) {
-    delete env[key];
-  }
-  return env;
-}
-
+import { cleanGitEnv, tryRunAsync, type RunResult } from '../lib/run.ts';
 import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../packages/cli/src/types.ts';
 
 /** Run the client from source, next to this file rather than from the cwd. */
