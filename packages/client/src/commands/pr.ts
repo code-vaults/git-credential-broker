@@ -1,5 +1,8 @@
 /**
- * `pr` — open, close, merge or update one pull request through the broker.
+ * `pr` — open, merge or update one pull request through the broker.
+ *
+ * `pr <subcommand>` runs as the catalogued gh action when the catalog has one (`pr:view`,
+ * `pr:close`, …); this file is the flag-only lifecycle for the actions gh cannot express.
  *
  * The credential never leaves the broker. The broker mints a token narrowed to `pull_requests: write`
  * plus read access to the branches it names, performs the action itself, and answers with the number,
@@ -29,8 +32,11 @@ const PR_TIMEOUT_MS = 60_000;
 /** Usage text for `pr`. */
 export const PR_USAGE = `Usage: gcb pr [options]
 
-Open, close, merge, update or inspect a pull request through the broker, without the credential
+Open, merge, update or inspect a pull request through the broker, without the credential
 ever reaching this side.
+
+A subcommand the gh action catalog has (pr view, pr close, …) runs as that action instead;
+gcb gh --help lists them. The flags below are the flag-only lifecycle gh cannot express.
 
 Opening (the default)
   --head <branch>      The branch holding the change                 [required]
@@ -72,7 +78,7 @@ Common
  * Read the action out of the flags.
  *
  * @param args - the parsed arguments.
- * @returns `close`, `merge`, `update` or `open`.
+ * @returns `merge`, `update` or `open`.
  */
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
   // `--resolve`, `--reply-to` and `--edit` take a value, and a bare one is parsed as a boolean flag with
@@ -105,11 +111,12 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     say(PR_USAGE);
     return 0;
   }
+  // Before --repo: the point of the message is to name the command that does it now.
+  if (args.has('close')) fail('--close moved to: gcb gh pr close <number> --repo owner/name');
 
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const host = args.value('host');
   const repo = args.value('repo') ?? fail('--repo is required (e.g. owner/name)');
-  if (args.has('close')) fail('--close moved to: gcb gh pr close <number> --repo owner/name');
   const action = actionOf(args);
   if (args.has('via-host') && action !== 'open') {
     fail('--via-host only creates a pull request, so it does not go with ' + JSON.stringify(action));

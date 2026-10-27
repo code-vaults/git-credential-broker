@@ -1152,6 +1152,10 @@ describe('the anchor flags, at the CLI boundary', () => {
     const moved = cli([...base, '--close']);
     assert.equal(moved.status, 1);
     assert.match(moved.stderr, /gcb gh pr close/);
+
+    const bare = cli(['--close']);
+    assert.equal(bare.status, 1);
+    assert.match(bare.stderr, /gcb gh pr close/, 'before --repo, so the message names the replacement');
   });
 
   it('refuses a side that is neither, and a line that is not a line', () => {

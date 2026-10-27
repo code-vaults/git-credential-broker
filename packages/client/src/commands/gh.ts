@@ -48,6 +48,7 @@ function repoFromCheckout(cwd: string): { repo: string; host: string } | undefin
 export const GH_USAGE = `Usage: gcb gh <domain> <command> [options]
 
 Run a catalogued GitHub action through the broker.
+gcb pr <subcommand> and gcb run <subcommand> are shorthands for the same actions.
 
 Common
   -R, --repo <owner/name>  Repository the action belongs to (default: origin remote)
@@ -71,7 +72,9 @@ export async function runGh(argv: readonly string[]): Promise<number> {
   }
   const [domain, command, ...rest] = argv;
   if (domain === undefined || command === undefined) {
-    fail('gcb gh needs a command, for example: gcb gh pr view 12 --repo owner/name');
+    // `gcb pr` and `gcb run` arrive here too, so the answer is the catalog rather than one example.
+    say(GH_USAGE);
+    return 1;
   }
   const actionName = `${domain}:${command}`;
   let action;
