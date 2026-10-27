@@ -31,7 +31,7 @@ const ACTION_LINES = Object.values(GH_ACTIONS)
   .join('\n');
 
 /**
- * Read owner/repo from the checkout's default remote: `origin` if it exists, else the first one.
+ * Read owner/repo from the checkout's `origin` remote.
  *
  * The URL parsing lives in `remotes.ts`, beside `--head origin:branch`, so the two cannot disagree
  * about what a remote points at.
@@ -41,9 +41,8 @@ const ACTION_LINES = Object.values(GH_ACTIONS)
  */
 function repoFromCheckout(cwd: string): { repo: string; host: string } | undefined {
   const remotes = listRemotes(cwd);
-  const name = remotes.includes('origin') ? 'origin' : remotes[0];
-  if (name === undefined) return undefined;
-  const found = remoteRepo(name, cwd);
+  if (!remotes.includes('origin')) return undefined;
+  const found = remoteRepo('origin', cwd);
   return found === undefined ? undefined : { repo: `${found.owner}/${found.repo}`, host: found.host };
 }
 
@@ -90,7 +89,7 @@ export async function runGh(argv: readonly string[]): Promise<number> {
   let repo = args.value('repo');
   if (repo === undefined) {
     const found = repoFromCheckout(process.cwd());
-    if (found === undefined) fail('--repo is required when the checkout has no usable GitHub remote');
+    if (found === undefined) fail('--repo is required when the checkout has no usable origin remote');
     if (found.host !== host.toLowerCase()) {
       fail(`the checkout's remote is on ${found.host}, but --host is ${host}; pass --repo or --host`);
     }

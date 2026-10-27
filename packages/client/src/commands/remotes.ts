@@ -31,22 +31,8 @@ export interface RemoteRepo {
  * @returns the output, or undefined when git refused.
  */
 function git(args: readonly string[], cwd: string): string | undefined {
-  const env = { ...process.env };
-  for (const key of [
-    'GIT_DIR',
-    'GIT_WORK_TREE',
-    'GIT_INDEX_FILE',
-    'GIT_OBJECT_DIRECTORY',
-    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-    'GIT_COMMON_DIR',
-    'GIT_NAMESPACE',
-    'GIT_CEILING_DIRECTORIES',
-    'GIT_DISCOVERY_ACROSS_FILESYSTEM',
-  ]) {
-    delete env[key];
-  }
   try {
-    const out = execFileSync('git', [...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const out = execFileSync('git', [...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     const trimmed = out.replace(/\s+$/, '');
     return trimmed === '' ? undefined : trimmed;
   } catch {

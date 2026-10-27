@@ -13,14 +13,13 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { baseBranchFor, listRemotes, qualifiedBranch, remoteRepo } from '../../packages/client/src/commands/remotes.ts';
-import { cleanGitEnv } from '../lib/run.ts';
 
 describe('resolving a branch that names a remote', () => {
   let dir = '';
 
   before(() => {
     dir = mkdtempSync(join(tmpdir(), 'remotes-'));
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: cleanGitEnv(), stdio: 'ignore' });
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
     git('init', '-q');
     git('remote', 'add', 'origin', 'git@github.com:me/git-credential-broker.git');
     git('remote', 'add', 'upstream', 'https://github.com/code-vaults/git-credential-broker.git');
@@ -67,7 +66,7 @@ describe('what a remote URL is allowed to look like', () => {
 
   before(() => {
     dir = mkdtempSync(join(tmpdir(), 'remotes-forms-'));
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: cleanGitEnv(), stdio: 'ignore' });
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
     git('init', '-q');
     git('remote', 'add', 'ported', 'https://git.example.com:8443/me/thing.git');
     git('remote', 'add', 'ssh-ported', 'ssh://git@git.example.com:2222/me/thing.git');
@@ -108,7 +107,7 @@ describe('the branch a --base means', () => {
 
   before(() => {
     dir = mkdtempSync(join(tmpdir(), 'remotes-base-'));
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: cleanGitEnv(), stdio: 'ignore' });
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
     git('init', '-q');
     git('remote', 'add', 'upstream', 'https://github.com/code-vaults/git-credential-broker.git');
     git('remote', 'add', 'origin', 'git@github.com:me/git-credential-broker.git');
