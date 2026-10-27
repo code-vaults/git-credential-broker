@@ -53,7 +53,8 @@ Opening (the default)
 Acting on one
   --number <n>         The pull request number                       [required]
   --status             Report its state, mergeability and the runs for its commit
-  --comment            Post the body as a comment on it (needs only --number and --body/--body-file)
+  --comment            Post an anchored review comment (also needs --file and --line);
+                       for a plain comment use: gcb gh pr comment <number> --body ...
   --file <path>        Anchor that comment to a line of this file, repository-relative
   --line <n>           The line to anchor to, in the new file unless --side says otherwise
   --side <left|right>  Which side of the diff --line counts on (default: right)
@@ -200,6 +201,12 @@ export async function runPr(argv: readonly string[]): Promise<number> {
       fail(`--side must be left or right, got ${JSON.stringify(args.value('side'))}`);
     }
   }
+  if (action === 'comment' && filePath === undefined) {
+    fail(
+      'plain comments moved to: gcb gh pr comment <number> --body ...; ' +
+        '--comment here only posts an anchored comment with --file and --line',
+    );
+  }
   const replyTo = args.value('reply-to');
   if (action === 'reply' && (replyTo === undefined || !Number.isInteger(Number(replyTo)) || Number(replyTo) <= 0)) {
     fail(`--reply-to needs the id of the comment being answered, got ${JSON.stringify(replyTo)}`);
@@ -254,16 +261,6 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     if (answer.error !== undefined) fail(`the host opener could not open it: ${answer.error}`);
     say(`opened #${answer.number ?? '?'} (as you, through the host opener): ${answer.url ?? '(no url)'}`);
     return 0;
-  }
-
-  // A plain conversation comment is gh's own path; an anchored one has no stable gh CLI and stays
-  // on the review-comment request below.
-  if (action === 'comment' && filePath === undefined) {
-    const ghArgs = ['pr', 'comment', String(number), '--body', body as string];
-    if (host !== undefined) ghArgs.push('--host', host);
-    ghArgs.push('--repo', repo);
-    if (socketPath !== undefined) ghArgs.push('--socket', socketPath);
-    return (await import('./gh.ts')).runGh(ghArgs);
   }
 
   if (socketPath === undefined) {
