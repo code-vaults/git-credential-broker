@@ -368,14 +368,14 @@ describe('createGithubAppProvider', () => {
       revokeStatus: 500,
     });
     const logs: string[] = [];
-    const provider = providerFor(stub, {}, undefined, (message) => logs.push(message));
+    const provider = providerFor(stub, {}, '\0', (message) => logs.push(message));
     const result = await provider.runAction?.({
       host: 'github.com',
       owner: 'acme',
       repo: 'widget',
       full: 'acme/widget',
       action: 'pr:view',
-      values: {},
+      values: { number: 7 },
     });
     assert.ok(result?.error);
     assert.match(result?.warning ?? '', /expires on its own/);
