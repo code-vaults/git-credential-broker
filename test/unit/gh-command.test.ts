@@ -268,6 +268,12 @@ describe('gcb gh', () => {
       ]);
       assert.equal(result.status, 0);
       assert.deepEqual(seen, { number: '7', body: '--help' });
+
+      const shortHelp = await runGhCli([
+        'pr', 'comment', '7', '--body', '-h', '--repo', 'acme/widget', '--socket', socketPath,
+      ]);
+      assert.equal(shortHelp.status, 0);
+      assert.deepEqual(seen, { number: '7', body: '-h' }, 'a body of literally -h is data too');
     } finally {
       await broker.close();
       fs.rmSync(root, { recursive: true, force: true });
@@ -280,7 +286,9 @@ describe('gcb gh', () => {
       ['--help'],
       ['pr', 'view', '--help', '7'],
       ['pr', 'view', '7', '--help'],
+      ['pr', 'view', '7', '-h'],
       ['pr', 'create', '--title', '--head', '--help'],
+      ['pr', 'create', '--title', '-h', '--head', 'feat', '--body', 'b'],
     ]) {
       const result = await runGhCli(argv);
       assert.equal(result.status, 0, argv.join(' '));

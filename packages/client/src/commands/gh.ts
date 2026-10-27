@@ -63,7 +63,8 @@ ${ACTION_LINES}`;
  * Run the `gh` command.
  *
  * @param argv - arguments after `gh`.
- * @returns the process exit code: 0 success, 1 refusal, 3 broker unreachable.
+ * @returns the process exit code: 0 success, 1 refusal, and the requested unreachable code
+ *          (1 by default; `pr` passes 3 for runPr's contract).
  */
 export async function runGh(
   argv: readonly string[],
@@ -113,7 +114,10 @@ export async function runGh(
 
   const rest: string[] = [];
   for (let index = 0; index < rawRest.length; index += 1) {
-    const argument = rawRest[index];
+    // `-h` is help in flag position, and parseArgs normalises only the token it reads at that
+    // position: normalise it here too, or a value flag's next `-h` is taken as its value. A body's
+    // `-h` was merged into `--body=-h` above and never reaches this line.
+    const argument = rawRest[index]?.replace(/^-h$/, '--help');
     const name = argument?.startsWith('--') && !argument.includes('=') ? argument.slice(2) : undefined;
     const next = rawRest[index + 1];
     const nextIsFlag = next !== undefined && /^--?[A-Za-z]/.test(next);
