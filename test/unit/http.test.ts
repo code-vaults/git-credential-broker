@@ -19,6 +19,30 @@ describe('proxy fetch cache', () => {
     assert.equal(fetcherFor('http://p.example:1'), fetcherFor('http://p.example:1'));
   });
 
+  it('reaches a local target directly even with a dead proxy in the environment', async () => {
+    const previous = process.env['http_proxy'];
+    process.env['http_proxy'] = 'http://127.0.0.1:1';
+    const server = http.createServer((_request, response) => {
+      response.writeHead(200);
+      response.end('direct');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    assert.ok(address !== null && typeof address !== 'string');
+    try {
+      const response = await fetcherFor(null)(`http://127.0.0.1:${address.port}/`, {
+        method: 'GET',
+        headers: {},
+      });
+      assert.equal(response.status, 200);
+      assert.equal(await response.text(), 'direct');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      if (previous === undefined) delete process.env['http_proxy'];
+      else process.env['http_proxy'] = previous;
+    }
+  });
+
   it('returns a response for a non-2xx even though x-fetch throws', async () => {
     const server = http.createServer((_request, response) => {
       response.writeHead(404);

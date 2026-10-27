@@ -125,6 +125,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (args.has('no-proxy') && args.value('proxy') !== undefined) {
     fail('--proxy and --no-proxy are mutually exclusive');
   }
+  if (args.has('proxy') && args.value('proxy') === undefined) fail('--proxy needs a value');
   const proxy = args.has('no-proxy') ? null : args.value('proxy');
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const host = args.value('host');
@@ -132,6 +133,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const action = actionOf(args);
   if (args.has('via-host') && action !== 'open') {
     fail('--via-host only creates a pull request, so it does not go with ' + JSON.stringify(action));
+  }
+  if (args.has('via-host') && (args.has('proxy') || args.has('no-proxy'))) {
+    fail('--proxy/--no-proxy need the broker; --via-host runs on the host');
   }
   // `--method` takes a value, so `has` — which is about boolean flags — is false for it however it is given.
   if (args.value('method') !== undefined && action !== 'merge') {

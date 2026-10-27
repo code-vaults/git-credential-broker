@@ -61,11 +61,22 @@ function makeFetch(proxy: ProxyChoice): FetchLike {
   return (url, init) => raw(url, { ...init, type: null });
 }
 
+/** The current proxy's cache key, for provider caches that must not cross choices. */
+export function currentProxyKey(): string {
+  return proxyCacheKey(context.getStore()?.proxy);
+}
+
 /** The fetch instance for a proxy choice, created once per effective choice. */
 export function fetcherFor(proxy: ProxyChoice): FetchLike {
   const key = proxyCacheKey(proxy);
   let fetcher = instances.get(key);
   if (fetcher === undefined) {
+    // A command may name a different proxy every time; keep the reuse bounded rather than letting
+    // arbitrary URLs grow this map for the life of the broker.
+    if (instances.size >= 16) {
+      const oldest = instances.keys().next().value;
+      if (oldest !== undefined) instances.delete(oldest);
+    }
     fetcher = makeFetch(proxy);
     instances.set(key, fetcher);
   }

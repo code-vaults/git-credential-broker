@@ -32,6 +32,7 @@ Ask the broker for a credential without pushing. Prints a fingerprint, never the
 export async function runProbe(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, { booleans: ['help', 'no-proxy'] });
   if (args.has('no-proxy') && args.value('proxy') !== undefined) fail('--proxy and --no-proxy are mutually exclusive');
+  if (args.has('proxy') && args.value('proxy') === undefined) fail('--proxy needs a value');
   const proxy = args.has('no-proxy') ? null : args.value('proxy');
   if (args.has('help') || args.has('h')) {
     say(PROBE_USAGE);

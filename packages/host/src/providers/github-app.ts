@@ -18,7 +18,7 @@
  * Reference: https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app
  */
 import { userTokenPath } from '../config.ts';
-import { proxyFetch } from '../http.ts';
+import { currentProxyKey, proxyFetch } from '../http.ts';
 import { createSign } from 'node:crypto';
 import { getGhAction, ProviderConfigError, tokenFingerprint, type ActionRunResult } from 'gcb-cli';
 import { runGhAction } from '../gh.ts';
@@ -377,7 +377,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
   ): Promise<void> {
     if (!checkPermissions) return Promise.resolve();
     // Keyed by both, because a log read checks a different set than a credential does.
-    const key = `${owner.toLowerCase()}|${Object.entries(wantedPermissions)
+    const key = `${owner.toLowerCase()}|${currentProxyKey()}|${Object.entries(wantedPermissions)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([name, level]) => `${name}=${level}`)
       .join(',')}`;
@@ -532,7 +532,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       // grace period for it, so the honest reason is the failure that is certain rather than the one that is
       // documented: two exchanges racing means one of them renews from a token the other has already
       // replaced, and whichever write-back runs last decides what is on disk for the next renewal.
-      let renewingPersonToken: Promise<string | undefined> | undefined;
+      const renewingPersonTokens = new Map<string, Promise<string | undefined>>();
 
 /**
  * One more sentence about a failure, when there is one worth having.
@@ -765,12 +765,15 @@ function pullRequestNumber(value: unknown): number | undefined {
        * @returns the user token, or `undefined` when nobody has authorized one.
        */
       async function personalToken(): Promise<string | undefined> {
-        if (renewingPersonToken !== undefined) return renewingPersonToken;
-        renewingPersonToken = renewPersonToken();
+        const key = currentProxyKey();
+        const running = renewingPersonTokens.get(key);
+        if (running !== undefined) return running;
+        const pending = renewPersonToken();
+        renewingPersonTokens.set(key, pending);
         try {
-          return await renewingPersonToken;
+          return await pending;
         } finally {
-          renewingPersonToken = undefined;
+          if (renewingPersonTokens.get(key) === pending) renewingPersonTokens.delete(key);
         }
       }
 
