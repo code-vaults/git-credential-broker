@@ -1036,11 +1036,7 @@ function pullRequestNumber(value: unknown): number | undefined {
       let method = 'POST';
       let url = collection;
       let body: Record<string, unknown> = { title: request.title, body: request.body, head: request.head, base: request.base, draft: request.draft === true };
-      if (request.action === 'close') {
-        method = 'PATCH';
-        url = `${collection}/${request.number}`;
-        body = { state: 'closed' };
-      } else if (request.action === 'update') {
+      if (request.action === 'update') {
         method = 'PATCH';
         url = `${collection}/${request.number}`;
         body = { title: request.title, body: request.body, base: request.base };

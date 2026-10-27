@@ -14,12 +14,16 @@ import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../
 const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));
 
 /** Run the installed client as a child, so its output never replaces the test reporter. */
-function runGhCli(args: readonly string[], cwd?: string): Promise<RunResult> {
+function runClient(args: readonly string[], cwd?: string): Promise<RunResult> {
   return tryRunAsync(
     process.execPath,
-    ['--conditions=development', CLIENT_BIN, 'gh', ...args],
+    ['--conditions=development', CLIENT_BIN, ...args],
     { cwd, env: process.env, timeoutMs: 5000 },
   );
+}
+
+function runGhCli(args: readonly string[], cwd?: string): Promise<RunResult> {
+  return runClient(['gh', ...args], cwd);
 }
 
 describe('gcb gh', () => {
@@ -200,6 +204,42 @@ describe('gcb gh', () => {
     }
   });
 
+  it('routes pr subcommands and run through the gh action', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-shorthand-'));
+    const socketPath = path.join(root, 'broker.sock');
+    const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] };
+    const config: BrokerConfig = {
+      socketPath,
+      socketMode: 0o600,
+      auditPath: null,
+      tokenCacheSkewSeconds: 300,
+      hosts: { 'github.com': block },
+    };
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() };
+    const actions: string[] = [];
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async (request) => {
+        actions.push(request.action);
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
+    try {
+      const pr = await runClient(['pr', 'view', '7', '--repo', 'acme/widget', '--socket', socketPath]);
+      assert.equal(pr.status, 0);
+      const close = await runClient(['pr', 'close', '7', '--repo', 'acme/widget', '--socket', socketPath]);
+      assert.equal(close.status, 0);
+      const run = await runClient(['run', 'list', '--repo', 'acme/widget', '--socket', socketPath]);
+      assert.equal(run.status, 0);
+      assert.deepEqual(actions, ['pr:view', 'pr:close', 'run:list']);
+    } finally {
+      await broker.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('sends a typed action to the broker and prints its stdout', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-command-'));
     const socketPath = path.join(root, 'broker.sock');
@@ -230,5 +270,13 @@ describe('gcb gh', () => {
       await broker.close();
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('bare run', () => {
+  it('prints the catalog help', async () => {
+    const result = await runClient(['run']);
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /Usage: gcb gh/);
   });
 });

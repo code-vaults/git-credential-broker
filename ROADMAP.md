@@ -204,8 +204,9 @@ host_broker:
       - built-ins first (`setup`, `init`, `stage`, `compose`, `probe`, `diagnose`, `authorize`,
         `app`, `host`, `config`, `version`, `help`);
       - `gcb gh …` explicit;
-      - `gcb pr view …`, `gcb run view …` etc. resolve to the `gh` subcommand. (Explicit
-        `gcb gh pr view` is wired; the shorthand is not.)
+      - `gcb pr view …`, `gcb run view …` etc. resolve to the `gh` subcommand. (Wired: any `pr`
+        subcommand the catalog has, plus `run`; the flag-only `gcb pr` stays for the lifecycle `gh`
+        cannot express, and `--close` refuses with a pointer at `gcb gh pr close`.)
 - [ ] Remove the built-in `pr` and `logs` commands. `gcb run view --job <id> --log` replaces `logs`.
 - [x] Build the command table. Every entry has:
       - canonical subcommand (no aliases, no abbreviations);
@@ -261,6 +262,7 @@ host_broker:
   | `pr:list` | `gh pr list` | `pull_requests: read` |
   | `pr:diff` | `gh pr diff` | `pull_requests: read`, `contents: read` |
   | `pr:create` | `gh pr create` | `pull_requests: write`, `contents: read` |
+  | `pr:close` | `gh pr close` | `pull_requests: write` |
   | `pr:comment` | `gh pr comment` | `pull_requests: write` |
   | `pr:review` | `gh pr review` | `pull_requests: write` |
   | `issue:create` | `gh issue create` | `issues: write` |

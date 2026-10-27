@@ -1,5 +1,8 @@
 /**
- * `pr` — open, close, merge or update one pull request through the broker.
+ * `pr` — open, merge or update one pull request through the broker.
+ *
+ * `pr <subcommand>` runs as the catalogued gh action when the catalog has one (`pr:view`,
+ * `pr:close`, …); this file is the flag-only lifecycle for the actions gh cannot express.
  *
  * The credential never leaves the broker. The broker mints a token narrowed to `pull_requests: write`
  * plus read access to the branches it names, performs the action itself, and answers with the number,
@@ -29,8 +32,11 @@ const PR_TIMEOUT_MS = 60_000;
 /** Usage text for `pr`. */
 export const PR_USAGE = `Usage: gcb pr [options]
 
-Open, close, merge, update or inspect a pull request through the broker, without the credential
+Open, merge, update or inspect a pull request through the broker, without the credential
 ever reaching this side.
+
+A subcommand the gh action catalog has (pr view, pr close, …) runs as that action instead;
+gcb gh --help lists them. The flags below are the flag-only lifecycle gh cannot express.
 
 Opening (the default)
   --head <branch>      The branch holding the change                 [required]
@@ -56,7 +62,6 @@ Acting on one
   --edit <id>          Replace the body of that review comment, with --body/--body-file
                        (an id --threads prints; no --number is needed)
   --resolve <thread>   Mark that review thread resolved (the id --threads prints)
-  --close              Close it
   --merge              Merge it (branch protection still applies)
   --method <m>         merge, squash (default) or rebase
   With --number and none of the above, the title, body or base is updated.
@@ -73,7 +78,7 @@ Common
  * Read the action out of the flags.
  *
  * @param args - the parsed arguments.
- * @returns `close`, `merge`, `update` or `open`.
+ * @returns `merge`, `update` or `open`.
  */
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
   // `--resolve`, `--reply-to` and `--edit` take a value, and a bare one is parsed as a boolean flag with
@@ -87,7 +92,6 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
   if (args.has('threads')) return 'threads' as const;
   if (args.has('comment')) return 'comment' as const;
   if (args.has('status')) return 'status' as const;
-  if (args.has('close')) return 'close' as const;
   if (args.has('merge')) return 'merge' as const;
   if (args.value('number') !== undefined) return 'update' as const;
   return 'open' as const;
@@ -101,11 +105,15 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
  */
 export async function runPr(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, {
-    booleans: ['help', 'draft', 'close', 'merge', 'status', 'comment', 'threads', 'via-host'],
+    booleans: ['help', 'draft', 'merge', 'status', 'comment', 'threads', 'via-host'],
   });
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
     return 0;
+  }
+  // Before --repo: the point of the message is to name the command that does it now.
+  if (args.has('close') || args.value('close') !== undefined) {
+    fail('--close moved to: gcb gh pr close <number> --repo owner/name');
   }
 
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
@@ -296,9 +304,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const done =
     action === 'open'
       ? 'opened'
-      : action === 'close'
-        ? 'closed'
-        : action === 'merge'
+      : action === 'merge'
           ? 'merged'
           : action === 'comment'
             ? 'commented on'
