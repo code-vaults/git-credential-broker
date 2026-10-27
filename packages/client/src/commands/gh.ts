@@ -127,6 +127,10 @@ export async function runGh(
     // single-dash operand belongs to a preceding value flag and was consumed before this point.
     const argument = raw?.replace(/^-h$/, '--help').replace(/^-(?=[A-Za-z])/, '--');
     if (argument === undefined) continue;
+    if (argument === '--') {
+      rest.push(...rawRest.slice(index));
+      break;
+    }
     if (argument === '--help') {
       help = true;
       rest.push(argument);
@@ -189,6 +193,7 @@ export async function runGh(
   if (socketPath === undefined) fail('no broker socket is configured');
 
   for (const argument of rest) {
+    if (argument === '--') break;
     const match = /^--([^=]+)/.exec(argument);
     if (match?.[1] !== undefined && !allowed.has(match[1])) {
       fail(`unknown option --${match[1]} for gcb gh ${domain} ${command}`);
