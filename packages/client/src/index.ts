@@ -15,7 +15,9 @@ Commands
   setup      Configure this environment's git to use the broker
   probe      Ask the broker what it would do for a repository, without pushing
   logs       Read a workflow job's log through the broker
-  pr         Use the broker's pull-request operations
+  pr         Use the broker's pull-request operations; pr view/list/diff/create/comment/review
+             resolve to the gh actions
+  run        Run a workflow run action (run view, run list)
   gh         Run a catalogued GitHub action through the broker
 
 As a git credential helper
@@ -37,8 +39,15 @@ async function run(argv: readonly string[]): Promise<number> {
       return (await import('./commands/probe.ts')).runProbe(rest);
     case 'logs':
       return (await import('./commands/logs.ts')).runLogs(rest);
-    case 'pr':
+    case 'pr': {
+      const sub = rest[0];
+      if (sub !== undefined && ['view', 'list', 'diff', 'create', 'comment', 'review'].includes(sub)) {
+        return (await import('./commands/gh.ts')).runGh(['pr', ...rest]);
+      }
       return (await import('./commands/pr.ts')).runPr(rest);
+    }
+    case 'run':
+      return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
     case 'gh':
       return (await import('./commands/gh.ts')).runGh(rest);
     default:
@@ -49,7 +58,7 @@ async function run(argv: readonly string[]): Promise<number> {
 
 export const clientBackend: CommandBackend = {
   role: 'client',
-  commands: ['setup', 'probe', 'logs', 'pr', 'gh'],
+  commands: ['setup', 'probe', 'logs', 'pr', 'run', 'gh'],
   help: CLIENT_HELP,
   run,
 };
