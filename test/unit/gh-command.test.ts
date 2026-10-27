@@ -169,6 +169,21 @@ describe('gcb gh', () => {
     }
   });
 
+  it('refuses a remote URL that names more than owner/repo', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-remote-path-'));
+    try {
+      const checkout = path.join(root, 'checkout');
+      fs.mkdirSync(checkout);
+      execFileSync('git', ['init', '--quiet'], { cwd: checkout });
+      execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widget/issues'], { cwd: checkout });
+      const result = await runGhCli(['pr', 'view', '7', '--socket', path.join(root, 'broker.sock')], checkout);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /no usable GitHub remote/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('sends a typed action to the broker and prints its stdout', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-command-'));
     const socketPath = path.join(root, 'broker.sock');

@@ -4,11 +4,10 @@
  * The action catalog defines the command, flags, positionals and permissions. The client only
  * parses names and values; the broker rebuilds the canonical argv and runs gh with its own token.
  */
-import { execFileSync } from 'node:child_process';
-
 import { GH_ACTIONS, getGhAction, parseArgs, say, fail, type ActionValues } from 'gcb-cli';
 
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
+import { listRemotes, remoteRepo } from './remotes.ts';
 
 const ACTION_LINES = Object.values(GH_ACTIONS)
   .map((action) => {
@@ -32,44 +31,20 @@ const ACTION_LINES = Object.values(GH_ACTIONS)
   .join('\n');
 
 /**
- * Read owner/repo from the checkout's git remote.
+ * Read owner/repo from the checkout's default remote: `origin` if it exists, else the first one.
  *
- * @returns the normalized repository, or undefined when git/the remote cannot answer.
+ * The URL parsing lives in `remotes.ts`, beside `--head origin:branch`, so the two cannot disagree
+ * about what a remote points at.
+ *
+ * @param cwd - the checkout to ask.
+ * @returns the normalized repository, or undefined when no remote names one.
  */
-function repoFromCheckout(): string | undefined {
-  let remotes: string[];
-  try {
-    remotes = execFileSync('git', ['remote'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line !== '');
-  } catch {
-    return undefined;
-  }
+function repoFromCheckout(cwd: string): string | undefined {
+  const remotes = listRemotes(cwd);
   const name = remotes.includes('origin') ? 'origin' : remotes[0];
   if (name === undefined) return undefined;
-  let url: string;
-  try {
-    url = execFileSync('git', ['remote', 'get-url', name], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-  } catch {
-    return undefined;
-  }
-  if (!/^(?:https?:\/\/|ssh:\/\/|git@)/i.test(url)) return undefined;
-  let pathPart = url.replace(/^[a-z]+:\/\//i, '');
-  if (pathPart.startsWith('git@')) pathPart = pathPart.slice(4).replace(':', '/');
-  else pathPart = pathPart.replace(/^[^/]+@/, '');
-  const slash = pathPart.indexOf('/');
-  if (slash < 0) return undefined;
-  const parts = pathPart
-    .slice(slash + 1)
-    .replace(/\.git$/, '')
-    .replace(/\/+$/, '')
-    .split('/');
-  if (parts.length < 2) return undefined;
-  return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+  const found = remoteRepo(name, cwd);
+  return found === undefined ? undefined : `${found.owner}/${found.repo}`;
 }
 
 /** Usage text for `gh`. */
@@ -111,8 +86,8 @@ export async function runGh(argv: readonly string[]): Promise<number> {
 
   const booleans = action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
   const args = parseArgs(rest, { booleans });
-  const repo = args.value('repo') ?? repoFromCheckout();
-  if (repo === undefined) fail('--repo is required when the checkout has no git remote');
+  const repo = args.value('repo') ?? repoFromCheckout(process.cwd());
+  if (repo === undefined) fail('--repo is required when the checkout has no usable GitHub remote');
   const host = args.value('host') ?? 'github.com';
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   if (socketPath === undefined) fail('no broker socket is configured');
