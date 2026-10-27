@@ -1093,6 +1093,36 @@ describe('compose', () => {
     );
   });
 
+  it('renders an explicit proxy literally', () => {
+    const explicit = renderCompose({
+      dir: '/volume1/docker/git-cred-broker',
+      socketDir: '/srv/shared/git-broker',
+      user: '1026:100',
+      image: 'node:24-slim',
+      packageSpec: 'gcb-host@0.1.0',
+      name: 'git-cred-broker',
+      proxy: 'http://proxy.example:7890',
+    });
+    assert.match(explicit, /http_proxy=http:\/\/proxy\.example:7890/);
+    assert.match(explicit, /https_proxy=http:\/\/proxy\.example:7890/);
+    assert.match(explicit, /NODE_USE_ENV_PROXY=1/);
+    assert.equal(/\$\{http_proxy/.test(explicit), false);
+  });
+
+  it('renders a direct connection when asked for no proxy', () => {
+    const direct = renderCompose({
+      dir: '/volume1/docker/git-cred-broker',
+      socketDir: '/srv/shared/git-broker',
+      user: '1026:100',
+      image: 'node:24-slim',
+      packageSpec: 'gcb-host@0.1.0',
+      name: 'git-cred-broker',
+      proxy: null,
+    });
+    assert.equal(/http_proxy|https_proxy|NODE_USE_ENV_PROXY/.test(direct), false);
+    assert.match(direct, /--no-proxy: the broker reaches GitHub directly/);
+  });
+
   it('emits one environment block, with the proxy switch the daemon insists on', () => {
     // Not a regex on a fragment: the failure this guards is a second `environment:` key, which is not valid
     // YAML and which docker rejects — and `docker compose config` cannot run here.
@@ -1231,5 +1261,22 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.equal(noNumber.status, 1);
     assert.match(noNumber.stderr, /no broker socket/, 'it reached socket resolution');
     assert.doesNotMatch(noNumber.stderr, /--number is required/, 'without being asked for a number');
+  });
+});
+
+describe('compose egress', () => {
+  it('omits the environment block when a code sidecar has no other variables', () => {
+    const direct = renderCompose({
+      dir: '/volume1/docker/git-cred-broker',
+      socketDir: '/srv/shared/git-broker',
+      user: '1026:100',
+      image: 'node:24-slim',
+      packageSpec: 'gcb-host@0.1.0',
+      name: 'git-cred-broker',
+      code: '/volume1/docker/git-cred-broker/app',
+      proxy: null,
+    });
+    assert.equal(/^    environment:/m.test(direct), false, 'an empty environment is not valid compose YAML');
+    assert.equal(/http_proxy|https_proxy|NODE_USE_ENV_PROXY/.test(direct), false);
   });
 });
