@@ -272,3 +272,11 @@ describe('gcb gh', () => {
     }
   });
 });
+
+describe('bare run', () => {
+  it('prints the catalog help', async () => {
+    const result = await runClient(['run']);
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /Usage: gcb gh/);
+  });
+});

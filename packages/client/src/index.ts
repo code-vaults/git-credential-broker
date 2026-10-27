@@ -70,6 +70,10 @@ async function run(argv: readonly string[]): Promise<number> {
       return (await import('./commands/pr.ts')).runPr(rest);
     }
     case 'run':
+      if (rest.length === 0) {
+        await (await import('./commands/gh.ts')).runGh(['run', '--help']);
+        return 1;
+      }
       return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
     case 'gh':
       return (await import('./commands/gh.ts')).runGh(rest);
