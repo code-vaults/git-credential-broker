@@ -8,6 +8,15 @@ import type { CommandBackend } from 'gcb-cli';
 
 export { runHelper } from './helper.ts';
 
+const PR_SUBCOMMANDS = Object.values(GH_ACTIONS)
+  .filter((action) => action.command[0] === 'pr')
+  .map((action) => action.command[1])
+  .join('|');
+const RUN_SUBCOMMANDS = Object.values(GH_ACTIONS)
+  .filter((action) => action.command[0] === 'run')
+  .map((action) => action.command[1])
+  .join('|');
+
 export const CLIENT_HELP = `gcb-client — container-side git credential helper and broker client.
 
 Usage: gcb <command> [options]
@@ -16,9 +25,9 @@ Commands
   setup      Configure this environment's git to use the broker
   probe      Ask the broker what it would do for a repository, without pushing
   logs       Read a workflow job's log through the broker
-  pr         Use the broker's pull-request lifecycle; a subcommand the gh action catalog has
-             (pr view, pr close, …) runs as that action instead
-  run        Run a workflow run action (run view, run list)
+  pr         Use the broker's pull-request lifecycle; these run as gh actions:
+             ${PR_SUBCOMMANDS}
+  run        Run a workflow run action: ${RUN_SUBCOMMANDS}
   gh         Run a catalogued GitHub action through the broker
 
 As a git credential helper
