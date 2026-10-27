@@ -66,11 +66,15 @@ ${ACTION_LINES}`;
  * @returns the process exit code: 0 success, 1 refusal.
  */
 export async function runGh(argv: readonly string[]): Promise<number> {
-  if (argv.length === 0 || argv.includes('--help') || argv.includes('-h')) {
+  if (argv.length === 0) {
     say(GH_USAGE);
-    return argv.length === 0 ? 1 : 0;
+    return 1;
   }
-  const [domain, command, ...rest] = argv;
+  const [domain, command, ...rawRest] = argv;
+  if (domain === '--help' || domain === '-h' || command === '--help' || command === '-h') {
+    say(GH_USAGE);
+    return 0;
+  }
   if (domain === undefined || command === undefined) {
     // A caller with a domain and no command (`gcb run`, `gcb gh pr`) gets the catalog rather than one
     // example: the answer is every action, and the example would only be right for one of them.
@@ -82,11 +86,35 @@ export async function runGh(argv: readonly string[]): Promise<number> {
   try {
     action = getGhAction(actionName);
   } catch {
+    if (rawRest.includes('--help') || rawRest.includes('-h')) {
+      say(GH_USAGE);
+      return 0;
+    }
     fail(`unknown gh action ${JSON.stringify(actionName)}`);
+  }
+
+  // A known value-taking flag consumes the next token even when it looks like an option, so a body
+  // that is literally `--help` is data, not a help request. The parser then sees `--body=--help`.
+  const valueFlags = new Set(action.flags.filter((flag) => flag.type !== 'boolean').map((flag) => flag.name));
+  const rest: string[] = [];
+  for (let index = 0; index < rawRest.length; index += 1) {
+    const argument = rawRest[index];
+    const name = argument?.startsWith('--') && !argument.includes('=') ? argument.slice(2) : undefined;
+    const next = rawRest[index + 1];
+    if (name !== undefined && valueFlags.has(name) && next !== undefined) {
+      rest.push(`${argument}=${next}`);
+      index += 1;
+    } else if (argument !== undefined) {
+      rest.push(argument);
+    }
   }
 
   const booleans = action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
   const args = parseArgs(rest, { booleans });
+  if (args.has('help')) {
+    say(GH_USAGE);
+    return 0;
+  }
   const host = args.value('host') ?? 'github.com';
   let repo = args.value('repo') ?? args.value('R');
   if (repo === undefined) {
