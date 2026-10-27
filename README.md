@@ -117,9 +117,11 @@ Debian package is not used are recorded in
 
 ```sh
 gcb gh pr view 12 --repo owner/name
-gcb gh pr create --repo owner/name --head feat/x --title "A title" --body "A body"
+gcb gh pr create -R owner/name --head feat/x --title "A title" --body "A body"
 gcb gh run view 123456 --log --repo owner/name
 ```
+
+`-R` is the short form of `--repo`, as in `gh` itself.
 
 Inside a checkout, `--repo` can be omitted only when `origin` names a usable GitHub repository whose
 host matches `--host`; otherwise pass `--repo`, or the matching `--host`.

@@ -50,10 +50,10 @@ export const GH_USAGE = `Usage: gcb gh <domain> <command> [options]
 Run a catalogued GitHub action through the broker.
 
 Common
-  --repo <owner/name>  Repository the action belongs to (default: origin remote)
-  --host <host>        Host as configured, e.g. github.com (default: github.com)
-  --socket <path>      Broker socket (default: GIT_BROKER_SOCKET)
-  -h, --help           Show this help
+  -R, --repo <owner/name>  Repository the action belongs to (default: origin remote)
+  --host <host>            Host as configured, e.g. github.com (default: github.com)
+  --socket <path>          Broker socket (default: GIT_BROKER_SOCKET)
+  -h, --help               Show this help
 
 Commands, from the action catalog
 ${ACTION_LINES}`;
@@ -84,7 +84,7 @@ export async function runGh(argv: readonly string[]): Promise<number> {
   const booleans = action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
   const args = parseArgs(rest, { booleans });
   const host = args.value('host') ?? 'github.com';
-  let repo = args.value('repo');
+  let repo = args.value('repo') ?? args.value('R');
   if (repo === undefined) {
     const found = repoFromCheckout(process.cwd());
     if (found === undefined) fail('--repo is required when the checkout has no usable origin remote');
@@ -99,6 +99,7 @@ export async function runGh(argv: readonly string[]): Promise<number> {
   const allowed = new Set([
     ...action.flags.map((flag) => flag.name),
     'repo',
+    'R',
     'host',
     'socket',
   ]);
