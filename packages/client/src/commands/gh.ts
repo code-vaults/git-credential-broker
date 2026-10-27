@@ -93,15 +93,18 @@ export async function runGh(argv: readonly string[]): Promise<number> {
     fail(`unknown gh action ${JSON.stringify(actionName)}`);
   }
 
-  // A known value-taking flag consumes the next token even when it looks like an option, so a body
-  // that is literally `--help` is data, not a help request. The parser then sees `--body=--help`.
+  // A known value-taking flag consumes the next token only when that token is a value. A following
+  // flag is left alone (so a missing value fails as missing), except a literal --help/-h: a body that
+  // is exactly one of those is data, not a help request. The parser then sees --body=--help.
   const valueFlags = new Set(action.flags.filter((flag) => flag.type !== 'boolean').map((flag) => flag.name));
   const rest: string[] = [];
   for (let index = 0; index < rawRest.length; index += 1) {
     const argument = rawRest[index];
     const name = argument?.startsWith('--') && !argument.includes('=') ? argument.slice(2) : undefined;
     const next = rawRest[index + 1];
-    if (name !== undefined && valueFlags.has(name) && next !== undefined) {
+    const nextIsFlag = next !== undefined && /^--?[A-Za-z]/.test(next);
+    const literalHelp = next === '--help' || next === '-h';
+    if (name !== undefined && valueFlags.has(name) && next !== undefined && (!nextIsFlag || literalHelp)) {
       rest.push(`${argument}=${next}`);
       index += 1;
     } else if (argument !== undefined) {

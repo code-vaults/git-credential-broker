@@ -323,3 +323,14 @@ describe('bare run', () => {
     assert.match(result.stdout, /Usage: gcb gh/);
   });
 });
+
+describe('gh option values', () => {
+  it('refuses a value flag followed by another flag', async () => {
+    const result = await runGhCli([
+      'pr', 'create', '--head', 'feat', '--title', '--draft', '--body', 'b',
+      '--repo', 'acme/widget', '--socket', '/nonexistent',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /needs --title/);
+  });
+});
