@@ -94,18 +94,19 @@ export async function runGh(argv: readonly string[]): Promise<number> {
   }
 
   // A known value-taking flag consumes the next token only when that token is a value. A following
-  // flag is left alone (so a missing value fails as missing), except a literal --help/-h: a body that
-  // is exactly one of those is data, not a help request. The parser then sees --body=--help.
+  // known flag is not taken as a value (so a missing value fails as missing), except a literal
+  // --help/-h: a body that is exactly one of those is data, not a help request. The parser then
+  // sees --body=--help.
   const valueFlags = new Set(action.flags.filter((flag) => flag.type !== 'boolean').map((flag) => flag.name));
 
-  const knownFlags = new Set([
+  const allowed = new Set([
     ...action.flags.map((flag) => flag.name),
     'repo',
     'R',
     'host',
     'socket',
-    'help',
   ]);
+  const knownFlags = new Set([...allowed, 'help']);
   for (let index = 0; index < rawRest.length; index += 1) {
     const argument = rawRest[index];
     if (argument === undefined || !argument.startsWith('--') || argument.includes('=')) continue;
@@ -159,13 +160,6 @@ export async function runGh(argv: readonly string[]): Promise<number> {
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   if (socketPath === undefined) fail('no broker socket is configured');
 
-  const allowed = new Set([
-    ...action.flags.map((flag) => flag.name),
-    'repo',
-    'R',
-    'host',
-    'socket',
-  ]);
   for (const argument of rest) {
     const match = /^--([^=]+)/.exec(argument);
     if (match?.[1] !== undefined && !allowed.has(match[1])) {
