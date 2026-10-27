@@ -101,7 +101,13 @@ export async function runGh(
   // known flag is not taken as a value (so a missing value fails as missing), except a literal
   // --help/-h: a body that is exactly one of those is data, not a help request. The parser then
   // sees --body=--help.
-  const valueFlags = new Set(action.flags.filter((flag) => flag.type !== 'boolean').map((flag) => flag.name));
+  const valueFlags = new Set([
+    ...action.flags.filter((flag) => flag.type !== 'boolean').map((flag) => flag.name),
+    'repo',
+    'R',
+    'host',
+    'socket',
+  ]);
 
   const allowed = new Set([
     ...action.flags.map((flag) => flag.name),
@@ -113,48 +119,62 @@ export async function runGh(
   const knownFlags = new Set([...allowed, 'help']);
 
   const rest: string[] = [];
+  let missingValue: string | undefined;
+  let help = false;
   for (let index = 0; index < rawRest.length; index += 1) {
-    // `-h` is help in flag position, and parseArgs normalises only the token it reads at that
-    // position: normalise it here too, or a value flag's next `-h` is taken as its value. A body's
-    // `-h` was merged into `--body=-h` above and never reaches this line.
-    const argument = rawRest[index]?.replace(/^-h$/, '--help');
-    const name = argument?.startsWith('--') && !argument.includes('=') ? argument.slice(2) : undefined;
-    const next = rawRest[index + 1];
-    const nextIsFlag = next !== undefined && /^--?[A-Za-z]/.test(next);
-    const literalHelp = (next === '--help' || next === '-h') && name === 'body';
-    if (name !== undefined && valueFlags.has(name) && next !== undefined && (!nextIsFlag || literalHelp)) {
-      rest.push(`${argument}=${next}`);
-      index += 1;
-    } else if (argument !== undefined) {
+    const raw = rawRest[index];
+    const argument = raw?.replace(/^-h$/, '--help');
+    if (argument === undefined) continue;
+    if (argument === '--help') {
+      help = true;
       rest.push(argument);
+      continue;
     }
+    const name = argument.startsWith('--') && !argument.includes('=') ? argument.slice(2) : undefined;
+    if (name === undefined || !valueFlags.has(name)) {
+      rest.push(argument);
+      continue;
+    }
+    const next = rawRest[index + 1];
+    if (next === undefined) {
+      missingValue ??= `--${name} needs a value`;
+      rest.push(argument);
+      continue;
+    }
+    if (next === '--help' || next === '-h') {
+      if (name === 'body') {
+        rest.push(`${argument}=${next}`);
+        index += 1;
+      } else {
+        help = true;
+        rest.push(argument);
+      }
+      continue;
+    }
+    if (next.startsWith('--')) {
+      const nextName = next.slice(2).split('=')[0];
+      if (nextName !== undefined && knownFlags.has(nextName)) {
+        missingValue ??= `--${name} needs a value`;
+      }
+      // Leave both tokens alone: a known flag is a missing value, an unknown one must reach the
+      // unknown-option check rather than becoming a value.
+      rest.push(argument);
+      continue;
+    }
+    rest.push(`${argument}=${next}`);
+    index += 1;
   }
+  if (help) {
+    say(GH_USAGE);
+    return 0;
+  }
+  if (missingValue !== undefined) fail(missingValue);
 
-  // `help` is declared a boolean so it is a help request wherever it sits: a value flag's next token
-  // was already merged above, so `--body --help` reaches the parser as data.
   const booleans = [
     ...action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name),
     'help',
   ];
   const args = parseArgs(rest, { booleans });
-  if (args.has('help')) {
-    say(GH_USAGE);
-    return 0;
-  }
-
-  for (let index = 0; index < rawRest.length; index += 1) {
-    const argument = rawRest[index];
-    if (argument === undefined || !argument.startsWith('--') || argument.includes('=')) continue;
-    const name = argument.slice(2);
-    if (!valueFlags.has(name)) continue;
-    const next = rawRest[index + 1];
-    if (next === undefined) fail(`--${name} needs a value`);
-    if (name === 'body' && (next === '--help' || next === '-h')) continue;
-    if (next.startsWith('--')) {
-      const nextName = next.slice(2).split('=')[0];
-      if (nextName !== undefined && knownFlags.has(nextName)) fail(`--${name} needs a value`);
-    }
-  }
 
   const host = args.value('host') ?? 'github.com';
   let repo = args.value('repo') ?? args.value('R');

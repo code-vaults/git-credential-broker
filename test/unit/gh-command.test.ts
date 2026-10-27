@@ -373,3 +373,14 @@ describe('help after a value flag', () => {
     assert.match(result.stdout, /Usage: gcb gh/);
   });
 });
+
+describe('unknown gh options', () => {
+  it('does not let an unknown flag become a value', async () => {
+    const result = await runGhCli([
+      'pr', 'comment', '7', '--body', 'x', '--bogus', 'y',
+      '--repo', 'acme/widget', '--socket', '/nonexistent',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /unknown option --bogus/);
+  });
+});
