@@ -19,7 +19,7 @@
  */
 import { userTokenPath } from '../config.ts';
 import { createSign } from 'node:crypto';
-import { getGhAction, ProviderConfigError, tokenFingerprint } from 'gcb-cli';
+import { getGhAction, ProviderConfigError, tokenFingerprint, type ActionRunResult } from 'gcb-cli';
 import { runGhAction } from '../gh.ts';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
@@ -190,6 +190,9 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
    * a token minted for git should not also be able to open a pull request.
    */
   const PULL_REQUEST_PERMISSIONS: Record<string, string> = { pull_requests: 'write', contents: 'read' };
+  /** The result of an action that never reached the executor. */
+  const NO_RUN = { stdout: '', stderr: '', code: null, signal: null, truncated: false, timedOut: false };
+  const REVOKE_WARNING = 'the action token could not be revoked; it expires on its own';
 
   /** owner login (lowercased) -> installation */
   const installations = new Map<string, CachedInstallation>();
@@ -578,8 +581,10 @@ function pullRequestNumber(value: unknown): number | undefined {
       if (typeof token !== 'string' || !token) {
         throw new ProviderConfigError('GitHub returned no installation token for the action');
       }
+      let result: ActionRunResult;
+      let warning: string | undefined;
       try {
-        const result = await runGhAction({
+        result = await runGhAction({
           action: request.action,
           values: request.values,
           repo: request.full,
@@ -588,7 +593,8 @@ function pullRequestNumber(value: unknown): number | undefined {
           ghPath,
           env: process.env,
         });
-        return { ...result, tokenFingerprint: tokenFingerprint(token) };
+      } catch (error) {
+        result = { ...NO_RUN, error: error instanceof Error ? error.message : String(error) };
       } finally {
         try {
           const response = await fetchImpl(`${api}/installation/token`, {
@@ -608,11 +614,14 @@ function pullRequestNumber(value: unknown): number | undefined {
               // The status is enough; a body that cannot be read is still not a successful revoke.
             }
             log(`could not revoke the action token: GitHub answered ${response.status}${detail ? ` ${detail}` : ''}`);
+            warning = REVOKE_WARNING;
           }
         } catch (error) {
           log(`could not revoke the action token: ${String((error as Error).message ?? error)}`);
+          warning = REVOKE_WARNING;
         }
       }
+      return { ...result, tokenFingerprint: tokenFingerprint(token), ...(warning === undefined ? {} : { warning }) };
     },
 
     async getCredential(request): Promise<Credential> {

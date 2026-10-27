@@ -146,6 +146,7 @@ function createStubFetch(options: {
   token?: string;
   tokenStatus?: number;
   revokeStatus?: number;
+  revokeReject?: boolean;
   appPermissions?: Record<string, string>;
   installationPermissions?: Record<string, string>;
   logText?: string;
@@ -157,6 +158,7 @@ function createStubFetch(options: {
     token = 'ghs_stub_token_value',
     tokenStatus = 201,
     revokeStatus = 204,
+    revokeReject = false,
     appPermissions = { contents: 'write', pull_requests: 'write' },
     installationPermissions = appPermissions,
     logText = 'stub log\n',
@@ -240,7 +242,7 @@ function createStubFetch(options: {
       return Promise.resolve(jsonResponse({ permissions: installationPermissions }));
     }
     if (url.endsWith('/installation/token')) {
-      return Promise.resolve(jsonResponse({}, revokeStatus));
+      return revokeReject ? Promise.reject(new Error('network down')) : Promise.resolve(jsonResponse({}, revokeStatus));
     }
     if (url.includes('/access_tokens')) {
       if (tokenStatus !== 201) return Promise.resolve(jsonResponse({ message: 'Bad credentials' }, tokenStatus));
@@ -319,9 +321,66 @@ describe('createGithubAppProvider', () => {
       assert.equal(result?.code, 0);
       assert.ok(logs.some((line) => line.includes('could not revoke the action token')));
       assert.ok(logs.some((line) => line.includes('500')));
+      assert.match(result?.warning ?? '', /expires on its own/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('reports a rejected action-token revoke', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-action-revoke-reject-'));
+    const gh = join(dir, 'gh');
+    writeFileSync(gh, '#!/bin/sh\nexit 0\n');
+    chmodSync(gh, 0o755);
+    const permissions = { pull_requests: 'read', contents: 'read', checks: 'read', statuses: 'read' };
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'Acme' } }],
+      nowMs,
+      appPermissions: permissions,
+      installationPermissions: permissions,
+      revokeReject: true,
+    });
+    const logs: string[] = [];
+    const provider = providerFor(stub, {}, gh, (message) => logs.push(message));
+    try {
+      const result = await provider.runAction?.({
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        full: 'acme/widget',
+        action: 'pr:view',
+        values: { number: 7 },
+      });
+      assert.match(result?.warning ?? '', /expires on its own/);
+      assert.ok(logs.some((line) => line.includes('network down')));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns setup failures and a failed-revoke warning together', async () => {
+    const permissions = { pull_requests: 'read', contents: 'read', checks: 'read', statuses: 'read' };
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'Acme' } }],
+      nowMs,
+      appPermissions: permissions,
+      installationPermissions: permissions,
+      revokeStatus: 500,
+    });
+    const logs: string[] = [];
+    // A NUL makes spawn throw synchronously; an ordinary bad path would be returned as result.error.
+    const provider = providerFor(stub, {}, '\0', (message) => logs.push(message));
+    const result = await provider.runAction?.({
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      full: 'acme/widget',
+      action: 'pr:view',
+      values: { number: 7 },
+    });
+    assert.ok(result?.error);
+    assert.match(result?.warning ?? '', /expires on its own/);
+    assert.ok(logs.some((line) => line.includes('could not revoke the action token')));
   });
 
   it('runs an action with an action token and revokes it', async () => {

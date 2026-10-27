@@ -123,10 +123,12 @@ export async function runGh(argv: readonly string[]): Promise<number> {
     fail((error as Error).message);
   }
   if (response.ok !== true) {
+    if (response.warning) process.stderr.write(`warning: ${response.warning}\n`);
     fail(`refused [${response.code ?? 'unknown'}]: ${response.reason ?? 'no reason'}`);
   }
   if (response.stdout) process.stdout.write(response.stdout);
   if (response.stderr) process.stderr.write(response.stderr);
+  if (response.warning) process.stderr.write(`warning: ${response.warning}\n`);
   if (response.truncated === true) {
     process.stderr.write('warning: the action output was truncated at the broker\x27s limit\n');
   }

@@ -296,7 +296,8 @@ export function createRequestHandler(
           values: actionValues,
         });
         if (result.error !== undefined) {
-          return denyAction(CODES.PROVIDER_ERROR, result.error, 'the host could not start gh');
+          const refusal = denyAction(CODES.PROVIDER_ERROR, result.error, 'the host could not start gh');
+          return result.warning === undefined ? refusal : { ...refusal, warning: result.warning };
         }
         audit.record({
           event: 'action',
@@ -319,6 +320,7 @@ export function createRequestHandler(
           exitCode: result.code,
           truncated: result.truncated,
           timedOut: result.timedOut,
+          ...(result.warning === undefined ? {} : { warning: result.warning }),
         };
       } catch (error) {
         const reason = String((error as Error).message ?? error).slice(0, 300);
