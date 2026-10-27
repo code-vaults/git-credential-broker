@@ -97,6 +97,29 @@ export async function runGh(argv: readonly string[]): Promise<number> {
   // flag is left alone (so a missing value fails as missing), except a literal --help/-h: a body that
   // is exactly one of those is data, not a help request. The parser then sees --body=--help.
   const valueFlags = new Set(action.flags.filter((flag) => flag.type !== 'boolean').map((flag) => flag.name));
+
+  const knownFlags = new Set([
+    ...action.flags.map((flag) => flag.name),
+    'repo',
+    'R',
+    'host',
+    'socket',
+    'help',
+  ]);
+  for (let index = 0; index < rawRest.length; index += 1) {
+    const argument = rawRest[index];
+    if (argument === undefined || !argument.startsWith('--') || argument.includes('=')) continue;
+    const name = argument.slice(2);
+    if (!valueFlags.has(name)) continue;
+    const next = rawRest[index + 1];
+    if (next === undefined) fail(`--${name} needs a value`);
+    if (next === '--help' || next === '-h') continue;
+    if (next.startsWith('--')) {
+      const nextName = next.slice(2).split('=')[0];
+      if (nextName !== undefined && knownFlags.has(nextName)) fail(`--${name} needs a value`);
+    }
+  }
+
   const rest: string[] = [];
   for (let index = 0; index < rawRest.length; index += 1) {
     const argument = rawRest[index];

@@ -325,12 +325,21 @@ describe('bare run', () => {
 });
 
 describe('gh option values', () => {
+  it('refuses an optional value flag followed by another flag', async () => {
+    const result = await runGhCli([
+      'pr', 'create', '--head', 'feat', '--title', 't', '--body', 'b', '--reviewer', '--draft',
+      '--repo', 'acme/widget', '--socket', '/nonexistent',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--reviewer needs a value/);
+  });
+
   it('refuses a value flag followed by another flag', async () => {
     const result = await runGhCli([
       'pr', 'create', '--head', 'feat', '--title', '--draft', '--body', 'b',
       '--repo', 'acme/widget', '--socket', '/nonexistent',
     ]);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /needs --title/);
+    assert.match(result.stderr, /--title needs a value/);
   });
 });
