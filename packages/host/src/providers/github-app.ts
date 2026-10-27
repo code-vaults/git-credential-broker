@@ -532,7 +532,10 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       // grace period for it, so the honest reason is the failure that is certain rather than the one that is
       // documented: two exchanges racing means one of them renews from a token the other has already
       // replaced, and whichever write-back runs last decides what is on disk for the next renewal.
-      const renewingPersonTokens = new Map<string, Promise<string | undefined>>();
+      // The refresh token on disk is one shared value; two renewals racing can invalidate it. Serialize
+      // the exchange even when the commands selected different proxy routes, then let the waiter re-read
+      // the cache the winner wrote. Each exchange still uses its own command's fetch.
+      let renewingPersonToken: Promise<string | undefined> | undefined;
 
 /**
  * One more sentence about a failure, when there is one worth having.
@@ -765,15 +768,19 @@ function pullRequestNumber(value: unknown): number | undefined {
        * @returns the user token, or `undefined` when nobody has authorized one.
        */
       async function personalToken(): Promise<string | undefined> {
-        const key = currentProxyKey();
-        const running = renewingPersonTokens.get(key);
-        if (running !== undefined) return running;
+        while (renewingPersonToken !== undefined) {
+          try {
+            await renewingPersonToken;
+          } catch {
+            // The winner failed; this command retries after the lock is released.
+          }
+        }
         const pending = renewPersonToken();
-        renewingPersonTokens.set(key, pending);
+        renewingPersonToken = pending;
         try {
           return await pending;
         } finally {
-          if (renewingPersonTokens.get(key) === pending) renewingPersonTokens.delete(key);
+          if (renewingPersonToken === pending) renewingPersonToken = undefined;
         }
       }
 

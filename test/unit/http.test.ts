@@ -86,6 +86,8 @@ describe('startup proxy environment', () => {
         NODE_USE_ENV_PROXY: '1',
         http_proxy: 'http://127.0.0.1:1',
         https_proxy: 'http://127.0.0.1:1',
+        no_proxy: '',
+        NO_PROXY: '',
       },
     });
     let output = '';
