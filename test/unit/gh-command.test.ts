@@ -276,11 +276,22 @@ describe('gcb gh', () => {
 
   it('treats --help as help wherever it sits', async () => {
     // No broker is involved: each case has to answer before the socket is looked for.
-    for (const argv of [['--help'], ['pr', 'view', '--help', '7'], ['pr', 'view', '7', '--help']]) {
+    for (const argv of [
+      ['--help'],
+      ['pr', 'view', '--help', '7'],
+      ['pr', 'view', '7', '--help'],
+      ['pr', 'create', '--title', '--head', '--help'],
+    ]) {
       const result = await runGhCli(argv);
       assert.equal(result.status, 0, argv.join(' '));
       assert.match(result.stdout, /Usage: gcb gh/);
     }
+  });
+
+  it('keeps the pr unreachable exit code', async () => {
+    const result = await runClient(['pr', 'view', '7', '--repo', 'acme/widget', '--socket', '/nonexistent']);
+    assert.equal(result.status, 3);
+    assert.match(result.stderr, /unreachable/);
   });
 
   it('sends a typed action to the broker and prints its stdout', async () => {

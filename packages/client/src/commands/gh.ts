@@ -63,9 +63,12 @@ ${ACTION_LINES}`;
  * Run the `gh` command.
  *
  * @param argv - arguments after `gh`.
- * @returns the process exit code: 0 success, 1 refusal.
+ * @returns the process exit code: 0 success, 1 refusal, 3 broker unreachable.
  */
-export async function runGh(argv: readonly string[]): Promise<number> {
+export async function runGh(
+  argv: readonly string[],
+  options: { readonly unreachableExitCode?: number } = {},
+): Promise<number> {
   if (argv.length === 0) {
     say(GH_USAGE);
     return 1;
@@ -107,25 +110,6 @@ export async function runGh(argv: readonly string[]): Promise<number> {
     'socket',
   ]);
   const knownFlags = new Set([...allowed, 'help']);
-  for (let index = 0; index < rawRest.length; index += 1) {
-    const argument = rawRest[index];
-    if (argument === undefined || !argument.startsWith('--') || argument.includes('=')) continue;
-    const name = argument.slice(2);
-    if (!valueFlags.has(name)) continue;
-    const next = rawRest[index + 1];
-    if (next === undefined) fail(`--${name} needs a value`);
-    if (next === '--help' || next === '-h') {
-      // A body is free text and may literally be --help; every other value flag leaves it as an
-      // unconsumed request so the help wins over the missing value.
-      if (name === 'body') continue;
-      say(GH_USAGE);
-      return 0;
-    }
-    if (next.startsWith('--')) {
-      const nextName = next.slice(2).split('=')[0];
-      if (nextName !== undefined && knownFlags.has(nextName)) fail(`--${name} needs a value`);
-    }
-  }
 
   const rest: string[] = [];
   for (let index = 0; index < rawRest.length; index += 1) {
@@ -133,7 +117,7 @@ export async function runGh(argv: readonly string[]): Promise<number> {
     const name = argument?.startsWith('--') && !argument.includes('=') ? argument.slice(2) : undefined;
     const next = rawRest[index + 1];
     const nextIsFlag = next !== undefined && /^--?[A-Za-z]/.test(next);
-    const literalHelp = next === '--help' || next === '-h';
+    const literalHelp = (next === '--help' || next === '-h') && name === 'body';
     if (name !== undefined && valueFlags.has(name) && next !== undefined && (!nextIsFlag || literalHelp)) {
       rest.push(`${argument}=${next}`);
       index += 1;
@@ -153,6 +137,21 @@ export async function runGh(argv: readonly string[]): Promise<number> {
     say(GH_USAGE);
     return 0;
   }
+
+  for (let index = 0; index < rawRest.length; index += 1) {
+    const argument = rawRest[index];
+    if (argument === undefined || !argument.startsWith('--') || argument.includes('=')) continue;
+    const name = argument.slice(2);
+    if (!valueFlags.has(name)) continue;
+    const next = rawRest[index + 1];
+    if (next === undefined) fail(`--${name} needs a value`);
+    if (name === 'body' && (next === '--help' || next === '-h')) continue;
+    if (next.startsWith('--')) {
+      const nextName = next.slice(2).split('=')[0];
+      if (nextName !== undefined && knownFlags.has(nextName)) fail(`--${name} needs a value`);
+    }
+  }
+
   const host = args.value('host') ?? 'github.com';
   let repo = args.value('repo') ?? args.value('R');
   if (repo === undefined) {
@@ -207,7 +206,8 @@ export async function runGh(argv: readonly string[]): Promise<number> {
       action.timeoutSeconds * 1000 + 30_000,
     );
   } catch (error) {
-    fail((error as Error).message);
+    process.stderr.write(`unreachable: ${(error as Error).message}\n`);
+    return options.unreachableExitCode ?? 1;
   }
   if (response.ok !== true) {
     if (response.warning) process.stderr.write(`warning: ${response.warning}\n`);
