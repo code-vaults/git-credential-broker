@@ -13,7 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { inferMode, loadConfig, resolveConfigPath, deploymentDir, SIDECAR } from '../config.ts';
-import { packageVersion } from 'gcb-cli';
+import { PACKAGE_VERSION } from 'gcb-cli';
 import { fail, parseArgs, say, warn } from 'gcb-cli';
 import { USER_TOKEN_FILE } from '../config.ts';
 
@@ -110,7 +110,7 @@ export function renderCompose(input: ComposeInput): string {
       - ${input.code}:${CODE_DIR}:ro`
     : '';
 
-  return `# Docker sidecar for gcb-host@${packageVersion()}
+  return `# Docker sidecar for gcb-host@${PACKAGE_VERSION}
 #
 # The broker holds the only long-lived secret, so it runs isolated: the key is mounted
 # read-only, there are no published ports, no capabilities, and the root filesystem is
@@ -237,7 +237,7 @@ export function runCompose(argv: readonly string[]): number {
       socketDir,
       user,
       image: args.value('image') ?? 'node:24-slim',
-      packageSpec: args.value('package') ?? `gcb-host@${packageVersion()}`,
+      packageSpec: args.value('package') ?? `gcb-host@${PACKAGE_VERSION}`,
       name: args.value('name') ?? 'git-cred-broker',
       code: args.value('code'),
     }),

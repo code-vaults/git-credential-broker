@@ -3,11 +3,5 @@
  */
 import pkg from '../package.json' with { type: 'json' };
 
-/**
- * The version of the running package.
- *
- * @returns the `version` field.
- */
-export function packageVersion(): string {
-  return pkg.version;
-}
+/** The version of the running package. */
+export const PACKAGE_VERSION: string = pkg.version;

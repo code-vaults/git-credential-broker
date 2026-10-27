@@ -17,7 +17,7 @@ export * from './types.ts';
 export * from './version.ts';
 
 import { platformRefusal } from './platform.ts';
-import { packageVersion } from './version.ts';
+import { PACKAGE_VERSION } from './version.ts';
 
 /** Commands implemented by the container-side package. */
 export const CLIENT_COMMANDS = ['setup', 'probe', 'logs', 'pr', 'run', 'gh'] as const;
@@ -71,7 +71,7 @@ export async function runCli(argv: readonly string[], backend: CommandBackend): 
     return 0;
   }
   if (command === 'version' || command === '--version' || command === '-v') {
-    process.stdout.write(`${packageVersion()}\n`);
+    process.stdout.write(`${PACKAGE_VERSION}\n`);
     return 0;
   }
 
