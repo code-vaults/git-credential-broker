@@ -3,9 +3,10 @@
  *
  * Node's native fetch reads proxy variables once, when its dispatcher is created, so a command that
  * wants a different proxy cannot get one by editing `process.env` (verified on 24.22: a later
- * `http_proxy` change is ignored). `node-fetch-native` builds a proxy-aware fetch per instance, and
- * `x-fetch` wraps that instance; both are cached by the effective proxy choice so a busy broker does
- * not create an agent per command.
+ * `http_proxy` change is ignored). `node-fetch-native` supplies the node-fetch agents (a direct
+ * pair, or `createProxy().agent` for an explicit proxy), and `x-fetch` wraps that fetch. The wrapped
+ * instance is cached by the effective proxy choice, so a busy broker does not create an agent per
+ * command.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import http from 'node:http';
@@ -59,9 +60,11 @@ const returnResponse: XFetchMiddleware = async (_ctx, next) => {
   }
 };
 
-function nodeFetchWithAgent(agentFor: (url: string) => http.Agent | https.Agent): typeof globalThis.fetch {
+function nodeFetchWithAgent(agentFor: (url: URL) => http.Agent | https.Agent): typeof globalThis.fetch {
+  // Pass the selector, not its result: node-fetch calls it per request, including redirects, so a
+  // redirect that changes scheme gets the right agent.
   return ((url: string, init: RequestInit = {}) =>
-    directFetch(url, { ...init, agent: agentFor(url) } as RequestInit & { agent: unknown })) as typeof globalThis.fetch;
+    directFetch(url, { ...init, agent: agentFor } as RequestInit & { agent: unknown })) as typeof globalThis.fetch;
 }
 
 function makeFetch(proxy: ProxyChoice): FetchLike {
@@ -73,7 +76,7 @@ function makeFetch(proxy: ProxyChoice): FetchLike {
     // NODE_USE_ENV_PROXY=1, so a direct choice needs its own agents rather than agent: false.
     const httpAgent = new http.Agent();
     const httpsAgent = new https.Agent();
-    native = nodeFetchWithAgent((url) => (url.startsWith('https:') ? httpsAgent : httpAgent));
+    native = nodeFetchWithAgent((url) => (url.protocol === 'https:' ? httpsAgent : httpAgent));
   } else {
     // createProxy's agent is a node-fetch agent; this works on Node 24 and 26, unlike handing its
     // bundled undici dispatcher to the native fetch (Node 26 rejects that dispatcher).

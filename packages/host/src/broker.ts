@@ -18,7 +18,7 @@
  *    already a socket, and refuses to follow a symlink.
  */
 import fs from 'node:fs';
-import { parseProxy, withProxy } from './http.ts';
+import { parseProxy, withProxy, type ProxyChoice } from './http.ts';
 import {
   buildGhArgv,
   getGhAction,
@@ -164,9 +164,7 @@ export function createRequestHandler(
     return { ok: false, code, reason: message };
   }
 
-  return async function handle(message: Record<string, unknown>): Promise<WireResponse> {
-    const proxy = parseProxy(message['proxy']);
-    if (proxy === false) return deny({ host: null, repo: null, session: null, helper_pid: null }, CODES.BAD_REQUEST, 'invalid proxy', 'invalid proxy');
+  async function handleRequest(message: Record<string, unknown>, proxy: ProxyChoice): Promise<WireResponse> {
     const auditEvent = message['op'] === 'action' ? 'action' : 'credential';
     const context: DecisionContext = {
       host: typeof message['host'] === 'string' ? message['host'] : null,
@@ -572,6 +570,19 @@ export function createRequestHandler(
       return deny(context, CODES.PROVIDER_ERROR, reason, message, hostDetail);
     }
   };
+
+  return async function handle(message: Record<string, unknown>): Promise<WireResponse> {
+    const proxy = parseProxy(message['proxy']);
+    if (proxy === false) {
+      return deny(
+        { host: null, repo: null, session: null, helper_pid: null },
+        CODES.BAD_REQUEST,
+        'invalid proxy',
+        'invalid proxy',
+      );
+    }
+    return withProxy(proxy, () => handleRequest(message, proxy));
+  };
 }
 
 /** Options for {@link startBroker}. */
@@ -618,12 +629,7 @@ export async function startBroker(options: StartBrokerOptions): Promise<RunningB
           respond({ ok: false, code: CODES.BAD_REQUEST, reason: 'malformed request' });
           return;
         }
-        const proxyChoice = parseProxy(message['proxy']);
-        if (proxyChoice === false) {
-          respond({ ok: false, code: CODES.BAD_REQUEST, reason: 'invalid proxy' });
-          return;
-        }
-        withProxy(proxyChoice, () => handle(message)).then(respond, (error: unknown) => {
+        handle(message).then(respond, (error: unknown) => {
           respond({ ok: false, code: CODES.PROVIDER_ERROR, reason: 'internal broker error' });
           log(`internal error: ${String((error as Error).message ?? error)}`);
         });

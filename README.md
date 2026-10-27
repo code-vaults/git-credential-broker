@@ -445,6 +445,11 @@ gcb pr status --number 7 --proxy http://proxy.example:7890
 `node-fetch-native` instance for each proxy value and caches it, so commands sharing a choice reuse the
 same connection pool.
 
+The choice comes from the pushing container, so it can override a host proxy policy. A deployment that
+must force all egress through one route should not give `gcb-client` to a container it does not trust;
+the allowlist and the broker key still bound what that container can reach, not which network path it
+uses.
+
 The broker, `authorize` and `diagnose` **refuse to start** when a proxy variable is set and `NODE_USE_ENV_PROXY` is
 not `1`, instead of reaching GitHub directly by a route nobody chose. `gh`, which the host opener runs,
 reads those variables itself (it is Go), so it only needs them to arrive.
