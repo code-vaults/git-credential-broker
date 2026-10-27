@@ -59,10 +59,9 @@ async function run(argv: readonly string[]): Promise<number> {
     case 'pr': {
       // The catalog is the one source for an action, so the shorthand asks it rather than keeping a
       // second list: a subcommand the catalog does not have stays with the flag-only lifecycle.
-      if (rest.length === 0) {
-        await (await import('./commands/gh.ts')).runGh(['pr', '--help']);
-        return 1;
-      }
+      // Bare `pr` asks the catalog too, where `run` needs no branch: the flag-only path would only
+      // tell it that --repo is required.
+      if (rest.length === 0) return (await import('./commands/gh.ts')).runGh(['pr']);
       const sub = rest[0];
       if (sub !== undefined && Object.hasOwn(GH_ACTIONS, `pr:${sub}`)) {
         return (await import('./commands/gh.ts')).runGh(['pr', ...rest]);
@@ -70,10 +69,6 @@ async function run(argv: readonly string[]): Promise<number> {
       return (await import('./commands/pr.ts')).runPr(rest);
     }
     case 'run':
-      if (rest.length === 0) {
-        await (await import('./commands/gh.ts')).runGh(['run', '--help']);
-        return 1;
-      }
       return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
     case 'gh':
       return (await import('./commands/gh.ts')).runGh(rest);

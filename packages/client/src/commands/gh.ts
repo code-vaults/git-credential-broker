@@ -72,7 +72,8 @@ export async function runGh(argv: readonly string[]): Promise<number> {
   }
   const [domain, command, ...rest] = argv;
   if (domain === undefined || command === undefined) {
-    // `gcb pr` and `gcb run` arrive here too, so the answer is the catalog rather than one example.
+    // A caller with a domain and no command (`gcb run`, `gcb gh pr`) gets the catalog rather than one
+    // example: the answer is every action, and the example would only be right for one of them.
     say(GH_USAGE);
     return 1;
   }
