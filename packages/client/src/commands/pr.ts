@@ -256,6 +256,16 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     return 0;
   }
 
+  // A plain conversation comment is gh's own path; an anchored one has no stable gh CLI and stays
+  // on the review-comment request below.
+  if (action === 'comment' && filePath === undefined) {
+    const ghArgs = ['pr', 'comment', String(number), '--body', body as string];
+    if (host !== undefined) ghArgs.push('--host', host);
+    ghArgs.push('--repo', repo);
+    if (socketPath !== undefined) ghArgs.push('--socket', socketPath);
+    return (await import('./gh.ts')).runGh(ghArgs);
+  }
+
   if (socketPath === undefined) {
     fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `gcb setup`');
   }
