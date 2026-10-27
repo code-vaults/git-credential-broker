@@ -28,7 +28,7 @@ export function withProxy<T>(proxy: ProxyChoice, fn: () => T): T {
 export function proxyCacheKey(proxy: ProxyChoice): string {
   if (proxy === null) return 'direct';
   if (proxy !== undefined) return `proxy:${proxy}`;
-  return `env:${process.env['https_proxy'] ?? ''}|${process.env['http_proxy'] ?? ''}|${process.env['no_proxy'] ?? ''}|${process.env['NODE_USE_ENV_PROXY'] ?? ''}`;
+  return `env:${process.env['https_proxy'] ?? ''}|${process.env['HTTPS_PROXY'] ?? ''}|${process.env['http_proxy'] ?? ''}|${process.env['HTTP_PROXY'] ?? ''}|${process.env['no_proxy'] ?? ''}|${process.env['NO_PROXY'] ?? ''}|${process.env['NODE_USE_ENV_PROXY'] ?? ''}`;
 }
 
 /**
