@@ -368,6 +368,7 @@ describe('createGithubAppProvider', () => {
       revokeStatus: 500,
     });
     const logs: string[] = [];
+    // A NUL makes spawn throw synchronously; an ordinary bad path would be returned as result.error.
     const provider = providerFor(stub, {}, '\0', (message) => logs.push(message));
     const result = await provider.runAction?.({
       host: 'github.com',
