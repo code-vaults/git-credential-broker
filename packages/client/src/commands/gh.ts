@@ -39,12 +39,12 @@ const ACTION_LINES = Object.values(GH_ACTIONS)
  * @param cwd - the checkout to ask.
  * @returns the normalized repository, or undefined when no remote names one.
  */
-function repoFromCheckout(cwd: string): string | undefined {
+function repoFromCheckout(cwd: string): { repo: string; host: string } | undefined {
   const remotes = listRemotes(cwd);
   const name = remotes.includes('origin') ? 'origin' : remotes[0];
   if (name === undefined) return undefined;
   const found = remoteRepo(name, cwd);
-  return found === undefined ? undefined : `${found.owner}/${found.repo}`;
+  return found === undefined ? undefined : { repo: `${found.owner}/${found.repo}`, host: found.host };
 }
 
 /** Usage text for `gh`. */
@@ -86,9 +86,16 @@ export async function runGh(argv: readonly string[]): Promise<number> {
 
   const booleans = action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
   const args = parseArgs(rest, { booleans });
-  const repo = args.value('repo') ?? repoFromCheckout(process.cwd());
-  if (repo === undefined) fail('--repo is required when the checkout has no usable GitHub remote');
   const host = args.value('host') ?? 'github.com';
+  let repo = args.value('repo');
+  if (repo === undefined) {
+    const found = repoFromCheckout(process.cwd());
+    if (found === undefined) fail('--repo is required when the checkout has no usable GitHub remote');
+    if (found.host !== host.toLowerCase()) {
+      fail(`the checkout's remote is on ${found.host}, but --host is ${host}; pass --repo or --host`);
+    }
+    repo = found.repo;
+  }
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   if (socketPath === undefined) fail('no broker socket is configured');
 

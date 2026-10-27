@@ -16,6 +16,7 @@ import { execFileSync } from 'node:child_process';
 export interface RemoteRepo {
   readonly owner: string;
   readonly repo: string;
+  readonly host: string;
 }
 
 /**
@@ -29,8 +30,22 @@ export interface RemoteRepo {
  * @returns the output, or undefined when git refused.
  */
 function git(args: readonly string[], cwd: string): string | undefined {
+  const env = { ...process.env };
+  for (const key of [
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_INDEX_FILE',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_COMMON_DIR',
+    'GIT_NAMESPACE',
+    'GIT_CEILING_DIRECTORIES',
+    'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+  ]) {
+    delete env[key];
+  }
   try {
-    const out = execFileSync('git', [...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const out = execFileSync('git', [...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     const trimmed = out.replace(/\s+$/, '');
     return trimmed === '' ? undefined : trimmed;
   } catch {
@@ -70,22 +85,26 @@ export function remoteRepo(name: string, cwd: string, push = false): RemoteRepo 
   // path, a `file:` URL, a host with no dot — is refused rather than read as an owner that happens to be a
   // port number or a directory name.
   let path: string | undefined;
+  let host: string | undefined;
   if (/^[a-z+]+:\/\//i.test(url)) {
     const rest = url.replace(/^[a-z+]+:\/\//i, '').replace(/^[^@/]*@/, '');
     const slash = rest.indexOf('/');
     const authority = slash < 0 ? '' : rest.slice(0, slash);
-    const host = authority.split(':')[0] ?? '';
+    host = authority.split(':')[0] ?? '';
     if (slash >= 0 && host.includes('.')) path = rest.slice(slash + 1);
   } else {
     const scp = /^(?:[^@/]+@)?([^/:]+\.[^/:]+):(.+)$/.exec(url);
-    if (scp !== null && scp[2] !== undefined) path = scp[2];
+    if (scp !== null && scp[1] !== undefined && scp[2] !== undefined) {
+      host = scp[1];
+      path = scp[2];
+    }
   }
-  if (path === undefined) return undefined;
+  if (path === undefined || host === undefined) return undefined;
 
   const cleaned = path.replace(/^\/+/, '').replace(/\/+$/, '').replace(/\.git$/i, '');
   const [owner, repo, ...rest] = cleaned.split('/').filter((part) => part !== '');
   if (owner === undefined || repo === undefined || rest.length > 0) return undefined;
-  return { owner, repo };
+  return { owner, repo, host: host.toLowerCase() };
 }
 
 /**

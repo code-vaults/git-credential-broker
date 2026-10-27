@@ -8,6 +8,26 @@ import { describe, it } from 'node:test';
 
 import { startBroker } from '../../packages/host/src/broker.ts';
 import { tryRunAsync, type RunResult } from '../lib/run.ts';
+
+/** Git must not inherit a GIT_DIR/GIT_WORK_TREE that redirects it away from the temp checkout. */
+function cleanGitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const key of [
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_INDEX_FILE',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_COMMON_DIR',
+    'GIT_NAMESPACE',
+    'GIT_CEILING_DIRECTORIES',
+    'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+  ]) {
+    delete env[key];
+  }
+  return env;
+}
+
 import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../packages/cli/src/types.ts';
 
 /** Run the client from source, next to this file rather than from the cwd. */
@@ -138,8 +158,8 @@ describe('gcb gh', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-remote-'));
     const checkout = path.join(root, 'checkout');
     fs.mkdirSync(checkout);
-    execFileSync('git', ['init', '--quiet'], { cwd: checkout });
-    execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:acme/widget.git'], { cwd: checkout });
+    execFileSync('git', ['init', '--quiet'], { cwd: checkout, env: cleanGitEnv() });
+    execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:acme/widget.git'], { cwd: checkout, env: cleanGitEnv() });
     const socketPath = path.join(root, 'broker.sock');
     const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] };
     const config: BrokerConfig = {
@@ -174,11 +194,27 @@ describe('gcb gh', () => {
     try {
       const checkout = path.join(root, 'checkout');
       fs.mkdirSync(checkout);
-      execFileSync('git', ['init', '--quiet'], { cwd: checkout });
-      execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widget/issues'], { cwd: checkout });
+      execFileSync('git', ['init', '--quiet'], { cwd: checkout, env: cleanGitEnv() });
+      execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widget/issues'], { cwd: checkout, env: cleanGitEnv() });
       const result = await runGhCli(['pr', 'view', '7', '--socket', path.join(root, 'broker.sock')], checkout);
       assert.equal(result.status, 1);
       assert.match(result.stderr, /no usable GitHub remote/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a checkout remote on another host', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-remote-host-'));
+    try {
+      const checkout = path.join(root, 'checkout');
+      fs.mkdirSync(checkout);
+      execFileSync('git', ['init', '--quiet'], { cwd: checkout, env: cleanGitEnv() });
+      execFileSync('git', ['remote', 'add', 'origin', 'git@gitlab.com:acme/widget.git'], { cwd: checkout, env: cleanGitEnv() });
+      const result = await runGhCli(['pr', 'view', '7', '--socket', path.join(root, 'broker.sock')], checkout);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /gitlab\.com/);
+      assert.match(result.stderr, /--host/);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

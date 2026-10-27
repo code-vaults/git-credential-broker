@@ -14,12 +14,32 @@ import { after, before, describe, it } from 'node:test';
 
 import { baseBranchFor, listRemotes, qualifiedBranch, remoteRepo } from '../../packages/client/src/commands/remotes.ts';
 
+/** Git must not inherit a GIT_DIR/GIT_WORK_TREE that redirects it away from the temp checkout. */
+function cleanGitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const key of [
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_INDEX_FILE',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+    'GIT_COMMON_DIR',
+    'GIT_NAMESPACE',
+    'GIT_CEILING_DIRECTORIES',
+    'GIT_DISCOVERY_ACROSS_FILESYSTEM',
+  ]) {
+    delete env[key];
+  }
+  return env;
+}
+
+
 describe('resolving a branch that names a remote', () => {
   let dir = '';
 
   before(() => {
     dir = mkdtempSync(join(tmpdir(), 'remotes-'));
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: cleanGitEnv(), stdio: 'ignore' });
     git('init', '-q');
     git('remote', 'add', 'origin', 'git@github.com:me/git-credential-broker.git');
     git('remote', 'add', 'upstream', 'https://github.com/code-vaults/git-credential-broker.git');
@@ -30,8 +50,8 @@ describe('resolving a branch that names a remote', () => {
   });
 
   it('reads an SSH url and an HTTPS one the same way', () => {
-    assert.deepEqual(remoteRepo('origin', dir), { owner: 'me', repo: 'git-credential-broker' });
-    assert.deepEqual(remoteRepo('upstream', dir), { owner: 'code-vaults', repo: 'git-credential-broker' });
+    assert.deepEqual(remoteRepo('origin', dir), { owner: 'me', repo: 'git-credential-broker', host: 'github.com' });
+    assert.deepEqual(remoteRepo('upstream', dir), { owner: 'code-vaults', repo: 'git-credential-broker', host: 'github.com' });
   });
 
   it('leaves a plain branch alone, because it is a branch of the repository --repo names', () => {
@@ -66,7 +86,7 @@ describe('what a remote URL is allowed to look like', () => {
 
   before(() => {
     dir = mkdtempSync(join(tmpdir(), 'remotes-forms-'));
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: cleanGitEnv(), stdio: 'ignore' });
     git('init', '-q');
     git('remote', 'add', 'ported', 'https://git.example.com:8443/me/thing.git');
     git('remote', 'add', 'prefixed', 'https://git.example.com/gitlab/group/thing.git');
@@ -79,7 +99,7 @@ describe('what a remote URL is allowed to look like', () => {
   });
 
   it('does not read a port as an owner', () => {
-    assert.deepEqual(remoteRepo('ported', dir), { owner: 'me', repo: 'thing' });
+    assert.deepEqual(remoteRepo('ported', dir), { owner: 'me', repo: 'thing', host: 'git.example.com' });
   });
 
   it('does not read a directory as a host', () => {
@@ -102,7 +122,7 @@ describe('the branch a --base means', () => {
 
   before(() => {
     dir = mkdtempSync(join(tmpdir(), 'remotes-base-'));
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, env: cleanGitEnv(), stdio: 'ignore' });
     git('init', '-q');
     git('remote', 'add', 'upstream', 'https://github.com/code-vaults/git-credential-broker.git');
     git('remote', 'add', 'origin', 'git@github.com:me/git-credential-broker.git');
