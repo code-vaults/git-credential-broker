@@ -114,7 +114,13 @@ export async function runGh(argv: readonly string[]): Promise<number> {
     if (!valueFlags.has(name)) continue;
     const next = rawRest[index + 1];
     if (next === undefined) fail(`--${name} needs a value`);
-    if (next === '--help' || next === '-h') continue;
+    if (next === '--help' || next === '-h') {
+      // A body is free text and may literally be --help; every other value flag leaves it as an
+      // unconsumed request so the help wins over the missing value.
+      if (name === 'body') continue;
+      say(GH_USAGE);
+      return 0;
+    }
     if (next.startsWith('--')) {
       const nextName = next.slice(2).split('=')[0];
       if (nextName !== undefined && knownFlags.has(nextName)) fail(`--${name} needs a value`);

@@ -343,3 +343,14 @@ describe('gh option values', () => {
     assert.match(result.stderr, /--title needs a value/);
   });
 });
+
+describe('help after a value flag', () => {
+  it('prints help instead of a missing-value error', async () => {
+    const result = await runGhCli([
+      'pr', 'create', '--title', '--help', '--head', 'feat', '--body', 'b',
+      '--repo', 'acme/widget', '--socket', '/nonexistent',
+    ]);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /Usage: gcb gh/);
+  });
+});
