@@ -4,6 +4,8 @@
  * The action catalog defines the command, flags, positionals and permissions. The client only
  * parses names and values; the broker rebuilds the canonical argv and runs gh with its own token.
  */
+import { execFileSync } from 'node:child_process';
+
 import { GH_ACTIONS, getGhAction, parseArgs, say, fail, type ActionValues } from 'gcb-cli';
 
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
@@ -29,13 +31,54 @@ const ACTION_LINES = Object.values(GH_ACTIONS)
   })
   .join('\n');
 
+/**
+ * Read owner/repo from the checkout's git remote.
+ *
+ * @returns the normalized repository, or undefined when git/the remote cannot answer.
+ */
+function repoFromCheckout(): string | undefined {
+  let remotes: string[];
+  try {
+    remotes = execFileSync('git', ['remote'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '');
+  } catch {
+    return undefined;
+  }
+  const name = remotes.includes('origin') ? 'origin' : remotes[0];
+  if (name === undefined) return undefined;
+  let url: string;
+  try {
+    url = execFileSync('git', ['remote', 'get-url', name], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return undefined;
+  }
+  if (!/^(?:https?:\/\/|ssh:\/\/|git@)/i.test(url)) return undefined;
+  let pathPart = url.replace(/^[a-z]+:\/\//i, '');
+  if (pathPart.startsWith('git@')) pathPart = pathPart.slice(4).replace(':', '/');
+  else pathPart = pathPart.replace(/^[^/]+@/, '');
+  const slash = pathPart.indexOf('/');
+  if (slash < 0) return undefined;
+  const parts = pathPart
+    .slice(slash + 1)
+    .replace(/\.git$/, '')
+    .replace(/\/+$/, '')
+    .split('/');
+  if (parts.length < 2) return undefined;
+  return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+}
+
 /** Usage text for `gh`. */
 export const GH_USAGE = `Usage: gcb gh <domain> <command> [options]
 
 Run a catalogued GitHub action through the broker.
 
 Common
-  --repo <owner/name>  Repository the action belongs to           [required]
+  --repo <owner/name>  Repository the action belongs to (default: origin remote)
   --host <host>        Host as configured, e.g. github.com (default: github.com)
   --socket <path>      Broker socket (default: GIT_BROKER_SOCKET)
   -h, --help           Show this help
@@ -68,7 +111,8 @@ export async function runGh(argv: readonly string[]): Promise<number> {
 
   const booleans = action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
   const args = parseArgs(rest, { booleans });
-  const repo = args.value('repo') ?? fail('--repo is required');
+  const repo = args.value('repo') ?? repoFromCheckout();
+  if (repo === undefined) fail('--repo is required when the checkout has no git remote');
   const host = args.value('host') ?? 'github.com';
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   if (socketPath === undefined) fail('no broker socket is configured');

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,11 +14,11 @@ import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../
 const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));
 
 /** Run the installed client as a child, so its output never replaces the test reporter. */
-function runGhCli(args: readonly string[]): Promise<RunResult> {
+function runGhCli(args: readonly string[], cwd?: string): Promise<RunResult> {
   return tryRunAsync(
     process.execPath,
     ['--conditions=development', CLIENT_BIN, 'gh', ...args],
-    { env: process.env, timeoutMs: 5000 },
+    { cwd, env: process.env, timeoutMs: 5000 },
   );
 }
 
@@ -127,6 +128,41 @@ describe('gcb gh', () => {
       const result = await runGhCli(['pr', 'view', '7', '--repo', 'acme/widget', '--socket', socketPath]);
       assert.equal(result.status, 0);
       assert.match(result.stderr, /expires on its own/);
+    } finally {
+      await broker.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves the repository from the checkout remote', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-remote-'));
+    const checkout = path.join(root, 'checkout');
+    fs.mkdirSync(checkout);
+    execFileSync('git', ['init', '--quiet'], { cwd: checkout });
+    execFileSync('git', ['remote', 'add', 'origin', 'git@github.com:acme/widget.git'], { cwd: checkout });
+    const socketPath = path.join(root, 'broker.sock');
+    const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] };
+    const config: BrokerConfig = {
+      socketPath,
+      socketMode: 0o600,
+      auditPath: null,
+      tokenCacheSkewSeconds: 300,
+      hosts: { 'github.com': block },
+    };
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() };
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async (request) => {
+        assert.equal(request.full, 'acme/widget');
+        return { stdout: 'ok\n', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
+    try {
+      const result = await runGhCli(['pr', 'view', '7', '--socket', socketPath], checkout);
+      assert.equal(result.status, 0);
+      assert.equal(result.stdout, 'ok\n');
     } finally {
       await broker.close();
       fs.rmSync(root, { recursive: true, force: true });
