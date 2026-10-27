@@ -274,6 +274,15 @@ describe('gcb gh', () => {
     }
   });
 
+  it('treats --help as help wherever it sits', async () => {
+    // No broker is involved: each case has to answer before the socket is looked for.
+    for (const argv of [['--help'], ['pr', 'view', '--help', '7'], ['pr', 'view', '7', '--help']]) {
+      const result = await runGhCli(argv);
+      assert.equal(result.status, 0, argv.join(' '));
+      assert.match(result.stdout, /Usage: gcb gh/);
+    }
+  });
+
   it('sends a typed action to the broker and prints its stdout', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-command-'));
     const socketPath = path.join(root, 'broker.sock');

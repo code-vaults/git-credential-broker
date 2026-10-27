@@ -1170,6 +1170,10 @@ describe('the anchor flags, at the CLI boundary', () => {
     const moved = cli([...base, '--comment', '--body', 'x']);
     assert.equal(moved.status, 1);
     assert.match(moved.stderr, /gcb gh pr comment/);
+
+    const bare = cli(['--comment']);
+    assert.equal(bare.status, 1);
+    assert.match(bare.stderr, /gcb gh pr comment/, 'before --repo, so the message names the replacement');
   });
 
   it('points --close at the gh action', () => {

@@ -109,7 +109,12 @@ export async function runGh(argv: readonly string[]): Promise<number> {
     }
   }
 
-  const booleans = action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
+  // `help` is declared a boolean so it is a help request wherever it sits: a value flag's next token
+  // was already merged above, so `--body --help` reaches the parser as data.
+  const booleans = [
+    ...action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name),
+    'help',
+  ];
   const args = parseArgs(rest, { booleans });
   if (args.has('help')) {
     say(GH_USAGE);

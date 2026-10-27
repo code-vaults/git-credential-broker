@@ -116,6 +116,14 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (args.has('close') || args.value('close') !== undefined) {
     fail('--close moved to: gcb gh pr close <number> --repo owner/name');
   }
+  // Before --repo too, for the same reason: the message names the command that does it now. An
+  // anchored comment (--file and --line) is still this command's to post.
+  if (args.has('comment') && args.value('file') === undefined && args.value('line') === undefined) {
+    fail(
+      'plain comments moved to: gcb gh pr comment <number> --body ...; ' +
+        '--comment here only posts an anchored comment with --file and --line',
+    );
+  }
 
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const host = args.value('host');
@@ -200,12 +208,6 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     if (side !== 'left' && side !== 'right') {
       fail(`--side must be left or right, got ${JSON.stringify(args.value('side'))}`);
     }
-  }
-  if (action === 'comment' && filePath === undefined) {
-    fail(
-      'plain comments moved to: gcb gh pr comment <number> --body ...; ' +
-        '--comment here only posts an anchored comment with --file and --line',
-    );
   }
   const replyTo = args.value('reply-to');
   if (action === 'reply' && (replyTo === undefined || !Number.isInteger(Number(replyTo)) || Number(replyTo) <= 0)) {
