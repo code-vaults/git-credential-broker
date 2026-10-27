@@ -119,10 +119,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   // Before --repo too, for the same reason: the message names the command that does it now. An
   // anchored comment (--file and --line) is still this command's to post.
   if (args.has('comment') && args.value('file') === undefined && args.value('line') === undefined) {
-    fail(
-      'plain comments moved to: gcb gh pr comment <number> --body ...; ' +
-        '--comment here only posts an anchored comment with --file and --line',
-    );
+    fail('--comment only posts an anchored review comment; pass --file and --line');
   }
 
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
