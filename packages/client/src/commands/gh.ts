@@ -123,7 +123,9 @@ export async function runGh(
   let help = false;
   for (let index = 0; index < rawRest.length; index += 1) {
     const raw = rawRest[index];
-    const argument = raw?.replace(/^-h$/, '--help');
+    // Match parseArgs: -h is help everywhere; any other single-dash letter is its long flag. A
+    // single-dash operand belongs to a preceding value flag and was consumed before this point.
+    const argument = raw?.replace(/^-h$/, '--help').replace(/^-(?=[A-Za-z])/, '--');
     if (argument === undefined) continue;
     if (argument === '--help') {
       help = true;
@@ -137,7 +139,7 @@ export async function runGh(
     }
     const next = rawRest[index + 1];
     if (next === undefined) {
-      missingValue ??= `--${name} needs a value`;
+      missingValue ??= `${raw} needs a value`;
       rest.push(argument);
       continue;
     }
@@ -154,7 +156,7 @@ export async function runGh(
     if (next.startsWith('--')) {
       const nextName = next.slice(2).split('=')[0];
       if (nextName !== undefined && knownFlags.has(nextName)) {
-        missingValue ??= `--${name} needs a value`;
+        missingValue ??= `${raw} needs a value`;
       }
       // Leave both tokens alone: a known flag is a missing value, an unknown one must reach the
       // unknown-option check rather than becoming a value.
@@ -170,10 +172,7 @@ export async function runGh(
   }
   if (missingValue !== undefined) fail(missingValue);
 
-  const booleans = [
-    ...action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name),
-    'help',
-  ];
+  const booleans = action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
   const args = parseArgs(rest, { booleans });
 
   const host = args.value('host') ?? 'github.com';

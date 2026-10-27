@@ -384,3 +384,11 @@ describe('unknown gh options', () => {
     assert.match(result.stderr, /unknown option --bogus/);
   });
 });
+
+describe('short gh flags', () => {
+  it('reports a missing -R value using the typed spelling', async () => {
+    const result = await runGhCli(['pr', 'view', '7', '-R']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /-R needs a value/);
+  });
+});
