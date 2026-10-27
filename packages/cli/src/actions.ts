@@ -152,6 +152,17 @@ const PR_COMMENT: GhAction = {
   hostUser: true,
 };
 
+// GitHub: PATCH /repos/{owner}/{repo}/pulls/{pull_number}
+const PR_CLOSE: GhAction = {
+  name: 'pr:close',
+  command: ['pr', 'close'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [],
+  permissions: { pull_requests: 'write' },
+  timeoutSeconds: 60,
+  hostUser: true,
+};
+
 // GitHub: POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
 const PR_REVIEW: GhAction = {
   name: 'pr:review',
@@ -226,6 +237,7 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:list': PR_LIST,
   'pr:diff': PR_DIFF,
   'pr:create': PR_CREATE,
+  'pr:close': PR_CLOSE,
   'pr:comment': PR_COMMENT,
   'pr:review': PR_REVIEW,
   'issue:create': ISSUE_CREATE,

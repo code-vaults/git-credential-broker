@@ -280,24 +280,16 @@ describe('broker request handling', () => {
     assert.match(unsupported.reason ?? '', /cannot manage pull requests/);
   });
 
-  it('closes a pull request, and refuses a merge method it does not know', async () => {
+  it('refuses a merge method it does not know', async () => {
     const seen: string[] = [];
     const managed: Provider = {
       name: 'with-prs',
       getCredential: () => Promise.reject(new Error('not used here')),
       pullRequest: (request) => {
         seen.push(request.action);
-        return Promise.resolve({ number: request.number ?? 0, url: 'u', state: 'closed' });
+        return Promise.resolve({ number: request.number ?? 0, url: 'u', state: 'open' });
       },
     };
-    const { handle, events } = makeHarness(['acme/widget'], managed);
-    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'close', number: 7 });
-
-    assert.equal(response.ok, true);
-    assert.deepEqual(seen, ['close']);
-    assert.equal(response.prState, 'closed');
-    assert.equal(events.at(-1)?.['action'], 'close');
-
     const badMethod = await makeHarness(['acme/widget'], managed).handle({
       ...REQUEST,
       op: 'pull-request',
@@ -306,7 +298,7 @@ describe('broker request handling', () => {
       method: 'fast-forward',
     });
     assert.equal(badMethod.code, CODES.BAD_REQUEST);
-    assert.deepEqual(seen, ['close'], 'and the provider was never asked to do it');
+    assert.deepEqual(seen, [], 'the provider was never asked to do it');
   });
 
   it('reports a pull request without changing it', async () => {
@@ -407,7 +399,7 @@ describe('broker request handling', () => {
       assert.equal(response.code, 'bad-request', label + ' has to be refused by the broker');
     }
 
-    const wrongAction = await handle({ ...comments, action: 'close' });
+    const wrongAction = await handle({ ...comments, action: 'merge' });
     assert.equal(wrongAction.code, 'bad-request', 'and an anchor only belongs on a comment');
   });
 

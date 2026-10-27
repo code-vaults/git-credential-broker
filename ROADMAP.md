@@ -261,6 +261,7 @@ host_broker:
   | `pr:list` | `gh pr list` | `pull_requests: read` |
   | `pr:diff` | `gh pr diff` | `pull_requests: read`, `contents: read` |
   | `pr:create` | `gh pr create` | `pull_requests: write`, `contents: read` |
+  | `pr:close` | `gh pr close` | `pull_requests: write` |
   | `pr:comment` | `gh pr comment` | `pull_requests: write` |
   | `pr:review` | `gh pr review` | `pull_requests: write` |
   | `issue:create` | `gh issue create` | `issues: write` |

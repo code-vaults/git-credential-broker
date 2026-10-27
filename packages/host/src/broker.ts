@@ -382,7 +382,6 @@ export function createRequestHandler(
       const action = message['action'] ?? 'open';
       if (
         action !== 'open' &&
-        action !== 'close' &&
         action !== 'merge' &&
         action !== 'update' &&
         action !== 'status' &&

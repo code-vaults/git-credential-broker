@@ -56,7 +56,6 @@ Acting on one
   --edit <id>          Replace the body of that review comment, with --body/--body-file
                        (an id --threads prints; no --number is needed)
   --resolve <thread>   Mark that review thread resolved (the id --threads prints)
-  --close              Close it
   --merge              Merge it (branch protection still applies)
   --method <m>         merge, squash (default) or rebase
   With --number and none of the above, the title, body or base is updated.
@@ -87,7 +86,6 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
   if (args.has('threads')) return 'threads' as const;
   if (args.has('comment')) return 'comment' as const;
   if (args.has('status')) return 'status' as const;
-  if (args.has('close')) return 'close' as const;
   if (args.has('merge')) return 'merge' as const;
   if (args.value('number') !== undefined) return 'update' as const;
   return 'open' as const;
@@ -101,7 +99,7 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
  */
 export async function runPr(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, {
-    booleans: ['help', 'draft', 'close', 'merge', 'status', 'comment', 'threads', 'via-host'],
+    booleans: ['help', 'draft', 'merge', 'status', 'comment', 'threads', 'via-host'],
   });
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
@@ -111,6 +109,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const host = args.value('host');
   const repo = args.value('repo') ?? fail('--repo is required (e.g. owner/name)');
+  if (args.has('close')) fail('--close moved to: gcb gh pr close <number> --repo owner/name');
   const action = actionOf(args);
   if (args.has('via-host') && action !== 'open') {
     fail('--via-host only creates a pull request, so it does not go with ' + JSON.stringify(action));
@@ -296,9 +295,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const done =
     action === 'open'
       ? 'opened'
-      : action === 'close'
-        ? 'closed'
-        : action === 'merge'
+      : action === 'merge'
           ? 'merged'
           : action === 'comment'
             ? 'commented on'

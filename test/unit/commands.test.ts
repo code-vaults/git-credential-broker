@@ -1143,9 +1143,15 @@ describe('the anchor flags, at the CLI boundary', () => {
   });
 
   it('refuses an anchor on an action that is not a comment', () => {
-    const closed = cli([...base, '--close', '--file', 'Dockerfile', '--line', '4', '--body', 'x']);
+    const closed = cli([...base, '--merge', '--file', 'Dockerfile', '--line', '4', '--body', 'x']);
     assert.equal(closed.status, 1);
     assert.match(closed.stderr, /only go with --comment/);
+  });
+
+  it('points --close at the gh action', () => {
+    const moved = cli([...base, '--close']);
+    assert.equal(moved.status, 1);
+    assert.match(moved.stderr, /gcb gh pr close/);
   });
 
   it('refuses a side that is neither, and a line that is not a line', () => {

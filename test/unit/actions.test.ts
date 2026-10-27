@@ -17,6 +17,7 @@ describe('gh action catalog', () => {
       'pr:list',
       'pr:diff',
       'pr:create',
+      'pr:close',
       'pr:comment',
       'pr:review',
       'issue:create',
@@ -25,6 +26,7 @@ describe('gh action catalog', () => {
     ]);
     assert.equal('pr:merge' in GH_ACTIONS, false);
     assert.equal(getGhAction('pr:create').command.join(' '), 'pr create');
+    assert.equal(getGhAction('pr:close').command.join(' '), 'pr close');
   });
 
   it('keeps creation token permissions narrow', () => {
