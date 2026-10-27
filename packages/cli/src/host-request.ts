@@ -60,6 +60,8 @@ export interface HostOpenRequest {
   readonly body: string;
   /** Open it as a draft. */
   readonly draft?: boolean;
+  /** Egress for the opener's gh call: absent = its environment, null = direct, string = proxy URL. */
+  readonly proxy?: string | null;
   readonly session?: string;
   readonly pid?: number;
 }
