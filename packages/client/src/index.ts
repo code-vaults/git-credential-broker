@@ -64,7 +64,7 @@ async function run(argv: readonly string[]): Promise<number> {
       if (rest.length === 0) return (await import('./commands/gh.ts')).runGh(['pr']);
       const sub = rest[0];
       if (sub !== undefined && Object.hasOwn(GH_ACTIONS, `pr:${sub}`)) {
-        return (await import('./commands/gh.ts')).runGh(['pr', ...rest]);
+        return (await import('./commands/gh.ts')).runGh(['pr', ...rest], { unreachableExitCode: 3 });
       }
       return (await import('./commands/pr.ts')).runPr(rest);
     }

@@ -53,7 +53,8 @@ Opening (the default)
 Acting on one
   --number <n>         The pull request number                       [required]
   --status             Report its state, mergeability and the runs for its commit
-  --comment            Post the body as a comment on it (needs only --number and --body/--body-file)
+  --comment            Post an anchored review comment (also needs --file and --line);
+                       for a plain comment use: gcb gh pr comment <number> --body ...
   --file <path>        Anchor that comment to a line of this file, repository-relative
   --line <n>           The line to anchor to, in the new file unless --side says otherwise
   --side <left|right>  Which side of the diff --line counts on (default: right)
@@ -114,6 +115,11 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   // Before --repo: the point of the message is to name the command that does it now.
   if (args.has('close') || args.value('close') !== undefined) {
     fail('--close moved to: gcb gh pr close <number> --repo owner/name');
+  }
+  // Before --repo too: a bare `gcb pr --comment` should hear what the flag needs, not that --repo
+  // is missing. An anchored comment (--file and --line) is still this command's to post.
+  if (args.has('comment') && args.value('file') === undefined && args.value('line') === undefined) {
+    fail('--comment only posts an anchored review comment; pass --file and --line');
   }
 
   const socketPath = resolveSocketPath(args.value('socket'), process.env);

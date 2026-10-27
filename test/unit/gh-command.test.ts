@@ -240,6 +240,68 @@ describe('gcb gh', () => {
     }
   });
 
+  it('does not mistake a flag value for a help request', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-body-help-'));
+    const socketPath = path.join(root, 'broker.sock');
+    const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] };
+    const config: BrokerConfig = {
+      socketPath,
+      socketMode: 0o600,
+      auditPath: null,
+      tokenCacheSkewSeconds: 300,
+      hosts: { 'github.com': block },
+    };
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() };
+    let seen: unknown;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async (request) => {
+        seen = request.values;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
+    try {
+      const result = await runGhCli([
+        'pr', 'comment', '7', '--body', '--help', '--repo', 'acme/widget', '--socket', socketPath,
+      ]);
+      assert.equal(result.status, 0);
+      assert.deepEqual(seen, { number: '7', body: '--help' });
+
+      const shortHelp = await runGhCli([
+        'pr', 'comment', '7', '--body', '-h', '--repo', 'acme/widget', '--socket', socketPath,
+      ]);
+      assert.equal(shortHelp.status, 0);
+      assert.deepEqual(seen, { number: '7', body: '-h' }, 'a body of literally -h is data too');
+    } finally {
+      await broker.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('treats --help as help wherever it sits', async () => {
+    // No broker is involved: each case has to answer before the socket is looked for.
+    for (const argv of [
+      ['--help'],
+      ['pr', 'view', '--help', '7'],
+      ['pr', 'view', '7', '--help'],
+      ['pr', 'view', '7', '-h'],
+      ['pr', 'create', '--title', '--head', '--help'],
+      ['pr', 'create', '--title', '-h', '--head', 'feat', '--body', 'b'],
+    ]) {
+      const result = await runGhCli(argv);
+      assert.equal(result.status, 0, argv.join(' '));
+      assert.match(result.stdout, /Usage: gcb gh/);
+    }
+  });
+
+  it('keeps the pr unreachable exit code', async () => {
+    const result = await runClient(['pr', 'view', '7', '--repo', 'acme/widget', '--socket', '/nonexistent']);
+    assert.equal(result.status, 3);
+    assert.match(result.stderr, /unreachable/);
+  });
+
   it('sends a typed action to the broker and prints its stdout', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-command-'));
     const socketPath = path.join(root, 'broker.sock');
@@ -278,5 +340,67 @@ describe('bare run', () => {
     const result = await runClient(['run']);
     assert.equal(result.status, 1);
     assert.match(result.stdout, /Usage: gcb gh/);
+  });
+});
+
+describe('gh option values', () => {
+  it('refuses an optional value flag followed by another flag', async () => {
+    const result = await runGhCli([
+      'pr', 'create', '--head', 'feat', '--title', 't', '--body', 'b', '--reviewer', '--draft',
+      '--repo', 'acme/widget', '--socket', '/nonexistent',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--reviewer needs a value/);
+  });
+
+  it('refuses a value flag followed by another flag', async () => {
+    const result = await runGhCli([
+      'pr', 'create', '--head', 'feat', '--title', '--draft', '--body', 'b',
+      '--repo', 'acme/widget', '--socket', '/nonexistent',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--title needs a value/);
+  });
+});
+
+describe('help after a value flag', () => {
+  it('prints help instead of a missing-value error', async () => {
+    const result = await runGhCli([
+      'pr', 'create', '--title', '--help', '--head', 'feat', '--body', 'b',
+      '--repo', 'acme/widget', '--socket', '/nonexistent',
+    ]);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /Usage: gcb gh/);
+  });
+});
+
+describe('unknown gh options', () => {
+  it('does not let an unknown flag become a value', async () => {
+    const result = await runGhCli([
+      'pr', 'comment', '7', '--body', 'x', '--bogus', 'y',
+      '--repo', 'acme/widget', '--socket', '/nonexistent',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /unknown option --bogus/);
+  });
+});
+
+describe('short gh flags', () => {
+  it('reports a missing -R value using the typed spelling', async () => {
+    const result = await runGhCli(['pr', 'view', '7', '-R']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /-R needs a value/);
+  });
+});
+
+describe('the -- terminator', () => {
+  it('does not treat the token after -- as help', async () => {
+    const result = await runGhCli([
+      'pr', 'view', '7', '--repo', 'acme/widget', '--socket', '/nonexistent',
+      '--', '--help',
+    ]);
+    assert.equal(result.status, 1);
+    assert.doesNotMatch(result.stdout, /Usage: gcb gh/);
+    assert.match(result.stderr, /too many positional arguments/);
   });
 });

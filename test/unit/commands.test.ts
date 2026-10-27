@@ -1166,6 +1166,16 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(result.stdout, /Usage: gcb gh/);
   });
 
+  it('refuses a plain --comment and names the anchor requirement', () => {
+    const moved = cli([...base, '--comment', '--body', 'x']);
+    assert.equal(moved.status, 1);
+    assert.match(moved.stderr, /anchored review comment/);
+
+    const bare = cli(['--comment']);
+    assert.equal(bare.status, 1);
+    assert.match(bare.stderr, /anchored review comment/, 'before --repo too');
+  });
+
   it('points --close at the gh action', () => {
     const moved = cli([...base, '--close']);
     assert.equal(moved.status, 1);

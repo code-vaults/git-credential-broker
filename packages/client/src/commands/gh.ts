@@ -63,14 +63,22 @@ ${ACTION_LINES}`;
  * Run the `gh` command.
  *
  * @param argv - arguments after `gh`.
- * @returns the process exit code: 0 success, 1 refusal.
+ * @returns the process exit code: 0 success, 1 refusal, and the requested unreachable code
+ *          (1 by default; `pr` passes 3 for runPr's contract).
  */
-export async function runGh(argv: readonly string[]): Promise<number> {
-  if (argv.length === 0 || argv.includes('--help') || argv.includes('-h')) {
+export async function runGh(
+  argv: readonly string[],
+  options: { readonly unreachableExitCode?: number } = {},
+): Promise<number> {
+  if (argv.length === 0) {
     say(GH_USAGE);
-    return argv.length === 0 ? 1 : 0;
+    return 1;
   }
-  const [domain, command, ...rest] = argv;
+  const [domain, command, ...rawRest] = argv;
+  if (domain === '--help' || domain === '-h' || command === '--help' || command === '-h') {
+    say(GH_USAGE);
+    return 0;
+  }
   if (domain === undefined || command === undefined) {
     // A caller with a domain and no command (`gcb run`, `gcb gh pr`) gets the catalog rather than one
     // example: the answer is every action, and the example would only be right for one of them.
@@ -82,11 +90,95 @@ export async function runGh(argv: readonly string[]): Promise<number> {
   try {
     action = getGhAction(actionName);
   } catch {
+    if (rawRest.includes('--help') || rawRest.includes('-h')) {
+      say(GH_USAGE);
+      return 0;
+    }
     fail(`unknown gh action ${JSON.stringify(actionName)}`);
   }
 
+  // A known value-taking flag consumes the next token only when that token is a value. A following
+  // known flag is not taken as a value (so a missing value fails as missing), except a literal
+  // --help/-h: a body that is exactly one of those is data, not a help request. The parser then
+  // sees --body=--help.
+  const valueFlags = new Set([
+    ...action.flags.filter((flag) => flag.type !== 'boolean').map((flag) => flag.name),
+    'repo',
+    'R',
+    'host',
+    'socket',
+  ]);
+
+  const allowed = new Set([
+    ...action.flags.map((flag) => flag.name),
+    'repo',
+    'R',
+    'host',
+    'socket',
+  ]);
+  const knownFlags = new Set([...allowed, 'help']);
+
+  const rest: string[] = [];
+  let missingValue: string | undefined;
+  let help = false;
+  for (let index = 0; index < rawRest.length; index += 1) {
+    const raw = rawRest[index];
+    // Match parseArgs: -h is help everywhere; any other single-dash letter is its long flag. A
+    // single-dash operand belongs to a preceding value flag and was consumed before this point.
+    const argument = raw?.replace(/^-h$/, '--help').replace(/^-(?=[A-Za-z])/, '--');
+    if (argument === undefined) continue;
+    if (argument === '--') {
+      rest.push(...rawRest.slice(index));
+      break;
+    }
+    if (argument === '--help') {
+      help = true;
+      rest.push(argument);
+      continue;
+    }
+    const name = argument.startsWith('--') && !argument.includes('=') ? argument.slice(2) : undefined;
+    if (name === undefined || !valueFlags.has(name)) {
+      rest.push(argument);
+      continue;
+    }
+    const next = rawRest[index + 1];
+    if (next === undefined) {
+      missingValue ??= `${raw} needs a value`;
+      rest.push(argument);
+      continue;
+    }
+    if (next === '--help' || next === '-h') {
+      if (name === 'body') {
+        rest.push(`${argument}=${next}`);
+        index += 1;
+      } else {
+        help = true;
+        rest.push(argument);
+      }
+      continue;
+    }
+    if (next.startsWith('--')) {
+      const nextName = next.slice(2).split('=')[0];
+      if (nextName !== undefined && knownFlags.has(nextName)) {
+        missingValue ??= `${raw} needs a value`;
+      }
+      // Leave both tokens alone: a known flag is a missing value, an unknown one must reach the
+      // unknown-option check rather than becoming a value.
+      rest.push(argument);
+      continue;
+    }
+    rest.push(`${argument}=${next}`);
+    index += 1;
+  }
+  if (help) {
+    say(GH_USAGE);
+    return 0;
+  }
+  if (missingValue !== undefined) fail(missingValue);
+
   const booleans = action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
   const args = parseArgs(rest, { booleans });
+
   const host = args.value('host') ?? 'github.com';
   let repo = args.value('repo') ?? args.value('R');
   if (repo === undefined) {
@@ -100,14 +192,8 @@ export async function runGh(argv: readonly string[]): Promise<number> {
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   if (socketPath === undefined) fail('no broker socket is configured');
 
-  const allowed = new Set([
-    ...action.flags.map((flag) => flag.name),
-    'repo',
-    'R',
-    'host',
-    'socket',
-  ]);
   for (const argument of rest) {
+    if (argument === '--') break;
     const match = /^--([^=]+)/.exec(argument);
     if (match?.[1] !== undefined && !allowed.has(match[1])) {
       fail(`unknown option --${match[1]} for gcb gh ${domain} ${command}`);
@@ -148,7 +234,8 @@ export async function runGh(argv: readonly string[]): Promise<number> {
       action.timeoutSeconds * 1000 + 30_000,
     );
   } catch (error) {
-    fail((error as Error).message);
+    process.stderr.write(`unreachable: ${(error as Error).message}\n`);
+    return options.unreachableExitCode ?? 1;
   }
   if (response.ok !== true) {
     if (response.warning) process.stderr.write(`warning: ${response.warning}\n`);
