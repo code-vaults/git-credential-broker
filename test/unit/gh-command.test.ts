@@ -88,7 +88,7 @@ describe('gcb gh', () => {
     };
     const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
     try {
-      const result = await runGhCli(['pr', 'view', '7', '--repo', 'acme/widget', '--socket', socketPath]);
+      const result = await runGhCli(['pr', 'view', '7', '-R', 'acme/widget', '--socket', socketPath]);
       assert.equal(result.status, 1);
       assert.match(result.stderr, /expires on its own/);
       assert.match(result.stderr, /refused/);
