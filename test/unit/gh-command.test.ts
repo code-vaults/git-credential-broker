@@ -129,7 +129,10 @@ describe('gcb gh', () => {
     };
     const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
     try {
-      const result = await runGhCli(['pr', 'view', '7', '--repo', 'acme/widget', '--socket', socketPath]);
+      const result = await runGhCli([
+        'pr', 'view', '7', '--repo', 'acme/widget', '--socket', socketPath,
+        '--proxy', 'http://proxy.example:7890',
+      ]);
       assert.equal(result.status, 0);
       assert.match(result.stderr, /expires on its own/);
     } finally {
@@ -314,20 +317,31 @@ describe('gcb gh', () => {
       hosts: { 'github.com': block },
     };
     const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() };
+    let seenProxy: string | null | undefined;
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       runAction: async (request) => {
         assert.equal(request.action, 'pr:view');
         assert.deepEqual(request.values, { number: '7' });
+        seenProxy = request.proxy;
         return { stdout: 'the viewed PR\n', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
       },
     };
     const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
     try {
-      const result = await runGhCli(['pr', 'view', '7', '--repo', 'acme/widget', '--socket', socketPath]);
+      const result = await runGhCli([
+        'pr', 'view', '7', '--repo', 'acme/widget', '--socket', socketPath,
+        '--proxy', 'http://proxy.example:7890',
+      ]);
       assert.equal(result.status, 0);
       assert.ok(result.stdout.endsWith('the viewed PR\n'));
+      assert.equal(seenProxy, 'http://proxy.example:7890');
+      const direct = await runGhCli([
+        'pr', 'view', '7', '--repo', 'acme/widget', '--socket', socketPath, '--no-proxy',
+      ]);
+      assert.equal(direct.status, 0);
+      assert.equal(seenProxy, null);
     } finally {
       await broker.close();
       fs.rmSync(root, { recursive: true, force: true });

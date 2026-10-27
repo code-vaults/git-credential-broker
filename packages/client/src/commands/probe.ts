@@ -18,6 +18,8 @@ Ask the broker for a credential without pushing. Prints a fingerprint, never the
   --host <host>     Host as git reports it, e.g. github.com        [required]
   --repo <owner/name>  Repository path                            [required]
   --protocol <p>    https (default) or http for a host that opted in
+  --proxy <url>     Use this proxy for this request
+  --no-proxy        Reach GitHub directly for this request
   -h, --help        Show this help
 `;
 
@@ -28,7 +30,9 @@ Ask the broker for a credential without pushing. Prints a fingerprint, never the
  * @returns the process exit code: 0 allowed, 1 denied, 3 unreachable.
  */
 export async function runProbe(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help'] });
+  const args = parseArgs(argv, { booleans: ['help', 'no-proxy'] });
+  if (args.has('no-proxy') && args.value('proxy') !== undefined) fail('--proxy and --no-proxy are mutually exclusive');
+  const proxy = args.has('no-proxy') ? null : args.value('proxy');
   if (args.has('help') || args.has('h')) {
     say(PROBE_USAGE);
     return 0;
@@ -52,6 +56,7 @@ export async function runProbe(argv: readonly string[]): Promise<number> {
       protocol,
       host,
       path: repo,
+      proxy,
       session: 'probe',
       pid: process.pid,
     });

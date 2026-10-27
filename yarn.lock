@@ -175,6 +175,8 @@ __metadata:
   resolution: "gcb-host@workspace:packages/host"
   dependencies:
     gcb-cli: "npm:0.1.0"
+    node-fetch-native: "npm:^1.6.7"
+    x-fetch: "npm:^0.3.0"
     yaml: "npm:^2.9.1"
   bin:
     gcb: ./bin/gcb.js
@@ -190,6 +192,13 @@ __metadata:
     yaml: "npm:^2.9.1"
   languageName: unknown
   linkType: soft
+
+"node-fetch-native@npm:^1.6.7":
+  version: 1.6.7
+  resolution: "node-fetch-native@npm:1.6.7"
+  checksum: 10c0/8b748300fb053d21ca4d3db9c3ff52593d5e8f8a2d9fe90cbfad159676e324b954fdaefab46aeca007b5b9edab3d150021c4846444e4e8ab1f4e44cd3807be87
+  languageName: node
+  linkType: hard
 
 "typescript@npm:^7.0.2":
   version: 7.0.2
@@ -337,6 +346,13 @@ __metadata:
   version: 7.24.6
   resolution: "undici-types@npm:7.24.6"
   checksum: 10c0/d9cd8befb643ac904615c280a095ba4240531f6bb4a5e75a22a7483630ca8d3f1016d2ab6ace6ceda1f63b3a2db2fe037fafe121d6917a0187573aa548ff78ca
+  languageName: node
+  linkType: hard
+
+"x-fetch@npm:^0.3.0":
+  version: 0.3.0
+  resolution: "x-fetch@npm:0.3.0"
+  checksum: 10c0/4f9f1a354d0cf8de40e7e537ec368566df99b257d7c196c89cbef63b7c383cec4f718256e44e3526e65b48225c536994ae727f66b2f10f4857701a86e93619e0
   languageName: node
   linkType: hard
 

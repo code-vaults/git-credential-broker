@@ -106,7 +106,7 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
  */
 export async function runPr(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, {
-    booleans: ['help', 'draft', 'merge', 'status', 'comment', 'threads', 'via-host'],
+    booleans: ['help', 'draft', 'merge', 'status', 'comment', 'threads', 'via-host', 'no-proxy'],
   });
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
@@ -122,6 +122,10 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     fail('--comment only posts an anchored review comment; pass --file and --line');
   }
 
+  if (args.has('no-proxy') && args.value('proxy') !== undefined) {
+    fail('--proxy and --no-proxy are mutually exclusive');
+  }
+  const proxy = args.has('no-proxy') ? null : args.value('proxy');
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const host = args.value('host');
   const repo = args.value('repo') ?? fail('--repo is required (e.g. owner/name)');
@@ -289,6 +293,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         draft: args.has('draft'),
         session: 'pr',
         pid: process.pid,
+        proxy,
       },
       PR_TIMEOUT_MS,
     );

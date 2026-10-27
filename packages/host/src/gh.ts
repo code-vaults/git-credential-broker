@@ -40,6 +40,8 @@ export interface GhRunOptions {
   readonly maxOutputBytes?: number;
   /** Environment to copy only the proxy and PATH values from. */
   readonly env?: NodeJS.ProcessEnv;
+  /** Per-command proxy: absent = copy env, null = direct, string = this proxy. */
+  readonly proxy?: string | null;
 }
 
 /**
@@ -82,6 +84,20 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   ]) {
     const value = source[key];
     if (value !== undefined && value !== '') env[key] = value;
+  }
+
+  if (options.proxy !== undefined) {
+    const proxyKeys = [
+      'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
+      'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'NODE_USE_ENV_PROXY',
+    ];
+    for (const key of proxyKeys) delete env[key];
+    if (options.proxy !== null) {
+      env.HTTP_PROXY = options.proxy;
+      env.HTTPS_PROXY = options.proxy;
+      env.ALL_PROXY = options.proxy;
+      env.NO_PROXY = 'localhost,127.0.0.1';
+    }
   }
 
   const timeoutMs = options.timeoutMs ?? getGhAction(options.action).timeoutSeconds * 1000;

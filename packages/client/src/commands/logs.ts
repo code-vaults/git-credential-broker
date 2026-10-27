@@ -27,6 +27,8 @@ Read a workflow job log through the broker, without the credential ever reaching
   --host <host>        Host as configured, e.g. github.com          [required]
   --repo <owner/name>  Repository the job belongs to                [required]
   --job <id>           Workflow job id, which is also the check run id   [required]
+  --proxy <url>        Use this proxy for this request
+  --no-proxy           Reach GitHub directly for this request
   -h, --help           Show this help
 `;
 
@@ -37,7 +39,9 @@ Read a workflow job log through the broker, without the credential ever reaching
  * @returns the process exit code: 0 read, 1 refused, 3 unreachable.
  */
 export async function runLogs(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help'] });
+  const args = parseArgs(argv, { booleans: ['help', 'no-proxy'] });
+  if (args.has('no-proxy') && args.value('proxy') !== undefined) fail('--proxy and --no-proxy are mutually exclusive');
+  const proxy = args.has('no-proxy') ? null : args.value('proxy');
   if (args.has('help') || args.has('h')) {
     say(LOGS_USAGE);
     return 0;
@@ -68,6 +72,7 @@ export async function runLogs(argv: readonly string[]): Promise<number> {
         host,
         path: repo,
         jobId,
+        proxy,
         session: 'logs',
         pid: process.pid,
       },

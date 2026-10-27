@@ -434,6 +434,17 @@ For a sidecar, pass them in its `environment:` (compose only forwards what the f
 process, `EnvironmentFile=` in the unit and the boot wrapper, both of which already read
 `/etc/git-cred-broker/proxy.env` if it exists.
 
+Every broker command also accepts a per-command choice:
+
+```sh
+gcb gh pr view 7 --no-proxy
+gcb pr status --number 7 --proxy http://proxy.example:7890
+```
+
+`gh` receives the choice through its process environment; the broker builds a separate
+`node-fetch-native` instance for each proxy value and caches it, so commands sharing a choice reuse the
+same connection pool.
+
 The broker, `authorize` and `diagnose` **refuse to start** when a proxy variable is set and `NODE_USE_ENV_PROXY` is
 not `1`, instead of reaching GitHub directly by a route nobody chose. `gh`, which the host opener runs,
 reads those variables itself (it is Go), so it only needs them to arrive.

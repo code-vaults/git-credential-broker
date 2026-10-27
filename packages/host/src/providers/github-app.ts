@@ -18,6 +18,7 @@
  * Reference: https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app
  */
 import { userTokenPath } from '../config.ts';
+import { proxyFetch } from '../http.ts';
 import { createSign } from 'node:crypto';
 import { getGhAction, ProviderConfigError, tokenFingerprint, type ActionRunResult } from 'gcb-cli';
 import { runGhAction } from '../gh.ts';
@@ -140,7 +141,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     host,
     cfg,
     skewSeconds = 300,
-    fetchImpl = globalThis.fetch,
+    fetchImpl = proxyFetch,
     now = () => Date.now(),
     ghPath,
     log = () => {},
@@ -592,6 +593,7 @@ function pullRequestNumber(value: unknown): number | undefined {
           host: request.host,
           ghPath,
           env: process.env,
+          proxy: request.proxy,
         });
       } catch (error) {
         result = { ...NO_RUN, error: error instanceof Error ? error.message : String(error) };
