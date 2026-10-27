@@ -395,7 +395,10 @@ describe('short gh flags', () => {
 
 describe('the -- terminator', () => {
   it('does not treat the token after -- as help', async () => {
-    const result = await runGhCli(['pr', 'view', '7', '--', '--help']);
+    const result = await runGhCli([
+      'pr', 'view', '7', '--repo', 'acme/widget', '--socket', '/nonexistent',
+      '--', '--help',
+    ]);
     assert.equal(result.status, 1);
     assert.doesNotMatch(result.stdout, /Usage: gcb gh/);
     assert.match(result.stderr, /too many positional arguments/);
