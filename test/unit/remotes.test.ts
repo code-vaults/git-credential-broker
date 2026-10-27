@@ -30,8 +30,8 @@ describe('resolving a branch that names a remote', () => {
   });
 
   it('reads an SSH url and an HTTPS one the same way', () => {
-    assert.deepEqual(remoteRepo('origin', dir), { owner: 'me', repo: 'git-credential-broker' });
-    assert.deepEqual(remoteRepo('upstream', dir), { owner: 'code-vaults', repo: 'git-credential-broker' });
+    assert.deepEqual(remoteRepo('origin', dir), { owner: 'me', repo: 'git-credential-broker', host: 'github.com' });
+    assert.deepEqual(remoteRepo('upstream', dir), { owner: 'code-vaults', repo: 'git-credential-broker', host: 'github.com' });
   });
 
   it('leaves a plain branch alone, because it is a branch of the repository --repo names', () => {
@@ -69,6 +69,7 @@ describe('what a remote URL is allowed to look like', () => {
     const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
     git('init', '-q');
     git('remote', 'add', 'ported', 'https://git.example.com:8443/me/thing.git');
+    git('remote', 'add', 'ssh-ported', 'ssh://git@git.example.com:2222/me/thing.git');
     git('remote', 'add', 'prefixed', 'https://git.example.com/gitlab/group/thing.git');
     git('remote', 'add', 'local', '/srv/git/thing.git');
     git('remote', 'add', 'files', 'file:///srv/git/thing.git');
@@ -78,8 +79,12 @@ describe('what a remote URL is allowed to look like', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('does not read a port as an owner', () => {
-    assert.deepEqual(remoteRepo('ported', dir), { owner: 'me', repo: 'thing' });
+  it('does not read a port as an owner, and keeps it in an HTTP(S) host', () => {
+    assert.deepEqual(remoteRepo('ported', dir), { owner: 'me', repo: 'thing', host: 'git.example.com:8443' });
+  });
+
+  it('drops an SSH port, because the API host has none', () => {
+    assert.deepEqual(remoteRepo('ssh-ported', dir), { owner: 'me', repo: 'thing', host: 'git.example.com' });
   });
 
   it('does not read a directory as a host', () => {

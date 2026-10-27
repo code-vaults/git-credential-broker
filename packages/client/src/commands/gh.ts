@@ -7,6 +7,7 @@
 import { GH_ACTIONS, getGhAction, parseArgs, say, fail, type ActionValues } from 'gcb-cli';
 
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
+import { remoteRepo } from './remotes.ts';
 
 const ACTION_LINES = Object.values(GH_ACTIONS)
   .map((action) => {
@@ -29,13 +30,27 @@ const ACTION_LINES = Object.values(GH_ACTIONS)
   })
   .join('\n');
 
+/**
+ * Read owner/repo from the checkout's `origin` remote.
+ *
+ * The URL parsing lives in `remotes.ts`, beside `--head origin:branch`, so the two cannot disagree
+ * about what a remote points at.
+ *
+ * @param cwd - the checkout to ask.
+ * @returns the normalized repository, or undefined when no remote names one.
+ */
+function repoFromCheckout(cwd: string): { repo: string; host: string } | undefined {
+  const found = remoteRepo('origin', cwd);
+  return found === undefined ? undefined : { repo: `${found.owner}/${found.repo}`, host: found.host };
+}
+
 /** Usage text for `gh`. */
 export const GH_USAGE = `Usage: gcb gh <domain> <command> [options]
 
 Run a catalogued GitHub action through the broker.
 
 Common
-  --repo <owner/name>  Repository the action belongs to           [required]
+  --repo <owner/name>  Repository the action belongs to (default: origin remote)
   --host <host>        Host as configured, e.g. github.com (default: github.com)
   --socket <path>      Broker socket (default: GIT_BROKER_SOCKET)
   -h, --help           Show this help
@@ -68,8 +83,16 @@ export async function runGh(argv: readonly string[]): Promise<number> {
 
   const booleans = action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
   const args = parseArgs(rest, { booleans });
-  const repo = args.value('repo') ?? fail('--repo is required');
   const host = args.value('host') ?? 'github.com';
+  let repo = args.value('repo');
+  if (repo === undefined) {
+    const found = repoFromCheckout(process.cwd());
+    if (found === undefined) fail('--repo is required when the checkout has no usable origin remote');
+    if (found.host !== host.toLowerCase()) {
+      fail(`the checkout's remote is on ${found.host}, but --host is ${host}; pass --repo or --host`);
+    }
+    repo = found.repo;
+  }
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   if (socketPath === undefined) fail('no broker socket is configured');
 
