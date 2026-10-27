@@ -8,14 +8,21 @@ import type { CommandBackend } from 'gcb-cli';
 
 export { runHelper } from './helper.ts';
 
-const PR_SUBCOMMANDS = Object.values(GH_ACTIONS)
-  .filter((action) => action.command[0] === 'pr')
-  .map((action) => action.command[1])
-  .join('|');
-const RUN_SUBCOMMANDS = Object.values(GH_ACTIONS)
-  .filter((action) => action.command[0] === 'run')
-  .map((action) => action.command[1])
-  .join('|');
+/**
+ * The catalogued subcommands of one domain, for the help text.
+ *
+ * The dispatch below reads the same table, so this cannot list a subcommand that does not run and a
+ * new action shows up in the help without a second edit.
+ *
+ * @param domain - the command before the colon, e.g. `pr`.
+ * @returns the subcommands, joined for one usage line.
+ */
+function cataloguedSubcommands(domain: string): string {
+  return Object.values(GH_ACTIONS)
+    .filter((action) => action.command[0] === domain)
+    .map((action) => action.command[1])
+    .join('|');
+}
 
 export const CLIENT_HELP = `gcb-client — container-side git credential helper and broker client.
 
@@ -26,8 +33,8 @@ Commands
   probe      Ask the broker what it would do for a repository, without pushing
   logs       Read a workflow job's log through the broker
   pr         Use the broker's pull-request lifecycle; these run as gh actions:
-             ${PR_SUBCOMMANDS}
-  run        Run a workflow run action: ${RUN_SUBCOMMANDS}
+             ${cataloguedSubcommands('pr')}
+  run        Run a workflow run action: ${cataloguedSubcommands('run')}
   gh         Run a catalogued GitHub action through the broker
 
 As a git credential helper
