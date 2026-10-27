@@ -52,6 +52,8 @@ Opening (the default)
 
 Acting on one
   --number <n>         The pull request number                       [required]
+  --proxy <url>        Use this proxy for this request
+  --no-proxy           Reach GitHub directly for this request
   --status             Report its state, mergeability and the runs for its commit
   --comment            Post an anchored review comment (also needs --file and --line);
                        for a plain comment use: gcb gh pr comment <number> --body ...

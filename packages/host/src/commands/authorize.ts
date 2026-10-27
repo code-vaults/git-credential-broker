@@ -18,7 +18,7 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 
 import { USER_TOKEN_FILE, userTokenPath, loadConfig, resolveConfigPath } from '../config.ts';
 import { collectUserToken, startDeviceFlow, type Fetcher } from '../device-flow.ts';
-import { fetcherFor } from '../http.ts';
+import { fetcherFor, parseProxy } from '../http.ts';
 import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from 'gcb-cli';
 
 /** Usage text for `authorize`. */
@@ -77,7 +77,9 @@ import { assertProxyEnabled } from '../proxy.ts';
 export async function runAuthorize(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, { booleans: ['help', 'no-proxy'] });
   if (args.has('no-proxy') && args.value('proxy') !== undefined) fail('--proxy and --no-proxy are mutually exclusive');
+  if (args.has('proxy') && args.value('proxy') === undefined) fail('--proxy needs a value');
   const proxy = args.has('no-proxy') ? null : args.value('proxy');
+  if (proxy !== undefined && parseProxy(proxy) === false) fail('--proxy must be an http(s) URL');
   if (args.has('help') || args.has('h')) {
     say(AUTHORIZE_USAGE);
     return 0;

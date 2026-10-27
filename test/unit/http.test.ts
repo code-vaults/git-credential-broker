@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { spawn } from 'node:child_process';
 import { describe, it } from 'node:test';
 
 import { fetcherFor, proxyCacheKey } from '../../packages/host/src/http.ts';
@@ -61,5 +62,37 @@ describe('proxy fetch cache', () => {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  });
+});
+
+describe('startup proxy environment', () => {
+  it('does not let a startup env proxy capture the direct path', async () => {
+    const server = http.createServer((_request, response) => {
+      response.writeHead(200);
+      response.end('direct');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    assert.ok(address !== null && typeof address !== 'string');
+    const script = `
+      import { fetcherFor } from ${JSON.stringify(new URL('../../packages/host/src/http.ts', import.meta.url).href)};
+      const response = await fetcherFor(null)('http://127.0.0.1:${address.port}/', { method: 'GET', headers: {} });
+      console.log(response.status, await response.text());
+    `;
+    const child = spawn(process.execPath, ['--conditions=development', '--input-type=module', '-e', script], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        NODE_USE_ENV_PROXY: '1',
+        http_proxy: 'http://127.0.0.1:1',
+        https_proxy: 'http://127.0.0.1:1',
+      },
+    });
+    let output = '';
+    child.stdout.on('data', (chunk) => { output += String(chunk); });
+    const code = await new Promise<number | null>((resolve) => child.on('exit', resolve));
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    assert.equal(code, 0);
+    assert.equal(output.trim(), '200 direct');
   });
 });

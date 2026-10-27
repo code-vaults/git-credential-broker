@@ -18,7 +18,7 @@
  *    already a socket, and refuses to follow a symlink.
  */
 import fs from 'node:fs';
-import { withProxy } from './http.ts';
+import { parseProxy, withProxy } from './http.ts';
 import {
   buildGhArgv,
   getGhAction,
@@ -125,18 +125,6 @@ export function prepareSocketPath(socketPath: string): void {
   fs.unlinkSync(socketPath);
 }
 
-/** Parse a per-command proxy choice; false means it is not a usable URL. */
-export function parseProxy(value: unknown): string | null | undefined | false {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  if (typeof value !== 'string') return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'http:' || url.protocol === 'https:' ? value : false;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Build the request handler. Kept separate from the server so it can be unit-tested without

@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 
 import { assertKeysReadable, loadConfig, resolveConfigPath } from '../config.ts';
 import { nextLink, signAppJwt } from '../providers/github-app.ts';
-import { fetcherFor } from '../http.ts';
+import { fetcherFor, parseProxy } from '../http.ts';
 import type { GithubAppHostConfig } from 'gcb-cli';
 import { fail, parseArgs, say, warn } from 'gcb-cli';
 
@@ -59,7 +59,9 @@ import { assertProxyEnabled } from '../proxy.ts';
 export async function runDiagnose(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, { booleans: ['help', 'no-proxy'] });
   if (args.has('no-proxy') && args.value('proxy') !== undefined) fail('--proxy and --no-proxy are mutually exclusive');
+  if (args.has('proxy') && args.value('proxy') === undefined) fail('--proxy needs a value');
   const proxy = args.has('no-proxy') ? null : args.value('proxy');
+  if (proxy !== undefined && parseProxy(proxy) === false) fail('--proxy must be an http(s) URL');
   if (proxy === undefined) assertProxyEnabled();
   if (args.has('help') || args.has('h')) {
     say(DIAGNOSE_USAGE);

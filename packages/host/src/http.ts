@@ -8,13 +8,28 @@
  * not create an agent per command.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createFetch as createProxyFetch } from 'node-fetch-native/proxy';
+import http from 'node:http';
+import https from 'node:https';
+import { createProxy } from 'node-fetch-native/proxy';
 import { fetch as directFetch } from 'node-fetch-native/node';
 import { createXFetch, isXFetchError, type XFetchMiddleware } from 'x-fetch';
 import type { FetchLike } from 'gcb-cli';
 
 /** A command's proxy choice: omitted keeps the host environment, null is direct. */
 export type ProxyChoice = string | null | undefined;
+
+/** Parse a proxy choice; false means it is not a usable http(s) URL. */
+export function parseProxy(value: unknown): ProxyChoice | false {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? value : false;
+  } catch {
+    return false;
+  }
+}
 
 const context = new AsyncLocalStorage<{ proxy: ProxyChoice }>();
 const instances = new Map<string, FetchLike>();
@@ -44,16 +59,26 @@ const returnResponse: XFetchMiddleware = async (_ctx, next) => {
   }
 };
 
+function nodeFetchWithAgent(agentFor: (url: string) => http.Agent | https.Agent): typeof globalThis.fetch {
+  return ((url: string, init: RequestInit = {}) =>
+    directFetch(url, { ...init, agent: agentFor(url) } as RequestInit & { agent: unknown })) as typeof globalThis.fetch;
+}
+
 function makeFetch(proxy: ProxyChoice): FetchLike {
   let native: typeof globalThis.fetch;
   if (proxy === undefined) {
     native = globalThis.fetch;
   } else if (proxy === null) {
-    // The node entry point is node-fetch, which has no environment-proxy handling; this is the
-    // direct path, including redirects to hosts not named in any bypass list.
-    native = directFetch;
+    // node-fetch's global agents are the ones Node points at the environment proxy when
+    // NODE_USE_ENV_PROXY=1, so a direct choice needs its own agents rather than agent: false.
+    const httpAgent = new http.Agent();
+    const httpsAgent = new https.Agent();
+    native = nodeFetchWithAgent((url) => (url.startsWith('https:') ? httpsAgent : httpAgent));
   } else {
-    native = createProxyFetch({ url: proxy, noProxy: [] });
+    // createProxy's agent is a node-fetch agent; this works on Node 24 and 26, unlike handing its
+    // bundled undici dispatcher to the native fetch (Node 26 rejects that dispatcher).
+    const agent = createProxy({ url: proxy, noProxy: [] }).agent;
+    native = nodeFetchWithAgent(() => agent as http.Agent);
   }
   const instance = createXFetch(native);
   instance.middlewares.use(returnResponse);
