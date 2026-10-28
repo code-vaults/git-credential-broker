@@ -582,3 +582,40 @@ examples/                configuration and compose snippets
 DEVELOPMENT.md           building from source, tests, releasing
 .agents/notes/           the design, its review, and the measured environment facts
 ```
+
+### Embedding the client in another image
+
+The contract between the pushing container and the broker is deliberately small:
+
+- the helper finds the socket through `GIT_BROKER_SOCKET`; otherwise `GIT_BROKER_SOCKET_FILE`,
+  defaulting to `$HOME/.config/git-credential-broker/socket`;
+- the broker's own egress uses `http_proxy` / `https_proxy` / `no_proxy` with
+  `NODE_USE_ENV_PROXY=1`; the sidecar additionally reads `GCB_PROXY` at `docker compose up`
+  time (`<url>` pins a proxy, empty is direct, unset keeps the host variables); every command
+  accepts `--proxy` / `--no-proxy`;
+- the socket is the only mounted interface; no credential, token or App key is ever placed in
+  the pushing container.
+
+`gcb --version` and `gcb gh --help` are the discovery checks inside a base image.
+
+### App permissions by action
+
+The action catalog is the source for these requirements; `gcb gh --help` prints the same
+actions. Grant them on the App, then approve any changed permissions on each installation.
+
+| Action | App permissions |
+|---|---|
+| `pr view` | `pull_requests: read`, `contents: read`, `checks: read`, `statuses: read` |
+| `pr list` | `pull_requests: read` |
+| `pr diff` | `pull_requests: read`, `contents: read` |
+| `pr create` | `pull_requests: write`, `contents: read` |
+| `pr close` | `pull_requests: write` |
+| `pr comment` | `pull_requests: write` |
+| `pr review` | `pull_requests: write` |
+| `issue create` | `issues: write` |
+| `run view` | `actions: read` |
+| `run list` | `actions: read` |
+
+A missing `checks` or `statuses` grant is why `gcb pr view 72` can fail while `pr diff` works:
+`pr view` reads the checks and statuses endpoints as well. Raising a permission on the App is not
+enough by itself — the installation must approve the updated grant.
