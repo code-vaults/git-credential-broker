@@ -1049,7 +1049,7 @@ describe('compose', () => {
     });
 
     assert.match(fromCode, /- \/volume1\/docker\/git-cred-broker\/app:\/opt\/gcb:ro/);
-    assert.match(fromCode, /- node\n\s+- --conditions=development\n\s+- \/opt\/gcb\/packages\/host\/bin\/gcb\.js\n\s+- daemon/);
+    assert.match(fromCode, /exec node --conditions=development \/opt\/gcb\/packages\/host\/bin\/gcb\.js daemon/);
     assert.equal(/npx/.test(fromCode), false, 'no registry access at start');
     assert.equal(/npm_config_cache/.test(fromCode), false, 'and so no cache to write');
     assert.match(fromCode, /STAGED\.json/, 'it points at the record of which commit this is');
@@ -1099,6 +1099,8 @@ describe('compose', () => {
     const keys = rendered.split('environment:').length - 1;
     assert.equal(keys, 1, 'a service with two environment keys is not a valid compose file');
     assert.match(rendered, /NODE_USE_ENV_PROXY=1/, 'and the switch has to be there with the proxy variables');
+    assert.match(rendered, /GCB_PROXY=\$\{GCB_PROXY-default\}/);
+    assert.match(rendered, /case "\$\{GCB_PROXY-default\}"/);
   });
 });
 

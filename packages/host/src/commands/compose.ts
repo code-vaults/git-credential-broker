@@ -76,7 +76,9 @@ export function renderCompose(input: ComposeInput): string {
       - https_proxy=\${https_proxy:-\${HTTPS_PROXY:-}}
       - no_proxy=\${no_proxy:-\${NO_PROXY:-}}
       # The daemon refuses to start with a proxy variable and without this one.
-      - NODE_USE_ENV_PROXY=1`;
+      - NODE_USE_ENV_PROXY=1
+      # Runtime override: a URL pins a proxy, an empty value goes direct, unset keeps the above.
+      - GCB_PROXY=\${GCB_PROXY-default}`;
 
   const environment = fromCode
     ? `
@@ -93,16 +95,18 @@ export function renderCompose(input: ComposeInput): string {
     ? `\n      # The authorized person's refresh token: the only secret mounted writable, because GitHub\n      # rotates it on every exchange.\n      - ${input.dir}/${USER_TOKEN_FILE}:${SIDECAR.userTokenPath}:rw`
     : '\n      # No user.refresh yet: run `gcb authorize` and render this again. A mount' +
       '\n      # for a path that does not exist would become a directory, and the broker would read that.';
-  const command = fromCode
-    ? `      - node
-      - --conditions=development
-      - ${CODE_DIR}/packages/host/bin/gcb.js
-      - daemon
-      - --config
-      - ${SIDECAR.configPath}`
-    : `      - sh
+  const start = fromCode
+    ? `exec node --conditions=development ${CODE_DIR}/packages/host/bin/gcb.js daemon --config ${SIDECAR.configPath}`
+    : `exec npx --yes --package '${input.packageSpec}' gcb daemon --config ${SIDECAR.configPath}`;
+  const command = `      - sh
       - -c
-      - exec npx --yes --package '${input.packageSpec}' gcb daemon --config ${SIDECAR.configPath}`;
+      - |
+        case "\${GCB_PROXY-default}" in
+          default) ;;
+          "") unset http_proxy https_proxy no_proxy NODE_USE_ENV_PROXY ;;
+          *) export http_proxy="$GCB_PROXY" https_proxy="$GCB_PROXY" no_proxy=localhost,127.0.0.1 NODE_USE_ENV_PROXY=1 ;;
+        esac
+        ${start}`;
 
   const codeMount = fromCode
     ? `
