@@ -450,3 +450,16 @@ describe('an invalid help path', () => {
     }
   });
 });
+
+describe('command-specific help refusal', () => {
+  it('runs the dispatcher checks for help host', async () => {
+    const result = await runClient(['help', 'host']);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    if (process.platform === 'win32') {
+      assert.match(result.stderr, /native Windows is not supported/);
+    } else {
+      assert.match(result.stderr, /`host` is a host command; install gcb-host on the host/);
+    }
+  });
+});
