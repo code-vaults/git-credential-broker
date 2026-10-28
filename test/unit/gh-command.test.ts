@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import { startBroker } from '../../packages/host/src/broker.ts';
-import { tryRunAsync, type RunResult } from '../lib/run.ts';
+import { tryRunAsync, type RunResult } from '../common/run.ts';
 import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../packages/cli/src/types.ts';
 
 /** Run the client from source, next to this file rather than from the cwd. */

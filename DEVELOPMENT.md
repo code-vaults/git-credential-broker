@@ -122,7 +122,7 @@ If you add tests, three traps are already paid for in this suite:
 
 - **Pin `HOME`.** The helper falls back to `$HOME/.config/git-credential-broker/socket`, so an
   unpinned `HOME` silently turns an "unconfigured" test into a "configured, broker missing" one.
-- **Use the async helpers in `test/lib/run.ts` when the test process also serves HTTP.**
+- **Use the async helpers in `test/common/run.ts` when the test process also serves HTTP.**
   `spawnSync` blocks the event loop, and the peer waiting on that server deadlocks.
 - **Ignore `EPIPE` when writing to a child's stdin.** A command that exits before reading closes the
   pipe; an unhandled stream error takes down the whole file with a misleading failure.

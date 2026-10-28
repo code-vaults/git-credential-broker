@@ -175,7 +175,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 - **Tests must not depend on the machine.** Pin `HOME`: the helper falls back to
   `$HOME/.config/git-credential-broker/socket`, so an unpinned `HOME` silently turns
   "unconfigured" tests into "configured, broker missing" ones.
-- **Use the async process helpers in `test/lib/run.ts` whenever the test process also serves
+- **Use the async process helpers in `test/common/run.ts` whenever the test process also serves
   HTTP.** `spawnSync` blocks the event loop, so the peer waiting on that server deadlocks. This
   cost real debugging time.
 - **Ignore `EPIPE` when writing to a child's stdin.** A command that exits before reading closes

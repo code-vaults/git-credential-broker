@@ -25,9 +25,9 @@ import { after, before, describe, it } from 'node:test';
 import { stringify as stringifyYaml } from 'yaml';
 import { fileURLToPath } from 'node:url';
 
-import { createGitHttpServer } from '../lib/git-http-server.ts';
-import type { GitHttpServer } from '../lib/git-http-server.ts';
-import { runAsync, tryRunAsync, waitFor } from '../lib/run.ts';
+import { createGitHttpServer } from '../common/git-http-server.ts';
+import type { GitHttpServer } from '../common/git-http-server.ts';
+import { runAsync, tryRunAsync, waitFor } from '../common/run.ts';
 
 /** The shipped artifacts, resolved next to this file rather than from the cwd. */
 const HELPER_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));
