@@ -418,3 +418,11 @@ describe('the -- terminator', () => {
     assert.match(result.stderr, /too many positional arguments/);
   });
 });
+
+describe('the help path', () => {
+  it('routes gcb help gh pr to gh pr --help', async () => {
+    const result = await runClient(['help', 'gh', 'pr']);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /Usage: gcb gh/);
+  });
+});

@@ -1247,3 +1247,19 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.doesNotMatch(noNumber.stderr, /--number is required/, 'without being asked for a number');
   });
 });
+
+describe('the help path', () => {
+  it('routes gcb help pr to gcb pr --help', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-help-path-'));
+    try {
+      const result = execFileSync('node', ['--conditions=development', 'packages/client/bin/gcb.js', 'help', 'pr'], {
+        cwd: path.resolve('.'),
+        encoding: 'utf8',
+        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+      });
+      assert.match(result, /Usage: gcb pr/);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+});

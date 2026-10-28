@@ -66,7 +66,13 @@ export async function runCli(argv: readonly string[], backend: CommandBackend): 
     process.stderr.write(`${backend.help}\n`);
     return 1;
   }
-  if (command === 'help' || command === '--help' || command === '-h') {
+  if (command === 'help') {
+    const path = argv.slice(1);
+    if (path.length > 0) return backend.run([...path, '--help']);
+    process.stdout.write(`${backend.help}\n`);
+    return 0;
+  }
+  if (command === '--help' || command === '-h') {
     process.stdout.write(`${backend.help}\n`);
     return 0;
   }
