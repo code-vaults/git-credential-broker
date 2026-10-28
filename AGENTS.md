@@ -17,7 +17,7 @@ had reached 549 lines mostly by accumulating rationale; it is not the place for 
 The action/CLI redesign (host-side `gh`, `gcb gh`, host-user delegation) is **underway**. YAML
 configuration and the three-package split are implemented. The typed action catalog and
 `gcb gh` broker/client path are present; the executor exists but several Phase 2 items remain
-incomplete. `examples/Dockerfile.host` builds the host image with `gh`, and the old `pr`/`logs`
+incomplete. The root `Dockerfile` builds the client and host image stages, and the old `pr`/`logs`
 commands are not removed yet. The Phase 2 design note is in
 `.agents/notes/proposed/architecture/2026-10-25-host-side-gh.md`. [`ROADMAP.md`](ROADMAP.md) is authoritative for the target and the order; this file
 describes the current tree, which is the last green baseline. Do not
@@ -52,7 +52,7 @@ container git → helper → unix socket → broker (outside the container) → 
 corepack yarn install    # Yarn 4 via corepack; packageManager pins it
 
 corepack yarn typecheck  # tsc, no emit
-corepack yarn build      # to dist/, then makes the CLI entry points executable
+corepack yarn build      # to lib/, then makes the CLI entry points executable
 corepack yarn check      # typecheck + build + all tests  ← run this before claiming success
 corepack yarn pack:check # build, then show exactly what npm would publish
 ```
@@ -60,8 +60,8 @@ corepack yarn pack:check # build, then show exactly what npm would publish
 The CLI runs from source too, so there is no need to build to try a command:
 
 ```sh
-node --conditions=development packages/client/bin/gcb.js --help
-node --conditions=development packages/host/bin/gcb.js compose --socket-dir /tmp/sock    # reads --config, $GIT_BROKER_CONFIG, else ./broker.config.yml
+node --conditions=gcb-development packages/client/bin/gcb.js --help
+node --conditions=gcb-development packages/host/bin/gcb.js compose --socket-dir /tmp/sock    # reads --config, $GIT_BROKER_CONFIG, else ./broker.config.yml
 ```
 
 `yarn test` builds first because the end-to-end suite execs `packages/client/bin/gcb.js` as a **real**
@@ -175,7 +175,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 - **Tests must not depend on the machine.** Pin `HOME`: the helper falls back to
   `$HOME/.config/git-credential-broker/socket`, so an unpinned `HOME` silently turns
   "unconfigured" tests into "configured, broker missing" ones.
-- **Use the async process helpers in `test/lib/run.ts` whenever the test process also serves
+- **Use the async process helpers in `test/common/run.ts` whenever the test process also serves
   HTTP.** `spawnSync` blocks the event loop, so the peer waiting on that server deadlocks. This
   cost real debugging time.
 - **Ignore `EPIPE` when writing to a child's stdin.** A command that exits before reading closes
@@ -320,6 +320,7 @@ Full detail and the measurements behind them:
 | `packages/host/src/providers/github-app.ts` | RS256 JWT, installation lookup, permission pre-flight, token cache |
 | `packages/host/src/device-flow.ts` | the device flow: the three exchanges that turn an authorization into a token |
 | `packages/host/src/commands/` | init, stage, compose, diagnose, authorize and host-opener |
+| `Dockerfile` | client and host image stages, with gh in the host stage |
 | `packages/client/bin/gcb.js`, `packages/host/bin/gcb.js` | the two installed `gcb` bins |
 | `test/e2e/packages.test.ts` | npm pack and install into separate client/host prefixes |
 | `scripts/postbuild.mjs` | build-time fixup: shebang and exec bit on the bin files |

@@ -14,14 +14,13 @@
     "node": ">=24"
   },
   "files": [
-    "dist",
-    "src"
+    "lib"
   ],
   "exports": {
     ".": {
-      "development": "./src/index.ts",
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "gcb-development": "./src/index.ts",
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
     }
   },
   "publishConfig": {

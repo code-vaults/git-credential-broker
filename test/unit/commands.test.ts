@@ -1049,7 +1049,7 @@ describe('compose', () => {
     });
 
     assert.match(fromCode, /- \/volume1\/docker\/git-cred-broker\/app:\/opt\/gcb:ro/);
-    assert.match(fromCode, /exec node --conditions=development \/opt\/gcb\/packages\/host\/bin\/gcb\.js daemon/);
+    assert.match(fromCode, /exec node --conditions=gcb-development \/opt\/gcb\/packages\/host\/bin\/gcb\.js daemon/);
     assert.equal(/npx/.test(fromCode), false, 'no registry access at start');
     assert.equal(/npm_config_cache/.test(fromCode), false, 'and so no cache to write');
     assert.match(fromCode, /STAGED\.json/, 'it points at the record of which commit this is');
@@ -1118,7 +1118,7 @@ describe('the anchor flags, at the CLI boundary', () => {
 
   const cli = (args: readonly string[]): { status: number; stdout: string; stderr: string } => {
     try {
-      execFileSync('node', ['--conditions=development', 'packages/client/bin/gcb.js', 'pr', ...args], {
+      execFileSync('node', ['--conditions=gcb-development', 'packages/client/bin/gcb.js', 'pr', ...args], {
         cwd: path.resolve('.'),
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -1252,7 +1252,7 @@ describe('the help path', () => {
   it('routes gcb help pr to gcb pr --help', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-help-path-'));
     try {
-      const result = execFileSync('node', ['--conditions=development', 'packages/client/bin/gcb.js', 'help', 'pr'], {
+      const result = execFileSync('node', ['--conditions=gcb-development', 'packages/client/bin/gcb.js', 'help', 'pr'], {
         cwd: path.resolve('.'),
         encoding: 'utf8',
         env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },

@@ -34,9 +34,9 @@ Node strips the types, so the package sources are directly runnable with the dev
 condition:
 
 ```sh
-node --conditions=development packages/client/bin/gcb.js --help
-node --conditions=development packages/host/bin/gcb.js compose --socket-dir /tmp/sock --config /tmp/deploy/broker.config.yml
-node --conditions=development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml --check
+node --conditions=gcb-development packages/client/bin/gcb.js --help
+node --conditions=gcb-development packages/host/bin/gcb.js compose --socket-dir /tmp/sock --config /tmp/deploy/broker.config.yml
+node --conditions=gcb-development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml --check
 ```
 
 Commands find the configuration by convention — `--config`, else `$GIT_BROKER_CONFIG`, else
@@ -48,11 +48,11 @@ Two consequences:
 
 - The sources must stay **erasable**: `erasableSyntaxOnly` is on (no enums, no parameter
   properties), and relative imports carry the `.ts` extension — `rewriteRelativeImportExtensions`
-  turns those into `.js` for `dist/`.
+  turns those into `.js` for `lib/`.
 - The `helper` command must resolve to an executable. `setup` records `!gcb`, so git resolves the
   globally installed bin through PATH; a source checkout can use the same config if it has a `gcb`
   shim on PATH, or spell the interpreter out explicitly with
-  `git config --global credential.helper '!node --conditions=development /path/packages/client/bin/gcb.js'`.
+  `git config --global credential.helper '!node --conditions=gcb-development /path/packages/client/bin/gcb.js'`.
 
 ## Build
 
@@ -61,7 +61,7 @@ corepack yarn build        # tsc per package + scripts/postbuild.mjs
 corepack yarn typecheck    # tsc, no emit
 ```
 
-Output goes to `packages/*/dist/`. `scripts/postbuild.mjs` exists for one reason: the two
+Output goes to `packages/*/lib/`. `scripts/postbuild.mjs` exists for one reason: the two
 `packages/*/bin/gcb.js` files are the package `bin` entries, so they need the
 `#!/usr/bin/env node` shebang and the executable bit. This repository cannot track that bit (the share it lives on defeats git's
 exec-bit detection), so the build applies it every time.
@@ -71,39 +71,39 @@ exec-bit detection), so the build applies it every time.
 As the CLI, without installing anything:
 
 ```sh
-node --conditions=development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml
+node --conditions=gcb-development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml
 ```
 
 As the commands a user of the package gets:
 
 ```sh
 mkdir -p /tmp/gcb-packs
-npm pack packages/cli packages/host --pack-destination /tmp/gcb-packs
+npm pack ./packages/cli ./packages/host --pack-destination /tmp/gcb-packs
 npm install -g /tmp/gcb-packs/gcb-cli-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
 gcb --version
 ```
 
-As an image, if you would rather pin a build than mount code or fetch at boot:
-
-```dockerfile
-FROM node:24-slim
-COPY . /src
-RUN cd /src && corepack yarn install && corepack yarn build \
-  && mkdir -p /tmp/gcb-packs \
-  && npm pack packages/cli packages/host --pack-destination /tmp/gcb-packs \
-  && npm install -g /tmp/gcb-packs/gcb-cli-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
-```
+As an image, build the host stage of the root Dockerfile:
 
 ```sh
-docker build -t gcb-host:local .
+docker build --target host -t gcb-host:local .
 gcb compose --image gcb-host:local > docker-compose.broker.yml
 ```
 
-Then change the rendered `command:` to the binary the image installed, since the default one fetches
-the published package:
+Then keep the rendered `sh -c` wrapper (it applies `GCB_PROXY`) and change only the final
+`exec npx ...` to the binary the image installed, since the default one fetches the published package:
 
 ```yaml
-    command: ["gcb", "daemon", "--config", "/etc/git-cred-broker/broker.config.yml"]
+    command:
+      - sh
+      - -c
+      - |
+        case "${GCB_PROXY-default}" in
+          default) ;;
+          "") unset http_proxy https_proxy all_proxy no_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY NODE_USE_ENV_PROXY ;;
+          *) export http_proxy="$GCB_PROXY" https_proxy="$GCB_PROXY" no_proxy=localhost,127.0.0.1 NODE_USE_ENV_PROXY=1 ;;
+        esac
+        exec gcb daemon --config /etc/git-cred-broker/broker.config.yml
 ```
 
 ## Tests
@@ -131,7 +131,7 @@ If you add tests, three traps are already paid for in this suite:
 
 - **Pin `HOME`.** The helper falls back to `$HOME/.config/git-credential-broker/socket`, so an
   unpinned `HOME` silently turns an "unconfigured" test into a "configured, broker missing" one.
-- **Use the async helpers in `test/lib/run.ts` when the test process also serves HTTP.**
+- **Use the async helpers in `test/common/run.ts` when the test process also serves HTTP.**
   `spawnSync` blocks the event loop, and the peer waiting on that server deadlocks.
 - **Ignore `EPIPE` when writing to a child's stdin.** A command that exits before reading closes the
   pipe; an unhandled stream error takes down the whole file with a misleading failure.
@@ -140,14 +140,15 @@ If you add tests, three traps are already paid for in this suite:
 
 ```sh
 corepack yarn pack:check   # shows exactly what each of the three packages would ship
-npm pack packages/cli      # the tarball itself
-npm pack packages/client
-npm pack packages/host
+npm pack ./packages/cli      # the tarball itself
+npm pack ./packages/client
+npm pack ./packages/host
 ```
 
-Each package ships `dist/` and `src/`, plus `bin/` for the client and host. The notes, the tests and
-`AGENTS.md` are not in the tarballs, and neither is the git history. `src/` ships so that stack
-traces and source maps point at something readable.
+Each package ships `lib/`, plus `bin/` for the client and host. The notes, the tests and
+`AGENTS.md` are not in the tarballs, and neither is the git history. `src/` does not ship:
+debug a published package from `lib/` and its source maps; the maps point back at `../src`, so keep
+the checkout of that version beside them.
 
 ## Releasing
 

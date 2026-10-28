@@ -92,8 +92,8 @@ dependencies:
 ```sh
 git clone https://github.com/code-vaults/git-credential-broker /opt/gcb
 cd /opt/gcb && corepack yarn install
-node --conditions=development packages/client/bin/gcb.js --help
-node --conditions=development packages/host/bin/gcb.js --help
+node --conditions=gcb-development packages/client/bin/gcb.js --help
+node --conditions=gcb-development packages/host/bin/gcb.js --help
 ```
 
 Keep the checkout outside every container mount.
@@ -101,12 +101,17 @@ Keep the checkout outside every container mount.
 ## GitHub actions
 
 The action path is wired through the broker; the host image must include `gh` before these commands
-can run. The container never receives the token. Build the image, then pass `--image gcb-host:gh` to
+can run. The container never receives the token. Build the image, then pass `--image code-vaults/gcb-host:dev` to
 the compose command in [Quick start](#quick-start-sidecar):
 
 ```sh
-docker build -f examples/Dockerfile.host -t gcb-host:gh .
+docker build --target host -t code-vaults/gcb-host:dev .
 ```
+
+The image's `CMD` starts `gcb daemon`, but `compose` still renders the registry-fetching `npx`
+command by default. Keep the rendered `sh -c` wrapper (it applies `GCB_PROXY`) and change only its
+final `exec npx ...` to `exec gcb daemon --config ...`; see
+[DEVELOPMENT.md](DEVELOPMENT.md#use-your-build).
 
 Debian packages use the Aliyun mirror by default in this image; pass
 `--build-arg APT_MIRROR=<host>` to build against another mirror.
@@ -288,7 +293,7 @@ path, because a relative one is resolved against the current directory, which is
 checkout:
 
 ```sh
-node --conditions=development /srv/git-cred-broker/packages/client/bin/gcb.js logs \
+node --conditions=gcb-development /srv/git-cred-broker/packages/client/bin/gcb.js logs \
   --socket /srv/git-cred-broker/broker.sock \
   --host github.com --repo owner/repo --job 1234567890
 ```
@@ -582,3 +587,80 @@ examples/                configuration and compose snippets
 DEVELOPMENT.md           building from source, tests, releasing
 .agents/notes/           the design, its review, and the measured environment facts
 ```
+
+## Embedding the client in another image
+
+The contract between the pushing container and the broker is deliberately small:
+
+- the helper finds the socket through `GIT_BROKER_SOCKET`; otherwise `GIT_BROKER_SOCKET_FILE`,
+  defaulting to `$HOME/.config/git-credential-broker/socket`;
+- the broker's own egress uses `http_proxy` / `https_proxy` / `no_proxy` with
+  `NODE_USE_ENV_PROXY=1`; the sidecar additionally reads `GCB_PROXY` at `docker compose up`
+  time (`<url>` pins a proxy, empty is direct, unset keeps the host variables); every command that
+  talks to GitHub accepts `--proxy` / `--no-proxy`;
+- the socket is the only mounted interface; no credential, token or App key is ever placed in
+  the pushing container.
+
+`gcb --version` and `gcb gh --help` are the discovery checks inside a base image.
+
+## Images
+
+Two images, in separate registries/repositories, mirror the two packages:
+
+| Image | Contents | Use |
+|---|---|---|
+| `code-vaults/gcb-client:dev` | `gcb` client and Node runtime only | idsh base / `COPY --from` |
+| `code-vaults/gcb-host:dev` | broker, `gh`, and broker dependencies | run `gcb daemon` on the host |
+
+Published equivalents are the same names on GHCR:
+`ghcr.io/code-vaults/gcb-client:dev` and `ghcr.io/code-vaults/gcb-host:dev`. A
+GitHub repository can publish both packages; they share the source repository without sharing a tag.
+
+For local development, build and reuse the same tags:
+
+```sh
+docker build --target client -t code-vaults/gcb-client:dev .
+docker build --target host   -t code-vaults/gcb-host:dev .
+```
+
+While the image exists locally, Docker uses it instead of pulling from the registry; another machine
+or CI pulls the same tags.
+
+For idsh's dev image, name the client image as a stage and copy only the gcb packages into the base:
+
+```dockerfile
+ARG BASE=devockr/idsh:base
+ARG GCB_CLIENT_IMAGE=code-vaults/gcb-client:dev
+FROM ${GCB_CLIENT_IMAGE} AS gcb-client
+FROM ${BASE}
+
+COPY --from=gcb-client /usr/local/lib/node_modules/gcb-cli /usr/local/lib/node_modules/gcb-cli
+COPY --from=gcb-client /usr/local/lib/node_modules/gcb-client /usr/local/lib/node_modules/gcb-client
+RUN ln -s /usr/local/lib/node_modules/gcb-client/bin/gcb.js /usr/local/bin/gcb
+```
+
+Copy the two package directories, not all of `/usr/local/lib/node_modules`: the idsh base already has
+its own `corepack` and `npm`, and a whole-directory copy would replace them. A CI build passes
+`--build-arg GCB_CLIENT_IMAGE=ghcr.io/code-vaults/gcb-client:dev` instead.
+
+## App permissions by action
+
+The action catalog is the source for these requirements; `gcb gh --help` prints the same
+actions. Grant them on the App, then approve any changed permissions on each installation.
+
+| Action | App permissions |
+|---|---|
+| `pr view` | `pull_requests: read`, `contents: read`, `checks: read`, `statuses: read` |
+| `pr list` | `pull_requests: read` |
+| `pr diff` | `pull_requests: read`, `contents: read` |
+| `pr create` | `pull_requests: write`, `contents: read` |
+| `pr close` | `pull_requests: write` |
+| `pr comment` | `pull_requests: write` |
+| `pr review` | `pull_requests: write` |
+| `issue create` | `issues: write` |
+| `run view` | `actions: read` |
+| `run list` | `actions: read` |
+
+A missing `checks` or `statuses` grant is why `gcb pr view 72` can fail while `pr diff` works:
+`pr view` reads the checks and statuses endpoints as well. Raising a permission on the App is not
+enough by itself — the installation must approve the updated grant.

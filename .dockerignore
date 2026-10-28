@@ -1,0 +1,17 @@
+.git
+.dsh
+.agents
+node_modules
+**/node_modules
+/lib/
+/packages/*/lib/
+coverage
+*.log
+
+# Never send key material or tokens into a Docker build context.
+*.pem
+*.key
+**/*.pem
+**/*.key
+user.refresh
+user.token
