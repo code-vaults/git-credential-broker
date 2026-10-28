@@ -56,11 +56,11 @@ jobs:
         with:
           commit-message: 'chore: release packages'
           pr-title: 'chore: release packages'
-          version-script: yarn changeset:version
-          publish-script: yarn changeset:publish
+          version-script: yarn run version
+          publish-script: yarn release
 
   image:
-    name: Publish ${{ matrix.image }}
+    name: Publish gcb-${{ matrix.target }}
     needs: release
     if: needs.release.outputs.published == 'true'
     runs-on: ubuntu-latest
@@ -71,11 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - image: gcb-client
-            target: client
-          - image: gcb-host
-            target: host
+        target: [client, host]
     steps:
       - name: Checkout Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -108,7 +104,7 @@ jobs:
         id: tags
         env:
           VERSION: ${{ needs.release.outputs.version }}
-          IMAGE: ${{ matrix.image }}
+          IMAGE: gcb-${{ matrix.target }}
         run: |
           {
             for registry in ghcr.io/code-vaults docker.io/code-vaults; do
@@ -135,8 +131,8 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ needs.release.outputs.version }}
-            org.opencontainers.image.title=${{ matrix.image }}
+            org.opencontainers.image.title=gcb-${{ matrix.target }}
           provenance: true
           sbom: true
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
