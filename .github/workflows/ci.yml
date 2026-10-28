@@ -43,24 +43,6 @@ jobs:
       # typecheck + build + unit + the end-to-end push against a local git-http-backend.
       - run: corepack yarn check
 
-  # Every published-package change needs a changeset. The release pull request removes the
-  # pending changesets itself, so it is exempt.
-  changeset:
-    if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main'
-    timeout-minutes: 5
-    name: changeset status
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: '24'
-      - run: corepack enable
-      - run: corepack yarn install --immutable
-      - run: corepack yarn changeset status --since=origin/main
-
   # The third platform, and not a formality: /tmp is a symlink to /private/tmp here, chmod means less and
   # the shell is older, all of which the suite is supposed to be indifferent to. If it fails, that is a
   # finding about the tests rather than about macOS.

@@ -152,31 +152,19 @@ the checkout of that version beside them.
 
 ## Releasing
 
-The three packages start at `0.0.0`; the initial publish is manual and must happen in dependency
-order after a green build:
-
-```sh
-corepack yarn check
-(cd packages/cli && npm publish)
-(cd packages/client && npm publish)
-(cd packages/host && npm publish)
-```
-
-After that, published changes are versioned with Changesets:
+Published changes are versioned with Changesets:
 
 1. Add a changeset with `corepack yarn changeset` in the pull request that changes a published package.
-   CI rejects a pull request without one; the release pull request is exempt.
 2. The release workflow uses `changesets/action` to open or update `chore: release packages`. Merging
    that pull request runs `changeset publish`.
 3. `@changesets/changelog-github` writes the changelog entries; each package's `prepublishOnly`
    runs `clean-pkg-json`, so the published manifest omits the workspace-only `development` export.
-4. Re-render any sidecar you generated: `compose` pins `gcb-host@<version>`, so it takes
+4. The same release builds and publishes the `gcb-client` and `gcb-host` images.
+5. Re-render any sidecar you generated: `compose` pins `gcb-host@<version>`, so it takes
    the new version only when it is rendered again.
 
 The release workflow uses npm trusted publishing (OIDC): `id-token: write` is granted, no
 `NPM_TOKEN` secret is read. Configure the npm package's trusted publisher for this repository first.
-The `0.0.0` guard in `scripts/publish.mjs` makes the first release manual; once the versions move,
-`changeset publish` performs the release.
 
 ## Layout
 

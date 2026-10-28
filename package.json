@@ -32,7 +32,7 @@
     "prepublishOnly": "yarn check",
     "changeset": "changeset",
     "changeset:version": "changeset version && yarn install --mode=update-lockfile",
-    "changeset:publish": "node scripts/publish.mjs"
+    "changeset:publish": "changeset publish"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.1",

@@ -6,16 +6,7 @@
       "repo": "code-vaults/git-credential-broker"
     }
   ],
-  "commit": false,
   "access": "public",
   "baseBranch": "main",
-  "updateInternalDependencies": "patch",
-  "linked": [
-    [
-      "gcb-cli",
-      "gcb-client",
-      "gcb-host"
-    ]
-  ],
-  "ignore": []
+  "updateInternalDependencies": "patch"
 }
