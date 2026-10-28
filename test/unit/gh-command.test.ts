@@ -427,12 +427,22 @@ describe('the help path', () => {
   });
 });
 
+describe('a help path that is the help command', () => {
+  it('prints root help for help --help and help help', async () => {
+    for (const args of [['help', '--help'], ['help', 'help']]) {
+      const result = await runClient(args);
+      assert.equal(result.status, 0, args.join(' '));
+      assert.match(result.stdout, /Usage: gcb/);
+    }
+  });
+});
+
 describe('an invalid help path', () => {
   it('does not run a command when the path contains options', async () => {
     for (const args of [
       ['help', 'pr', '--'],
       ['help', 'pr', '--number'],
-      ['help', '--help'],
+      ['help', 'pr', '--help'],
     ]) {
       const result = await runClient(args);
       assert.equal(result.status, 1, args.join(' '));
