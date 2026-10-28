@@ -130,7 +130,11 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (args.has('proxy') && args.value('proxy') === undefined) fail('--proxy needs a value');
   const proxy = args.has('no-proxy') ? null : args.value('proxy');
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
-  const host = args.value('host') ?? 'github.com';
+  const hostArg = args.value('host');
+  if ((args.has('host') || hostArg !== undefined) && (hostArg === undefined || hostArg.trim() === '')) {
+    fail('--host needs a value (e.g. github.com)');
+  }
+  const host = hostArg ?? 'github.com';
   const repo = args.value('repo') ?? fail('--repo is required (e.g. owner/name)');
   const action = actionOf(args);
   if (args.has('via-host') && action !== 'open') {

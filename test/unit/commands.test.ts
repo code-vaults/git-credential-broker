@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
+import net from 'node:net';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -22,6 +23,8 @@ import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../pack
 import { performSetup } from '../../packages/client/src/commands/setup.ts';
 import type { BrokerConfig, GithubAppHostConfig } from '../../packages/cli/src/types.ts';
 import { runProbe } from '../../packages/client/src/commands/probe.ts';
+import { encodeMessage, parseMessage } from '../../packages/cli/src/socket-protocol.ts';
+import { runAsync } from '../common/run.ts';
 
 /** Scratch space for the whole file. */
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-commands-'));
@@ -1252,6 +1255,46 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.equal(result.status, 1);
     assert.match(result.stderr, /no broker socket/, 'validation got past the host');
     assert.doesNotMatch(result.stderr, /--host is required/);
+  });
+
+  it('refuses an explicitly empty host', () => {
+    const result = cli(['--host', '', '--repo', 'acme/widget', '--number', '7', '--status']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--host needs a value/);
+  });
+
+  it('sends the default host to the broker', async () => {
+    const socketPath = path.join(scratch, 'pr-host-default.sock');
+    let request: Record<string, unknown> | undefined;
+    const server = net.createServer((socket) => {
+      let buffer = '';
+      socket.on('data', (chunk: Buffer) => {
+        buffer += chunk.toString('utf8');
+        const newline = buffer.indexOf('\n');
+        if (newline < 0) return;
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
+        socket.end(encodeMessage({ ok: true, prStatus: 'open', prNumber: 7, prUrl: 'https://example.test/7' }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    try {
+      const result = await runAsync(process.execPath, [
+        '--conditions=gcb-development',
+        'packages/client/bin/gcb.js',
+        'pr',
+        '--repo', 'acme/widget',
+        '--number', '7',
+        '--status',
+        '--socket', socketPath,
+      ], {
+        cwd: path.resolve('.'),
+        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+      });
+      assert.equal(result.status, 0);
+      assert.equal(request?.['host'], 'github.com');
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
   });
 });
 
