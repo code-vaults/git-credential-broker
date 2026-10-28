@@ -83,9 +83,18 @@ async function startFakeBroker(response: WireResponse): Promise<{ socketPath: st
   const server = net.createServer((socket) => {
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
+    let pending = '';
     socket.on('data', (chunk) => {
-      requests.push(JSON.parse(chunk.toString().trim()) as Record<string, unknown>);
-      socket.write(`${JSON.stringify(response)}\n`);
+      pending += chunk.toString();
+      for (;;) {
+        const newline = pending.indexOf('\n');
+        if (newline < 0) break;
+        const line = pending.slice(0, newline);
+        pending = pending.slice(newline + 1);
+        if (line.trim() === '') continue;
+        requests.push(JSON.parse(line) as Record<string, unknown>);
+        socket.write(`${JSON.stringify(response)}\n`);
+      }
     });
   });
   await new Promise<void>((resolve) => server.listen(socketPath, () => resolve()));

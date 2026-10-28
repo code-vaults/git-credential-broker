@@ -44,6 +44,7 @@ Environment
   GIT_BROKER_SOCKET       Broker socket path
   GIT_BROKER_REQUIRE=1    Fail closed instead of behaving as if not installed when unconfigured
   GIT_BROKER_SOCKET_FILE  Where to read the socket path from when no variable is set
+  GCB_PROXY               Per-push broker proxy: a URL, or empty for direct
 
 Host commands such as init/stage/compose/diagnose are in gcb-host.`;
 
