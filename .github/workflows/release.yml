@@ -32,7 +32,6 @@ jobs:
         with:
           node-version: '24'
           cache: yarn
-          registry-url: https://registry.npmjs.org
 
       - name: Install Dependencies
         run: |
@@ -51,5 +50,3 @@ jobs:
           version-script: corepack yarn changeset:version
           publish-script: corepack yarn changeset:publish
           github-token: ${{ secrets.GITHUB_TOKEN }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
