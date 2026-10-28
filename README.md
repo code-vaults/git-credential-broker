@@ -598,6 +598,21 @@ The contract between the pushing container and the broker is deliberately small:
 
 `gcb --version` and `gcb gh --help` are the discovery checks inside a base image.
 
+### Local development images
+
+Build the same names locally that the registry will eventually carry, so an embedding Dockerfile does not
+change between local development and publishing:
+
+```sh
+docker build -t code-vaults/gcb:dev .
+docker build --target client -t code-vaults/gcb:client-dev .
+```
+
+`code-vaults/gcb:client-dev` is the small image for `COPY --from`, with the client and its runtime
+dependencies; `code-vaults/gcb:dev` also carries the broker tooling. While the image exists locally,
+Docker uses it instead of pulling from the registry; another machine or CI will pull the same tags.
+The broker's host-side runtime image is separate and is still `gcb-host:gh` in this deployment.
+
 ### App permissions by action
 
 The action catalog is the source for these requirements; `gcb gh --help` prints the same
