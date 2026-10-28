@@ -175,7 +175,7 @@ Print a Docker sidecar definition for the broker (to stdout). Pair it with a con
   --user <uid:gid>    UID the sidecar runs as (default: this user)
   --image <name>      Base image (default: node:24-slim)
   --package <spec>    npm spec to run (default: gcb-host@<version>)
-  --name <name>       Service and container name (default: git-cred-broker)
+  --name <name>       Service and container name (default: gcb)
   -h, --help          Show this help
 `;
 
@@ -238,7 +238,7 @@ export function runCompose(argv: readonly string[]): number {
       user,
       image: args.value('image') ?? 'node:24-slim',
       packageSpec: args.value('package') ?? `gcb-host@${PACKAGE_VERSION}`,
-      name: args.value('name') ?? 'git-cred-broker',
+      name: args.value('name') ?? 'gcb',
       code: args.value('code'),
     }),
   );
