@@ -294,6 +294,12 @@ export async function runHelper(argv: readonly string[], io: HelperIO = {}): Pro
     return refuse('GIT_BROKER_SOCKET is not set while GIT_BROKER_REQUIRE=1, so the broker cannot be reached');
   }
 
+  // Git has no per-push argument channel to the credential helper, so the helper reads its
+  // environment: GCB_PROXY=<url> pins a proxy, GCB_PROXY= (empty) goes direct, unset keeps the
+  // broker's environment. This choice only affects minting the credential; the push transport's
+  // own proxy is still Git's http.proxy / HTTPS_PROXY / NO_PROXY.
+  const configuredProxy = env['GCB_PROXY'];
+  const proxy = configuredProxy === undefined ? undefined : configuredProxy === '' ? null : configuredProxy;
   let response: WireResponse;
   try {
     response = await requestOverSocket(socketPath, {
@@ -302,6 +308,7 @@ export async function runHelper(argv: readonly string[], io: HelperIO = {}): Pro
       protocol: input['protocol'],
       host: input['host'],
       path: input['path'],
+      proxy,
       session: env['DSH_SESSION_ID'] ?? null,
       pid: process.pid,
     });

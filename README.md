@@ -441,6 +441,11 @@ gcb gh pr view 7 --no-proxy
 gcb pr status --number 7 --proxy http://proxy.example:7890
 ```
 
+For `git push`, the credential helper has no per-command argument, so it reads
+`GCB_PROXY=<url>` or `GCB_PROXY=` (empty, direct) from git's environment. That controls how the
+broker mints the token; Git's own HTTP transport still uses `http.proxy` / `HTTPS_PROXY` /
+`NO_PROXY`, so set both when the push itself must follow the same route.
+
 `gh` receives the choice through its process environment; the broker builds a separate
 `node-fetch-native` instance for each proxy value and caches it, so commands sharing a choice reuse the
 same connection pool. `--via-host` carries the same choice to the host opener, which applies it to its
