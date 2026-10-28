@@ -423,32 +423,6 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     return pending;
   }
 
-    /**
-     * Read a pull request that another call has already fetched.
-     *
-     * @param text - the JSON body.
-     * @param fallbackNumber - the number the caller asked about.
-     * @returns the number, URL and state.
-     */
-    function readPullRequest(text: string): PullRequest {
-      let parsed: unknown = null;
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        parsed = null;
-      }
-      const payload = (parsed ?? {}) as { number?: unknown; html_url?: unknown; state?: unknown; merged?: unknown };
-      if (typeof payload.number !== 'number' || typeof payload.html_url !== 'string') {
-        throw new ProviderConfigError('GitHub did not answer with a pull request');
-      }
-      return {
-        number: payload.number,
-        url: payload.html_url,
-        state: typeof payload.state === 'string' ? payload.state : undefined,
-        merged: payload.merged === true,
-      };
-    }
-
   /**
    * Report what a pull request is, and how its commit is doing.
    *
@@ -1055,10 +1029,6 @@ function pullRequestNumber(value: unknown): number | undefined {
         for (const [key, value] of Object.entries(body)) {
           if (value === undefined) delete body[key];
         }
-      } else if (request.action === 'merge') {
-        method = 'PUT';
-        url = `${collection}/${request.number}/merge`;
-        body = { merge_method: request.method ?? 'squash' };
       }
 
       let text: string;
@@ -1080,17 +1050,6 @@ function pullRequestNumber(value: unknown): number | undefined {
         const detail = (error as { hostDetail?: string }).hostDetail;
         if (detail !== undefined) Object.assign(wrapped, { hostDetail: detail });
         throw wrapped;
-      }
-
-      if (request.action === 'merge') {
-        // The merge answers with a sha and a message, not the pull request, so read it back for the
-        // canonical URL — and to report whether GitHub actually merged it.
-        const merged = JSON.parse(text) as { merged?: unknown };
-        if (merged.merged !== true) {
-          throw new ProviderConfigError('GitHub did not merge the pull request');
-        }
-        const { text: after } = await callWithToken('GET', `${collection}/${request.number}`, token);
-        return readPullRequest(after);
       }
 
       let parsed: unknown = null;

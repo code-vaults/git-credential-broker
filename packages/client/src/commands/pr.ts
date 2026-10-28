@@ -1,5 +1,5 @@
 /**
- * `pr` — open, merge or update one pull request through the broker.
+ * `pr` — open, update or inspect one pull request through the broker.
  *
  * `pr <subcommand>` runs as the catalogued gh action when the catalog has one (`pr:view`,
  * `pr:close`, …); this file is the flag-only lifecycle for the actions gh cannot express.
@@ -32,7 +32,7 @@ const PR_TIMEOUT_MS = 60_000;
 /** Usage text for `pr`. */
 export const PR_USAGE = `Usage: gcb pr [options]
 
-Open, merge, update or inspect a pull request through the broker, without the credential
+Open, update or inspect a pull request through the broker, without the credential
 ever reaching this side.
 
 A subcommand the gh action catalog has (pr view, pr close, …) runs as that action instead;
@@ -65,8 +65,6 @@ Acting on one
   --edit <id>          Replace the body of that review comment, with --body/--body-file
                        (an id --threads prints; no --number is needed)
   --resolve <thread>   Mark that review thread resolved (the id --threads prints)
-  --merge              Merge it (branch protection still applies)
-  --method <m>         merge, squash (default) or rebase
   With --number and none of the above, the title, body or base is updated.
 
 Common
@@ -81,7 +79,7 @@ Common
  * Read the action out of the flags.
  *
  * @param args - the parsed arguments.
- * @returns `merge`, `update` or `open`.
+ * @returns `update` or `open`.
  */
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
   // `--resolve`, `--reply-to` and `--edit` take a value, and a bare one is parsed as a boolean flag with
@@ -95,7 +93,6 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
   if (args.has('threads')) return 'threads' as const;
   if (args.has('comment')) return 'comment' as const;
   if (args.has('status')) return 'status' as const;
-  if (args.has('merge')) return 'merge' as const;
   if (args.value('number') !== undefined) return 'update' as const;
   return 'open' as const;
 }
@@ -108,7 +105,7 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
  */
 export async function runPr(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, {
-    booleans: ['help', 'draft', 'merge', 'status', 'comment', 'threads', 'via-host', 'no-proxy'],
+    booleans: ['help', 'draft', 'status', 'comment', 'threads', 'via-host', 'no-proxy'],
   });
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
@@ -139,10 +136,6 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const action = actionOf(args);
   if (args.has('via-host') && action !== 'open') {
     fail('--via-host only creates a pull request, so it does not go with ' + JSON.stringify(action));
-  }
-  // `--method` takes a value, so `has` — which is about boolean flags — is false for it however it is given.
-  if (args.value('method') !== undefined && action !== 'merge') {
-    fail('--method chooses how to merge, so it only goes with --merge');
   }
   const viaHost = action === 'open' && args.has('via-host');
   if (!repo) fail('--repo is required (e.g. owner/name), also with --via-host: the opener passes it on');
@@ -296,7 +289,6 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         ...(title === undefined ? {} : { title }),
         ...(body === undefined ? {} : { body }),
         ...(filePath === undefined ? {} : { filePath, line: Number(lineArg), side }),
-        ...(action === 'merge' ? { method: args.value('method') ?? 'squash' } : {}),
         draft: args.has('draft'),
         session: 'pr',
         pid: process.pid,
@@ -322,9 +314,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const done =
     action === 'open'
       ? 'opened'
-      : action === 'merge'
-          ? 'merged'
-          : action === 'comment'
+      : action === 'comment'
             ? 'commented on'
             : action === 'reply'
               ? 'replied in'

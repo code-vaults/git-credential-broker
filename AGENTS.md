@@ -197,10 +197,9 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   The broker performs each action without the token leaving it, and prints the number, the URL and
   the state.
 
-  **The agent does not merge on its own, and could not.** The ruleset requires an approving review,
-  so a merge through this path is blocked exactly as a click would be — which is the point of saying
-  the gate is branch protection rather than this tool. `--merge` exists for when a human asks for it,
-  not for routine use.
+  **The agent does not merge on its own, and could not.** There is no merge action; the ruleset requires
+  an approving review, so a merge is a human action on GitHub. The point is that the gate is branch
+  protection rather than this tool.
 
   Worth keeping in the rule: the ability to open a pull request does not carry the ability to push
   to the branch it targets — the token is narrowed to `pull_requests: write`. CI runs on

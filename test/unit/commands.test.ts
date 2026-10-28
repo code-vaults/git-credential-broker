@@ -1154,7 +1154,7 @@ describe('the anchor flags, at the CLI boundary', () => {
   });
 
   it('refuses an anchor on an action that is not a comment', () => {
-    const closed = cli([...base, '--merge', '--file', 'Dockerfile', '--line', '4', '--body', 'x']);
+    const closed = cli([...base, '--status', '--file', 'Dockerfile', '--line', '4', '--body', 'x']);
     assert.equal(closed.status, 1);
     assert.match(closed.stderr, /only go with --comment/);
   });
@@ -1204,11 +1204,6 @@ describe('the anchor flags, at the CLI boundary', () => {
     }
   });
 
-  it('refuses --method unless the action merges', () => {
-    const updated = cli([...base, '--method', 'squash', '--title', 'a title']);
-    assert.equal(updated.status, 1);
-    assert.match(updated.stderr, /only goes with --merge/);
-  });
 
   it('refuses an edit with nothing to say, or with no comment to change', () => {
     const noBody = cli([...base, '--edit', '99']);
