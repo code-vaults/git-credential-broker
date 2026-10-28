@@ -31,7 +31,7 @@ import {
   type HostOpenResult,
 } from 'gcb-cli';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-cli';
-import { parseProxy } from '../http.ts';
+import { applyProxyChoice, parseProxy, type ProxyChoice } from '../http.ts';
 
 const run = promisify(execFile);
 
@@ -218,18 +218,9 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
  * @param request - what to create.
  * @returns the number and URL, or the reason it did not work.
  */
-function openerEnv(proxy: string | null | undefined): NodeJS.ProcessEnv {
+function openerEnv(proxy: ProxyChoice): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  if (proxy === undefined) return env;
-  for (const key of ['http_proxy', 'https_proxy', 'all_proxy', 'no_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'NODE_USE_ENV_PROXY']) {
-    delete env[key];
-  }
-  if (proxy !== null) {
-    env.HTTP_PROXY = proxy;
-    env.HTTPS_PROXY = proxy;
-    env.ALL_PROXY = proxy;
-    env.NO_PROXY = 'localhost,127.0.0.1';
-  }
+  applyProxyChoice(env, proxy);
   return env;
 }
 

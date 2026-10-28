@@ -19,6 +19,23 @@ import type { FetchLike } from 'gcb-cli';
 /** A command's proxy choice: omitted keeps the host environment, null is direct. */
 export type ProxyChoice = string | null | undefined;
 
+/** Every spelling that can carry a proxy to Node or to a child process. */
+export const PROXY_ENV_KEYS = [
+  'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
+  'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'NODE_USE_ENV_PROXY',
+] as const;
+
+/** Apply one command's proxy choice to an environment for a child process. */
+export function applyProxyChoice(env: NodeJS.ProcessEnv, proxy: ProxyChoice): void {
+  if (proxy === undefined) return;
+  for (const key of PROXY_ENV_KEYS) delete env[key];
+  if (proxy === null) return;
+  env.HTTP_PROXY = proxy;
+  env.HTTPS_PROXY = proxy;
+  env.ALL_PROXY = proxy;
+  env.NO_PROXY = 'localhost,127.0.0.1';
+}
+
 /** Parse a proxy choice; false means it is not a usable http(s) URL. */
 export function parseProxy(value: unknown): ProxyChoice | false {
   if (value === undefined) return undefined;
