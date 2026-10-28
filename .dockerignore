@@ -1,0 +1,8 @@
+.git
+.dsh
+.agents
+node_modules
+**/node_modules
+**/dist
+coverage
+*.log

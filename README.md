@@ -105,7 +105,7 @@ can run. The container never receives the token. Build the image, then pass `--i
 the compose command in [Quick start](#quick-start-sidecar):
 
 ```sh
-docker build -f examples/Dockerfile.host -t code-vaults/gcb-host:dev .
+docker build --target host -t code-vaults/gcb-host:dev .
 ```
 
 Debian packages use the Aliyun mirror by default in this image; pass
