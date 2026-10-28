@@ -3,7 +3,8 @@
 .agents
 node_modules
 **/node_modules
-**/lib
+/lib/
+/packages/*/lib/
 coverage
 *.log
 

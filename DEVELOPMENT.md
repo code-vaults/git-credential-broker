@@ -78,24 +78,15 @@ As the commands a user of the package gets:
 
 ```sh
 mkdir -p /tmp/gcb-packs
-npm pack packages/cli packages/host --pack-destination /tmp/gcb-packs
+npm pack ./packages/cli ./packages/host --pack-destination /tmp/gcb-packs
 npm install -g /tmp/gcb-packs/gcb-cli-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
 gcb --version
 ```
 
-As an image, if you would rather pin a build than mount code or fetch at boot:
-
-```dockerfile
-FROM node:24-slim
-COPY . /src
-RUN cd /src && corepack yarn install && corepack yarn build \
-  && mkdir -p /tmp/gcb-packs \
-  && npm pack packages/cli packages/host --pack-destination /tmp/gcb-packs \
-  && npm install -g /tmp/gcb-packs/gcb-cli-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
-```
+As an image, build the host stage of the root Dockerfile:
 
 ```sh
-docker build -t gcb-host:local .
+docker build --target host -t gcb-host:local .
 gcb compose --image gcb-host:local > docker-compose.broker.yml
 ```
 
@@ -140,14 +131,15 @@ If you add tests, three traps are already paid for in this suite:
 
 ```sh
 corepack yarn pack:check   # shows exactly what each of the three packages would ship
-npm pack packages/cli      # the tarball itself
-npm pack packages/client
-npm pack packages/host
+npm pack ./packages/cli      # the tarball itself
+npm pack ./packages/client
+npm pack ./packages/host
 ```
 
 Each package ships `lib/`, plus `bin/` for the client and host. The notes, the tests and
 `AGENTS.md` are not in the tarballs, and neither is the git history. `src/` does not ship:
-debug a published package from `lib/` and its source maps, or from the checkout that produced it.
+debug a published package from `lib/` and its source maps; the maps point back at `../src`, so keep
+the checkout of that version beside them.
 
 ## Releasing
 

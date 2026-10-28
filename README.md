@@ -108,6 +108,10 @@ the compose command in [Quick start](#quick-start-sidecar):
 docker build --target host -t code-vaults/gcb-host:dev .
 ```
 
+The image's `CMD` starts `gcb daemon`, but `compose` still renders the registry-fetching `npx`
+command by default; change the rendered `command:` to the binary as shown in
+[DEVELOPMENT.md](DEVELOPMENT.md#use-your-build).
+
 Debian packages use the Aliyun mirror by default in this image; pass
 `--build-arg APT_MIRROR=<host>` to build against another mirror.
 
@@ -583,7 +587,7 @@ DEVELOPMENT.md           building from source, tests, releasing
 .agents/notes/           the design, its review, and the measured environment facts
 ```
 
-### Embedding the client in another image
+## Embedding the client in another image
 
 The contract between the pushing container and the broker is deliberately small:
 
@@ -591,14 +595,14 @@ The contract between the pushing container and the broker is deliberately small:
   defaulting to `$HOME/.config/git-credential-broker/socket`;
 - the broker's own egress uses `http_proxy` / `https_proxy` / `no_proxy` with
   `NODE_USE_ENV_PROXY=1`; the sidecar additionally reads `GCB_PROXY` at `docker compose up`
-  time (`<url>` pins a proxy, empty is direct, unset keeps the host variables); every command
-  accepts `--proxy` / `--no-proxy`;
+  time (`<url>` pins a proxy, empty is direct, unset keeps the host variables); every command that
+talks to GitHub accepts `--proxy` / `--no-proxy`;
 - the socket is the only mounted interface; no credential, token or App key is ever placed in
   the pushing container.
 
 `gcb --version` and `gcb gh --help` are the discovery checks inside a base image.
 
-### Images
+## Images
 
 Two images, in separate registries/repositories, mirror the two packages:
 
@@ -638,7 +642,7 @@ Copy the two package directories, not all of `/usr/local/lib/node_modules`: the 
 its own `corepack` and `npm`, and a whole-directory copy would replace them. A CI build passes
 `--build-arg GCB_CLIENT_IMAGE=ghcr.io/code-vaults/gcb-client:dev` instead.
 
-### App permissions by action
+## App permissions by action
 
 The action catalog is the source for these requirements; `gcb gh --help` prints the same
 actions. Grant them on the App, then approve any changed permissions on each installation.
