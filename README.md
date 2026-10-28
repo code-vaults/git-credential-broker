@@ -434,6 +434,9 @@ For a sidecar, pass them in its `environment:` (compose only forwards what the f
 process, `EnvironmentFile=` in the unit and the boot wrapper, both of which already read
 `/etc/git-cred-broker/proxy.env` if it exists.
 
+The sidecar also reads `GCB_PROXY` at `docker compose up` time, without re-rendering the compose
+file: a URL pins that proxy, an empty value goes direct, and leaving it unset keeps the host variables.
+
 Every broker command also accepts a per-command choice:
 
 ```sh
