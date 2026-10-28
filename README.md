@@ -621,6 +621,22 @@ docker build --target host   -t code-vaults/gcb-host:dev .
 While the image exists locally, Docker uses it instead of pulling from the registry; another machine
 or CI pulls the same tags.
 
+For idsh's dev image, name the client image as a stage and copy only the gcb packages into the base:
+
+```dockerfile
+ARG GCB_CLIENT_IMAGE=code-vaults/gcb-client:dev
+FROM ${GCB_CLIENT_IMAGE} AS gcb-client
+FROM ${BASE}
+
+COPY --from=gcb-client /usr/local/lib/node_modules/gcb-cli /usr/local/lib/node_modules/gcb-cli
+COPY --from=gcb-client /usr/local/lib/node_modules/gcb-client /usr/local/lib/node_modules/gcb-client
+RUN ln -s /usr/local/lib/node_modules/gcb-client/bin/gcb.js /usr/local/bin/gcb
+```
+
+Copy the two package directories, not all of `/usr/local/lib/node_modules`: the idsh base already has
+its own `corepack` and `npm`, and a whole-directory copy would replace them. A CI build passes
+`--build-arg GCB_CLIENT_IMAGE=ghcr.io/code-vaults/gcb-client:dev` instead.
+
 ### App permissions by action
 
 The action catalog is the source for these requirements; `gcb gh --help` prints the same
