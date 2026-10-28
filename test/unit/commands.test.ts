@@ -1173,6 +1173,14 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(result.stdout, /Usage: gcb gh/);
   });
 
+  it('refuses the removed merge flags', () => {
+    for (const flag of [['--merge'], ['--method', 'squash']]) {
+      const result = cli([...base, ...flag, '--title', 'a title']);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /no merge action/);
+    }
+  });
+
   it('refuses a plain --comment and names the anchor requirement', () => {
     const moved = cli([...base, '--comment', '--body', 'x']);
     assert.equal(moved.status, 1);
@@ -1325,6 +1333,38 @@ describe('the anchor flags, at the CLI boundary', () => {
       assert.equal(request?.['op'], 'action');
       assert.equal(request?.['ghAction'], 'pr:edit');
       assert.equal(request?.['path'], 'acme/widget');
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it('passes a front-matter body to gh pr edit', async () => {
+    const bodyFile = path.join(scratch, 'front-matter.md');
+    fs.writeFileSync(bodyFile, '---\ntitle: x\n---\n\nbody\n');
+    const socketPath = path.join(scratch, 'pr-body.sock');
+    let request: Record<string, unknown> | undefined;
+    const server = net.createServer((socket) => {
+      let buffer = '';
+      socket.on('data', (chunk: Buffer) => {
+        buffer += chunk.toString('utf8');
+        const newline = buffer.indexOf('\n');
+        if (newline < 0) return;
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
+        socket.end(encodeMessage({ ok: true, stdout: 'updated\n', exitCode: 0 }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    try {
+      const result = await runAsync(process.execPath, [
+        '--conditions=gcb-development',
+        'packages/client/bin/gcb.js',
+        'pr', '--number', '7', '--body-file', bodyFile, '--repo', 'acme/widget', '--socket', socketPath,
+      ], {
+        cwd: path.resolve('.'),
+        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+      });
+      assert.equal(result.status, 0);
+      assert.equal((request?.['values'] as Record<string, unknown> | undefined)?.['body'], '---\ntitle: x\n---\n\nbody\n');
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

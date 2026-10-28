@@ -116,6 +116,12 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (args.has('close') || args.value('close') !== undefined) {
     fail('--close moved to: gcb gh pr close <number> --repo owner/name');
   }
+  if (args.has('merge') || args.value('merge') !== undefined) {
+    fail('there is no merge action: merging is a human action on GitHub');
+  }
+  if (args.has('method') || args.value('method') !== undefined) {
+    fail('--method was removed with --merge: there is no merge action');
+  }
   // Before --repo too: a bare `gcb pr --comment` should hear what the flag needs, not that --repo
   // is missing. An anchored comment (--file and --line) is still this command's to post.
   if (args.has('comment') && args.value('file') === undefined && args.value('line') === undefined) {
@@ -142,6 +148,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     }
     repo = `${found.owner}/${found.repo}`;
   }
+  if (repo.trim() === '') fail('--repo needs a value (e.g. owner/name)');
   const action = actionOf(args);
   if (args.has('via-host') && action !== 'open') {
     fail('--via-host only creates a pull request, so it does not go with ' + JSON.stringify(action));
@@ -232,9 +239,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
 
   if (action === 'update') {
     const ghArgs = ['pr', 'edit', String(number), '--repo', repo, '--host', host];
-    if (title !== undefined) ghArgs.push('--title', title);
-    if (body !== undefined) ghArgs.push('--body', body);
-    if (base !== undefined) ghArgs.push('--base', base);
+    if (title !== undefined) ghArgs.push(`--title=${title}`);
+    if (body !== undefined) ghArgs.push(`--body=${body}`);
+    if (base !== undefined) ghArgs.push(`--base=${base}`);
     const socketArg = args.value('socket');
     if (socketArg !== undefined) ghArgs.push('--socket', socketArg);
     if (args.has('no-proxy')) ghArgs.push('--no-proxy');

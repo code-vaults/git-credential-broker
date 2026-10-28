@@ -94,6 +94,13 @@ describe('buildGhArgv', () => {
     ]);
   });
 
+  it('builds the edit flags', () => {
+    assert.deepEqual(
+      buildGhArgv('pr:edit', { number: 7, title: 't', base: 'main' }, 'acme/widget'),
+      ['pr', 'edit', '7', '--title', 't', '--base', 'main', '--repo', 'acme/widget'],
+    );
+  });
+
   it('accepts numeric flag values without stringifying them first', () => {
     assert.deepEqual(buildGhArgv('pr:list', { limit: 10 }, 'acme/widget'), [
       'pr',
