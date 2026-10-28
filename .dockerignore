@@ -6,3 +6,11 @@ node_modules
 **/lib
 coverage
 *.log
+
+# Never send key material or tokens into a Docker build context.
+*.pem
+*.key
+**/*.pem
+**/*.key
+user.refresh
+user.token

@@ -52,4 +52,4 @@ COPY --from=build /packs /packs
 RUN npm install -g --omit=dev /packs/gcb-cli-*.tgz /packs/gcb-host-*.tgz \
  && rm -rf /packs /usr/local/lib/node_modules/gcb-*/lib/*.map /root/.npm /tmp/* \
  && npm cache clean --force
-ENTRYPOINT ["gcb", "daemon"]
+CMD ["gcb", "daemon"]

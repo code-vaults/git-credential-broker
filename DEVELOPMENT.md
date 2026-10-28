@@ -146,8 +146,8 @@ npm pack packages/host
 ```
 
 Each package ships `lib/`, plus `bin/` for the client and host. The notes, the tests and
-`AGENTS.md` are not in the tarballs, and neither is the git history. `src/` ships so that stack
-traces and source maps point at something readable.
+`AGENTS.md` are not in the tarballs, and neither is the git history. `src/` does not ship:
+debug a published package from `lib/` and its source maps, or from the checkout that produced it.
 
 ## Releasing
 

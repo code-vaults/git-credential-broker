@@ -624,6 +624,7 @@ or CI pulls the same tags.
 For idsh's dev image, name the client image as a stage and copy only the gcb packages into the base:
 
 ```dockerfile
+ARG BASE=devockr/idsh:base
 ARG GCB_CLIENT_IMAGE=code-vaults/gcb-client:dev
 FROM ${GCB_CLIENT_IMAGE} AS gcb-client
 FROM ${BASE}
