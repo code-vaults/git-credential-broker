@@ -60,8 +60,8 @@ corepack yarn pack:check # build, then show exactly what npm would publish
 The CLI runs from source too, so there is no need to build to try a command:
 
 ```sh
-node --conditions=gcb-development packages/client/bin/gcb.js --help
-node --conditions=gcb-development packages/host/bin/gcb.js compose --socket-dir /tmp/sock    # reads --config, $GIT_BROKER_CONFIG, else ./broker.config.yml
+node --conditions=development packages/client/bin/gcb.js --help
+node --conditions=development packages/host/bin/gcb.js compose --socket-dir /tmp/sock    # reads --config, $GIT_BROKER_CONFIG, else ./broker.config.yml
 ```
 
 `yarn test` builds first because the end-to-end suite execs `packages/client/bin/gcb.js` as a **real**

@@ -21,6 +21,7 @@ import fs from 'node:fs';
 import { parseProxy, withProxy, type ProxyChoice } from './http.ts';
 import {
   buildGhArgv,
+  PACKAGE_VERSION,
   getGhAction,
   MAX_BODY_CHARS,
   MAX_MESSAGE_BYTES,
@@ -41,7 +42,7 @@ import { hostConfig, normalizeRepoPath, repoAllowed } from './policy.ts';
 import type { ActionValues, MergeMethod, AuditSink, BrokerConfig, Provider, WireResponse } from 'gcb-cli';
 
 /** Reported by the `ping` operation so the container side can prove what it reached. */
-export const BROKER_VERSION = '0.1.0';
+export const BROKER_VERSION = PACKAGE_VERSION;
 
 /** How long one socket connection may stay idle before it is dropped. */
 // How long a connection may stay silent before it is dropped. It has to outlast the longest wait a client

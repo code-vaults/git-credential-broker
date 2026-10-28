@@ -178,7 +178,7 @@ agent can write to is a repository whose commits the agent can rewrite.
 Then run it from there — Node strips types, so there is nothing to build:
 
   corepack yarn install   # in <to>; stage itself does not run commit code
-  node --conditions=gcb-development <to>/packages/host/bin/gcb.js daemon --config <deployment directory>/broker.config.yml
+  node --conditions=development <to>/packages/host/bin/gcb.js daemon --config <deployment directory>/broker.config.yml
 `;
 
 /**

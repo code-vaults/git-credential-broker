@@ -929,7 +929,7 @@ describe('compose', () => {
     socketDir: '/srv/shared/git-broker',
     user: '1026:100',
     image: 'node:24-slim',
-    packageSpec: 'gcb-host@0.1.0',
+    packageSpec: 'gcb-host@0.0.0',
     name: 'git-cred-broker',
   });
 
@@ -1019,7 +1019,7 @@ describe('compose', () => {
       socketDir: '/srv/shared/git-broker',
       user: '1026:100',
       image: 'node:24-slim',
-      packageSpec: 'gcb-host@0.1.0',
+      packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
     });
     assert.match(custom, /\/srv\/custom\/broker\.yml:\/etc\/git-cred-broker\/broker\.config\.yml:ro/);
@@ -1033,7 +1033,7 @@ describe('compose', () => {
   });
 
   it('runs the daemon from the published package, not from a copied checkout', () => {
-    assert.match(rendered, /npx --yes --package 'gcb-host@0\.1\.0' gcb daemon/);
+    assert.match(rendered, /npx --yes --package 'gcb-host@0\.0\.0' gcb daemon/);
     assert.match(rendered, new RegExp(`--config ${SIDECAR.configPath}`));
   });
 
@@ -1043,13 +1043,13 @@ describe('compose', () => {
       socketDir: '/srv/shared/git-broker',
       user: '1026:100',
       image: 'node:24-slim',
-      packageSpec: 'gcb-host@0.1.0',
+      packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
       code: '/volume1/docker/git-cred-broker/app',
     });
 
     assert.match(fromCode, /- \/volume1\/docker\/git-cred-broker\/app:\/opt\/gcb:ro/);
-    assert.match(fromCode, /exec node --conditions=gcb-development \/opt\/gcb\/packages\/host\/bin\/gcb\.js daemon/);
+    assert.match(fromCode, /exec node --conditions=development \/opt\/gcb\/packages\/host\/bin\/gcb\.js daemon/);
     assert.equal(/npx/.test(fromCode), false, 'no registry access at start');
     assert.equal(/npm_config_cache/.test(fromCode), false, 'and so no cache to write');
     assert.match(fromCode, /STAGED\.json/, 'it points at the record of which commit this is');
@@ -1118,7 +1118,7 @@ describe('the anchor flags, at the CLI boundary', () => {
 
   const cli = (args: readonly string[]): { status: number; stdout: string; stderr: string } => {
     try {
-      execFileSync('node', ['--conditions=gcb-development', 'packages/client/bin/gcb.js', 'pr', ...args], {
+      execFileSync('node', ['--conditions=development', 'packages/client/bin/gcb.js', 'pr', ...args], {
         cwd: path.resolve('.'),
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -1252,7 +1252,7 @@ describe('the help path', () => {
   it('routes gcb help pr to gcb pr --help', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-help-path-'));
     try {
-      const result = execFileSync('node', ['--conditions=gcb-development', 'packages/client/bin/gcb.js', 'help', 'pr'], {
+      const result = execFileSync('node', ['--conditions=development', 'packages/client/bin/gcb.js', 'help', 'pr'], {
         cwd: path.resolve('.'),
         encoding: 'utf8',
         env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },

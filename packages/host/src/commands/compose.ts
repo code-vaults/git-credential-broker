@@ -29,7 +29,7 @@ export interface ComposeInput {
   readonly user: string;
   /** Base image. */
   readonly image: string;
-  /** npm spec to run, e.g. `gcb@0.1.0`. */
+  /** npm spec to run, e.g. `gcb@0.0.0`. */
   readonly packageSpec: string;
   /** Compose service and container name. */
   readonly name: string;
@@ -96,7 +96,7 @@ export function renderCompose(input: ComposeInput): string {
     : '\n      # No user.refresh yet: run `gcb authorize` and render this again. A mount' +
       '\n      # for a path that does not exist would become a directory, and the broker would read that.';
   const start = fromCode
-    ? `exec node --conditions=gcb-development ${CODE_DIR}/packages/host/bin/gcb.js daemon --config ${SIDECAR.configPath}`
+    ? `exec node --conditions=development ${CODE_DIR}/packages/host/bin/gcb.js daemon --config ${SIDECAR.configPath}`
     : `exec npx --yes --package '${input.packageSpec}' gcb daemon --config ${SIDECAR.configPath}`;
   const command = `      - sh
       - -c

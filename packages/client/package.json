@@ -1,6 +1,6 @@
 {
   "name": "gcb-client",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "Container-side gcb client: credential helper, setup, and socket-backed commands.",
   "license": "MIT",
   "author": "JounQin <admin@1stg.me>",
@@ -22,16 +22,19 @@
   ],
   "exports": {
     ".": {
-      "gcb-development": "./src/index.ts",
+      "development": "./src/index.ts",
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     }
   },
   "dependencies": {
-    "gcb-cli": "0.1.0"
+    "gcb-cli": "0.0.0"
   },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "prepublishOnly": "clean-pkg-json"
   }
 }

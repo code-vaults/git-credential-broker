@@ -13,6 +13,7 @@ import { after, describe, it } from 'node:test';
 
 import { redact } from '../../packages/host/src/audit.ts';
 import { tokenFingerprint } from '../../packages/cli/src/fingerprint.ts';
+import { PACKAGE_VERSION } from '../../packages/cli/src/version.ts';
 import { CODES, createRequestHandler, prepareSocketPath } from '../../packages/host/src/broker.ts';
 import { MAX_BODY_CHARS } from '../../packages/cli/src/host-request.ts';
 import { createStaticProvider } from '../../packages/host/src/providers/static.ts';
@@ -107,7 +108,7 @@ describe('broker request handling', () => {
     const { handle } = makeHarness();
     const response = await handle({ op: 'ping' });
     assert.equal(response.ok, true);
-    assert.equal(response.version, '0.1.0');
+    assert.equal(response.version, PACKAGE_VERSION);
     assert.deepEqual(response.hosts, [HOST]);
   });
 
