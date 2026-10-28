@@ -267,7 +267,7 @@ app's **private key**, so run it where the key is. On a host-process deployment 
 a sidecar it is inside the container:
 
 ```sh
-docker compose -f docker-compose.broker.yml exec git-cred-broker \
+docker compose -f docker-compose.broker.yml exec gcb \
   npx --yes --package gcb-host gcb \
   diagnose --config /etc/git-cred-broker/broker.config.yml
 ```
@@ -433,6 +433,32 @@ NODE_USE_ENV_PROXY=1
 For a sidecar, pass them in its `environment:` (compose only forwards what the file names); for the host
 process, `EnvironmentFile=` in the unit and the boot wrapper, both of which already read
 `/etc/git-cred-broker/proxy.env` if it exists.
+
+The sidecar also reads `GCB_PROXY` at `docker compose up` time, without re-rendering the compose
+file: a URL pins that proxy, an empty value goes direct, and leaving it unset keeps the host variables.
+
+Every broker command also accepts a per-command choice:
+
+```sh
+gcb gh pr view 7 --no-proxy
+gcb pr status --number 7 --proxy http://proxy.example:7890
+```
+
+For `git push`, the credential helper has no per-command argument, so it reads
+`GCB_PROXY=<url>` or `GCB_PROXY=` (empty, direct) from git's environment. That controls how the
+broker mints the token; Git's own HTTP transport still uses `http.proxy` / `HTTPS_PROXY` /
+`NO_PROXY`, so set both when the push itself must follow the same route.
+
+`gh` receives the choice through its process environment; the broker builds a separate
+`node-fetch-native` instance for each proxy value and caches it, so commands sharing a choice reuse the
+same connection pool. `--via-host` carries the same choice to the host opener, which applies it to its
+own `gh pr create`.
+
+The choice comes from the pushing container, so it can override a host proxy policy. A deployment that
+must force all egress through one route should not give `gcb-client` to a container it does not trust;
+the allowlist and the broker key still bound what that container can reach, not which network path it
+uses. The `--via-host` opener honours the same choice while acting as the person, and the person's
+token is not bounded by the app key, so only serve checkouts from a container you trust.
 
 The broker, `authorize` and `diagnose` **refuse to start** when a proxy variable is set and `NODE_USE_ENV_PROXY` is
 not `1`, instead of reaching GitHub directly by a route nobody chose. `gh`, which the host opener runs,

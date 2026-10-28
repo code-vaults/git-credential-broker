@@ -189,3 +189,38 @@ describe('runGhAction options', { skip: onWindows }, () => {
     }
   });
 });
+
+describe('runGhAction proxy override', { skip: onWindows }, () => {
+  it('clears the proxy environment for a direct action', async () => {
+    const gh = shim('printf "%s|%s|%s\\n" "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY"');
+    const result = await runGhAction({
+      action: 'pr:view',
+      values: { number: 7 },
+      repo: 'acme/widget',
+      token: 't',
+      ghPath: gh,
+      env: { PATH: process.env['PATH'] ?? '', HTTP_PROXY: 'http://old:1', NO_PROXY: 'old' },
+      proxy: null,
+    });
+    assert.equal(result.code, 0);
+    assert.equal(result.stdout.trim(), '||');
+  });
+
+  it('sets the proxy environment for an explicit action', async () => {
+    const gh = shim('printf "%s|%s|%s\\n" "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY"');
+    const result = await runGhAction({
+      action: 'pr:view',
+      values: { number: 7 },
+      repo: 'acme/widget',
+      token: 't',
+      ghPath: gh,
+      env: { PATH: process.env['PATH'] ?? '' },
+      proxy: 'http://proxy.example:7890',
+    });
+    assert.equal(result.code, 0);
+    assert.equal(
+      result.stdout.trim(),
+      'http://proxy.example:7890|http://proxy.example:7890|localhost,127.0.0.1',
+    );
+  });
+});

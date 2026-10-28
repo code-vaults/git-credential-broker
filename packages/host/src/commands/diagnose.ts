@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 
 import { assertKeysReadable, loadConfig, resolveConfigPath } from '../config.ts';
 import { nextLink, signAppJwt } from '../providers/github-app.ts';
+import { fetcherFor, parseProxy } from '../http.ts';
 import type { GithubAppHostConfig } from 'gcb-cli';
 import { fail, parseArgs, say, warn } from 'gcb-cli';
 
@@ -42,6 +43,8 @@ repositories each installation can reach. Never prints a key or a token.
 
   --config <path>  The broker configuration to inspect (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   --host <host>    Which host block to inspect (default: the first github-app one)
+  --proxy <url>    Use this proxy for this command
+  --no-proxy       Reach GitHub directly for this command
   -h, --help       Show this help
 `;
 
@@ -54,8 +57,12 @@ repositories each installation can reach. Never prints a key or a token.
 import { assertProxyEnabled } from '../proxy.ts';
 
 export async function runDiagnose(argv: readonly string[]): Promise<number> {
-  assertProxyEnabled();
-  const args = parseArgs(argv, { booleans: ['help'] });
+  const args = parseArgs(argv, { booleans: ['help', 'no-proxy'] });
+  if (args.has('no-proxy') && args.value('proxy') !== undefined) fail('--proxy and --no-proxy are mutually exclusive');
+  if (args.has('proxy') && args.value('proxy') === undefined) fail('--proxy needs a value');
+  const proxy = args.has('no-proxy') ? null : args.value('proxy');
+  if (proxy !== undefined && parseProxy(proxy) === false) fail('--proxy must be an http(s) URL');
+  if (proxy === undefined) assertProxyEnabled();
   if (args.has('help') || args.has('h')) {
     say(DIAGNOSE_USAGE);
     return 0;
@@ -83,6 +90,7 @@ export async function runDiagnose(argv: readonly string[]): Promise<number> {
   if (issuer === undefined) fail('the host block has neither clientId nor appId');
   const api = block.apiBaseUrl ?? 'https://api.github.com';
   const apiVersion = block.apiVersion ?? '2022-11-28';
+  const fetcher = fetcherFor(proxy);
 
   /**
    * Call the API authenticated as the app.
@@ -92,7 +100,8 @@ export async function runDiagnose(argv: readonly string[]): Promise<number> {
    */
   async function asApp(path: string): Promise<{ json: unknown; link: string | null }> {
     const jwt = signAppJwt({ privateKeyPem: pem, iss: issuer as string | number, nowMs: Date.now() });
-    const response = await fetch(`${api}${path}`, {
+    const response = await fetcher(`${api}${path}`, {
+      method: 'GET',
       headers: {
         accept: 'application/vnd.github+json',
         authorization: `Bearer ${jwt}`,
@@ -126,7 +135,7 @@ export async function runDiagnose(argv: readonly string[]): Promise<number> {
    */
   async function asInstallation(installationId: number, path: string): Promise<unknown> {
     const jwt = signAppJwt({ privateKeyPem: pem, iss: issuer as string | number, nowMs: Date.now() });
-    const minted = await fetch(`${api}/app/installations/${installationId}/access_tokens`, {
+    const minted = await fetcher(`${api}/app/installations/${installationId}/access_tokens`, {
       method: 'POST',
       headers: {
         accept: 'application/vnd.github+json',
@@ -142,7 +151,8 @@ export async function runDiagnose(argv: readonly string[]): Promise<number> {
     const token = (JSON.parse(mintedText) as { token?: string }).token;
     if (!token) throw new Error(`installation ${installationId} returned no token`);
 
-    const response = await fetch(`${api}${path}`, {
+    const response = await fetcher(`${api}${path}`, {
+      method: 'GET',
       headers: {
         accept: 'application/vnd.github+json',
         authorization: `Bearer ${token}`,

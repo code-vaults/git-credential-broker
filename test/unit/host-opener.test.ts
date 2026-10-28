@@ -113,3 +113,49 @@ describe('a claim that someone else holds', () => {
     rmSync(root, { recursive: true, force: true });
   });
 });
+
+describe('the opener proxy choice', () => {
+  it('applies, keeps or clears the proxy environment per request', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-opener-proxy-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(join(repo, '.git'));
+    const envFile = join(root, 'env');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      `#!/bin/sh\nprintf '%s|%s|%s|%s\\n' "$HTTP_PROXY" "$HTTPS_PROXY" "$NO_PROXY" "$NODE_USE_ENV_PROXY" > ${envFile}\necho "https://github.com/acme/widget/pull/7"\n`,
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    const previous = {
+      HTTP_PROXY: process.env['HTTP_PROXY'],
+      HTTPS_PROXY: process.env['HTTPS_PROXY'],
+      NO_PROXY: process.env['NO_PROXY'],
+      NODE_USE_ENV_PROXY: process.env['NODE_USE_ENV_PROXY'],
+    };
+    process.env['HTTP_PROXY'] = 'http://host-env:1';
+    process.env['HTTPS_PROXY'] = 'http://host-env:1';
+    process.env['NO_PROXY'] = 'host';
+    process.env['NODE_USE_ENV_PROXY'] = '1';
+    try {
+      for (const proxy of [undefined, 'http://proxy.example:7890', null] as const) {
+        const id = writeRequest(dir, { head: 'feat/ok', base: 'main', title: 'x', body: '', proxy });
+        const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+        assert.equal(code, 0);
+        assert.equal(readResult(dir, id)?.error, undefined);
+        const seen = readFileSync(envFile, 'utf8').trim();
+        if (proxy === undefined) assert.equal(seen, 'http://host-env:1|http://host-env:1|host|1');
+        else if (proxy === null) assert.equal(seen, '|||');
+        else assert.equal(seen, 'http://proxy.example:7890|http://proxy.example:7890|localhost,127.0.0.1|');
+      }
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

@@ -60,6 +60,8 @@ export interface HostOpenRequest {
   readonly body: string;
   /** Open it as a draft. */
   readonly draft?: boolean;
+  /** Egress for the opener's gh call: absent = its environment, null = direct, string = proxy URL. */
+  readonly proxy?: string | null;
   readonly session?: string;
   readonly pid?: number;
 }
@@ -308,6 +310,7 @@ export function readRequest(dir: string, id: string): HostOpenRequest | undefine
     title: parsed.title,
     body: typeof parsed.body === 'string' ? parsed.body : '',
     draft: parsed.draft === true,
+    ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
     session: parsed.session,
     pid: parsed.pid,
   };

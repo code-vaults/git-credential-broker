@@ -12,6 +12,7 @@ import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 
 import { buildGhArgv, getGhAction, type ActionValues } from 'gcb-cli';
+import { applyProxyChoice, PROXY_ENV_KEYS } from './http.ts';
 
 /** The default stdout/stderr ceiling, in bytes per stream. */
 export const DEFAULT_GH_OUTPUT_BYTES = 200_000;
@@ -40,6 +41,8 @@ export interface GhRunOptions {
   readonly maxOutputBytes?: number;
   /** Environment to copy only the proxy and PATH values from. */
   readonly env?: NodeJS.ProcessEnv;
+  /** Per-command proxy: absent = copy env, null = direct, string = this proxy. */
+  readonly proxy?: string | null;
 }
 
 /**
@@ -69,20 +72,11 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
     GIT_TERMINAL_PROMPT: '0',
     PATH: source['PATH'] ?? '',
   };
-  for (const key of [
-    'http_proxy',
-    'https_proxy',
-    'all_proxy',
-    'no_proxy',
-    'HTTP_PROXY',
-    'HTTPS_PROXY',
-    'ALL_PROXY',
-    'NO_PROXY',
-    'NODE_USE_ENV_PROXY',
-  ]) {
+  for (const key of PROXY_ENV_KEYS) {
     const value = source[key];
     if (value !== undefined && value !== '') env[key] = value;
   }
+  applyProxyChoice(env, options.proxy);
 
   const timeoutMs = options.timeoutMs ?? getGhAction(options.action).timeoutSeconds * 1000;
 

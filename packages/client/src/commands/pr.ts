@@ -52,6 +52,8 @@ Opening (the default)
 
 Acting on one
   --number <n>         The pull request number                       [required]
+  --proxy <url>        Use this proxy for this request
+  --no-proxy           Reach GitHub directly for this request
   --status             Report its state, mergeability and the runs for its commit
   --comment            Post an anchored review comment (also needs --file and --line);
                        for a plain comment use: gcb gh pr comment <number> --body ...
@@ -106,7 +108,7 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
  */
 export async function runPr(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, {
-    booleans: ['help', 'draft', 'merge', 'status', 'comment', 'threads', 'via-host'],
+    booleans: ['help', 'draft', 'merge', 'status', 'comment', 'threads', 'via-host', 'no-proxy'],
   });
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
@@ -122,6 +124,11 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     fail('--comment only posts an anchored review comment; pass --file and --line');
   }
 
+  if (args.has('no-proxy') && args.value('proxy') !== undefined) {
+    fail('--proxy and --no-proxy are mutually exclusive');
+  }
+  if (args.has('proxy') && args.value('proxy') === undefined) fail('--proxy needs a value');
+  const proxy = args.has('no-proxy') ? null : args.value('proxy');
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const host = args.value('host');
   const repo = args.value('repo') ?? fail('--repo is required (e.g. owner/name)');
@@ -242,6 +249,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         title,
         body: body ?? '',
         draft: args.has('draft'),
+        proxy,
         session: 'pr',
         pid: process.pid,
       });
@@ -289,6 +297,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         draft: args.has('draft'),
         session: 'pr',
         pid: process.pid,
+        proxy,
       },
       PR_TIMEOUT_MS,
     );

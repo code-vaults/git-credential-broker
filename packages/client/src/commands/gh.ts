@@ -54,6 +54,8 @@ Common
   -R, --repo <owner/name>  Repository the action belongs to (default: origin remote)
   --host <host>            Host as configured, e.g. github.com (default: github.com)
   --socket <path>          Broker socket (default: GIT_BROKER_SOCKET)
+  --proxy <url>            Use this proxy for this action
+  --no-proxy               Reach GitHub directly for this action
   -h, --help               Show this help
 
 Commands, from the action catalog
@@ -107,6 +109,7 @@ export async function runGh(
     'R',
     'host',
     'socket',
+    'proxy',
   ]);
 
   const allowed = new Set([
@@ -115,6 +118,8 @@ export async function runGh(
     'R',
     'host',
     'socket',
+    'proxy',
+    'no-proxy',
   ]);
   const knownFlags = new Set([...allowed, 'help']);
 
@@ -177,8 +182,9 @@ export async function runGh(
   if (missingValue !== undefined) fail(missingValue);
 
   const booleans = action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
-  const args = parseArgs(rest, { booleans });
-
+  const args = parseArgs(rest, { booleans: [...booleans, 'no-proxy'] });
+  if (args.has('no-proxy') && args.value('proxy') !== undefined) fail('--proxy and --no-proxy are mutually exclusive');
+  const proxy = args.has('no-proxy') ? null : args.value('proxy');
   const host = args.value('host') ?? 'github.com';
   let repo = args.value('repo') ?? args.value('R');
   if (repo === undefined) {
@@ -230,7 +236,7 @@ export async function runGh(
   try {
     response = await requestOverSocket(
       socketPath,
-      { op: 'action', host, path: repo, ghAction: actionName, values: values as ActionValues, session: 'gh', pid: process.pid },
+      { op: 'action', host, path: repo, ghAction: actionName, values: values as ActionValues, proxy, session: 'gh', pid: process.pid },
       action.timeoutSeconds * 1000 + 30_000,
     );
   } catch (error) {

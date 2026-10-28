@@ -18,6 +18,7 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 
 import { USER_TOKEN_FILE, userTokenPath, loadConfig, resolveConfigPath } from '../config.ts';
 import { collectUserToken, startDeviceFlow, type Fetcher } from '../device-flow.ts';
+import { fetcherFor, parseProxy } from '../http.ts';
 import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from 'gcb-cli';
 
 /** Usage text for `authorize`. */
@@ -30,6 +31,8 @@ that, because the broker renews the token itself.
   --config <path>   The configuration (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   --host <host>     The host block to authorize for (default: github.com)
   --to <path>       Where to write the refresh token (default: beside the configuration)
+  --proxy <url>     Use this proxy for this command
+  --no-proxy        Reach GitHub directly for this command
   -h, --help        Show this help
 
 The app needs its client id configured (the App ID will not do), and "Enable Device Flow" selected in
@@ -72,13 +75,17 @@ export function brokerReadsPath(privateKeyPath: string | undefined): string | un
 import { assertProxyEnabled } from '../proxy.ts';
 
 export async function runAuthorize(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help'] });
+  const args = parseArgs(argv, { booleans: ['help', 'no-proxy'] });
+  if (args.has('no-proxy') && args.value('proxy') !== undefined) fail('--proxy and --no-proxy are mutually exclusive');
+  if (args.has('proxy') && args.value('proxy') === undefined) fail('--proxy needs a value');
+  const proxy = args.has('no-proxy') ? null : args.value('proxy');
+  if (proxy !== undefined && parseProxy(proxy) === false) fail('--proxy must be an http(s) URL');
   if (args.has('help') || args.has('h')) {
     say(AUTHORIZE_USAGE);
     return 0;
   }
 
-  assertProxyEnabled();
+  if (proxy === undefined) assertProxyEnabled();
   const configPath = resolveConfigPath(args.value('config'));
   const host = args.value('host') ?? 'github.com';
   const config = loadConfig(configPath);
@@ -89,7 +96,7 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
     fail(`${host} has no clientId — a device flow needs the app's client id, and the App ID will not do`);
   }
 
-  const fetcher: Fetcher = (url, init) => fetch(url, init);
+  const fetcher: Fetcher = fetcherFor(proxy);
   const code = await startDeviceFlow(block.clientId, fetcher);
   say(`Open ${code.verificationUri} and enter: ${code.userCode}`);
   say(`Waiting up to ${Math.round(code.expiresIn / 60)} minutes for that to be authorized…`);

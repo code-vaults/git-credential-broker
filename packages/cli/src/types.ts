@@ -25,6 +25,8 @@ export interface ActionRequest {
   readonly full: string;
   readonly action: string;
   readonly values: ActionValues;
+  /** Per-command proxy override: absent = host env, null = direct, string = proxy URL. */
+  readonly proxy?: string | null;
 }
 
 /** The bounded result of one action. */
@@ -54,6 +56,8 @@ export interface Credential {
 
 /** What a provider is asked to produce a credential for. */
 export interface CredentialRequest {
+  /** Per-command proxy override: absent = host env, null = direct, string = proxy URL. */
+  readonly proxy?: string | null;
   /** The configured host key, not the raw value the client sent. */
   readonly host: string;
   readonly owner: string;
@@ -95,6 +99,8 @@ export interface JobLogRequest {
   readonly repo: string;
   /** The workflow job id, which is also the check run id. */
   readonly jobId: number;
+  /** Per-command proxy override: absent = host env, null = direct, string = proxy URL. */
+  readonly proxy?: string | null;
 }
 
 /** What can be done to a pull request. */
@@ -118,6 +124,8 @@ export interface PullRequestRequest {
   readonly owner: string;
   readonly repo: string;
   readonly action: PullRequestAction;
+  /** Per-command proxy override: absent = host env, null = direct, string = proxy URL. */
+  readonly proxy?: string | null;
   /** The pull request number. Not needed to open one, to resolve a thread, or to edit a comment. */
   readonly number?: number;
   /** The review comment being answered or changed, for `action: "reply"` or `"edit"`. */

@@ -31,6 +31,7 @@ import {
   type HostOpenResult,
 } from 'gcb-cli';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-cli';
+import { applyProxyChoice, parseProxy, type ProxyChoice } from '../http.ts';
 
 const run = promisify(execFile);
 
@@ -187,7 +188,15 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
       continue;
     }
 
-    const result = await openOne(repo, command, extra, request);
+    const proxy = parseProxy(request.proxy);
+    if (proxy === false) {
+      writeResult(dir, id, { error: 'invalid proxy in the request' });
+      removeRequest(dir, id);
+      warn(`refused ${id}: invalid proxy`);
+      answered += 1;
+      continue;
+    }
+    const result = await openOne(repo, command, extra, { ...request, proxy });
     writeResult(dir, id, result);
     removeRequest(dir, id);
     if (result.error !== undefined) {
@@ -209,6 +218,12 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
  * @param request - what to create.
  * @returns the number and URL, or the reason it did not work.
  */
+function openerEnv(proxy: ProxyChoice): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  applyProxyChoice(env, proxy);
+  return env;
+}
+
 async function openOne(
   repo: string,
   command: string,
@@ -240,7 +255,7 @@ async function openOne(
         '--body-file',
         bodyFile,
       ],
-      { cwd: repo, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20 },
+      { cwd: repo, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: openerEnv(request.proxy) },
     );
     const found = pullRequestUrl(stdout);
     if (!found) {

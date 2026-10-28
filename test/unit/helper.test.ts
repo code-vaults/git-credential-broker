@@ -76,17 +76,31 @@ function capture(input: string): Capture {
  * @param response - the JSON the fake broker replies with.
  * @returns the fake broker; always close it.
  */
-async function startFakeBroker(response: WireResponse): Promise<{ socketPath: string; close: () => Promise<void> }> {
+async function startFakeBroker(response: WireResponse): Promise<{ socketPath: string; requests: Record<string, unknown>[]; close: () => Promise<void> }> {
   const socketPath = path.join(tempDir, `broker-${Math.random().toString(36).slice(2)}.sock`);
   const sockets = new Set<net.Socket>();
+  const requests: Record<string, unknown>[] = [];
   const server = net.createServer((socket) => {
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
-    socket.on('data', () => socket.write(`${JSON.stringify(response)}\n`));
+    let pending = '';
+    socket.on('data', (chunk) => {
+      pending += chunk.toString();
+      for (;;) {
+        const newline = pending.indexOf('\n');
+        if (newline < 0) break;
+        const line = pending.slice(0, newline);
+        pending = pending.slice(newline + 1);
+        if (line.trim() === '') continue;
+        requests.push(JSON.parse(line) as Record<string, unknown>);
+        socket.write(`${JSON.stringify(response)}\n`);
+      }
+    });
   });
   await new Promise<void>((resolve) => server.listen(socketPath, () => resolve()));
   return {
     socketPath,
+    requests,
     close: () =>
       new Promise<void>((resolve) => {
         // Destroy first: `server.close` waits for open connections, and a failed assertion
@@ -238,6 +252,20 @@ describe('runHelper: configured means fail-closed', () => {
     } finally {
       await broker.close();
       rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('sends the GCB_PROXY choice and maps an empty value to direct', async () => {
+    const broker = await startFakeBroker({ ok: true, username: 'x-access-token', password: 'ghs_fake' });
+    try {
+      const first = capture(CLIENT_REQUEST);
+      await runHelper(['get'], { ...first, env: { GIT_BROKER_SOCKET: broker.socketPath, GCB_PROXY: 'http://proxy.example:7890' } });
+      assert.equal(broker.requests[0]?.['proxy'], 'http://proxy.example:7890');
+      const second = capture(CLIENT_REQUEST);
+      await runHelper(['get'], { ...second, env: { GIT_BROKER_SOCKET: broker.socketPath, GCB_PROXY: '' } });
+      assert.equal(broker.requests[1]?.['proxy'], null);
+    } finally {
+      await broker.close();
     }
   });
 
