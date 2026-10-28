@@ -23,7 +23,7 @@ import {
   writeRequest,
 } from 'gcb-cli';
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
-import { baseBranchFor, qualifiedBranch } from './remotes.ts';
+import { baseBranchFor, qualifiedBranch, remoteRepo } from './remotes.ts';
 import { fail, parseArgs, say } from 'gcb-cli';
 
 /** Longer than a credential request: a token is minted, then the action is performed. */
@@ -70,7 +70,7 @@ Acting on one
 Common
   --socket <path>      Broker socket (default: $GIT_BROKER_SOCKET or the socket file)
   --host <host>        Host as configured, e.g. github.com (default: github.com)
-  --repo <owner/name>  Repository the pull request belongs to        [required]
+  --repo <owner/name>  Repository the pull request belongs to (default: origin remote)
   -h, --help           Show this help
 `;
 
@@ -132,13 +132,20 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     fail('--host needs a value (e.g. github.com)');
   }
   const host = hostArg ?? 'github.com';
-  const repo = args.value('repo') ?? fail('--repo is required (e.g. owner/name)');
+  let repo = args.value('repo');
+  if (repo === undefined) {
+    const found = remoteRepo('origin', process.cwd());
+    if (found === undefined) fail('--repo is required when the checkout has no usable origin remote');
+    if (found.host !== host.toLowerCase()) {
+      fail(`the checkout's remote is on ${found.host}, but --host is ${host}; pass --repo or --host`);
+    }
+    repo = `${found.owner}/${found.repo}`;
+  }
   const action = actionOf(args);
   if (args.has('via-host') && action !== 'open') {
     fail('--via-host only creates a pull request, so it does not go with ' + JSON.stringify(action));
   }
   const viaHost = action === 'open' && args.has('via-host');
-  if (!repo) fail('--repo is required (e.g. owner/name), also with --via-host: the opener passes it on');
 
   const number = args.value('number');
   // `--head origin:feat/x` and `--base upstream:main` name a configured remote instead of a repository

@@ -1264,6 +1264,40 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(result.stderr, /--host needs a value/);
   });
 
+  it('resolves the repository from origin', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-pr-origin-'));
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widget.git'], { cwd: root });
+    const socketPath = path.join(root, 'broker.sock');
+    let request: Record<string, unknown> | undefined;
+    const server = net.createServer((socket) => {
+      let buffer = '';
+      socket.on('data', (chunk: Buffer) => {
+        buffer += chunk.toString('utf8');
+        const newline = buffer.indexOf('\n');
+        if (newline < 0) return;
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
+        socket.end(encodeMessage({ ok: true, prStatus: 'open', prNumber: 7, prUrl: 'https://example.test/7' }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    try {
+      const result = await runAsync(process.execPath, [
+        '--conditions=gcb-development',
+        path.resolve('packages/client/bin/gcb.js'),
+        'pr', '--number', '7', '--status', '--socket', socketPath,
+      ], {
+        cwd: root,
+        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+      });
+      assert.equal(result.status, 0);
+      assert.equal(request?.['path'], 'acme/widget');
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('sends the default host to the broker', async () => {
     const socketPath = path.join(scratch, 'pr-host-default.sock');
     let request: Record<string, unknown> | undefined;
