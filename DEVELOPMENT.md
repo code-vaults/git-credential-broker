@@ -173,9 +173,10 @@ After that, published changes are versioned with Changesets:
 4. Re-render any sidecar you generated: `compose` pins `gcb-host@<version>`, so it takes
    the new version only when it is rendered again.
 
-The release workflow needs the `NPM_TOKEN` repository secret. The `0.0.0` guard in
-`scripts/publish.mjs` makes the first release manual; once the versions move, `changeset publish`
-performs the release.
+The release workflow uses npm trusted publishing (OIDC): `id-token: write` is granted, no
+`NPM_TOKEN` secret is read. Configure the npm package's trusted publisher for this repository first.
+The `0.0.0` guard in `scripts/publish.mjs` makes the first release manual; once the versions move,
+`changeset publish` performs the release.
 
 ## Layout
 
