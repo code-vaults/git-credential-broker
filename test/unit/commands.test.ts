@@ -1263,6 +1263,12 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(result.stderr, /--host needs a value/);
   });
 
+  it('refuses a valueless host', () => {
+    const result = cli(['--host', '--repo', 'acme/widget', '--number', '7', '--status']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--host needs a value/);
+  });
+
   it('sends the default host to the broker', async () => {
     const socketPath = path.join(scratch, 'pr-host-default.sock');
     let request: Record<string, unknown> | undefined;
