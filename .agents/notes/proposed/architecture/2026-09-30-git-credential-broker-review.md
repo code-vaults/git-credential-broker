@@ -101,7 +101,7 @@ NODE_USE_ENV_PROXY=1                     ← Node 24：fetch/undici 也遵循 *_
 192.0.2.10:3000 -> timeout
 192.0.2.1:443 -> ERR ECONNREFUSED      ← 路由器可达（RST）
 192.0.2.1:80  -> OPEN
-172.24.0.1:443   -> OPEN                  ← docker 网关（宿主）可达
+192.0.2.1:443   -> OPEN                  ← docker 网关（宿主）可达
 ```
 
 两个独立的问题叠在一起：
@@ -127,7 +127,7 @@ NODE_USE_ENV_PROXY=1                     ← Node 24：fetch/undici 也遵循 *_
   (a) 新增一个专用 bind mount（推荐，位于 `Workspaces` 之外）；
   (b) 复用 `/home/app/.dsh/git-broker/broker.sock`（零 compose 改动，但见 P1-6）。
 - **次选：仍走 HTTP**，则必须同时做到：
-  1. broker **只绑 docker 网关**（实测 `172.24.0.1` 可达），不绑 `0.0.0.0`/LAN；
+  1. broker **只绑 docker 网关**（实测 `192.0.2.1` 可达），不绑 `0.0.0.0`/LAN；
   2. `no_proxy`/`NO_PROXY` 精确加入 broker 地址（两套大小写变量都要，
      且不能指望每个客户端都遵守）；
   3. TLS（或 HMAC 签名 + 时间戳 + nonce + 重放窗口），共享密钥改用签名而非静态头。
@@ -259,7 +259,7 @@ D. 未设置、stdin 为 /dev/null → fatal: ...: No such device or address    
 | App 私钥放挂载之外 | §2.2.4, §7 | ✅ 容器内无 `/volume1`；`/volume1/docker/…` 是可行且正确的落点 |
 | 「`.dsh` 不等于安全」 | — | ⚠️ compose 是 `..:/home/app/Workspaces` + `./.dsh:/home/app/.dsh`，**`.dsh` ⊂ `Workspaces`**，别把长期材料放 `.dsh` |
 | 降权到 `app` 是有效边界 | §2.1 | ✅ `CapEff=0x0`（SETUID/SETGID 仅存在于 bounding set，未生效） |
-| broker 走宿主 LAN IP | §5.1, §7 | ❌ `192.0.2.10:443/3000` **timeout**；文档未验证该地址。LAN 可达性本身成立（`.1:80` OPEN），docker 网关 `172.24.0.1` 也可达 |
+| broker 走宿主 LAN IP | §5.1, §7 | ❌ `192.0.2.10:443/3000` **timeout**；文档未验证该地址。LAN 可达性本身成立（`.1:80` OPEN），docker 网关 `192.0.2.1` 也可达 |
 | 容器内不存在长期材料即安全 | §6.1 | ✅ 这条成立，且是本设计最强的部分 |
 | 集中吊销 | §6.1 | ✅ 删安装/吊销 App 有效（注意 token 有效期 1 小时，见官方文档） |
 | `api.github.com` 可换取 token | §5.2 | ✅ 实测 `/`→200、未认证 `/app/installations`→401（首次裸请求 403 是代理抖动，非封禁） |
