@@ -310,6 +310,7 @@ export function readRequest(dir: string, id: string): HostOpenRequest | undefine
     title: parsed.title,
     body: typeof parsed.body === 'string' ? parsed.body : '',
     draft: parsed.draft === true,
+    ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
     session: parsed.session,
     pid: parsed.pid,
   };

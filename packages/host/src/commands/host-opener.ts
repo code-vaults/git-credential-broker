@@ -31,6 +31,7 @@ import {
   type HostOpenResult,
 } from 'gcb-cli';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-cli';
+import { parseProxy } from '../http.ts';
 
 const run = promisify(execFile);
 
@@ -187,7 +188,15 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
       continue;
     }
 
-    const result = await openOne(repo, command, extra, request);
+    const proxy = parseProxy(request.proxy);
+    if (proxy === false) {
+      writeResult(dir, id, { error: 'invalid proxy in the request' });
+      removeRequest(dir, id);
+      warn(`refused ${id}: invalid proxy`);
+      answered += 1;
+      continue;
+    }
+    const result = await openOne(repo, command, extra, { ...request, proxy });
     writeResult(dir, id, result);
     removeRequest(dir, id);
     if (result.error !== undefined) {
@@ -212,7 +221,7 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
 function openerEnv(proxy: string | null | undefined): NodeJS.ProcessEnv {
   const env = { ...process.env };
   if (proxy === undefined) return env;
-  for (const key of ['http_proxy', 'https_proxy', 'all_proxy', 'no_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY']) {
+  for (const key of ['http_proxy', 'https_proxy', 'all_proxy', 'no_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'NODE_USE_ENV_PROXY']) {
     delete env[key];
   }
   if (proxy !== null) {
