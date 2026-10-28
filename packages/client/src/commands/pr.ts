@@ -71,7 +71,7 @@ Acting on one
 
 Common
   --socket <path>      Broker socket (default: $GIT_BROKER_SOCKET or the socket file)
-  --host <host>        Host as configured, e.g. github.com           [required]
+  --host <host>        Host as configured, e.g. github.com (default: github.com)
   --repo <owner/name>  Repository the pull request belongs to        [required]
   -h, --help           Show this help
 `;
@@ -130,7 +130,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (args.has('proxy') && args.value('proxy') === undefined) fail('--proxy needs a value');
   const proxy = args.has('no-proxy') ? null : args.value('proxy');
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
-  const host = args.value('host');
+  const host = args.value('host') ?? 'github.com';
   const repo = args.value('repo') ?? fail('--repo is required (e.g. owner/name)');
   const action = actionOf(args);
   if (args.has('via-host') && action !== 'open') {
@@ -141,7 +141,6 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     fail('--method chooses how to merge, so it only goes with --merge');
   }
   const viaHost = action === 'open' && args.has('via-host');
-  if (!host && !viaHost) fail('--host is required (e.g. github.com)');
   if (!repo) fail('--repo is required (e.g. owner/name), also with --via-host: the opener passes it on');
 
   const number = args.value('number');

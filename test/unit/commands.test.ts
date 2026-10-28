@@ -1246,6 +1246,13 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(noNumber.stderr, /no broker socket/, 'it reached socket resolution');
     assert.doesNotMatch(noNumber.stderr, /--number is required/, 'without being asked for a number');
   });
+
+  it('defaults the host to github.com', () => {
+    const result = cli(['--repo', 'acme/widget', '--number', '7', '--status']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /no broker socket/, 'validation got past the host');
+    assert.doesNotMatch(result.stderr, /--host is required/);
+  });
 });
 
 describe('the help path', () => {
