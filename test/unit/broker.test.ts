@@ -378,7 +378,7 @@ describe('broker request handling', () => {
       assert.equal(response.code, 'bad-request', label + ' has to be refused by the broker');
     }
 
-    const wrongAction = await handle({ ...comments, action: 'merge' });
+    const wrongAction = await handle({ ...comments, action: 'status' });
     assert.equal(wrongAction.code, 'bad-request', 'and an anchor only belongs on a comment');
   });
 
