@@ -1181,6 +1181,12 @@ describe('the anchor flags, at the CLI boundary', () => {
     }
   });
 
+  it('refuses a valueless repo', () => {
+    const result = cli(['--repo', '--number', '7', '--status']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--repo needs a value/);
+  });
+
   it('refuses unexpected positionals', () => {
     const result = cli(['--repo', 'acme/widget', '--number', '7', '--status', 'stray']);
     assert.equal(result.status, 1);

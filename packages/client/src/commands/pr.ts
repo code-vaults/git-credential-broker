@@ -149,7 +149,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     fail('--host needs a value (e.g. github.com)');
   }
   const host = hostArg ?? 'github.com';
-  let repo = args.value('repo');
+  const repoArg = args.value('repo');
+  if (args.has('repo') && repoArg === undefined) fail('--repo needs a value (e.g. owner/name)');
+  let repo = repoArg;
   if (repo === undefined) {
     const found = remoteRepo('origin', process.cwd());
     if (found === undefined) fail('--repo is required when the checkout has no usable origin remote');
