@@ -52,7 +52,7 @@ container git → helper → unix socket → broker (outside the container) → 
 corepack yarn install    # Yarn 4 via corepack; packageManager pins it
 
 corepack yarn typecheck  # tsc, no emit
-corepack yarn build      # to dist/, then makes the CLI entry points executable
+corepack yarn build      # to lib/, then makes the CLI entry points executable
 corepack yarn check      # typecheck + build + all tests  ← run this before claiming success
 corepack yarn pack:check # build, then show exactly what npm would publish
 ```

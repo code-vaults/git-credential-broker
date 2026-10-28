@@ -48,7 +48,7 @@ Two consequences:
 
 - The sources must stay **erasable**: `erasableSyntaxOnly` is on (no enums, no parameter
   properties), and relative imports carry the `.ts` extension — `rewriteRelativeImportExtensions`
-  turns those into `.js` for `dist/`.
+  turns those into `.js` for `lib/`.
 - The `helper` command must resolve to an executable. `setup` records `!gcb`, so git resolves the
   globally installed bin through PATH; a source checkout can use the same config if it has a `gcb`
   shim on PATH, or spell the interpreter out explicitly with
@@ -61,7 +61,7 @@ corepack yarn build        # tsc per package + scripts/postbuild.mjs
 corepack yarn typecheck    # tsc, no emit
 ```
 
-Output goes to `packages/*/dist/`. `scripts/postbuild.mjs` exists for one reason: the two
+Output goes to `packages/*/lib/`. `scripts/postbuild.mjs` exists for one reason: the two
 `packages/*/bin/gcb.js` files are the package `bin` entries, so they need the
 `#!/usr/bin/env node` shebang and the executable bit. This repository cannot track that bit (the share it lives on defeats git's
 exec-bit detection), so the build applies it every time.
@@ -145,7 +145,7 @@ npm pack packages/client
 npm pack packages/host
 ```
 
-Each package ships `dist/` and `src/`, plus `bin/` for the client and host. The notes, the tests and
+Each package ships `lib/`, plus `bin/` for the client and host. The notes, the tests and
 `AGENTS.md` are not in the tarballs, and neither is the git history. `src/` ships so that stack
 traces and source maps point at something readable.
 

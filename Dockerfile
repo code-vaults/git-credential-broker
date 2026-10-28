@@ -22,7 +22,7 @@ RUN corepack yarn install --immutable \
 FROM node:24-slim AS client
 COPY --from=build /packs /packs
 RUN npm install -g --omit=dev /packs/gcb-cli-*.tgz /packs/gcb-client-*.tgz \
- && rm -rf /packs /usr/local/lib/node_modules/gcb-*/src /usr/local/lib/node_modules/gcb-*/dist/*.map /root/.npm /tmp/* \
+ && rm -rf /packs /usr/local/lib/node_modules/gcb-*/lib/*.map /root/.npm /tmp/* \
  && npm cache clean --force
 ENTRYPOINT ["gcb"]
 
@@ -50,6 +50,6 @@ RUN --mount=type=cache,id=apt_cache,target=/var/cache/apt,sharing=locked \
 FROM host-base AS host
 COPY --from=build /packs /packs
 RUN npm install -g --omit=dev /packs/gcb-cli-*.tgz /packs/gcb-host-*.tgz \
- && rm -rf /packs /usr/local/lib/node_modules/gcb-*/src /usr/local/lib/node_modules/gcb-*/dist/*.map /root/.npm /tmp/* \
+ && rm -rf /packs /usr/local/lib/node_modules/gcb-*/lib/*.map /root/.npm /tmp/* \
  && npm cache clean --force
 ENTRYPOINT ["gcb", "daemon"]
