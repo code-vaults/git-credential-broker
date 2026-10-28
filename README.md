@@ -597,7 +597,7 @@ The contract between the pushing container and the broker is deliberately small:
 - the broker's own egress uses `http_proxy` / `https_proxy` / `no_proxy` with
   `NODE_USE_ENV_PROXY=1`; the sidecar additionally reads `GCB_PROXY` at `docker compose up`
   time (`<url>` pins a proxy, empty is direct, unset keeps the host variables); every command that
-talks to GitHub accepts `--proxy` / `--no-proxy`;
+  talks to GitHub accepts `--proxy` / `--no-proxy`;
 - the socket is the only mounted interface; no credential, token or App key is ever placed in
   the pushing container.
 
