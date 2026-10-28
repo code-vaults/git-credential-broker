@@ -426,3 +426,17 @@ describe('the help path', () => {
     assert.match(result.stdout, /Usage: gcb gh/);
   });
 });
+
+describe('an invalid help path', () => {
+  it('does not run a command when the path contains options', async () => {
+    for (const args of [
+      ['help', 'pr', '--'],
+      ['help', 'pr', '--number'],
+      ['help', '--help'],
+    ]) {
+      const result = await runClient(args);
+      assert.equal(result.status, 1, args.join(' '));
+      assert.match(result.stderr, /help takes a command path/);
+    }
+  });
+});

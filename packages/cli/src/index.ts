@@ -68,7 +68,13 @@ export async function runCli(argv: readonly string[], backend: CommandBackend): 
   }
   if (command === 'help') {
     const path = argv.slice(1);
-    if (path.length > 0) return backend.run([...path, '--help']);
+    if (path.length > 0) {
+      if (path.some((argument) => argument === '--' || argument.startsWith('-'))) {
+        process.stderr.write('gcb: help takes a command path, not options\n');
+        return 1;
+      }
+      return backend.run([...path, '--help']);
+    }
     process.stdout.write(`${backend.help}\n`);
     return 0;
   }
