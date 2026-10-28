@@ -418,3 +418,48 @@ describe('the -- terminator', () => {
     assert.match(result.stderr, /too many positional arguments/);
   });
 });
+
+describe('the help path', () => {
+  it('routes gcb help gh pr to gh pr --help', async () => {
+    const result = await runClient(['help', 'gh', 'pr']);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /Usage: gcb gh/);
+  });
+});
+
+describe('a help path that is the help command', () => {
+  it('prints root help for help --help and help help', async () => {
+    for (const args of [['help', '--help'], ['help', 'help']]) {
+      const result = await runClient(args);
+      assert.equal(result.status, 0, args.join(' '));
+      assert.match(result.stdout, /Usage: gcb/);
+    }
+  });
+});
+
+describe('an invalid help path', () => {
+  it('does not run a command when the path contains options', async () => {
+    for (const args of [
+      ['help', 'pr', '--'],
+      ['help', 'pr', '--number'],
+      ['help', 'pr', '--help'],
+    ]) {
+      const result = await runClient(args);
+      assert.equal(result.status, 1, args.join(' '));
+      assert.match(result.stderr, /help takes a command path/);
+    }
+  });
+});
+
+describe('command-specific help refusal', () => {
+  it('runs the dispatcher checks for help host', async () => {
+    const result = await runClient(['help', 'host']);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    if (process.platform === 'win32') {
+      assert.match(result.stderr, /native Windows is not supported/);
+    } else {
+      assert.match(result.stderr, /`host` is a host command; install gcb-host on the host/);
+    }
+  });
+});
