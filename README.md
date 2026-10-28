@@ -654,6 +654,7 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr list` | `pull_requests: read` |
 | `pr diff` | `pull_requests: read`, `contents: read` |
 | `pr create` | `pull_requests: write`, `contents: read` |
+| `pr edit` | `pull_requests: write` |
 | `pr close` | `pull_requests: write` |
 | `pr comment` | `pull_requests: write` |
 | `pr review` | `pull_requests: write` |

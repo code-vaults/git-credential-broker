@@ -106,7 +106,6 @@ export interface JobLogRequest {
 /** What can be done to a pull request. */
 export type PullRequestAction =
   | 'open'
-  | 'update'
   | 'status'
   | 'comment'
   | 'threads'

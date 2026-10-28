@@ -1019,19 +1019,11 @@ function pullRequestNumber(value: unknown): number | undefined {
       if (request.action === 'status') {
         return readPullRequestStatus(request, token, collection);
       }
-      let method = 'POST';
-      let url = collection;
-      let body: Record<string, unknown> = { title: request.title, body: request.body, head: request.head, base: request.base, draft: request.draft === true };
-      if (request.action === 'update') {
-        method = 'PATCH';
-        url = `${collection}/${request.number}`;
-        body = { title: request.title, body: request.body, base: request.base };
-        for (const [key, value] of Object.entries(body)) {
-          if (value === undefined) delete body[key];
-        }
-      }
-
       let text: string;
+      const method = 'POST';
+      const url = collection;
+      const body: Record<string, unknown> = { title: request.title, body: request.body, head: request.head, base: request.base, draft: request.draft === true };
+
       try {
         // as theirs, which is what automated reviewers recognise. The token itself is as wide as that person —
         // it carries the app permissions and could push and merge — and what is narrow is this code: it is

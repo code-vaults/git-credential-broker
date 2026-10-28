@@ -24,6 +24,7 @@ import {
 } from 'gcb-cli';
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { baseBranchFor, qualifiedBranch, remoteRepo } from './remotes.ts';
+import { runGh } from './gh.ts';
 import { fail, parseArgs, say } from 'gcb-cli';
 
 /** Longer than a credential request: a token is minted, then the action is performed. */
@@ -227,6 +228,18 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const resolveId = args.value('resolve');
   if (action === 'resolve' && (resolveId === undefined || resolveId.trim() === '')) {
     fail(`--resolve needs the id of the thread being resolved, got ${JSON.stringify(resolveId)}`);
+  }
+
+  if (action === 'update') {
+    const ghArgs = ['pr', 'edit', String(number), '--repo', repo, '--host', host];
+    if (title !== undefined) ghArgs.push('--title', title);
+    if (body !== undefined) ghArgs.push('--body', body);
+    if (base !== undefined) ghArgs.push('--base', base);
+    const socketArg = args.value('socket');
+    if (socketArg !== undefined) ghArgs.push('--socket', socketArg);
+    if (args.has('no-proxy')) ghArgs.push('--no-proxy');
+    else if (args.value('proxy') !== undefined) ghArgs.push('--proxy', args.value('proxy') as string);
+    return runGh(ghArgs, { unreachableExitCode: 3 });
   }
 
   if (viaHost) {

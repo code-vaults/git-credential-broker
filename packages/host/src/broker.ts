@@ -386,7 +386,6 @@ export function createRequestHandler(
       const action = message['action'] ?? 'open';
       if (
         action !== 'open' &&
-        action !== 'update' &&
         action !== 'status' &&
         action !== 'comment' &&
         action !== 'threads' &&
@@ -413,7 +412,7 @@ export function createRequestHandler(
       if (action === 'open' && !usable(head)) {
         return deny(context, CODES.BAD_REQUEST, `bad head ${JSON.stringify(head)}`, 'the head branch name is not usable');
       }
-      if ((action === 'open' || action === 'update') && base !== undefined && !usable(base)) {
+      if (action === 'open' && base !== undefined && !usable(base)) {
         return deny(context, CODES.BAD_REQUEST, `bad base ${JSON.stringify(base)}`, 'the base branch name is not usable');
       }
       if (action === 'open' && (typeof title !== 'string' || title.trim() === '' || title.length > MAX_TITLE_CHARS)) {
@@ -447,9 +446,6 @@ export function createRequestHandler(
       }
       if (side !== 'left' && side !== 'right') {
         return deny(context, CODES.BAD_REQUEST, `bad side ${JSON.stringify(side)}`, 'the side has to be left or right');
-      }
-      if (action === 'update' && title === undefined && body === undefined && base === undefined) {
-        return deny(context, CODES.BAD_REQUEST, 'empty update', 'an update has to change a title, a body or a base');
       }
       if ((action === 'comment' || action === 'reply' || action === 'edit') && (typeof body !== 'string' || body.trim() === '')) {
         return deny(context, CODES.BAD_REQUEST, 'empty comment', 'a comment has to say something');

@@ -1298,6 +1298,38 @@ describe('the anchor flags, at the CLI boundary', () => {
     }
   });
 
+  it('routes an update to gh pr edit', async () => {
+    const socketPath = path.join(scratch, 'pr-update.sock');
+    let request: Record<string, unknown> | undefined;
+    const server = net.createServer((socket) => {
+      let buffer = '';
+      socket.on('data', (chunk: Buffer) => {
+        buffer += chunk.toString('utf8');
+        const newline = buffer.indexOf('\n');
+        if (newline < 0) return;
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
+        socket.end(encodeMessage({ ok: true, stdout: 'updated\n', exitCode: 0 }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    try {
+      const result = await runAsync(process.execPath, [
+        '--conditions=gcb-development',
+        'packages/client/bin/gcb.js',
+        'pr', '--number', '7', '--title', 'a title', '--repo', 'acme/widget', '--socket', socketPath,
+      ], {
+        cwd: path.resolve('.'),
+        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+      });
+      assert.equal(result.status, 0);
+      assert.equal(request?.['op'], 'action');
+      assert.equal(request?.['ghAction'], 'pr:edit');
+      assert.equal(request?.['path'], 'acme/widget');
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
   it('sends the default host to the broker', async () => {
     const socketPath = path.join(scratch, 'pr-host-default.sock');
     let request: Record<string, unknown> | undefined;

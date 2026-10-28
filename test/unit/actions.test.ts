@@ -17,6 +17,7 @@ describe('gh action catalog', () => {
       'pr:list',
       'pr:diff',
       'pr:create',
+      'pr:edit',
       'pr:close',
       'pr:comment',
       'pr:review',
