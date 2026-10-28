@@ -1100,7 +1100,9 @@ describe('compose', () => {
     assert.equal(keys, 1, 'a service with two environment keys is not a valid compose file');
     assert.match(rendered, /NODE_USE_ENV_PROXY=1/, 'and the switch has to be there with the proxy variables');
     assert.match(rendered, /GCB_PROXY=\$\{GCB_PROXY-default\}/);
-    assert.match(rendered, /case "\$\{GCB_PROXY-default\}"/);
+    assert.match(rendered, /case "\$\$\{GCB_PROXY-default\}"/);
+    assert.match(rendered, /\$\$GCB_PROXY/);
+    assert.match(rendered, /unset http_proxy https_proxy all_proxy no_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY NODE_USE_ENV_PROXY/);
   });
 });
 

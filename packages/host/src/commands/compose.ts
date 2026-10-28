@@ -101,10 +101,10 @@ export function renderCompose(input: ComposeInput): string {
   const command = `      - sh
       - -c
       - |
-        case "\${GCB_PROXY-default}" in
+        case "\$\${GCB_PROXY-default}" in
           default) ;;
-          "") unset http_proxy https_proxy no_proxy NODE_USE_ENV_PROXY ;;
-          *) export http_proxy="$GCB_PROXY" https_proxy="$GCB_PROXY" no_proxy=localhost,127.0.0.1 NODE_USE_ENV_PROXY=1 ;;
+          "") unset http_proxy https_proxy all_proxy no_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY NODE_USE_ENV_PROXY ;;
+          *) export http_proxy="\$\$GCB_PROXY" https_proxy="\$\$GCB_PROXY" no_proxy=localhost,127.0.0.1 NODE_USE_ENV_PROXY=1 ;;
         esac
         ${start}`;
 
