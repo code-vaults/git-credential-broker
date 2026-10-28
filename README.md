@@ -109,7 +109,8 @@ docker build --target host -t code-vaults/gcb-host:dev .
 ```
 
 The image's `CMD` starts `gcb daemon`, but `compose` still renders the registry-fetching `npx`
-command by default; change the rendered `command:` to the binary as shown in
+command by default. Keep the rendered `sh -c` wrapper (it applies `GCB_PROXY`) and change only its
+final `exec npx ...` to `exec gcb daemon --config ...`; see
 [DEVELOPMENT.md](DEVELOPMENT.md#use-your-build).
 
 Debian packages use the Aliyun mirror by default in this image; pass

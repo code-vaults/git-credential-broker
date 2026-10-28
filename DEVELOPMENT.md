@@ -90,11 +90,20 @@ docker build --target host -t gcb-host:local .
 gcb compose --image gcb-host:local > docker-compose.broker.yml
 ```
 
-Then change the rendered `command:` to the binary the image installed, since the default one fetches
-the published package:
+Then keep the rendered `sh -c` wrapper (it applies `GCB_PROXY`) and change only the final
+`exec npx ...` to the binary the image installed, since the default one fetches the published package:
 
 ```yaml
-    command: ["gcb", "daemon", "--config", "/etc/git-cred-broker/broker.config.yml"]
+    command:
+      - sh
+      - -c
+      - |
+        case "${GCB_PROXY-default}" in
+          default) ;;
+          "") unset http_proxy https_proxy all_proxy no_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY NODE_USE_ENV_PROXY ;;
+          *) export http_proxy="$GCB_PROXY" https_proxy="$GCB_PROXY" no_proxy=localhost,127.0.0.1 NODE_USE_ENV_PROXY=1 ;;
+        esac
+        exec gcb daemon --config /etc/git-cred-broker/broker.config.yml
 ```
 
 ## Tests

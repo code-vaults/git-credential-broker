@@ -101,8 +101,11 @@ NODE_USE_ENV_PROXY=1                     ← Node 24：fetch/undici 也遵循 *_
 192.0.2.10:3000 -> timeout
 192.0.2.1:443 -> ERR ECONNREFUSED      ← 路由器可达（RST）
 192.0.2.1:80  -> OPEN
-192.0.2.1:443   -> OPEN                  ← docker 网关（宿主）可达
+DOCKER_GATEWAY_IP:443 -> OPEN           ← docker 网关（宿主）可达
 ```
+
+`DOCKER_GATEWAY_IP` is a placeholder: replace it with the measured gateway address before relying on
+the reachability result.
 
 两个独立的问题叠在一起：
 
@@ -127,7 +130,7 @@ NODE_USE_ENV_PROXY=1                     ← Node 24：fetch/undici 也遵循 *_
   (a) 新增一个专用 bind mount（推荐，位于 `Workspaces` 之外）；
   (b) 复用 `/home/app/.dsh/git-broker/broker.sock`（零 compose 改动，但见 P1-6）。
 - **次选：仍走 HTTP**，则必须同时做到：
-  1. broker **只绑 docker 网关**（实测 `192.0.2.1` 可达），不绑 `0.0.0.0`/LAN；
+  1. broker **只绑 docker 网关**（实测 `DOCKER_GATEWAY_IP` 可达），不绑 `0.0.0.0`/LAN；
   2. `no_proxy`/`NO_PROXY` 精确加入 broker 地址（两套大小写变量都要，
      且不能指望每个客户端都遵守）；
   3. TLS（或 HMAC 签名 + 时间戳 + nonce + 重放窗口），共享密钥改用签名而非静态头。
