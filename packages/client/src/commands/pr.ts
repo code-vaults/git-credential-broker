@@ -27,6 +27,13 @@ import { baseBranchFor, qualifiedBranch, remoteRepo } from './remotes.ts';
 import { runGh } from './gh.ts';
 import { fail, parseArgs, say } from 'gcb-cli';
 
+/** Every flag the flag-only lifecycle understands. */
+const KNOWN_FLAGS = new Set([
+  'help', 'h', 'draft', 'close', 'comment', 'file', 'line', 'side', 'threads',
+  'reply-to', 'edit', 'resolve', 'proxy', 'no-proxy', 'socket', 'host', 'repo',
+  'head', 'base', 'title', 'body', 'body-file', 'number', 'via-host', 'status',
+]);
+
 /** Longer than a credential request: a token is minted, then the action is performed. */
 const PR_TIMEOUT_MS = 60_000;
 
@@ -112,15 +119,18 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     say(PR_USAGE);
     return 0;
   }
+  // Unknown options are refused rather than ignored: a typo must not silently fall through to an update.
+  for (const argument of argv) {
+    if (argument === '--') break;
+    if (!argument.startsWith('--')) continue;
+    const name = argument.slice(2).split('=', 1)[0] ?? '';
+    if (!KNOWN_FLAGS.has(name)) fail('unknown option --' + name + ' for gcb pr');
+  }
+  if (args.positionals.length > 0) fail('unexpected argument ' + JSON.stringify(args.positionals[0]) + ' for gcb pr');
+
   // Before --repo: the point of the message is to name the command that does it now.
   if (args.has('close') || args.value('close') !== undefined) {
     fail('--close moved to: gcb gh pr close <number> --repo owner/name');
-  }
-  if (args.has('merge') || args.value('merge') !== undefined) {
-    fail('there is no merge action: merging is a human action on GitHub');
-  }
-  if (args.has('method') || args.value('method') !== undefined) {
-    fail('--method was removed with --merge: there is no merge action');
   }
   // Before --repo too: a bare `gcb pr --comment` should hear what the flag needs, not that --repo
   // is missing. An anchored comment (--file and --line) is still this command's to post.

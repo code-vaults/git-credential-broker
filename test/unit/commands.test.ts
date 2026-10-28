@@ -1173,12 +1173,18 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(result.stdout, /Usage: gcb gh/);
   });
 
-  it('refuses the removed merge flags', () => {
-    for (const flag of [['--merge'], ['--method', 'squash']]) {
+  it('refuses unknown options, including removed merge flags', () => {
+    for (const flag of [['--merge'], ['--merge-xxx'], ['--method', 'squash'], ['--method-xxx', 'squash'], ['--xafajbsfbafabsjkf']]) {
       const result = cli([...base, ...flag, '--title', 'a title']);
       assert.equal(result.status, 1);
-      assert.match(result.stderr, /no merge action/);
+      assert.match(result.stderr, /unknown option/);
     }
+  });
+
+  it('refuses unexpected positionals', () => {
+    const result = cli(['--repo', 'acme/widget', '--number', '7', '--status', 'stray']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /unexpected argument "stray"/);
   });
 
   it('refuses a plain --comment and names the anchor requirement', () => {
