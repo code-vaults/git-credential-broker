@@ -1,6 +1,6 @@
 {
   "name": "gcb-host",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "Host-side gcb broker, configuration, providers and administration commands.",
   "license": "MIT",
   "author": "JounQin <admin@1stg.me>",
@@ -22,13 +22,13 @@
   ],
   "exports": {
     ".": {
-      "gcb-development": "./src/index.ts",
+      "development": "./src/index.ts",
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     }
   },
   "dependencies": {
-    "gcb-cli": "0.1.0",
+    "gcb-cli": "0.0.0",
     "node-fetch-native": "^1.6.7",
     "x-fetch": "^0.3.0",
     "yaml": "^2.9.1"
@@ -36,5 +36,8 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "prepublishOnly": "clean-pkg-json"
   }
 }

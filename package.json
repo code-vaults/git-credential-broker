@@ -1,6 +1,6 @@
 {
   "name": "gcb-workspace",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "private": true,
   "description": "Workspace for gcb-cli, gcb-client and gcb-host.",
   "license": "MIT",
@@ -24,15 +24,21 @@
   "scripts": {
     "build": "node scripts/clean-build.mjs && tsc -p packages/cli/tsconfig.build.json && tsc -p packages/client/tsconfig.build.json && tsc -p packages/host/tsconfig.build.json && node scripts/postbuild.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "yarn build && node --conditions=gcb-development --disable-warning=ExperimentalWarning --test test/unit/*.test.ts test/e2e/*.test.ts",
-    "test:unit": "node --conditions=gcb-development --disable-warning=ExperimentalWarning --test test/unit/*.test.ts",
-    "test:e2e": "yarn build && node --conditions=gcb-development --disable-warning=ExperimentalWarning --test test/e2e/*.test.ts",
+    "test": "yarn build && node --conditions=development --disable-warning=ExperimentalWarning --test test/unit/*.test.ts test/e2e/*.test.ts",
+    "test:unit": "node --conditions=development --disable-warning=ExperimentalWarning --test test/unit/*.test.ts",
+    "test:e2e": "yarn build && node --conditions=development --disable-warning=ExperimentalWarning --test test/e2e/*.test.ts",
     "check": "yarn typecheck && yarn test",
     "pack:check": "yarn build && node scripts/pack-check.mjs",
-    "prepublishOnly": "yarn check"
+    "prepublishOnly": "yarn check",
+    "changeset": "changeset",
+    "changeset:version": "changeset version && yarn install --mode=update-lockfile",
+    "changeset:publish": "node scripts/publish.mjs"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3",
     "@types/node": "^24.19.0",
+    "clean-pkg-json": "^2.0.0",
     "typescript": "^7.0.2",
     "yaml": "^2.9.1"
   }

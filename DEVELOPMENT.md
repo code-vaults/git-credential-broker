@@ -34,9 +34,9 @@ Node strips the types, so the package sources are directly runnable with the dev
 condition:
 
 ```sh
-node --conditions=gcb-development packages/client/bin/gcb.js --help
-node --conditions=gcb-development packages/host/bin/gcb.js compose --socket-dir /tmp/sock --config /tmp/deploy/broker.config.yml
-node --conditions=gcb-development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml --check
+node --conditions=development packages/client/bin/gcb.js --help
+node --conditions=development packages/host/bin/gcb.js compose --socket-dir /tmp/sock --config /tmp/deploy/broker.config.yml
+node --conditions=development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml --check
 ```
 
 Commands find the configuration by convention — `--config`, else `$GIT_BROKER_CONFIG`, else
@@ -52,7 +52,7 @@ Two consequences:
 - The `helper` command must resolve to an executable. `setup` records `!gcb`, so git resolves the
   globally installed bin through PATH; a source checkout can use the same config if it has a `gcb`
   shim on PATH, or spell the interpreter out explicitly with
-  `git config --global credential.helper '!node --conditions=gcb-development /path/packages/client/bin/gcb.js'`.
+  `git config --global credential.helper '!node --conditions=development /path/packages/client/bin/gcb.js'`.
 
 ## Build
 
@@ -71,7 +71,7 @@ exec-bit detection), so the build applies it every time.
 As the CLI, without installing anything:
 
 ```sh
-node --conditions=gcb-development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml
+node --conditions=development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml
 ```
 
 As the commands a user of the package gets:
@@ -152,12 +152,30 @@ the checkout of that version beside them.
 
 ## Releasing
 
-1. Bump the same `version` in all three package manifests and keep the exact `gcb-cli` dependency in
-   client/host in lockstep.
-2. `corepack yarn check`.
-3. Publish in dependency order: `npm publish packages/cli`, then `packages/client` and `packages/host`.
+The three packages start at `0.0.0`; the initial publish is manual and must happen in dependency
+order after a green build:
+
+```sh
+corepack yarn check
+(cd packages/cli && npm publish)
+(cd packages/client && npm publish)
+(cd packages/host && npm publish)
+```
+
+After that, published changes are versioned with Changesets:
+
+1. Add a changeset with `corepack yarn changeset` in the pull request that changes a published package.
+   CI rejects a pull request without one; the release pull request is exempt.
+2. The release workflow uses `changesets/action` to open or update `chore: release packages`. Merging
+   that pull request runs `changeset publish`.
+3. `@changesets/changelog-github` writes the changelog entries; each package's `prepublishOnly`
+   runs `clean-pkg-json`, so the published manifest omits the workspace-only `development` export.
 4. Re-render any sidecar you generated: `compose` pins `gcb-host@<version>`, so it takes
    the new version only when it is rendered again.
+
+The release workflow needs the `NPM_TOKEN` repository secret. The `0.0.0` guard in
+`scripts/publish.mjs` makes the first release manual; once the versions move, `changeset publish`
+performs the release.
 
 ## Layout
 
