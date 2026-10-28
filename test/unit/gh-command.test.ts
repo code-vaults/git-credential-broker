@@ -17,7 +17,7 @@ const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', imp
 function runClient(args: readonly string[], cwd?: string): Promise<RunResult> {
   return tryRunAsync(
     process.execPath,
-    ['--conditions=development', CLIENT_BIN, ...args],
+    ['--conditions=gcb-development', CLIENT_BIN, ...args],
     { cwd, env: process.env, timeoutMs: 5000 },
   );
 }

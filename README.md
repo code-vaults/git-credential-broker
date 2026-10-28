@@ -92,8 +92,8 @@ dependencies:
 ```sh
 git clone https://github.com/code-vaults/git-credential-broker /opt/gcb
 cd /opt/gcb && corepack yarn install
-node --conditions=development packages/client/bin/gcb.js --help
-node --conditions=development packages/host/bin/gcb.js --help
+node --conditions=gcb-development packages/client/bin/gcb.js --help
+node --conditions=gcb-development packages/host/bin/gcb.js --help
 ```
 
 Keep the checkout outside every container mount.
@@ -288,7 +288,7 @@ path, because a relative one is resolved against the current directory, which is
 checkout:
 
 ```sh
-node --conditions=development /srv/git-cred-broker/packages/client/bin/gcb.js logs \
+node --conditions=gcb-development /srv/git-cred-broker/packages/client/bin/gcb.js logs \
   --socket /srv/git-cred-broker/broker.sock \
   --host github.com --repo owner/repo --job 1234567890
 ```

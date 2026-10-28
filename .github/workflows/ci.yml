@@ -92,7 +92,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           $log = Join-Path $env:RUNNER_TEMP 'daemon.txt'
-          node --conditions=development packages/host/bin/gcb.js daemon --check *> $log
+          node --conditions=gcb-development packages/host/bin/gcb.js daemon --check *> $log
           $code = $LASTEXITCODE
           $out = Get-Content $log -Raw
           Write-Host "exit=$code"
@@ -109,7 +109,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           $log = Join-Path $env:RUNNER_TEMP 'setup.txt'
-          node --conditions=development packages/client/bin/gcb.js setup *> $log
+          node --conditions=gcb-development packages/client/bin/gcb.js setup *> $log
           $code = $LASTEXITCODE
           $out = Get-Content $log -Raw
           Write-Host "exit=$code"
@@ -126,7 +126,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           $log = Join-Path $env:RUNNER_TEMP 'compose.txt'
-          node --conditions=development packages/host/bin/gcb.js compose --socket-dir C:\sock *> $log
+          node --conditions=gcb-development packages/host/bin/gcb.js compose --socket-dir C:\sock *> $log
           $code = $LASTEXITCODE
           $out = Get-Content $log -Raw
           Write-Host "exit=$code"
@@ -142,7 +142,7 @@ jobs:
 
       - name: help still works
         shell: pwsh
-        run: node --conditions=development packages/client/bin/gcb.js --help
+        run: node --conditions=gcb-development packages/client/bin/gcb.js --help
 
   wsl:
     timeout-minutes: 20

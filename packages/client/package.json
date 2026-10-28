@@ -22,7 +22,7 @@
   ],
   "exports": {
     ".": {
-      "development": "./src/index.ts",
+      "gcb-development": "./src/index.ts",
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     }
