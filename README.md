@@ -101,11 +101,11 @@ Keep the checkout outside every container mount.
 ## GitHub actions
 
 The action path is wired through the broker; the host image must include `gh` before these commands
-can run. The container never receives the token. Build the image, then pass `--image gcb-host:gh` to
+can run. The container never receives the token. Build the image, then pass `--image code-vaults/gcb-host:dev` to
 the compose command in [Quick start](#quick-start-sidecar):
 
 ```sh
-docker build -f examples/Dockerfile.host -t gcb-host:gh .
+docker build -f examples/Dockerfile.host -t code-vaults/gcb-host:dev .
 ```
 
 Debian packages use the Aliyun mirror by default in this image; pass
@@ -619,12 +619,7 @@ docker build --target host   -t code-vaults/gcb-host:dev .
 ```
 
 While the image exists locally, Docker uses it instead of pulling from the registry; another machine
-or CI pulls the same tags. The current local broker tag `gcb-host:gh` is just a transitional alias:
-
-```sh
-docker tag gcb-host:gh code-vaults/gcb-host:dev
-```
-
+or CI pulls the same tags.
 
 ### App permissions by action
 
