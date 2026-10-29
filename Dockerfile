@@ -5,8 +5,8 @@
 #   host    the broker, with gh, for running `gcb daemon`
 #
 # Local build:
-#   docker build --target client -t code-vaults/gcb-client:dev .
-#   docker build --target host   -t code-vaults/gcb-host:dev .
+#   docker build --target client -t ghcr.io/code-vaults/gcb-client:dev .
+#   docker build --target host   -t ghcr.io/code-vaults/gcb-host:dev .
 
 FROM node:24-slim AS build
 WORKDIR /src

@@ -155,7 +155,8 @@ the checkout of that version beside them.
 Published changes are versioned with Changesets:
 
 1. Add a changeset with `corepack yarn changeset` in the pull request that changes a published package.
-   There is no CI gate for this; a release run with no changesets publishes nothing.
+   There is no CI gate for this; with no changesets, `changeset publish` only publishes versions npm
+does not have yet.
 2. The release workflow uses `changesets/action` to open or update `chore: release packages`. Merging
    that pull request runs `changeset publish`.
 3. `@changesets/changelog-github` writes the changelog entries; each package's `prepack` runs
@@ -166,11 +167,10 @@ Published changes are versioned with Changesets:
 
 The release workflow uses npm trusted publishing (OIDC): `id-token: write` is granted, no
 `NPM_TOKEN` secret is read. Configure the npm package's trusted publisher for this repository first.
+The two images are published to GHCR only.
 
 Also configure:
 
-- `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets; both registry logins happen before
-  the image build, so a missing pair fails the release after npm has already published
 - **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests** on;
   `changesets/action` cannot open the version pull request without it
 

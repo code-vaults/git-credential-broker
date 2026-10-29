@@ -96,13 +96,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
-        with:
-          registry: docker.io
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Work out the tags
         id: tags
         env:
@@ -110,11 +103,9 @@ jobs:
           IMAGE: gcb-${{ matrix.target }}
         run: |
           {
-            for registry in ghcr.io/code-vaults docker.io/code-vaults; do
-              echo "$registry/$IMAGE:latest"
-              echo "$registry/$IMAGE:sha-${GITHUB_SHA}"
-              echo "$registry/$IMAGE:${VERSION}"
-            done
+            echo "ghcr.io/code-vaults/$IMAGE:latest"
+            echo "ghcr.io/code-vaults/$IMAGE:sha-${GITHUB_SHA}"
+            echo "ghcr.io/code-vaults/$IMAGE:${VERSION}"
           } > "$RUNNER_TEMP/tags"
           {
             echo 'tags<<TAGS'
