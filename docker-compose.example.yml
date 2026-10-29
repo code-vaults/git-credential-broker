@@ -5,6 +5,8 @@
 #   gcb compose --socket-dir <a host directory the DSH container mounts> \
 #     > docker-compose.yml
 #
+# Then, from that directory: docker compose up -d
+#
 # Generate it rather than retyping it. The mount targets inside the container must match the
 # paths `init --mode sidecar` recorded, and both commands read them from one definition, so a
 # hand-edited copy is the one thing that can silently drift.

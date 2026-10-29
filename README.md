@@ -168,7 +168,7 @@ gcb init --mode sidecar --dir "$DEPLOY" \
 
 gcb compose --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" \
   > "$DEPLOY/docker-compose.yml"
-docker compose -f "$DEPLOY/docker-compose.yml" up -d
+cd "$DEPLOY" && docker compose up -d
 ```
 
 A deployment directory holds the config, key, log and compose file; `app/` is only a convention
@@ -285,7 +285,7 @@ app's **private key**, so run it where the key is. On a host-process deployment 
 a sidecar it is inside the container:
 
 ```sh
-cd "$DEPLOY" && docker compose -f docker-compose.yml exec gcb \
+cd "$DEPLOY" && docker compose exec gcb \
   npx --yes --package gcb-host gcb \
   diagnose --config /etc/git-cred-broker/broker.config.yml
 ```
