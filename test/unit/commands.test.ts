@@ -1184,10 +1184,18 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.doesNotMatch(value.stderr, /unknown option/, 'a value is not an option');
   });
 
-  it('refuses a valueless repo', () => {
-    const result = cli(['--repo', '--number', '7', '--status']);
+  it('refuses a valueless or option-looking repo', () => {
+    for (const argv of [['--repo', '--number', '7', '--status'], ['--repo', '-h', '--number', '7', '--status']]) {
+      const result = cli(argv);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /--repo needs a value/);
+    }
+  });
+
+  it('refuses an option-looking host', () => {
+    const result = cli(['--host', '-h', '--repo', 'acme/widget', '--number', '7', '--status']);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /--repo needs a value/);
+    assert.match(result.stderr, /--host needs a value/);
   });
 
   it('refuses unexpected positionals', () => {

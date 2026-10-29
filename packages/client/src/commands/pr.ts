@@ -141,13 +141,18 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (args.has('proxy') && args.value('proxy') === undefined) fail('--proxy needs a value');
   const proxy = args.has('no-proxy') ? null : args.value('proxy');
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
+  const looksLikeOption = (value: string | undefined): boolean =>
+    value !== undefined && /^-(?=[A-Za-z])/.test(value);
   const hostArg = args.value('host');
-  if ((args.has('host') || hostArg !== undefined) && (hostArg === undefined || hostArg.trim() === '')) {
+  if ((args.has('host') || hostArg !== undefined) &&
+      (hostArg === undefined || hostArg.trim() === '' || looksLikeOption(hostArg))) {
     fail('--host needs a value (e.g. github.com)');
   }
   const host = hostArg ?? 'github.com';
   const repoArg = args.value('repo');
-  if (args.has('repo') && repoArg === undefined) fail('--repo needs a value (e.g. owner/name)');
+  if ((args.has('repo') || repoArg !== undefined) && (repoArg === undefined || looksLikeOption(repoArg))) {
+    fail('--repo needs a value (e.g. owner/name)');
+  }
   let repo = repoArg;
   if (repo === undefined) {
     const found = remoteRepo('origin', process.cwd());
