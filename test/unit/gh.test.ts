@@ -46,12 +46,13 @@ describe('runGhAction', { skip: onWindows }, () => {
       values: { number: 7, jq: '.body' },
       repo: 'acme/widget',
       token: 'app-token',
+      host: 'GitHub.com',
       ghPath: gh,
       env: { PATH: process.env.PATH },
     });
     assert.equal(result.code, 0);
     assert.match(result.stdout, /TOKEN=\[\]/);
-    assert.match(result.stdout, /oauth_token: app-token/);
+    assert.match(result.stdout, /github\.com:\n    oauth_token: app-token/);
   });
 
   it('kills the process group on timeout', async () => {
