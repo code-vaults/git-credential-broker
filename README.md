@@ -605,27 +605,25 @@ The contract between the pushing container and the broker is deliberately small:
 
 ## Images
 
-Two GHCR images, in separate repositories, mirror the two packages:
+Two GHCR repositories mirror the two packages:
 
 | Image | Contents | Use |
 |---|---|---|
 | `ghcr.io/code-vaults/gcb-client:dev` | `gcb` client and Node runtime only | idsh base / `COPY --from` |
 | `ghcr.io/code-vaults/gcb-host:dev` | broker, `gh`, and broker dependencies | run `gcb daemon` on the host |
 
-Published equivalents are the same names on GHCR:
-`ghcr.io/code-vaults/gcb-client:dev` and `ghcr.io/code-vaults/gcb-host:dev`.
-A GitHub repository can publish both packages; they share the source repository without sharing a
-tag.
+The release publishes both repositories with `latest`, `<version>` and `sha-<sha>` tags. The
+`:dev` tags are local build tags and are not published; do not pull them from GHCR.
 
-For local development, build and reuse the same tags:
+For local development, build and reuse the `:dev` tags:
 
 ```sh
 docker build --target client -t ghcr.io/code-vaults/gcb-client:dev .
 docker build --target host   -t ghcr.io/code-vaults/gcb-host:dev .
 ```
 
-While the image exists locally, Docker uses it instead of pulling from the registry; another machine
-or CI pulls the same tags.
+While the image exists locally, Docker uses it instead of pulling from the registry. Another machine
+or CI builds the same Dockerfile and tags, rather than pulling `:dev`.
 
 For idsh's dev image, name the client image as a stage and copy only the gcb packages into the base:
 
@@ -641,8 +639,9 @@ RUN ln -s /usr/local/lib/node_modules/gcb-client/bin/gcb.js /usr/local/bin/gcb
 ```
 
 Copy the two package directories, not all of `/usr/local/lib/node_modules`: the idsh base already has
-its own `corepack` and `npm`, and a whole-directory copy would replace them. A CI build passes
-`--build-arg GCB_CLIENT_IMAGE=ghcr.io/code-vaults/gcb-client:dev` instead.
+its own `corepack` and `npm`, and a whole-directory copy would replace them. That default is for a
+local build; CI and production pass a published version instead, e.g.
+`--build-arg GCB_CLIENT_IMAGE=ghcr.io/code-vaults/gcb-client:<version>`.
 
 ## App permissions by action
 

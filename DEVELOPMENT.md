@@ -156,7 +156,7 @@ Published changes are versioned with Changesets:
 
 1. Add a changeset with `corepack yarn changeset` in the pull request that changes a published package.
    There is no CI gate for this; with no changesets, `changeset publish` only publishes versions npm
-does not have yet.
+   does not have yet.
 2. The release workflow uses `changesets/action` to open or update `chore: release packages`. Merging
    that pull request runs `changeset publish`.
 3. `@changesets/changelog-github` writes the changelog entries; each package's `prepack` runs
