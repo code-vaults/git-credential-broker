@@ -3,7 +3,7 @@
 # `gcb compose` prints the sidecar in 1b, already filled in for your paths:
 #
 #   gcb compose --socket-dir <a host directory the DSH container mounts> \
-#     > docker-compose.broker.yml
+#     > docker-compose.yml
 #
 # Generate it rather than retyping it. The mount targets inside the container must match the
 # paths `init --mode sidecar` recorded, and both commands read them from one definition, so a

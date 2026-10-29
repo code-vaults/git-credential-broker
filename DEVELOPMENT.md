@@ -87,7 +87,7 @@ As an image, build the host stage of the root Dockerfile:
 
 ```sh
 docker build --target host -t gcb-host:local .
-gcb compose --image gcb-host:local > docker-compose.broker.yml
+gcb compose --image gcb-host:local > docker-compose.yml
 ```
 
 Then keep the rendered `sh -c` wrapper (it applies `GCB_PROXY`) and change only the final
@@ -185,6 +185,7 @@ scripts/postbuild.mjs  the shebang and exec bit on the two bins
 test/unit/             policy, JWT, provider, helper, broker, config, commands, stage, daemon
 test/e2e/push.test.ts  a real push over authenticated smart HTTP
 test/e2e/packages.test.ts  npm pack and install into separate client/host prefixes
-examples/              configuration and compose snippets
+examples/              configuration snippets
+docker-compose.example.yml  tracked sidecar example
 .agents/notes/         the design, its review, the verified record, environment facts
 ```

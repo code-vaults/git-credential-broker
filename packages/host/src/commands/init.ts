@@ -604,7 +604,7 @@ export async function runInit(argv: readonly string[]): Promise<number> {
     if (result.previous) {
       say('Restart the broker to pick this up:');
       if (result.mode === 'sidecar') {
-        say('  docker compose -f docker-compose.broker.yml up -d    # sidecar');
+        say(`  docker compose -f ${path.dirname(result.keyPath)}/docker-compose.yml up -d    # sidecar`);
       } else {
         say(`  gcb daemon --config ${result.configPath}    # host process`);
       }
@@ -628,7 +628,7 @@ export async function runInit(argv: readonly string[]): Promise<number> {
         say(
           `  gcb compose --dir ${path.dirname(result.keyPath)} --config ${result.configPath} --socket-dir <a directory the pusher mounts> \\`,
         );
-        say('    > docker-compose.broker.yml && docker compose -f docker-compose.broker.yml up -d');
+        say(`    > ${path.dirname(result.keyPath)}/docker-compose.yml && docker compose -f ${path.dirname(result.keyPath)}/docker-compose.yml up -d`);
       } else {
         say('Then start the broker as a host process:');
         say(`  gcb daemon --config ${result.configPath} --check   # validate, bind nothing`);

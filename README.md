@@ -159,7 +159,7 @@ the default sidecar fetches `gcb-host` with `npx` at start, while `--code` runs 
 registry access at boot.
 
 ```sh
-DEPLOY=/srv/git-cred-broker        # broker.config.yml, app.pem and log/ live here
+DEPLOY=/srv/git-cred-broker        # the deployment directory
 SOCKET_DIR=/srv/git-broker-socket  # a host directory the pushing container already mounts
 
 gcb init --mode sidecar --dir "$DEPLOY" \
@@ -167,8 +167,20 @@ gcb init --mode sidecar --dir "$DEPLOY" \
   --allow owner/repo --client-id Iv23li… --app-id 123456
 
 gcb compose --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" \
-  > "$DEPLOY/docker-compose.broker.yml"
-docker compose -f "$DEPLOY/docker-compose.broker.yml" up -d
+  > "$DEPLOY/docker-compose.yml"
+docker compose -f "$DEPLOY/docker-compose.yml" up -d
+```
+
+A deployment directory holds the config, key, log and compose file; `app/` is only a convention
+for a staged commit, and `--code` accepts any directory outside every mount.
+
+```text
+$DEPLOY/
+  broker.config.yml
+  app.pem
+  log/
+  docker-compose.yml
+  app/                 optional staged commit
 ```
 
 Nothing above has to name the shared directories. A host process asks the container runtime — docker,
@@ -186,7 +198,8 @@ instead, run `gcb stage --to "$DEPLOY/app"`, install its dependencies in that di
 root you intend to export, or pass `--repo <path>`: it defaults to the current directory and exports
 that repository's `HEAD`, never the working tree. `stage` is export-only: it does not install
 dependencies or build, and it never runs the commit's code. It leaves `STAGED.json` beside the code
-recording the commit.
+recording the commit; `--code` does not require that file, and the directory may have any name outside
+the mounts.
 
 ## Quick start: host process
 
@@ -272,7 +285,7 @@ app's **private key**, so run it where the key is. On a host-process deployment 
 a sidecar it is inside the container:
 
 ```sh
-docker compose -f docker-compose.broker.yml exec gcb \
+docker compose -f "$DEPLOY/docker-compose.yml" exec gcb \
   npx --yes --package gcb-host gcb \
   diagnose --config /etc/git-cred-broker/broker.config.yml
 ```
@@ -583,7 +596,8 @@ packages/client/src/     credential helper, setup, probe, logs, pr, gh
 packages/host/src/       YAML config, providers, broker, daemon and host commands
 packages/*/bin/          the two installed gcb bins (client and host)
 test/                    unit tests, plus an end-to-end push over authenticated smart HTTP
-examples/                configuration and compose snippets
+examples/                configuration snippets
+docker-compose.example.yml  tracked sidecar example
 DEVELOPMENT.md           building from source, tests, releasing
 .agents/notes/           the design, its review, and the measured environment facts
 ```
