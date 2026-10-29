@@ -10,7 +10,7 @@ Split the repository into Yarn workspaces under `packages/`:
 
 ```text
 packages/
-  cli/       gcb-core       shared CLI runtime, argument parsing, protocol, types
+  core/      gcb-core      shared command runtime, argument parsing, protocol, types
   client/    gcb-client    container side; depends on gcb-core
   host/      gcb-host      host side; depends on gcb-core and yaml
 ```
@@ -72,7 +72,7 @@ self-contained artifact. That is a separate decision from this package split.
 ## Packaging and tests
 
 - Root is private; `workspaces: ["packages/*"]`.
-- Each package has its own `package.json`, `tsconfig.json`, `src/`, `dist/`, and `files`.
+- Each package has its own `package.json`, `tsconfig.json`, `src/`, `lib/`, and `files`.
 - Versions stay in lockstep; `gcb-client` and `gcb-host` depend on the exact `gcb-core` version.
 - CI adds a real package test:
   1. `npm pack` all three;
@@ -81,7 +81,7 @@ self-contained artifact. That is a separate decision from this package split.
   3. install `gcb-host` into another prefix, assert `gcb app --help` and `gcb daemon --help` work
      and `yaml` is present.
 - Unit tests may continue to import `packages/*/src` through a development export condition; the
-  packaged entry points use `dist`.
+  packaged entry points use `lib`.
 
 ## Consequences
 
