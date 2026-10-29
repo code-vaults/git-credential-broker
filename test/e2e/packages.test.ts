@@ -40,17 +40,22 @@ function runFailure(command: string, args: readonly string[]): string {
 function pack(name: string): string {
   const target = path.join(packs, name);
   fs.mkdirSync(target, { recursive: true });
-  const manifestPath = path.join(ROOT, 'packages', name, 'package.json');
-  const manifest = fs.readFileSync(manifestPath, 'utf8');
-  try {
-    const output = run('npm', ['pack', path.join(ROOT, 'packages', name), '--pack-destination', target]);
-    const file = output.trim().split('\n').pop();
-    assert.ok(file, `npm pack produced no filename for ${name}`);
-    return path.join(target, file);
-  } finally {
-    // prepack runs clean-pkg-json in the workspace; restore the source manifest.
-    fs.writeFileSync(manifestPath, manifest);
-  }
+  const source = path.join(ROOT, 'packages', name);
+  const copy = path.join(scratch, 'sources', name);
+  fs.mkdirSync(path.dirname(copy), { recursive: true });
+  fs.cpSync(source, copy, {
+    recursive: true,
+    filter: (entry) => !entry.includes(`${path.sep}node_modules`) && !entry.endsWith(`${path.sep}dist`),
+  });
+  const output = execFileSync('npm', ['pack', copy, '--pack-destination', target], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, PATH: `${path.join(ROOT, 'node_modules', '.bin')}${path.delimiter}${process.env['PATH'] ?? ''}` },
+  });
+  const file = output.trim().split('\n').pop();
+  assert.ok(file, `npm pack produced no filename for ${name}`);
+  return path.join(target, file);
 }
 
 /** Find a package below a prefix. */

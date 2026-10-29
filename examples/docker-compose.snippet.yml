@@ -91,8 +91,9 @@ services:
       - /srv/git-broker-socket:/run/git-broker
 ```
 
-Pin a version (`npx --yes --package 'gcb-host@0.0.0'`) if you would rather not
-resolve `latest` on every start; `compose` pins the version it was generated from.
+Pin a released version (`npx --yes --package 'gcb-host@<version>'`) if you would rather not
+resolve `latest` on every start; `compose` pins the version it was generated from. The first
+functional release is `0.0.1`; `0.0.0` is an empty placeholder.
 
 ## 2. DSH container: reach the socket and configure git
 
