@@ -1174,11 +1174,14 @@ describe('the anchor flags, at the CLI boundary', () => {
   });
 
   it('refuses unknown options, including removed merge flags', () => {
-    for (const flag of [['--merge'], ['--merge-xxx'], ['--method', 'squash'], ['--method-xxx', 'squash'], ['--xafajbsfbafabsjkf']]) {
+    for (const flag of [['--merge'], ['-merge'], ['--merge-xxx'], ['--method', 'squash'], ['--method-xxx', 'squash'], ['--xafajbsfbafabsjkf']]) {
       const result = cli([...base, ...flag, '--title', 'a title']);
       assert.equal(result.status, 1);
       assert.match(result.stderr, /unknown option/);
     }
+
+    const value = cli([...base, '--title=--not-a-flag']);
+    assert.doesNotMatch(value.stderr, /unknown option/, 'a value is not an option');
   });
 
   it('refuses a valueless repo', () => {

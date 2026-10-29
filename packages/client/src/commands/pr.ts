@@ -120,10 +120,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     return 0;
   }
   // Unknown options are refused rather than ignored: a typo must not silently fall through to an update.
-  for (const argument of argv) {
-    if (argument === '--') break;
-    if (!argument.startsWith('--')) continue;
-    const name = argument.slice(2).split('=', 1)[0] ?? '';
+  for (const name of args.names) {
     if (!KNOWN_FLAGS.has(name)) fail('unknown option --' + name + ' for gcb pr');
   }
   if (args.positionals.length > 0) fail('unexpected argument ' + JSON.stringify(args.positionals[0]) + ' for gcb pr');
