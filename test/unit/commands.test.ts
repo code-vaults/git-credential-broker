@@ -1185,7 +1185,7 @@ describe('the anchor flags, at the CLI boundary', () => {
   });
 
   it('refuses a valueless or option-looking repo', () => {
-    for (const argv of [['--repo', '--number', '7', '--status'], ['--repo', '-h', '--number', '7', '--status']]) {
+    for (const argv of [['--repo', '--number', '7', '--status'], ['--repo', '-h', '--number', '7', '--status'], ['--repo=--help', '--number', '7', '--status'], ['--repo', 'acme/widget', '--repo', '-h', '--number', '7', '--status']]) {
       const result = cli(argv);
       assert.equal(result.status, 1);
       assert.match(result.stderr, /--repo needs a value/);
@@ -1193,9 +1193,15 @@ describe('the anchor flags, at the CLI boundary', () => {
   });
 
   it('refuses an option-looking host', () => {
-    const result = cli(['--host', '-h', '--repo', 'acme/widget', '--number', '7', '--status']);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /--host needs a value/);
+    for (const argv of [
+      ['--host', '-h', '--repo', 'acme/widget', '--number', '7', '--status'],
+      ['--host=--help', '--repo', 'acme/widget', '--number', '7', '--status'],
+      ['--host', 'github.com', '--host', '-h', '--repo', 'acme/widget', '--number', '7', '--status'],
+    ]) {
+      const result = cli(argv);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /--host needs a value/);
+    }
   });
 
   it('refuses unexpected positionals', () => {
