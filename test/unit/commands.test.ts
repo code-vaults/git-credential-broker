@@ -8,6 +8,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
+import net from 'node:net';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -22,6 +23,8 @@ import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../pack
 import { performSetup } from '../../packages/client/src/commands/setup.ts';
 import type { BrokerConfig, GithubAppHostConfig } from '../../packages/cli/src/types.ts';
 import { runProbe } from '../../packages/client/src/commands/probe.ts';
+import { encodeMessage, parseMessage } from '../../packages/cli/src/socket-protocol.ts';
+import { runAsync } from '../common/run.ts';
 
 /** Scratch space for the whole file. */
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-commands-'));
@@ -1151,7 +1154,7 @@ describe('the anchor flags, at the CLI boundary', () => {
   });
 
   it('refuses an anchor on an action that is not a comment', () => {
-    const closed = cli([...base, '--merge', '--file', 'Dockerfile', '--line', '4', '--body', 'x']);
+    const closed = cli([...base, '--status', '--file', 'Dockerfile', '--line', '4', '--body', 'x']);
     assert.equal(closed.status, 1);
     assert.match(closed.stderr, /only go with --comment/);
   });
@@ -1168,6 +1171,43 @@ describe('the anchor flags, at the CLI boundary', () => {
     const result = cli([]);
     assert.equal(result.status, 1);
     assert.match(result.stdout, /Usage: gcb gh/);
+  });
+
+  it('refuses unknown options, including removed merge flags', () => {
+    for (const flag of [['--merge'], ['-merge'], ['--merge-xxx'], ['--method', 'squash'], ['--method-xxx', 'squash'], ['--xafajbsfbafabsjkf']]) {
+      const result = cli([...base, ...flag, '--title', 'a title']);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /unknown option/);
+    }
+
+    const value = cli([...base, '--title=--not-a-flag']);
+    assert.doesNotMatch(value.stderr, /unknown option/, 'a value is not an option');
+  });
+
+  it('refuses a valueless or option-looking repo', () => {
+    for (const argv of [['--repo', '--number', '7', '--status'], ['--repo', '-h', '--number', '7', '--status'], ['--repo=--help', '--number', '7', '--status'], ['--repo', 'acme/widget', '--repo', '-h', '--number', '7', '--status']]) {
+      const result = cli(argv);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /--repo needs a value/);
+    }
+  });
+
+  it('refuses an option-looking host', () => {
+    for (const argv of [
+      ['--host', '-h', '--repo', 'acme/widget', '--number', '7', '--status'],
+      ['--host=--help', '--repo', 'acme/widget', '--number', '7', '--status'],
+      ['--host', 'github.com', '--host', '-h', '--repo', 'acme/widget', '--number', '7', '--status'],
+    ]) {
+      const result = cli(argv);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /--host needs a value/);
+    }
+  });
+
+  it('refuses unexpected positionals', () => {
+    const result = cli(['--repo', 'acme/widget', '--number', '7', '--status', 'stray']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /unexpected argument "stray"/);
   });
 
   it('refuses a plain --comment and names the anchor requirement', () => {
@@ -1201,11 +1241,6 @@ describe('the anchor flags, at the CLI boundary', () => {
     }
   });
 
-  it('refuses --method unless the action merges', () => {
-    const updated = cli([...base, '--method', 'squash', '--title', 'a title']);
-    assert.equal(updated.status, 1);
-    assert.match(updated.stderr, /only goes with --merge/);
-  });
 
   it('refuses an edit with nothing to say, or with no comment to change', () => {
     const noBody = cli([...base, '--edit', '99']);
@@ -1245,6 +1280,157 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.equal(noNumber.status, 1);
     assert.match(noNumber.stderr, /no broker socket/, 'it reached socket resolution');
     assert.doesNotMatch(noNumber.stderr, /--number is required/, 'without being asked for a number');
+  });
+
+  it('defaults the host to github.com', () => {
+    const result = cli(['--repo', 'acme/widget', '--number', '7', '--status']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /no broker socket/, 'validation got past the host');
+    assert.doesNotMatch(result.stderr, /--host is required/);
+  });
+
+  it('refuses an explicitly empty host', () => {
+    const result = cli(['--host', '', '--repo', 'acme/widget', '--number', '7', '--status']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--host needs a value/);
+  });
+
+  it('refuses a valueless host', () => {
+    const result = cli(['--host', '--repo', 'acme/widget', '--number', '7', '--status']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--host needs a value/);
+  });
+
+  it('resolves the repository from origin', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-pr-origin-'));
+    execFileSync('git', ['init', '--quiet'], { cwd: root });
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widget.git'], { cwd: root });
+    const socketPath = path.join(root, 'broker.sock');
+    let request: Record<string, unknown> | undefined;
+    const server = net.createServer((socket) => {
+      let buffer = '';
+      socket.on('data', (chunk: Buffer) => {
+        buffer += chunk.toString('utf8');
+        const newline = buffer.indexOf('\n');
+        if (newline < 0) return;
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
+        socket.end(encodeMessage({ ok: true, prStatus: 'open', prNumber: 7, prUrl: 'https://example.test/7' }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    try {
+      const result = await runAsync(process.execPath, [
+        '--conditions=gcb-development',
+        path.resolve('packages/client/bin/gcb.js'),
+        'pr', '--number', '7', '--status', '--socket', socketPath,
+      ], {
+        cwd: root,
+        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+      });
+      assert.equal(result.status, 0);
+      assert.equal(request?.['path'], 'acme/widget');
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('routes an update to gh pr edit', async () => {
+    const socketPath = path.join(scratch, 'pr-update.sock');
+    let request: Record<string, unknown> | undefined;
+    const server = net.createServer((socket) => {
+      let buffer = '';
+      socket.on('data', (chunk: Buffer) => {
+        buffer += chunk.toString('utf8');
+        const newline = buffer.indexOf('\n');
+        if (newline < 0) return;
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
+        socket.end(encodeMessage({ ok: true, stdout: 'updated\n', exitCode: 0 }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    try {
+      const result = await runAsync(process.execPath, [
+        '--conditions=gcb-development',
+        'packages/client/bin/gcb.js',
+        'pr', '--number', '7', '--title', 'a title', '--repo', 'acme/widget', '--socket', socketPath,
+      ], {
+        cwd: path.resolve('.'),
+        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+      });
+      assert.equal(result.status, 0);
+      assert.equal(request?.['op'], 'action');
+      assert.equal(request?.['ghAction'], 'pr:edit');
+      assert.equal(request?.['path'], 'acme/widget');
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it('passes a front-matter body to gh pr edit', async () => {
+    const bodyFile = path.join(scratch, 'front-matter.md');
+    fs.writeFileSync(bodyFile, '---\ntitle: x\n---\n\nbody\n');
+    const socketPath = path.join(scratch, 'pr-body.sock');
+    let request: Record<string, unknown> | undefined;
+    const server = net.createServer((socket) => {
+      let buffer = '';
+      socket.on('data', (chunk: Buffer) => {
+        buffer += chunk.toString('utf8');
+        const newline = buffer.indexOf('\n');
+        if (newline < 0) return;
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
+        socket.end(encodeMessage({ ok: true, stdout: 'updated\n', exitCode: 0 }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    try {
+      const result = await runAsync(process.execPath, [
+        '--conditions=gcb-development',
+        'packages/client/bin/gcb.js',
+        'pr', '--number', '7', '--body-file', bodyFile, '--repo', 'acme/widget', '--socket', socketPath,
+      ], {
+        cwd: path.resolve('.'),
+        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+      });
+      assert.equal(result.status, 0);
+      assert.equal((request?.['values'] as Record<string, unknown> | undefined)?.['body'], '---\ntitle: x\n---\n\nbody\n');
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
+  it('sends the default host to the broker', async () => {
+    const socketPath = path.join(scratch, 'pr-host-default.sock');
+    let request: Record<string, unknown> | undefined;
+    const server = net.createServer((socket) => {
+      let buffer = '';
+      socket.on('data', (chunk: Buffer) => {
+        buffer += chunk.toString('utf8');
+        const newline = buffer.indexOf('\n');
+        if (newline < 0) return;
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
+        socket.end(encodeMessage({ ok: true, prStatus: 'open', prNumber: 7, prUrl: 'https://example.test/7' }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    try {
+      const result = await runAsync(process.execPath, [
+        '--conditions=gcb-development',
+        'packages/client/bin/gcb.js',
+        'pr',
+        '--repo', 'acme/widget',
+        '--number', '7',
+        '--status',
+        '--socket', socketPath,
+      ], {
+        cwd: path.resolve('.'),
+        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+      });
+      assert.equal(result.status, 0);
+      assert.equal(request?.['host'], 'github.com');
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
   });
 });
 

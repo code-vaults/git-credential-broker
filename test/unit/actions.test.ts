@@ -17,6 +17,7 @@ describe('gh action catalog', () => {
       'pr:list',
       'pr:diff',
       'pr:create',
+      'pr:edit',
       'pr:close',
       'pr:comment',
       'pr:review',
@@ -91,6 +92,13 @@ describe('buildGhArgv', () => {
       '--repo',
       'acme/widget',
     ]);
+  });
+
+  it('builds the edit flags', () => {
+    assert.deepEqual(
+      buildGhArgv('pr:edit', { number: 7, title: 't', base: 'main' }, 'acme/widget'),
+      ['pr', 'edit', '7', '--title', 't', '--base', 'main', '--repo', 'acme/widget'],
+    );
   });
 
   it('accepts numeric flag values without stringifying them first', () => {

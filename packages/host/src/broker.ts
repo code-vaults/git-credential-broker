@@ -38,7 +38,7 @@ import net from 'node:net';
 import path from 'node:path';
 
 import { hostConfig, normalizeRepoPath, repoAllowed } from './policy.ts';
-import type { ActionValues, MergeMethod, AuditSink, BrokerConfig, Provider, WireResponse } from 'gcb-cli';
+import type { ActionValues, AuditSink, BrokerConfig, Provider, WireResponse } from 'gcb-cli';
 
 /** Reported by the `ping` operation so the container side can prove what it reached. */
 export const BROKER_VERSION = '0.1.0';
@@ -386,8 +386,6 @@ export function createRequestHandler(
       const action = message['action'] ?? 'open';
       if (
         action !== 'open' &&
-        action !== 'merge' &&
-        action !== 'update' &&
         action !== 'status' &&
         action !== 'comment' &&
         action !== 'threads' &&
@@ -407,7 +405,6 @@ export function createRequestHandler(
       const filePath = message['filePath'];
       const line = message['line'];
       const side = message['side'] ?? 'right';
-      const method = message['method'] ?? 'squash';
       const branch = BRANCH;
       const usable = (value: unknown): value is string =>
         typeof value === 'string' && branch.test(value) && !value.includes('..');
@@ -415,7 +412,7 @@ export function createRequestHandler(
       if (action === 'open' && !usable(head)) {
         return deny(context, CODES.BAD_REQUEST, `bad head ${JSON.stringify(head)}`, 'the head branch name is not usable');
       }
-      if ((action === 'open' || action === 'update') && base !== undefined && !usable(base)) {
+      if (action === 'open' && base !== undefined && !usable(base)) {
         return deny(context, CODES.BAD_REQUEST, `bad base ${JSON.stringify(base)}`, 'the base branch name is not usable');
       }
       if (action === 'open' && (typeof title !== 'string' || title.trim() === '' || title.length > MAX_TITLE_CHARS)) {
@@ -450,9 +447,6 @@ export function createRequestHandler(
       if (side !== 'left' && side !== 'right') {
         return deny(context, CODES.BAD_REQUEST, `bad side ${JSON.stringify(side)}`, 'the side has to be left or right');
       }
-      if (action === 'update' && title === undefined && body === undefined && base === undefined) {
-        return deny(context, CODES.BAD_REQUEST, 'empty update', 'an update has to change a title, a body or a base');
-      }
       if ((action === 'comment' || action === 'reply' || action === 'edit') && (typeof body !== 'string' || body.trim() === '')) {
         return deny(context, CODES.BAD_REQUEST, 'empty comment', 'a comment has to say something');
       }
@@ -469,9 +463,6 @@ export function createRequestHandler(
       }
       if (action !== 'open' && action !== 'resolve' && action !== 'edit' && (typeof number !== 'number' || !Number.isInteger(number) || number <= 0)) {
         return deny(context, CODES.BAD_REQUEST, `bad number ${JSON.stringify(number)}`, 'this action needs a pull request number');
-      }
-      if (action === 'merge' && method !== 'merge' && method !== 'squash' && method !== 'rebase') {
-        return deny(context, CODES.BAD_REQUEST, `bad method ${JSON.stringify(method)}`, 'the merge method must be merge, squash or rebase');
       }
       if (typeof provider.pullRequest !== 'function') {
         return deny(
@@ -498,7 +489,6 @@ export function createRequestHandler(
           ...(typeof base === 'string' ? { base } : {}),
           ...(typeof title === 'string' ? { title } : {}),
           ...(typeof body === 'string' ? { body } : {}),
-          ...(action === 'merge' ? { method: method as MergeMethod } : {}),
           draft: message['draft'] === true,
         });
         audit.record({
@@ -520,7 +510,6 @@ export function createRequestHandler(
           prNumber: result.number,
           prUrl: result.url,
           prState: result.state,
-          prMerged: result.merged === true,
           prStatus: result.status,
         };
       } catch (error) {

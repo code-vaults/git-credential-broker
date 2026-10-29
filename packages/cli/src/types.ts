@@ -106,17 +106,12 @@ export interface JobLogRequest {
 /** What can be done to a pull request. */
 export type PullRequestAction =
   | 'open'
-  | 'merge'
-  | 'update'
   | 'status'
   | 'comment'
   | 'threads'
   | 'reply'
   | 'edit'
   | 'resolve';
-
-/** How a merge should be recorded. */
-export type MergeMethod = 'merge' | 'squash' | 'rebase';
 
 /** What a provider is asked to do to a pull request. */
 export interface PullRequestRequest {
@@ -145,7 +140,6 @@ export interface PullRequestRequest {
   /** Which side of the diff the line counts on. The new file, unless told otherwise. */
   readonly side?: 'left' | 'right';
   readonly draft?: boolean;
-  readonly method?: MergeMethod;
 }
 
 /** One pull request, as GitHub describes it after an action. */
@@ -280,7 +274,6 @@ export interface WireResponse {
   readonly prUrl?: string;
   readonly prNumber?: number;
   readonly prState?: string;
-  readonly prMerged?: boolean;
   /** The report, for `action: "status"`. */
   readonly prStatus?: string;
   /** For `op: "action"`. */

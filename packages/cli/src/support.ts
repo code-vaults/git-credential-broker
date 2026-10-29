@@ -19,6 +19,8 @@ export interface Args {
   value(name: string): string | undefined;
   /** Whether a boolean flag was present. */
   has(name: string): boolean;
+  /** Every option name seen, after the parser's normalization. */
+  readonly names: readonly string[];
   /** Arguments that were not flags. */
   readonly positionals: readonly string[];
 }
@@ -82,6 +84,7 @@ export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {
     values: (name) => collected.get(name) ?? [],
     value: (name) => collected.get(name)?.[0],
     has: (name) => flags.has(name),
+    names: [...new Set([...collected.keys(), ...flags])],
     positionals,
   };
 }

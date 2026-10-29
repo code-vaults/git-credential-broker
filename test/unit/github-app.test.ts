@@ -695,29 +695,6 @@ describe('createGithubAppProvider', () => {
     assert.equal(posted?.body?.['draft'], false);
   });
 
-  it('merges a pull request with the method it was told to use', async () => {
-    const stub = createStubFetch({
-      installations: [{ id: 42, account: { login: 'acme' } }],
-      nowMs,
-      appPermissions: { pull_requests: 'write', contents: 'read' },
-      installationPermissions: { pull_requests: 'write', contents: 'read' },
-    });
-    const pr = await providerFor(stub).pullRequest!({
-      action: 'merge',
-      host: 'github.com',
-      owner: 'acme',
-      repo: 'widget',
-      number: 42,
-      method: 'rebase',
-    });
-
-    const put = stub.calls.find((call) => call.method === 'PUT');
-    assert.equal(put?.url, 'https://api.github.com/repos/acme/widget/pulls/42/merge');
-    assert.deepEqual(put?.body, { merge_method: 'rebase' });
-    assert.equal(pr.url, 'https://github.com/acme/widget/pull/42');
-    assert.equal(pr.merged, true, 'and the state comes from reading the pull request back');
-  });
-
   it('reports a pull request, and how its commit is doing', async () => {
     const stub = createStubFetch({
   installations: [{ id: 42, account: { login: 'acme' } }],

@@ -1,5 +1,5 @@
 /**
- * `pr` — open, merge or update one pull request through the broker.
+ * `pr` — open, update or inspect one pull request through the broker.
  *
  * `pr <subcommand>` runs as the catalogued gh action when the catalog has one (`pr:view`,
  * `pr:close`, …); this file is the flag-only lifecycle for the actions gh cannot express.
@@ -23,8 +23,16 @@ import {
   writeRequest,
 } from 'gcb-cli';
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
-import { baseBranchFor, qualifiedBranch } from './remotes.ts';
+import { baseBranchFor, qualifiedBranch, remoteRepo } from './remotes.ts';
+import { runGh } from './gh.ts';
 import { fail, parseArgs, say } from 'gcb-cli';
+
+/** Every flag the flag-only lifecycle understands. */
+const KNOWN_FLAGS = new Set([
+  'help', 'h', 'draft', 'close', 'comment', 'file', 'line', 'side', 'threads',
+  'reply-to', 'edit', 'resolve', 'proxy', 'no-proxy', 'socket', 'host', 'repo',
+  'head', 'base', 'title', 'body', 'body-file', 'number', 'via-host', 'status',
+]);
 
 /** Longer than a credential request: a token is minted, then the action is performed. */
 const PR_TIMEOUT_MS = 60_000;
@@ -32,7 +40,7 @@ const PR_TIMEOUT_MS = 60_000;
 /** Usage text for `pr`. */
 export const PR_USAGE = `Usage: gcb pr [options]
 
-Open, merge, update or inspect a pull request through the broker, without the credential
+Open, update or inspect a pull request through the broker, without the credential
 ever reaching this side.
 
 A subcommand the gh action catalog has (pr view, pr close, …) runs as that action instead;
@@ -65,14 +73,12 @@ Acting on one
   --edit <id>          Replace the body of that review comment, with --body/--body-file
                        (an id --threads prints; no --number is needed)
   --resolve <thread>   Mark that review thread resolved (the id --threads prints)
-  --merge              Merge it (branch protection still applies)
-  --method <m>         merge, squash (default) or rebase
   With --number and none of the above, the title, body or base is updated.
 
 Common
   --socket <path>      Broker socket (default: $GIT_BROKER_SOCKET or the socket file)
-  --host <host>        Host as configured, e.g. github.com           [required]
-  --repo <owner/name>  Repository the pull request belongs to        [required]
+  --host <host>        Host as configured, e.g. github.com (default: github.com)
+  --repo <owner/name>  Repository the pull request belongs to (default: origin remote)
   -h, --help           Show this help
 `;
 
@@ -81,7 +87,7 @@ Common
  * Read the action out of the flags.
  *
  * @param args - the parsed arguments.
- * @returns `merge`, `update` or `open`.
+ * @returns `update` or `open`.
  */
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
   // `--resolve`, `--reply-to` and `--edit` take a value, and a bare one is parsed as a boolean flag with
@@ -95,7 +101,6 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
   if (args.has('threads')) return 'threads' as const;
   if (args.has('comment')) return 'comment' as const;
   if (args.has('status')) return 'status' as const;
-  if (args.has('merge')) return 'merge' as const;
   if (args.value('number') !== undefined) return 'update' as const;
   return 'open' as const;
 }
@@ -108,12 +113,18 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
  */
 export async function runPr(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, {
-    booleans: ['help', 'draft', 'merge', 'status', 'comment', 'threads', 'via-host', 'no-proxy'],
+    booleans: ['help', 'draft', 'status', 'comment', 'threads', 'via-host', 'no-proxy'],
   });
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
     return 0;
   }
+  // Unknown options are refused rather than ignored: a typo must not silently fall through to an update.
+  for (const name of args.names) {
+    if (!KNOWN_FLAGS.has(name)) fail('unknown option --' + name + ' for gcb pr');
+  }
+  if (args.positionals.length > 0) fail('unexpected argument ' + JSON.stringify(args.positionals[0]) + ' for gcb pr');
+
   // Before --repo: the point of the message is to name the command that does it now.
   if (args.has('close') || args.value('close') !== undefined) {
     fail('--close moved to: gcb gh pr close <number> --repo owner/name');
@@ -130,19 +141,31 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (args.has('proxy') && args.value('proxy') === undefined) fail('--proxy needs a value');
   const proxy = args.has('no-proxy') ? null : args.value('proxy');
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
-  const host = args.value('host');
-  const repo = args.value('repo') ?? fail('--repo is required (e.g. owner/name)');
+  const looksLikeOption = (value: string): boolean =>
+    value.startsWith('--') || /^-(?=[A-Za-z])/.test(value);
+  const invalidValue = (name: string): boolean =>
+    args.has(name) || args.values(name).some((value) => value.trim() === '' || looksLikeOption(value));
+  const hasValue = (name: string): boolean => args.has(name) || args.values(name).length > 0;
+  const hostArg = args.value('host');
+  if (hasValue('host') && invalidValue('host')) fail('--host needs a value (e.g. github.com)');
+  const host = hostArg ?? 'github.com';
+  const repoArg = args.value('repo');
+  if (hasValue('repo') && invalidValue('repo')) fail('--repo needs a value (e.g. owner/name)');
+  let repo = repoArg;
+  if (repo === undefined) {
+    const found = remoteRepo('origin', process.cwd());
+    if (found === undefined) fail('--repo is required when the checkout has no usable origin remote');
+    if (found.host !== host.toLowerCase()) {
+      fail(`the checkout's remote is on ${found.host}, but --host is ${host}; pass --repo or --host`);
+    }
+    repo = `${found.owner}/${found.repo}`;
+  }
+  if (repo.trim() === '') fail('--repo needs a value (e.g. owner/name)');
   const action = actionOf(args);
   if (args.has('via-host') && action !== 'open') {
     fail('--via-host only creates a pull request, so it does not go with ' + JSON.stringify(action));
   }
-  // `--method` takes a value, so `has` — which is about boolean flags — is false for it however it is given.
-  if (args.value('method') !== undefined && action !== 'merge') {
-    fail('--method chooses how to merge, so it only goes with --merge');
-  }
   const viaHost = action === 'open' && args.has('via-host');
-  if (!host && !viaHost) fail('--host is required (e.g. github.com)');
-  if (!repo) fail('--repo is required (e.g. owner/name), also with --via-host: the opener passes it on');
 
   const number = args.value('number');
   // `--head origin:feat/x` and `--base upstream:main` name a configured remote instead of a repository
@@ -226,6 +249,18 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     fail(`--resolve needs the id of the thread being resolved, got ${JSON.stringify(resolveId)}`);
   }
 
+  if (action === 'update') {
+    const ghArgs = ['pr', 'edit', String(number), '--repo', repo, '--host', host];
+    if (title !== undefined) ghArgs.push(`--title=${title}`);
+    if (body !== undefined) ghArgs.push(`--body=${body}`);
+    if (base !== undefined) ghArgs.push(`--base=${base}`);
+    const socketArg = args.value('socket');
+    if (socketArg !== undefined) ghArgs.push('--socket', socketArg);
+    if (args.has('no-proxy')) ghArgs.push('--no-proxy');
+    else if (args.value('proxy') !== undefined) ghArgs.push('--proxy', args.value('proxy') as string);
+    return runGh(ghArgs, { unreachableExitCode: 3 });
+  }
+
   if (viaHost) {
     if (head === undefined || title === undefined) fail('--via-host needs --head and --title');
     const gitDir = findGitDir(process.cwd());
@@ -293,7 +328,6 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         ...(title === undefined ? {} : { title }),
         ...(body === undefined ? {} : { body }),
         ...(filePath === undefined ? {} : { filePath, line: Number(lineArg), side }),
-        ...(action === 'merge' ? { method: args.value('method') ?? 'squash' } : {}),
         draft: args.has('draft'),
         session: 'pr',
         pid: process.pid,
@@ -319,9 +353,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const done =
     action === 'open'
       ? 'opened'
-      : action === 'merge'
-          ? 'merged'
-          : action === 'comment'
+      : action === 'comment'
             ? 'commented on'
             : action === 'reply'
               ? 'replied in'

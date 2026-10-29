@@ -280,27 +280,6 @@ describe('broker request handling', () => {
     assert.match(unsupported.reason ?? '', /cannot manage pull requests/);
   });
 
-  it('refuses a merge method it does not know', async () => {
-    const seen: string[] = [];
-    const managed: Provider = {
-      name: 'with-prs',
-      getCredential: () => Promise.reject(new Error('not used here')),
-      pullRequest: (request) => {
-        seen.push(request.action);
-        return Promise.resolve({ number: request.number ?? 0, url: 'u', state: 'open' });
-      },
-    };
-    const badMethod = await makeHarness(['acme/widget'], managed).handle({
-      ...REQUEST,
-      op: 'pull-request',
-      action: 'merge',
-      number: 7,
-      method: 'fast-forward',
-    });
-    assert.equal(badMethod.code, CODES.BAD_REQUEST);
-    assert.deepEqual(seen, [], 'the provider was never asked to do it');
-  });
-
   it('reports a pull request without changing it', async () => {
     const asked: string[] = [];
     const reader: Provider = {
@@ -399,7 +378,7 @@ describe('broker request handling', () => {
       assert.equal(response.code, 'bad-request', label + ' has to be refused by the broker');
     }
 
-    const wrongAction = await handle({ ...comments, action: 'merge' });
+    const wrongAction = await handle({ ...comments, action: 'status' });
     assert.equal(wrongAction.code, 'bad-request', 'and an anchor only belongs on a comment');
   });
 
