@@ -41,6 +41,12 @@ export interface FlagSpec {
 }
 
 /** One allowed `gh` action. */
+/** A fixed `gh api` request, with only typed values substituted. */
+export interface ApiSpec {
+  readonly method: 'GET' | 'POST' | 'PATCH' | 'PUT';
+  readonly endpoint: string;
+}
+
 export interface GhAction {
   readonly name: string;
   /** The subcommand after the `gh` binary, e.g. `['pr', 'view']`. */
@@ -56,6 +62,8 @@ export interface GhAction {
   readonly timeoutSeconds: number;
   /** Whether the host broker may run this as a person with `--as-user`. */
   readonly hostUser: boolean;
+  /** When set, the executor runs `gh api` for this fixed request instead of the command above. */
+  readonly api?: ApiSpec;
 }
 
 /** Values supplied by the caller, keyed by positional or flag name. */
@@ -178,6 +186,24 @@ const PR_CLOSE: GhAction = {
   hostUser: true,
 };
 
+// GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+const PR_REVIEW_VIEW: GhAction = {
+  name: 'pr:review-view',
+  command: ['pr', 'review-view'],
+  positionals: [
+    { name: 'number', type: 'number', required: true },
+    { name: 'reviewId', type: 'number', required: true },
+  ],
+  flags: [{ name: 'jq', type: 'string' }],
+  permissions: { pull_requests: 'read' },
+  timeoutSeconds: 120,
+  hostUser: false,
+  api: {
+    method: 'GET',
+    endpoint: 'repos/{owner}/{repo}/pulls/{number}/reviews/{reviewId}',
+  },
+};
+
 // GitHub: POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
 const PR_REVIEW: GhAction = {
   name: 'pr:review',
@@ -256,6 +282,7 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:close': PR_CLOSE,
   'pr:comment': PR_COMMENT,
   'pr:review': PR_REVIEW,
+  'pr:review-view': PR_REVIEW_VIEW,
   'issue:create': ISSUE_CREATE,
   'run:view': RUN_VIEW,
   'run:list': RUN_LIST,
@@ -317,6 +344,43 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
   ]);
   for (const key of Object.keys(values)) {
     if (!known.has(key)) throw new ActionError(`unknown option ${JSON.stringify(key)} for ${name}`);
+  }
+
+  if (action.api !== undefined) {
+    const substitutions: Record<string, string> = {
+      owner,
+      repo: repository,
+      ...Object.fromEntries(
+        action.positionals.flatMap((positional) => {
+          const value = values[positional.name];
+          if (value === undefined) {
+            if (positional.required === true) throw new ActionError(`${name} needs ${positional.name}`);
+            return [];
+          }
+          return [[positional.name, positional.type === 'number' ? String(asNumber(value, positional.name)) : asString(value, positional.name)]];
+        }),
+      ),
+    };
+    const endpoint = action.api.endpoint.replace(/\{([a-zA-Z]+)\}/g, (_match, key: string) => {
+      const value = substitutions[key];
+      if (value === undefined) throw new ActionError(`${name} has no value for {${key}}`);
+      return encodeURIComponent(value);
+    });
+    const argv = ['api', '--method', action.api.method, endpoint];
+    for (const flag of action.flags) {
+      const value = values[flag.name];
+      if (value === undefined) {
+        if (flag.required === true) throw new ActionError(`${name} needs --${flag.name}`);
+        continue;
+      }
+      if (flag.type === 'boolean') {
+        if (typeof value !== 'boolean') throw new ActionError(`--${flag.name} is a boolean`);
+        if (value) argv.push(`--${flag.name}`);
+      } else {
+        argv.push(`--${flag.name}`, flag.type === 'number' ? String(asNumber(value, flag.name)) : asString(value, flag.name));
+      }
+    }
+    return argv;
   }
 
   const argv = [...action.command];
