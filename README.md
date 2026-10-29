@@ -285,7 +285,7 @@ app's **private key**, so run it where the key is. On a host-process deployment 
 a sidecar it is inside the container:
 
 ```sh
-docker compose -f "$DEPLOY/docker-compose.yml" exec gcb \
+cd "$DEPLOY" && docker compose -f docker-compose.yml exec gcb \
   npx --yes --package gcb-host gcb \
   diagnose --config /etc/git-cred-broker/broker.config.yml
 ```
