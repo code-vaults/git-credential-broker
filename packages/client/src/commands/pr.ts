@@ -85,16 +85,16 @@ Common
 `;
 
 
-/**
- * Read the action out of the flags.
- *
- * @param args - the parsed arguments.
- * @returns `update` or `open`.
- */
 /** A positive decimal identifier that survives Number() without losing precision. */
 const isPositiveSafeInteger = (value: string | undefined): value is string =>
   value !== undefined && /^[1-9][0-9]*$/.test(value) && Number.isSafeInteger(Number(value));
 
+/**
+ * Read the action out of the flags.
+ *
+ * @param args - the parsed arguments.
+ * @returns the selected action; `--id` is applied by the caller as `review`.
+ */
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
   // `--resolve`, `--reply-to` and `--edit` take a value, and a bare one is parsed as a boolean flag with
   // no value at all. Selecting the action from the flag's *presence* is what turns that into the refusal

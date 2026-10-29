@@ -102,7 +102,7 @@ describe('buildGhArgv', () => {
     );
     assert.throws(
       () => buildGhArgv('pr:review-by-id', { number: 42, id: 0 }, 'acme/widget'),
-      /id/, 
+      /id/,
     );
   });
 
