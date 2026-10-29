@@ -30,7 +30,7 @@ import { fail, parseArgs, say } from 'gcb-core';
 /** Every flag the flag-only lifecycle understands. */
 const KNOWN_FLAGS = new Set([
   'help', 'h', 'draft', 'close', 'comment', 'file', 'line', 'side', 'threads',
-  'reply-to', 'edit', 'resolve', 'id', 'proxy', 'no-proxy', 'socket', 'host', 'repo',
+  'reply-to', 'edit', 'resolve', 'id', 'jq', 'proxy', 'no-proxy', 'socket', 'host', 'repo',
   'head', 'base', 'title', 'body', 'body-file', 'number', 'via-host', 'status',
 ]);
 
@@ -74,6 +74,7 @@ Acting on one
                        (an id --threads prints; no --number is needed)
   --resolve <thread>   Mark that review thread resolved (the id --threads prints)
   --id <review-id>     Show one existing review (with --number)
+  --jq <expr>          Filter that review's JSON (with --id)
   With --number and none of the above, the title, body or base is updated.
 
 Common
@@ -261,6 +262,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     if (socketArg !== undefined) ghArgs.push('--socket', socketArg);
     if (args.has('no-proxy')) ghArgs.push('--no-proxy');
     else if (args.value('proxy') !== undefined) ghArgs.push('--proxy', args.value('proxy') as string);
+    if (args.value('jq') !== undefined) ghArgs.push('--jq', args.value('jq') as string);
     return runGh(ghArgs, { unreachableExitCode: 3 });
   }
 
