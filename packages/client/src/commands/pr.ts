@@ -217,6 +217,12 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (number !== undefined && (!Number.isInteger(Number(number)) || Number(number) <= 0)) {
     fail(`--number must be a positive integer, got ${JSON.stringify(number)}`);
   }
+  if (args.has('jq') && args.value('jq') === undefined) {
+    fail('--jq needs an expression');
+  }
+  if (args.value('jq') !== undefined && action !== 'review') {
+    fail('--jq only goes with --id');
+  }
   if (action === 'update' && title === undefined && body === undefined && base === undefined) {
     fail('an update has to change something: pass --title, --body/--body-file or --base');
   }

@@ -1165,6 +1165,18 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(result.stderr, /no broker socket/);
   });
 
+  it('refuses --jq without --id', () => {
+    const result = cli([...base, '--jq', '.body']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--jq only goes with --id/);
+  });
+
+  it('refuses a bare --jq', () => {
+    const result = cli(['review', ...base, '--id', '9', '--jq']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--jq needs an expression/);
+  });
+
   it('refuses --close with a value too', () => {
     for (const argv of [['--close', '7'], ['--close=7']]) {
       const moved = cli([...base, ...argv]);
