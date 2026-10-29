@@ -60,7 +60,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   const home = mkdtempSync(path.join(tmpdir(), 'gcb-gh-'));
   const configDir = path.join(home, 'gh');
   mkdirSync(configDir, { recursive: true });
-  const host = (options.host ?? 'github.com').toLowerCase();
+  const host = options.host?.toLowerCase() ?? 'github.com';
   const usesJq = options.values['jq'] !== undefined;
   if (usesJq) {
     // gh runs --jq in the same process, so a caller expression could print GH_TOKEN via env.
