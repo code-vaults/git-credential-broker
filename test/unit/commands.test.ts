@@ -1165,6 +1165,12 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(result.stderr, /no broker socket/);
   });
 
+  it('refuses a noncanonical review id before dispatch', () => {
+    const result = cli(['review', ...base, '--id', '9.0', '--jq', '.body']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--id needs a positive review id/);
+  });
+
   it('refuses --id beside another action', () => {
     const result = cli([...base, '--id', '9', '--status']);
     assert.equal(result.status, 1);

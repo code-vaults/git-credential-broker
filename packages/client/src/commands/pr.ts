@@ -91,6 +91,10 @@ Common
  * @param args - the parsed arguments.
  * @returns `update` or `open`.
  */
+/** A positive decimal identifier that survives Number() without losing precision. */
+const isPositiveSafeInteger = (value: string | undefined): value is string =>
+  value !== undefined && /^[1-9][0-9]*$/.test(value) && Number.isSafeInteger(Number(value));
+
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
   // `--resolve`, `--reply-to` and `--edit` take a value, and a bare one is parsed as a boolean flag with
   // no value at all. Selecting the action from the flag's *presence* is what turns that into the refusal
@@ -224,7 +228,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   }
   // `--resolve` and `--edit` name their target by id and need no pull request number, but one given
   // anyway still has to be a number.
-  if (number !== undefined && (!Number.isInteger(Number(number)) || Number(number) <= 0)) {
+  if (number !== undefined && !isPositiveSafeInteger(number)) {
     fail(`--number must be a positive integer, got ${JSON.stringify(number)}`);
   }
   if (args.has('jq') && args.value('jq') === undefined) {
@@ -264,7 +268,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     fail(`--edit needs the id of the review comment being changed, got ${JSON.stringify(editId)}`);
   }
   const reviewId = args.value('id');
-  if (action === 'review' && (reviewId === undefined || !Number.isInteger(Number(reviewId)) || Number(reviewId) <= 0)) {
+  if (action === 'review' && !isPositiveSafeInteger(reviewId)) {
     fail(`--id needs a positive review id, got ${JSON.stringify(reviewId)}`);
   }
   const resolveId = args.value('resolve');
