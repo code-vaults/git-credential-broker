@@ -65,11 +65,16 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   if (usesJq) {
     // gh runs --jq in the same process, so a caller expression could print GH_TOKEN via env.
     // Keep the token in the isolated config file instead when jq is present.
-    writeFileSync(
-      path.join(configDir, 'hosts.yml'),
-      `${host}:\n    oauth_token: ${options.token}\n    user: gcb\n`,
-      { mode: 0o600 },
-    );
+    try {
+      writeFileSync(
+        path.join(configDir, 'hosts.yml'),
+        `${host}:\n    oauth_token: ${options.token}\n    user: gcb\n`,
+        { mode: 0o600 },
+      );
+    } catch (error) {
+      rmSync(home, { recursive: true, force: true });
+      throw error;
+    }
   }
   const source = options.env ?? process.env;
   const env: NodeJS.ProcessEnv = {
