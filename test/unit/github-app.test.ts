@@ -25,7 +25,7 @@ function recordedBody(body: string | undefined): Record<string, unknown> | null 
 }
 
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createVerify, generateKeyPairSync } from 'node:crypto';
@@ -265,6 +265,34 @@ describe('createGithubAppProvider', () => {
    * @param overrides - configuration overrides.
    * @returns the provider.
    */
+  /** A fake gh that records its argv and answers the fixed API actions. */
+  function fakeGh(
+    threadRepo = 'acme/widget',
+    threads = '{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]}}}}}',
+  ): { path: string; log: string } {
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-fake-gh-'));
+    const log = join(dir, 'calls');
+    const gh = join(dir, 'gh');
+    writeFileSync(
+      gh,
+      `#!/bin/sh
+printf '%s\\n' "$*" >> ${JSON.stringify(log)}
+case "$*" in
+  *resolveReviewThread*) echo '{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}' ;;
+  *PullRequestReviewThread*) echo '{"data":{"node":{"pullRequest":{"repository":{"nameWithOwner":${JSON.stringify(threadRepo)}}}}}}' ;;
+  *graphql*) echo '${threads}' ;;
+  */pulls/comments/99*) echo '{"html_url":"https://github.com/acme/widget/pull/8#discussion_r99","pull_request_url":"https://api.github.com/repos/acme/widget/pulls/8"}' ;;
+  */replies*) echo '{}' ;;
+  */reviews*) echo '{"html_url":"https://github.com/acme/widget/pull/7#pullrequestreview-1"}' ;;
+  */pulls/7/comments*) echo '{"html_url":"https://github.com/acme/widget/pull/7#discussion_r100"}' ;;
+  *) echo '{}' ;;
+esac
+`,
+    );
+    chmodSync(gh, 0o755);
+    return { path: gh, log };
+  }
+
   function providerFor(
     stub: { calls: RecordedCall[]; fetchImpl: FetchLike },
     overrides: Partial<GithubAppHostConfig> = {},
@@ -842,9 +870,10 @@ describe('createGithubAppProvider', () => {
   });
 
 
-  it('posts an anchored comment on the line it was given, on the same review it already posts', async () => {
+  it('posts an anchored comment through the fixed api action', async () => {
     const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
-    await providerFor(stub).pullRequest!({
+    const gh = fakeGh();
+    const pr = await providerFor(stub, {}, gh.path).pullRequest!({
       action: 'comment',
       host: 'github.com',
       owner: 'acme',
@@ -855,28 +884,85 @@ describe('createGithubAppProvider', () => {
       line: 4,
     });
 
-    const review = stub.calls.find((call) => call.url.endsWith('/reviews'));
-    assert.ok(review, 'the review endpoint is the one used');
-    assert.deepEqual(
-      (review?.body as Record<string, unknown>)?.['comments'],
-      [{ path: 'Dockerfile', line: 4, side: 'RIGHT', body: 'why this marker exists' }],
-    );
-    assert.equal((review?.body as Record<string, unknown>)?.['event'], 'COMMENT');
+    const args = readFileSync(gh.log, 'utf8');
+    assert.match(args, /\/pulls\/7\/comments/);
+    assert.match(args, /path=Dockerfile/);
+    assert.match(args, /line=4/);
+    assert.match(args, /side=RIGHT/);
+    assert.match(args, /body=why this marker exists/);
+    assert.equal(pr.url, 'https://github.com/acme/widget/pull/7#discussion_r100');
+    assert.equal(stub.calls.some((call) => call.url.endsWith('/reviews')), false);
   });
 
-  it('posts a body-only comment the way it always has', async () => {
+  it('replies in a review thread through the fixed api action', async () => {
     const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
-    await providerFor(stub).pullRequest!({
+    const gh = fakeGh();
+    await providerFor(stub, {}, gh.path).pullRequest!({
+      action: 'reply', host: 'github.com', owner: 'acme', repo: 'widget', number: 7, commentId: 99, body: 'a reply',
+    });
+    const args = readFileSync(gh.log, 'utf8');
+    assert.match(args, /\/pulls\/comments\/99\/replies/);
+    assert.match(args, /body=a reply/);
+  });
+
+  it('lists review threads through the fixed GraphQL action', async () => {
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    const gh = fakeGh('acme/widget', JSON.stringify({
+      data: {
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              nodes: [{
+                id: 'PRRT_1',
+                isResolved: false,
+                path: 'src/a.ts',
+                line: 2,
+                comments: { nodes: [{ databaseId: 9, author: { login: 'reviewer' }, body: 'the finding' }] },
+              }],
+            },
+          },
+        },
+      },
+    }));
+    const pr = await providerFor(stub, {}, gh.path).pullRequest!({
+      action: 'threads', host: 'github.com', owner: 'acme', repo: 'widget', number: 7,
+    });
+    assert.match(pr.status ?? '', /PRRT_1/);
+    assert.match(pr.status ?? '', /the finding/);
+    assert.match(readFileSync(gh.log, 'utf8'), /reviewThreads/);
+  });
+
+  it('refuses to resolve without a person token', async () => {
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    const gh = fakeGh();
+    await assert.rejects(
+      providerFor(stub, {}, gh.path).pullRequest!({
+        action: 'resolve', host: 'github.com', owner: 'acme', repo: 'widget', number: 4, threadId: 'PRRT_x',
+      }),
+      /authorized person token/,
+    );
+    assert.equal(existsSync(gh.log), false, 'nothing was sent to gh');
+  });
+
+  it('posts a body-only comment through the fixed api action', async () => {
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    const gh = fakeGh();
+    const pr = await providerFor(stub, {}, gh.path).pullRequest!({
       action: 'comment', host: 'github.com', owner: 'acme', repo: 'widget', number: 7, body: 'a general remark',
     });
 
-    const review = stub.calls.find((call) => call.url.endsWith('/reviews'));
-    assert.deepEqual(review?.body, { body: 'a general remark', event: 'COMMENT' }, 'nothing new in the payload');
+    const args = readFileSync(gh.log, 'utf8');
+    assert.match(args, /\/pulls\/7\/reviews/);
+    assert.match(args, /body=a general remark/);
+    assert.match(args, /event=COMMENT/);
+    assert.equal(pr.url, 'https://github.com/acme/widget/pull/7#pullrequestreview-1');
+    assert.equal(stub.calls.some((call) => call.url.endsWith('/reviews')), false);
   });
 
   it('changes a review comment by its id, and reports the comment it changed', async () => {
     const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
-    const changed = await providerFor(stub).pullRequest!({
+    const gh = fakeGh();
+    const changed = await providerFor(stub, {}, gh.path).pullRequest!({
       action: 'edit',
       host: 'github.com',
       owner: 'acme',
@@ -886,31 +972,23 @@ describe('createGithubAppProvider', () => {
       body: 'a corrected note',
     });
 
-    const patch = stub.calls.find((call) => call.method === 'PATCH' && call.url.includes('/pulls/comments/'));
-    assert.ok(patch, 'a review comment is changed at the review comments endpoint');
-    // The comment id names the thing and is one for the whole repository, so the route carries no pull
-    // request number and nothing is read first: the number to report comes back in the answer.
-    assert.equal(patch?.url, 'https://api.github.com/repos/acme/widget/pulls/comments/99');
-    assert.deepEqual(patch?.body, { body: 'a corrected note' });
-    assert.equal(patch?.authorization, 'Bearer ghs_stub_token_value', 'and it is the app that changes it');
-    assert.equal(
-      stub.calls.some((call) => call.method === 'GET' && call.url.includes('/pulls/comments/')),
-      false,
-      'no round trip to read the comment first',
-    );
-    assert.equal(changed.number, 7);
-    assert.equal(changed.url, 'https://github.com/acme/widget/pull/7#discussion_r99');
+    const args = readFileSync(gh.log, 'utf8');
+    assert.match(args, /--method PATCH/);
+    assert.match(args, /\/pulls\/comments\/99/);
+    assert.match(args, /body=a corrected note/);
+    assert.equal(stub.calls.some((call) => call.method === 'GET' && call.url.includes('/pulls/comments/')), false);
+    assert.equal(changed.number, 8);
+    assert.equal(changed.url, 'https://github.com/acme/widget/pull/8#discussion_r99');
   });
 
   it("reports the comment's own pull request, not the number the caller passed", async () => {
-    // The route cannot honour a pull request number, so the provider must not echo one: the review
-    // comment object names the pull request it belongs to, and that is what the CLI reports.
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       commentPr: 8,
     });
-    const changed = await providerFor(stub).pullRequest!({
+    const gh = fakeGh();
+    const changed = await providerFor(stub, {}, gh.path).pullRequest!({
       action: 'edit',
       host: 'github.com',
       owner: 'acme',
@@ -931,14 +1009,14 @@ describe('createGithubAppProvider', () => {
 
     // No installation: the repository the app was never installed on, resolved as a person.
     const stub = createStubFetch({ installations: [], nowMs, threadRepo: 'upstream/upstream' });
-    const answered = await providerFor(stub, { userTokens: { upstream: tokenPath } }).pullRequest!({
+    const gh = fakeGh('upstream/upstream');
+    const answered = await providerFor(stub, { userTokens: { upstream: tokenPath } }, gh.path).pullRequest!({
       action: 'resolve', host: 'github.com', owner: 'upstream', repo: 'upstream', number: 4, threadId: 'PRRT_x',
     });
     assert.ok(answered, 'the resolve went through');
 
-    const mutation = stub.calls.find((call) => typeof call.raw === 'string' && call.raw.includes('resolveReviewThread'));
-    assert.ok(mutation, 'the mutation was sent');
-    assert.equal(mutation?.authorization, 'Bearer github_pat_x', 'and a token per owner is what sent it');
+    const args = readFileSync(gh.log, 'utf8');
+    assert.match(args, /resolveReviewThread/);
     assert.equal(
       stub.calls.some((call) => call.url.includes('/access_tokens')),
       false,
@@ -955,12 +1033,14 @@ describe('createGithubAppProvider', () => {
       nowMs,
       threadRepo: 'someone/else',
     });
+    const gh = fakeGh('someone/else');
     await assert.rejects(
-      providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
+      providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }, gh.path).pullRequest!({
         action: 'resolve', host: 'github.com', owner: 'acme', repo: 'widget', number: 4, threadId: 'PRRT_elsewhere',
       }),
       /not a review thread of acme\/widget/,
     );
+    assert.doesNotMatch(readFileSync(gh.log, 'utf8'), /resolveReviewThread/, 'the mutation never runs');
     rmSync(dir, { recursive: true, force: true });
   });
 

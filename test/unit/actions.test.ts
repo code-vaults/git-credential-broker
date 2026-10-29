@@ -22,6 +22,13 @@ describe('gh action catalog', () => {
       'pr:comment',
       'pr:review',
       'pr:review-by-id',
+      'pr:reply',
+      'pr:edit-comment',
+      'pr:threads',
+      'pr:review-comment',
+      'pr:comment-inline',
+      'pr:resolve-check',
+      'pr:resolve',
       'issue:create',
       'run:view',
       'run:list',
@@ -107,6 +114,36 @@ describe('buildGhArgv', () => {
     assert.throws(
       () => buildGhArgv('pr:review-by-id', { number: 42, id: 9007199254740993 }, 'acme/widget'),
       /positive integer/,
+    );
+  });
+
+  it('builds the fixed review api requests', () => {
+    assert.deepEqual(
+      buildGhArgv('pr:reply', { commentId: 99, body: 'reply text' }, 'acme/widget'),
+      [
+        'api',
+        '--method',
+        'POST',
+        'repos/acme/widget/pulls/comments/99/replies',
+        '-f',
+        'body=reply text',
+      ],
+    );
+    assert.deepEqual(
+      buildGhArgv('pr:resolve', { threadId: 'PRRT_x' }, 'acme/widget'),
+      [
+        'api',
+        'graphql',
+        '-f',
+        'query=mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}',
+        '-f',
+        'threadId=PRRT_x',
+      ],
+    );
+    assert.equal(
+      buildGhArgv('pr:resolve', { threadId: 'PRRT_x' }, 'acme/widget').includes('--repo'),
+      false,
+      'an api action does not inject --repo',
     );
   });
 

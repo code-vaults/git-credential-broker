@@ -548,6 +548,9 @@ function pullRequestNumber(value: unknown): number | undefined {
 
     async runAction(request) {
       const spec = getGhAction(request.action);
+      if (spec.api?.identity === 'user') {
+        throw new ProviderConfigError(`${request.action} needs an authorized person token; use the gcb pr --resolve path`);
+      }
       const wanted: Record<string, string> = { ...spec.permissions };
       await ensurePermissions(request.owner, wanted);
       const installationId = await resolveInstallationId(request.owner);
@@ -730,6 +733,22 @@ function pullRequestNumber(value: unknown): number | undefined {
 
       const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
 
+      /** Run one fixed catalog API action with the token chosen for this request. */
+      const runApi = async (action: string, values: Record<string, string | number | undefined>, token: string): Promise<string> => {
+        const result = await runGhAction({
+          action,
+          values,
+          repo: `${request.owner}/${request.repo}`,
+          token,
+          host: request.host,
+          ghPath,
+          proxy: request.proxy,
+          env: process.env,
+        });
+        if (result.code !== 0) throw new Error(`gh api ${action} failed: ${result.stderr.slice(0, 300)}`);
+        return result.stdout;
+      };
+
 
       /**
        * The token of the person this deployment authorized, when there is one.
@@ -804,16 +823,16 @@ function pullRequestNumber(value: unknown): number | undefined {
         return cachedPersonToken.token;
       }
 
+      if (request.action === 'resolve' && actingToken === undefined) {
+        throw new ProviderConfigError('resolving a review thread needs an authorized person token; run `gcb authorize` first');
+      }
+
       if (request.action === 'resolve') {
         // Resolving has no REST endpoint either. The thread id is the one `--threads` prints.
         // The thread id is a global node id, and the person token is not narrowed to a repository the way
         // an installation token is. Ask whose thread it is before changing it: the allowlist decided which
         // repositories this broker may touch, and a mutation is the wrong place to discover it did not.
-        const { text: scoped } = await callWithToken('POST', `${api}/graphql`, personToken ?? token, {
-          query:
-            'query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{pullRequest{repository{nameWithOwner}}}}}',
-          variables: { threadId: request.threadId },
-        });
+        const scoped = await runApi('pr:resolve-check', { threadId: request.threadId }, actingToken as string);
         let belongsTo: unknown;
         try {
           const parsed = JSON.parse(scoped) as {
@@ -834,11 +853,7 @@ function pullRequestNumber(value: unknown): number | undefined {
           );
         }
 
-        const { text: raw } = await callWithToken('POST', `${api}/graphql`, personToken ?? token, {
-          query:
-            'mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}',
-          variables: { threadId: request.threadId ?? '' },
-        });
+        const raw = await runApi('pr:resolve', { threadId: request.threadId }, actingToken as string);
         let answer: unknown = null;
         try {
           answer = JSON.parse(raw);
@@ -866,12 +881,7 @@ function pullRequestNumber(value: unknown): number | undefined {
       if (request.action === 'reply') {
         // A reply belongs in the thread it answers. The issues API would need `issues: write` and
         // would start a new conversation instead of joining one.
-        await callWithToken(
-          'POST',
-          `${collection}/${request.number}/comments/${String(request.commentId ?? 0)}/replies`,
-          token,
-          { body: request.body ?? '' },
-        );
+        await runApi('pr:reply', { commentId: request.commentId, body: request.body }, token);
         return { number: request.number ?? 0, url: '' };
       }
 
@@ -880,8 +890,7 @@ function pullRequestNumber(value: unknown): number | undefined {
         // one per pull request. The route therefore carries no pull request number and the CLI asks for
         // none: the number to report is the one the comment itself names, read back from the answer
         // rather than echoed from the request. The repository in the path is what the allowlist binds.
-        const endpoint = `${api}/repos/${request.owner}/${request.repo}/pulls/comments/${String(request.commentId ?? 0)}`;
-        const { text: edited } = await callWithToken('PATCH', endpoint, token, { body: request.body ?? '' });
+        const edited = await runApi('pr:edit-comment', { commentId: request.commentId, body: request.body }, token);
         let changed: unknown = null;
         try {
           changed = JSON.parse(edited);
@@ -898,11 +907,7 @@ function pullRequestNumber(value: unknown): number | undefined {
       if (request.action === 'threads') {
         // GraphQL, because review threads have no REST list. The repository and the number are
         // named here, so the allowlist still decides what can be reached.
-        const { text: raw } = await callWithToken('POST', `${api}/graphql`, token, {
-          query:
-            'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:50){totalCount nodes{id isResolved path line comments(first:10){nodes{databaseId author{login} body}}}}}}}',
-          variables: { owner: request.owner, name: request.repo, number: request.number },
-        });
+        const raw = await runApi('pr:threads', { number: request.number }, token);
         let listed: unknown = null;
         try {
           listed = JSON.parse(raw);
@@ -981,31 +986,23 @@ function pullRequestNumber(value: unknown): number | undefined {
       }
 
       if (request.action === 'comment') {
-        // A review with no verdict: GitHub shows it as a comment on the pull request, and it needs
-        // only the pull request permission the app already has. A *conversation* comment would be the
-        // issues API, which needs `issues: write` — see the README.
-        await callWithToken('POST', `${collection}/${request.number}/reviews`, token, {
-          body: request.body ?? '',
-          event: 'COMMENT',
-          // An inline comment rides on the same review, so a body-only comment stays one code path.
-          ...(request.filePath === undefined || request.line === undefined
-            ? {}
-            : {
-                comments: [
-                  {
-                    path: request.filePath,
-                    line: request.line,
-                    // GitHub spells the side in capitals on this endpoint; ours is the readable one.
-                    side: (request.side ?? 'right').toUpperCase(),
-                    body: request.body ?? '',
-                  },
-                ],
-              }),
-        });
-        const { text: after } = await callWithToken('GET', `${collection}/${request.number}`, token);
+        const inline = request.filePath !== undefined && request.line !== undefined;
+        const raw = await runApi(
+          inline ? 'pr:comment-inline' : 'pr:review-comment',
+          inline
+            ? {
+                number: request.number,
+                body: request.body,
+                path: request.filePath,
+                line: request.line,
+                side: (request.side ?? 'right').toUpperCase(),
+              }
+            : { number: request.number, body: request.body },
+          token,
+        );
         let read: unknown = null;
         try {
-          read = JSON.parse(after);
+          read = JSON.parse(raw);
         } catch {
           read = null;
         }

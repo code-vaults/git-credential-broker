@@ -658,6 +658,12 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr close` | `pull_requests: write` |
 | `pr comment` | `pull_requests: write` |
 | `pr review` | `pull_requests: write` |
+| `pr review-comment` | `pull_requests: write` |
+| `pr comment-inline` | `pull_requests: write` |
+| `pr reply` | `pull_requests: write` |
+| `pr edit-comment` | `pull_requests: write` |
+| `pr threads` | `pull_requests: read` |
+| `pr resolve` | person token |
 | `pr review --id` (`pr:review-by-id`) | `pull_requests: read` |
 | `issue create` | `issues: write` |
 | `run view` | `actions: read` |

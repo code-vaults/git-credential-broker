@@ -42,8 +42,18 @@ export interface FlagSpec {
 
 /** A fixed `gh api` request, with only typed values substituted. */
 export interface ApiSpec {
-  readonly method: 'GET';
-  readonly endpoint: string;
+  readonly method: 'GET' | 'POST' | 'PATCH';
+  /** A REST endpoint template, or omitted for GraphQL. */
+  readonly endpoint?: string;
+  /** A fixed GraphQL query or mutation. */
+  readonly graphql?: string;
+  /** Values sent as `-f name=value`; the caller supplies each one. */
+  readonly body?: readonly string[];
+  /** Values sent as `-f name=value` with a constant. */
+  readonly staticBody?: Readonly<Record<string, string>>;
+  /** GraphQL variables, substituted from the endpoint values. */
+  readonly variables?: readonly string[];
+  readonly identity?: 'app' | 'user';
 }
 
 /** One allowed `gh` action. */
@@ -204,6 +214,128 @@ const PR_REVIEW_BY_ID: GhAction = {
   },
 };
 
+// GitHub: POST /repos/{owner}/{repo}/pulls/comments/{comment_id}/replies
+const PR_REPLY: GhAction = {
+  name: 'pr:reply',
+  command: ['pr', 'reply'],
+  positionals: [{ name: 'commentId', type: 'number', required: true }],
+  flags: [{ name: 'body', type: 'string', required: true }],
+  permissions: { pull_requests: 'write' },
+  timeoutSeconds: 120,
+  hostUser: false,
+  api: {
+    method: 'POST',
+    endpoint: 'repos/{owner}/{repo}/pulls/comments/{commentId}/replies',
+    body: ['body'],
+  },
+};
+
+// GitHub: PATCH /repos/{owner}/{repo}/pulls/comments/{comment_id}
+const PR_EDIT_COMMENT: GhAction = {
+  name: 'pr:edit-comment',
+  command: ['pr', 'edit-comment'],
+  positionals: [{ name: 'commentId', type: 'number', required: true }],
+  flags: [{ name: 'body', type: 'string', required: true }],
+  permissions: { pull_requests: 'write' },
+  timeoutSeconds: 120,
+  hostUser: false,
+  api: {
+    method: 'PATCH',
+    endpoint: 'repos/{owner}/{repo}/pulls/comments/{commentId}',
+    body: ['body'],
+  },
+};
+
+// GitHub: GraphQL repository.pullRequest.reviewThreads
+const PR_THREADS: GhAction = {
+  name: 'pr:threads',
+  command: ['pr', 'threads'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [],
+  permissions: { pull_requests: 'read' },
+  timeoutSeconds: 120,
+  hostUser: false,
+  api: {
+    method: 'POST',
+    graphql:
+      'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:50){totalCount nodes{id isResolved path line comments(first:10){nodes{databaseId author{login} body}}}}}}}',
+    variables: ['owner', 'repo', 'number'],
+  },
+};
+
+// GitHub: POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
+const PR_REVIEW_COMMENT: GhAction = {
+  name: 'pr:review-comment',
+  command: ['pr', 'review-comment'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [{ name: 'body', type: 'string', required: true }],
+  permissions: { pull_requests: 'write' },
+  timeoutSeconds: 120,
+  hostUser: false,
+  api: {
+    method: 'POST',
+    endpoint: 'repos/{owner}/{repo}/pulls/{number}/reviews',
+    body: ['body'],
+    staticBody: { event: 'COMMENT' },
+  },
+};
+
+// GitHub: POST /repos/{owner}/{repo}/pulls/{pull_number}/comments
+const PR_COMMENT_INLINE: GhAction = {
+  name: 'pr:comment-inline',
+  command: ['pr', 'comment-inline'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [
+    { name: 'body', type: 'string', required: true },
+    { name: 'path', type: 'string', required: true },
+    { name: 'line', type: 'number', required: true },
+    { name: 'side', type: 'string' },
+  ],
+  permissions: { pull_requests: 'write' },
+  timeoutSeconds: 120,
+  hostUser: false,
+  api: {
+    method: 'POST',
+    endpoint: 'repos/{owner}/{repo}/pulls/{number}/comments',
+    body: ['path', 'line', 'side', 'body'],
+  },
+};
+
+// GitHub: GraphQL node.pullRequestReviewThread (ownership check before resolving)
+const PR_RESOLVE_CHECK: GhAction = {
+  name: 'pr:resolve-check',
+  command: ['pr', 'resolve-check'],
+  positionals: [{ name: 'threadId', type: 'string', required: true }],
+  flags: [],
+  permissions: { pull_requests: 'read' },
+  timeoutSeconds: 120,
+  hostUser: true,
+  api: {
+    method: 'POST',
+    identity: 'user',
+    graphql:
+      'query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{pullRequest{repository{nameWithOwner}}}}}',
+    variables: ['threadId'],
+  },
+};
+
+// GitHub: GraphQL resolveReviewThread
+const PR_RESOLVE: GhAction = {
+  name: 'pr:resolve',
+  command: ['pr', 'resolve'],
+  positionals: [{ name: 'threadId', type: 'string', required: true }],
+  flags: [],
+  permissions: { pull_requests: 'write' },
+  timeoutSeconds: 120,
+  hostUser: true,
+  api: {
+    method: 'POST',
+    identity: 'user',
+    graphql: 'mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}',
+    variables: ['threadId'],
+  },
+};
+
 // GitHub: POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
 const PR_REVIEW: GhAction = {
   name: 'pr:review',
@@ -283,6 +415,13 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:comment': PR_COMMENT,
   'pr:review': PR_REVIEW,
   'pr:review-by-id': PR_REVIEW_BY_ID,
+  'pr:reply': PR_REPLY,
+  'pr:edit-comment': PR_EDIT_COMMENT,
+  'pr:threads': PR_THREADS,
+  'pr:review-comment': PR_REVIEW_COMMENT,
+  'pr:comment-inline': PR_COMMENT_INLINE,
+  'pr:resolve-check': PR_RESOLVE_CHECK,
+  'pr:resolve': PR_RESOLVE,
   'issue:create': ISSUE_CREATE,
   'run:view': RUN_VIEW,
   'run:list': RUN_LIST,
@@ -363,13 +502,32 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
         }),
       ),
     };
-    const endpoint = action.api.endpoint.replace(/\{([a-zA-Z_]+)\}/g, (_match, key: string) => {
-      const value = substitutions[key];
-      if (value === undefined) throw new ActionError(`${name} has no value for {${key}}`);
-      return encodeURIComponent(value);
-    });
-    if (endpoint.includes('{')) throw new ActionError(`${name} left an endpoint placeholder unresolved`);
-    argv = ['api', '--method', action.api.method, endpoint];
+    if (action.api.graphql !== undefined) {
+      argv = ['api', 'graphql', '-f', `query=${action.api.graphql}`];
+      for (const variable of action.api.variables ?? []) {
+        const value = substitutions[variable] ?? values[variable];
+        if (value === undefined) throw new ActionError(`${name} has no ${variable} variable`);
+        argv.push('-f', `${variable}=${typeof value === 'number' ? String(value) : asString(value, variable)}`);
+      }
+    } else {
+      if (action.api.endpoint === undefined) throw new ActionError(`${name} has no endpoint`);
+      const endpoint = action.api.endpoint.replace(/\{([a-zA-Z_]+)\}/g, (_match, key: string) => {
+        const value = substitutions[key];
+        if (value === undefined) throw new ActionError(`${name} has no value for {${key}}`);
+        return encodeURIComponent(value);
+      });
+      if (endpoint.includes('{')) throw new ActionError(`${name} left an endpoint placeholder unresolved`);
+      argv = ['api', '--method', action.api.method, endpoint];
+      for (const field of action.api.body ?? []) {
+        const value = values[field];
+        if (value === undefined) continue;
+        const text = typeof value === 'number' ? String(asNumber(value, field)) : typeof value === 'string' ? value : String(value);
+        argv.push('-f', `${field}=${text}`);
+      }
+      for (const [field, text] of Object.entries(action.api.staticBody ?? {})) {
+        argv.push('-f', `${field}=${text}`);
+      }
+    }
   } else {
     argv = [...action.command];
     for (const positional of action.positionals) {
@@ -388,6 +546,7 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
 
   const present = new Set<string>();
   for (const flag of action.flags) {
+    if (action.api !== undefined && action.api.body?.includes(flag.name) === true) continue;
     const value = values[flag.name];
     if (value === undefined) {
       if (flag.required === true) throw new ActionError(`${name} needs --${flag.name}`);
