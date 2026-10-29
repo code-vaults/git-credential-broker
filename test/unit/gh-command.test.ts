@@ -8,7 +8,7 @@ import { describe, it } from 'node:test';
 
 import { startBroker } from '../../packages/host/src/broker.ts';
 import { tryRunAsync, type RunResult } from '../common/run.ts';
-import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../packages/cli/src/types.ts';
+import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../packages/core/src/types.ts';
 
 /** Run the client from source, next to this file rather than from the cwd. */
 const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));
@@ -17,7 +17,7 @@ const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', imp
 function runClient(args: readonly string[], cwd?: string): Promise<RunResult> {
   return tryRunAsync(
     process.execPath,
-    ['--conditions=gcb-development', CLIENT_BIN, ...args],
+    ['--conditions=development', CLIENT_BIN, ...args],
     { cwd, env: process.env, timeoutMs: 5000 },
   );
 }

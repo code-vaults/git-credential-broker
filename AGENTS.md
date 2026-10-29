@@ -60,8 +60,8 @@ corepack yarn pack:check # build, then show exactly what npm would publish
 The CLI runs from source too, so there is no need to build to try a command:
 
 ```sh
-node --conditions=gcb-development packages/client/bin/gcb.js --help
-node --conditions=gcb-development packages/host/bin/gcb.js compose --socket-dir /tmp/sock    # reads --config, $GIT_BROKER_CONFIG, else ./broker.config.yml
+node --conditions=development packages/client/bin/gcb.js --help
+node --conditions=development packages/host/bin/gcb.js compose --socket-dir /tmp/sock    # reads --config, $GIT_BROKER_CONFIG, else ./broker.config.yml
 ```
 
 `yarn test` builds first because the end-to-end suite execs `packages/client/bin/gcb.js` as a **real**
@@ -79,7 +79,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   `setup` cannot know the PATH of a later git process; do not pretend a setup-time check is a
   guarantee. If a review finding depends on an unsupported shape, answer it in the PR and leave
   the code alone.
-- **The gh action catalog is the one source for an action.** `packages/cli/src/actions.ts`
+- **The gh action catalog is the one source for an action.** `packages/core/src/actions.ts`
   defines its command, flags, positionals, permissions and timeout; the token mint, the creation
   preflight, the command table and the docs must read it rather than keep a second list. The broker
   rebuilds a canonical argv from validated values and never forwards the caller’s argv. Add an
@@ -310,7 +310,7 @@ Full detail and the measurements behind them:
 
 | Path | What |
 |---|---|
-| `packages/cli/src/` | shared parser, help/version, protocol, types, platform, paths and the gh action catalog |
+| `packages/core/src/` | shared parser, help/version, protocol, types, platform, paths and the gh action catalog |
 | `packages/client/src/helper.ts` | the container-side credential helper |
 | `packages/client/src/commands/` | setup, probe, logs, pr, gh and remotes |
 | `packages/host/src/broker.ts` | unix socket server, refusal codes, audit records |

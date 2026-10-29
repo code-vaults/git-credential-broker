@@ -92,8 +92,8 @@ dependencies:
 ```sh
 git clone https://github.com/code-vaults/git-credential-broker /opt/gcb
 cd /opt/gcb && corepack yarn install
-node --conditions=gcb-development packages/client/bin/gcb.js --help
-node --conditions=gcb-development packages/host/bin/gcb.js --help
+node --conditions=development packages/client/bin/gcb.js --help
+node --conditions=development packages/host/bin/gcb.js --help
 ```
 
 Keep the checkout outside every container mount.
@@ -101,11 +101,11 @@ Keep the checkout outside every container mount.
 ## GitHub actions
 
 The action path is wired through the broker; the host image must include `gh` before these commands
-can run. The container never receives the token. Build the image, then pass `--image code-vaults/gcb-host:dev` to
+can run. The container never receives the token. Build the image, then pass `--image ghcr.io/code-vaults/gcb-host:dev` to
 the compose command in [Quick start](#quick-start-sidecar):
 
 ```sh
-docker build --target host -t code-vaults/gcb-host:dev .
+docker build --target host -t ghcr.io/code-vaults/gcb-host:dev .
 ```
 
 The image's `CMD` starts `gcb daemon`, but `compose` still renders the registry-fetching `npx`
@@ -137,7 +137,7 @@ Inside a checkout, `--repo` can be omitted only when `origin` names a usable Git
 host matches `--host`; otherwise pass `--repo`, or the matching `--host`.
 
 The exact command, flags and required values come from
-[`packages/cli/src/actions.ts`](packages/cli/src/actions.ts); `gcb gh --help` renders that catalog.
+[`packages/core/src/actions.ts`](packages/core/src/actions.ts); `gcb gh --help` renders that catalog.
 
 ## Set up the GitHub App first
 
@@ -146,7 +146,7 @@ The exact command, flags and required values come from
    should open pull requests, **Actions: Read** for `logs`, and **Checks: Read** / **Statuses: Read** /
    **Issues: Read and write** for the corresponding `gcb gh` actions. Grant them in the app, not only
    in the request. The per-action source of truth is the catalog in
-   [`packages/cli/src/actions.ts`](packages/cli/src/actions.ts).
+   [`packages/core/src/actions.ts`](packages/core/src/actions.ts).
 3. Install the app on the account that owns the repositories, granting access to those alone.
 4. Download the **private key**; note the **App ID** and **Client ID**.
 5. Ignore the client secret — this tool never uses it. Installation tokens are obtained by signing a
@@ -293,7 +293,7 @@ path, because a relative one is resolved against the current directory, which is
 checkout:
 
 ```sh
-node --conditions=gcb-development /srv/git-cred-broker/packages/client/bin/gcb.js logs \
+node --conditions=development /srv/git-cred-broker/packages/client/bin/gcb.js logs \
   --socket /srv/git-cred-broker/broker.sock \
   --host github.com --repo owner/repo --job 1234567890
 ```
@@ -578,7 +578,7 @@ this working, and the traps it already paid for, are in [AGENTS.md](AGENTS.md).
 ## Layout
 
 ```
-packages/cli/src/        shared parser, protocol, types, platform helpers and the gh action catalog
+packages/core/src/        shared parser, protocol, types, platform helpers and the gh action catalog
 packages/client/src/     credential helper, setup, probe, logs, pr, gh
 packages/host/src/       YAML config, providers, broker, daemon and host commands
 packages/*/bin/          the two installed gcb bins (client and host)
@@ -605,43 +605,43 @@ The contract between the pushing container and the broker is deliberately small:
 
 ## Images
 
-Two images, in separate registries/repositories, mirror the two packages:
+Two GHCR repositories mirror the two packages:
 
 | Image | Contents | Use |
 |---|---|---|
-| `code-vaults/gcb-client:dev` | `gcb` client and Node runtime only | idsh base / `COPY --from` |
-| `code-vaults/gcb-host:dev` | broker, `gh`, and broker dependencies | run `gcb daemon` on the host |
+| `ghcr.io/code-vaults/gcb-client:dev` | `gcb` client and Node runtime only | idsh base / `COPY --from` |
+| `ghcr.io/code-vaults/gcb-host:dev` | broker, `gh`, and broker dependencies | run `gcb daemon` on the host |
 
-Published equivalents are the same names on GHCR:
-`ghcr.io/code-vaults/gcb-client:dev` and `ghcr.io/code-vaults/gcb-host:dev`. A
-GitHub repository can publish both packages; they share the source repository without sharing a tag.
+The release publishes both repositories with `latest`, `<version>` and `sha-<sha>` tags. The
+`:dev` tags are local build tags and are not published; do not pull them from GHCR.
 
-For local development, build and reuse the same tags:
+For local development, build and reuse the `:dev` tags:
 
 ```sh
-docker build --target client -t code-vaults/gcb-client:dev .
-docker build --target host   -t code-vaults/gcb-host:dev .
+docker build --target client -t ghcr.io/code-vaults/gcb-client:dev .
+docker build --target host   -t ghcr.io/code-vaults/gcb-host:dev .
 ```
 
-While the image exists locally, Docker uses it instead of pulling from the registry; another machine
-or CI pulls the same tags.
+While the image exists locally, Docker uses it instead of pulling from the registry. Another machine
+or CI builds the same Dockerfile and tags, rather than pulling `:dev`.
 
 For idsh's dev image, name the client image as a stage and copy only the gcb packages into the base:
 
 ```dockerfile
 ARG BASE=devockr/idsh:base
-ARG GCB_CLIENT_IMAGE=code-vaults/gcb-client:dev
+ARG GCB_CLIENT_IMAGE=ghcr.io/code-vaults/gcb-client:dev
 FROM ${GCB_CLIENT_IMAGE} AS gcb-client
 FROM ${BASE}
 
-COPY --from=gcb-client /usr/local/lib/node_modules/gcb-cli /usr/local/lib/node_modules/gcb-cli
+COPY --from=gcb-client /usr/local/lib/node_modules/gcb-core /usr/local/lib/node_modules/gcb-core
 COPY --from=gcb-client /usr/local/lib/node_modules/gcb-client /usr/local/lib/node_modules/gcb-client
 RUN ln -s /usr/local/lib/node_modules/gcb-client/bin/gcb.js /usr/local/bin/gcb
 ```
 
 Copy the two package directories, not all of `/usr/local/lib/node_modules`: the idsh base already has
-its own `corepack` and `npm`, and a whole-directory copy would replace them. A CI build passes
-`--build-arg GCB_CLIENT_IMAGE=ghcr.io/code-vaults/gcb-client:dev` instead.
+its own `corepack` and `npm`, and a whole-directory copy would replace them. That default is for a
+local build; CI and production pass a published version instead, e.g.
+`--build-arg GCB_CLIENT_IMAGE=ghcr.io/code-vaults/gcb-client:<version>`.
 
 ## App permissions by action
 

@@ -8,7 +8,7 @@
  * Exit codes: 0 read, 1 refused, 3 broker unreachable.
  */
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
-import { fail, parseArgs, say } from 'gcb-cli';
+import { fail, parseArgs, say } from 'gcb-core';
 
 /**
  * How long to wait for the broker.

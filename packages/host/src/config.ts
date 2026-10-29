@@ -9,7 +9,7 @@ import path, { posix } from 'node:path';
 import { parseDocument } from 'yaml';
 
 import { parseAllowEntry } from './policy.ts';
-import type { BrokerConfig, GithubAppHostConfig, HostConfig, StaticHostConfig } from 'gcb-cli';
+import type { BrokerConfig, GithubAppHostConfig, HostConfig, StaticHostConfig } from 'gcb-core';
 
 /** The file every command looks for when no configuration path is given. */
 export const DEFAULT_CONFIG_FILE = 'broker.config.yml';

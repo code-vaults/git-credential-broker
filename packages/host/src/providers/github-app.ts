@@ -20,15 +20,15 @@
 import { userTokenPath } from '../config.ts';
 import { currentProxyKey, proxyFetch } from '../http.ts';
 import { createSign } from 'node:crypto';
-import { getGhAction, ProviderConfigError, tokenFingerprint, type ActionRunResult } from 'gcb-cli';
+import { getGhAction, ProviderConfigError, tokenFingerprint, type ActionRunResult } from 'gcb-core';
 import { runGhAction } from '../gh.ts';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { refreshUserToken } from '../device-flow.ts';
 
-import type { Credential, FetchLike, FetchResponseLike, GithubAppHostConfig, Provider } from 'gcb-cli';
-import type { JobLog, JobLogRequest } from 'gcb-cli';
-import type { PullRequest, PullRequestRequest } from 'gcb-cli';
+import type { Credential, FetchLike, FetchResponseLike, GithubAppHostConfig, Provider } from 'gcb-core';
+import type { JobLog, JobLogRequest } from 'gcb-core';
+import type { PullRequest, PullRequestRequest } from 'gcb-core';
 
 /** REST API origin. Overridable for GitHub Enterprise. */
 const DEFAULT_API = 'https://api.github.com';

@@ -19,7 +19,7 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 import { USER_TOKEN_FILE, userTokenPath, loadConfig, resolveConfigPath } from '../config.ts';
 import { collectUserToken, startDeviceFlow, type Fetcher } from '../device-flow.ts';
 import { fetcherFor, parseProxy } from '../http.ts';
-import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from 'gcb-cli';
+import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from 'gcb-core';
 
 /** Usage text for `authorize`. */
 export const AUTHORIZE_USAGE = `Usage: gcb authorize [options]

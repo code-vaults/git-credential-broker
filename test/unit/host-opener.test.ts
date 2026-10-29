@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { runHostOpener } from '../../packages/host/src/commands/host-opener.ts';
-import { channelDir, listRequests, readResult, writeRequest } from '../../packages/cli/src/host-request.ts';
+import { channelDir, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 
 describe('the opener, once', () => {
   let root = '';

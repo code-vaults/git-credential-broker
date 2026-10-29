@@ -4,7 +4,7 @@
  * The action catalog defines the command, flags, positionals and permissions. The client only
  * parses names and values; the broker rebuilds the canonical argv and runs gh with its own token.
  */
-import { GH_ACTIONS, getGhAction, parseArgs, say, fail, type ActionValues } from 'gcb-cli';
+import { GH_ACTIONS, getGhAction, parseArgs, say, fail, type ActionValues } from 'gcb-core';
 
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { remoteRepo } from './remotes.ts';

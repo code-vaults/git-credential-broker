@@ -10,7 +10,7 @@ import { chmodSync, closeSync, createWriteStream, mkdirSync, openSync } from 'no
 import type { WriteStream } from 'node:fs';
 import { dirname } from 'node:path';
 
-import type { AuditSink } from 'gcb-cli';
+import type { AuditSink } from 'gcb-core';
 
 /**
  * Keys whose values must never reach the audit log.

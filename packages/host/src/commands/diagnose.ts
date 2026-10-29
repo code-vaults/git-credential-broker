@@ -18,8 +18,8 @@ import { readFileSync } from 'node:fs';
 import { assertKeysReadable, loadConfig, resolveConfigPath } from '../config.ts';
 import { nextLink, signAppJwt } from '../providers/github-app.ts';
 import { fetcherFor, parseProxy } from '../http.ts';
-import type { GithubAppHostConfig } from 'gcb-cli';
-import { fail, parseArgs, say, warn } from 'gcb-cli';
+import type { GithubAppHostConfig } from 'gcb-core';
+import { fail, parseArgs, say, warn } from 'gcb-core';
 
 /** One installation, as far as this command cares. */
 interface Installation {

@@ -19,11 +19,11 @@ import { renderCompose, runCompose } from '../../packages/host/src/commands/comp
 import { runDiagnose } from '../../packages/host/src/commands/diagnose.ts';
 import { SIDECAR, loadConfig, resolveConfigPath, deploymentDir } from '../../packages/host/src/config.ts';
 import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit, resolveInitSelection } from '../../packages/host/src/commands/init.ts';
-import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../packages/cli/src/support.ts';
+import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../packages/core/src/support.ts';
 import { performSetup } from '../../packages/client/src/commands/setup.ts';
-import type { BrokerConfig, GithubAppHostConfig } from '../../packages/cli/src/types.ts';
+import type { BrokerConfig, GithubAppHostConfig } from '../../packages/core/src/types.ts';
 import { runProbe } from '../../packages/client/src/commands/probe.ts';
-import { encodeMessage, parseMessage } from '../../packages/cli/src/socket-protocol.ts';
+import { encodeMessage, parseMessage } from '../../packages/core/src/socket-protocol.ts';
 import { runAsync } from '../common/run.ts';
 
 /** Scratch space for the whole file. */
@@ -932,7 +932,7 @@ describe('compose', () => {
     socketDir: '/srv/shared/git-broker',
     user: '1026:100',
     image: 'node:24-slim',
-    packageSpec: 'gcb-host@0.1.0',
+    packageSpec: 'gcb-host@0.0.0',
     name: 'git-cred-broker',
   });
 
@@ -1022,7 +1022,7 @@ describe('compose', () => {
       socketDir: '/srv/shared/git-broker',
       user: '1026:100',
       image: 'node:24-slim',
-      packageSpec: 'gcb-host@0.1.0',
+      packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
     });
     assert.match(custom, /\/srv\/custom\/broker\.yml:\/etc\/git-cred-broker\/broker\.config\.yml:ro/);
@@ -1036,7 +1036,7 @@ describe('compose', () => {
   });
 
   it('runs the daemon from the published package, not from a copied checkout', () => {
-    assert.match(rendered, /npx --yes --package 'gcb-host@0\.1\.0' gcb daemon/);
+    assert.match(rendered, /npx --yes --package 'gcb-host@0\.0\.0' gcb daemon/);
     assert.match(rendered, new RegExp(`--config ${SIDECAR.configPath}`));
   });
 
@@ -1046,13 +1046,13 @@ describe('compose', () => {
       socketDir: '/srv/shared/git-broker',
       user: '1026:100',
       image: 'node:24-slim',
-      packageSpec: 'gcb-host@0.1.0',
+      packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
       code: '/volume1/docker/git-cred-broker/app',
     });
 
     assert.match(fromCode, /- \/volume1\/docker\/git-cred-broker\/app:\/opt\/gcb:ro/);
-    assert.match(fromCode, /exec node --conditions=gcb-development \/opt\/gcb\/packages\/host\/bin\/gcb\.js daemon/);
+    assert.match(fromCode, /exec node --conditions=development \/opt\/gcb\/packages\/host\/bin\/gcb\.js daemon/);
     assert.equal(/npx/.test(fromCode), false, 'no registry access at start');
     assert.equal(/npm_config_cache/.test(fromCode), false, 'and so no cache to write');
     assert.match(fromCode, /STAGED\.json/, 'it points at the record of which commit this is');
@@ -1121,7 +1121,7 @@ describe('the anchor flags, at the CLI boundary', () => {
 
   const cli = (args: readonly string[]): { status: number; stdout: string; stderr: string } => {
     try {
-      execFileSync('node', ['--conditions=gcb-development', 'packages/client/bin/gcb.js', 'pr', ...args], {
+      execFileSync('node', ['--conditions=development', 'packages/client/bin/gcb.js', 'pr', ...args], {
         cwd: path.resolve('.'),
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -1320,7 +1320,7 @@ describe('the anchor flags, at the CLI boundary', () => {
     await new Promise<void>((resolve) => server.listen(socketPath, resolve));
     try {
       const result = await runAsync(process.execPath, [
-        '--conditions=gcb-development',
+        '--conditions=development',
         path.resolve('packages/client/bin/gcb.js'),
         'pr', '--number', '7', '--status', '--socket', socketPath,
       ], {
@@ -1351,7 +1351,7 @@ describe('the anchor flags, at the CLI boundary', () => {
     await new Promise<void>((resolve) => server.listen(socketPath, resolve));
     try {
       const result = await runAsync(process.execPath, [
-        '--conditions=gcb-development',
+        '--conditions=development',
         'packages/client/bin/gcb.js',
         'pr', '--number', '7', '--title', 'a title', '--repo', 'acme/widget', '--socket', socketPath,
       ], {
@@ -1385,7 +1385,7 @@ describe('the anchor flags, at the CLI boundary', () => {
     await new Promise<void>((resolve) => server.listen(socketPath, resolve));
     try {
       const result = await runAsync(process.execPath, [
-        '--conditions=gcb-development',
+        '--conditions=development',
         'packages/client/bin/gcb.js',
         'pr', '--number', '7', '--body-file', bodyFile, '--repo', 'acme/widget', '--socket', socketPath,
       ], {
@@ -1415,7 +1415,7 @@ describe('the anchor flags, at the CLI boundary', () => {
     await new Promise<void>((resolve) => server.listen(socketPath, resolve));
     try {
       const result = await runAsync(process.execPath, [
-        '--conditions=gcb-development',
+        '--conditions=development',
         'packages/client/bin/gcb.js',
         'pr',
         '--repo', 'acme/widget',
@@ -1438,7 +1438,7 @@ describe('the help path', () => {
   it('routes gcb help pr to gcb pr --help', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-help-path-'));
     try {
-      const result = execFileSync('node', ['--conditions=gcb-development', 'packages/client/bin/gcb.js', 'help', 'pr'], {
+      const result = execFileSync('node', ['--conditions=development', 'packages/client/bin/gcb.js', 'help', 'pr'], {
         cwd: path.resolve('.'),
         encoding: 'utf8',
         env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },

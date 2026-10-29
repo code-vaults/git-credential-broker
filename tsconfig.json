@@ -25,7 +25,7 @@
     "noEmit": true,
 
     "paths": {
-      "gcb-cli": ["./packages/cli/src/index.ts"],
+      "gcb-core": ["./packages/core/src/index.ts"],
       "gcb-client": ["./packages/client/src/index.ts"],
       "gcb-host": ["./packages/host/src/index.ts"]
     }

@@ -3,8 +3,8 @@
  *
  * The host commands are not imported here; installing `gcb-client` never pulls `yaml`.
  */
-import { GH_ACTIONS } from 'gcb-cli';
-import type { CommandBackend } from 'gcb-cli';
+import { GH_ACTIONS } from 'gcb-core';
+import type { CommandBackend } from 'gcb-core';
 
 export { runHelper } from './helper.ts';
 

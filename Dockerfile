@@ -5,8 +5,8 @@
 #   host    the broker, with gh, for running `gcb daemon`
 #
 # Local build:
-#   docker build --target client -t code-vaults/gcb-client:dev .
-#   docker build --target host   -t code-vaults/gcb-host:dev .
+#   docker build --target client -t ghcr.io/code-vaults/gcb-client:dev .
+#   docker build --target host   -t ghcr.io/code-vaults/gcb-host:dev .
 
 FROM node:24-slim AS build
 WORKDIR /src
@@ -17,11 +17,11 @@ COPY scripts ./scripts
 RUN corepack yarn install --immutable \
  && corepack yarn build \
  && mkdir -p /packs \
- && npm pack ./packages/cli ./packages/client ./packages/host --pack-destination /packs
+ && npm pack ./packages/core ./packages/client ./packages/host --pack-destination /packs
 
 FROM node:24-slim AS client
 COPY --from=build /packs /packs
-RUN npm install -g --omit=dev /packs/gcb-cli-*.tgz /packs/gcb-client-*.tgz \
+RUN npm install -g --omit=dev /packs/gcb-core-*.tgz /packs/gcb-client-*.tgz \
  && rm -rf /packs /root/.npm /tmp/* \
  && find /usr/local/lib/node_modules/gcb-*/lib -type f -name '*.map' -delete \
  && npm cache clean --force
@@ -50,7 +50,7 @@ RUN --mount=type=cache,id=apt_cache,target=/var/cache/apt,sharing=locked \
 
 FROM host-base AS host
 COPY --from=build /packs /packs
-RUN npm install -g --omit=dev /packs/gcb-cli-*.tgz /packs/gcb-host-*.tgz \
+RUN npm install -g --omit=dev /packs/gcb-core-*.tgz /packs/gcb-host-*.tgz \
  && rm -rf /packs /root/.npm /tmp/* \
  && find /usr/local/lib/node_modules/gcb-*/lib -type f -name '*.map' -delete \
  && npm cache clean --force

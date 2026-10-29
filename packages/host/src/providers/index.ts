@@ -5,7 +5,7 @@
  * broker, the helper, the socket protocol, the allowlist and the audit trail are all
  * provider-agnostic.
  */
-import type { FetchLike, HostConfig, Provider } from 'gcb-cli';
+import type { FetchLike, HostConfig, Provider } from 'gcb-core';
 import { createGithubAppProvider } from './github-app.ts';
 import { createStaticProvider } from './static.ts';
 

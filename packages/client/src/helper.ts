@@ -35,8 +35,8 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 
-import { asWireResponse, encodeMessage, parseMessage } from 'gcb-cli';
-import type { WireResponse } from 'gcb-cli';
+import { asWireResponse, encodeMessage, parseMessage } from 'gcb-core';
+import type { WireResponse } from 'gcb-core';
 
 /** Ceiling for the description git sends us. */
 const MAX_INPUT_BYTES = 8 * 1024;

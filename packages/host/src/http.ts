@@ -14,7 +14,7 @@ import https from 'node:https';
 import { createProxy } from 'node-fetch-native/proxy';
 import { fetch as directFetch } from 'node-fetch-native/node';
 import { createXFetch, isXFetchError, type XFetchMiddleware } from 'x-fetch';
-import type { FetchLike } from 'gcb-cli';
+import type { FetchLike } from 'gcb-core';
 
 /** A command's proxy choice: omitted keeps the host environment, null is direct. */
 export type ProxyChoice = string | null | undefined;

@@ -22,8 +22,13 @@ const hostPrefix = path.join(scratch, 'host');
 after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
 /** Run a command and return stdout. */
-function run(command: string, args: readonly string[]): string {
-  return execFileSync(command, args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+function run(command: string, args: readonly string[], env?: NodeJS.ProcessEnv): string {
+  return execFileSync(command, args, {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    ...(env === undefined ? {} : { env }),
+  });
 }
 
 /** Run a command that is expected to fail, returning its stderr. */
@@ -40,7 +45,17 @@ function runFailure(command: string, args: readonly string[]): string {
 function pack(name: string): string {
   const target = path.join(packs, name);
   fs.mkdirSync(target, { recursive: true });
-  const output = run('npm', ['pack', path.join(ROOT, 'packages', name), '--pack-destination', target]);
+  const source = path.join(ROOT, 'packages', name);
+  const copy = path.join(scratch, 'sources', name);
+  fs.mkdirSync(path.dirname(copy), { recursive: true });
+  fs.cpSync(source, copy, {
+    recursive: true,
+    filter: (entry) => !entry.includes(`${path.sep}node_modules`),
+  });
+  const output = run('npm', ['pack', copy, '--pack-destination', target], {
+    ...process.env,
+    PATH: `${path.join(ROOT, 'node_modules', '.bin')}${path.delimiter}${process.env['PATH'] ?? ''}`,
+  });
   const file = output.trim().split('\n').pop();
   assert.ok(file, `npm pack produced no filename for ${name}`);
   return path.join(target, file);
@@ -71,12 +86,12 @@ function bin(prefix: string): string {
 describe('packed npm packages', () => {
   before(() => {
     fs.mkdirSync(packs, { recursive: true });
-    const cli = pack('cli');
+    const core = pack('core');
     const client = pack('client');
     const host = pack('host');
 
-    run('npm', ['install', '-g', '--prefix', clientPrefix, '--no-audit', '--no-fund', cli, client]);
-    run('npm', ['install', '-g', '--prefix', hostPrefix, '--no-audit', '--no-fund', cli, host]);
+    run('npm', ['install', '-g', '--prefix', clientPrefix, '--no-audit', '--no-fund', core, client]);
+    run('npm', ['install', '-g', '--prefix', hostPrefix, '--no-audit', '--no-fund', core, host]);
   });
 
   it('installs a working client without the host parser', () => {

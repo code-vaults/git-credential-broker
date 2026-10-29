@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 
-import { buildGhArgv, getGhAction, type ActionValues } from 'gcb-cli';
+import { buildGhArgv, getGhAction, type ActionValues } from 'gcb-core';
 import { applyProxyChoice, PROXY_ENV_KEYS } from './http.ts';
 
 /** The default stdout/stderr ceiling, in bytes per stream. */

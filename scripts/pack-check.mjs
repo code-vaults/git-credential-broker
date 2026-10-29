@@ -12,7 +12,7 @@ import path from 'node:path';
 const root = path.resolve(import.meta.dirname, '..');
 const scratch = mkdtempSync(path.join(os.tmpdir(), 'gcb-pack-check-'));
 try {
-  for (const name of ['cli', 'client', 'host']) {
+  for (const name of ['core', 'client', 'host']) {
     console.log(`\n== packages/${name}`);
     execFileSync('npm', ['pack', path.join(root, 'packages', name), '--dry-run', '--pack-destination', scratch], {
       cwd: root,

@@ -1,6 +1,6 @@
 {
-  "name": "gcb-cli",
-  "version": "0.1.0",
+  "name": "gcb-core",
+  "version": "0.0.0",
   "description": "Shared command runtime and protocol for gcb-client and gcb-host.",
   "license": "MIT",
   "author": "JounQin <admin@1stg.me>",
@@ -18,7 +18,7 @@
   ],
   "exports": {
     ".": {
-      "gcb-development": "./src/index.ts",
+      "development": "./src/index.ts",
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     }
@@ -26,5 +26,8 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "prepack": "clean-pkg-json"
   }
 }

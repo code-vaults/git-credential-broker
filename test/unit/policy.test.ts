@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { hostConfig, normalizeRepoPath, parseAllowEntry, repoAllowed } from '../../packages/host/src/policy.ts';
-import type { BrokerConfig } from '../../packages/cli/src/types.ts';
+import type { BrokerConfig } from '../../packages/core/src/types.ts';
 
 describe('normalizeRepoPath', () => {
   it('accepts what git actually sends and strips the .git suffix', () => {

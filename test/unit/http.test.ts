@@ -79,7 +79,7 @@ describe('startup proxy environment', () => {
       const response = await fetcherFor(null)('http://127.0.0.1:${address.port}/', { method: 'GET', headers: {} });
       console.log(response.status, await response.text());
     `;
-    const child = spawn(process.execPath, ['--conditions=gcb-development', '--input-type=module', '-e', script], {
+    const child = spawn(process.execPath, ['--conditions=development', '--input-type=module', '-e', script], {
       cwd: process.cwd(),
       env: {
         ...process.env,

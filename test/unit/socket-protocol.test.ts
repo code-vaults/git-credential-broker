@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { MAX_BODY_CHARS } from '../../packages/cli/src/host-request.ts';
-import { MAX_MESSAGE_BYTES, createLineReader } from '../../packages/cli/src/socket-protocol.ts';
+import { MAX_BODY_CHARS } from '../../packages/core/src/host-request.ts';
+import { MAX_MESSAGE_BYTES, createLineReader } from '../../packages/core/src/socket-protocol.ts';
 
 describe('createLineReader', () => {
   it('splits lines across chunks and ignores blank lines', () => {

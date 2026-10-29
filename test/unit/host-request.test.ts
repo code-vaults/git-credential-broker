@@ -30,7 +30,7 @@ import {
   writeOpener,
   writeRequest,
   writeResult,
-} from '../../packages/cli/src/host-request.ts';
+} from '../../packages/core/src/host-request.ts';
 
 /** A good request, which each test varies one field of. */
 const GOOD = { head: 'feat/thing', base: 'main', title: 'a title', body: 'a body' };

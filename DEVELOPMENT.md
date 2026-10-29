@@ -34,9 +34,9 @@ Node strips the types, so the package sources are directly runnable with the dev
 condition:
 
 ```sh
-node --conditions=gcb-development packages/client/bin/gcb.js --help
-node --conditions=gcb-development packages/host/bin/gcb.js compose --socket-dir /tmp/sock --config /tmp/deploy/broker.config.yml
-node --conditions=gcb-development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml --check
+node --conditions=development packages/client/bin/gcb.js --help
+node --conditions=development packages/host/bin/gcb.js compose --socket-dir /tmp/sock --config /tmp/deploy/broker.config.yml
+node --conditions=development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml --check
 ```
 
 Commands find the configuration by convention — `--config`, else `$GIT_BROKER_CONFIG`, else
@@ -52,7 +52,7 @@ Two consequences:
 - The `helper` command must resolve to an executable. `setup` records `!gcb`, so git resolves the
   globally installed bin through PATH; a source checkout can use the same config if it has a `gcb`
   shim on PATH, or spell the interpreter out explicitly with
-  `git config --global credential.helper '!node --conditions=gcb-development /path/packages/client/bin/gcb.js'`.
+  `git config --global credential.helper '!node --conditions=development /path/packages/client/bin/gcb.js'`.
 
 ## Build
 
@@ -71,15 +71,15 @@ exec-bit detection), so the build applies it every time.
 As the CLI, without installing anything:
 
 ```sh
-node --conditions=gcb-development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml
+node --conditions=development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml
 ```
 
 As the commands a user of the package gets:
 
 ```sh
 mkdir -p /tmp/gcb-packs
-npm pack ./packages/cli ./packages/host --pack-destination /tmp/gcb-packs
-npm install -g /tmp/gcb-packs/gcb-cli-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
+npm pack ./packages/core ./packages/host --pack-destination /tmp/gcb-packs
+npm install -g /tmp/gcb-packs/gcb-core-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
 gcb --version
 ```
 
@@ -140,7 +140,7 @@ If you add tests, three traps are already paid for in this suite:
 
 ```sh
 corepack yarn pack:check   # shows exactly what each of the three packages would ship
-npm pack ./packages/cli      # the tarball itself
+npm pack ./packages/core      # the tarball itself
 npm pack ./packages/client
 npm pack ./packages/host
 ```
@@ -152,17 +152,32 @@ the checkout of that version beside them.
 
 ## Releasing
 
-1. Bump the same `version` in all three package manifests and keep the exact `gcb-cli` dependency in
-   client/host in lockstep.
-2. `corepack yarn check`.
-3. Publish in dependency order: `npm publish packages/cli`, then `packages/client` and `packages/host`.
-4. Re-render any sidecar you generated: `compose` pins `gcb-host@<version>`, so it takes
+Published changes are versioned with Changesets:
+
+1. Add a changeset with `corepack yarn changeset` in the pull request that changes a published package.
+   There is no CI gate for this; with no changesets, `changeset publish` only publishes versions npm
+   does not have yet.
+2. The release workflow uses `changesets/action` to open or update `chore: release packages`. Merging
+   that pull request runs `changeset publish`.
+3. `@changesets/changelog-github` writes the changelog entries; each package's `prepack` runs
+   `clean-pkg-json`, so the published manifest omits the workspace-only `development` export.
+4. The same release builds and publishes the `gcb-client` and `gcb-host` images.
+5. Re-render any sidecar you generated: `compose` pins `gcb-host@<version>`, so it takes
    the new version only when it is rendered again.
+
+The release workflow uses npm trusted publishing (OIDC): `id-token: write` is granted, no
+`NPM_TOKEN` secret is read. Configure the npm package's trusted publisher for this repository first.
+The two images are published to GHCR only.
+
+Also configure:
+
+- **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests** on;
+  `changesets/action` cannot open the version pull request without it
 
 ## Layout
 
 ```
-packages/cli/src/      parser, help/version, protocol, types, platform and paths
+packages/core/src/      parser, help/version, protocol, types, platform and paths
 packages/client/src/   credential helper, setup, probe, logs and pr
 packages/host/src/     YAML config, providers, broker, daemon and host commands
 packages/*/bin/gcb.js  the two installed bins (client and host)

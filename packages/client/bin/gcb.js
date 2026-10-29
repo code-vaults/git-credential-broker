@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { runCli } from 'gcb-cli';
+import { runCli } from 'gcb-core';
 import { clientBackend, runHelper } from 'gcb-client';
 
 const argv = process.argv.slice(2);
