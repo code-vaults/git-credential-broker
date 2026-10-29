@@ -25,7 +25,6 @@ describe('gh action catalog', () => {
       'pr:reply',
       'pr:edit-comment',
       'pr:threads',
-      'pr:review-comment',
       'pr:comment-inline',
       'pr:resolve-check',
       'pr:resolve',

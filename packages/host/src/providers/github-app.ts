@@ -988,7 +988,7 @@ function pullRequestNumber(value: unknown): number | undefined {
       if (request.action === 'comment') {
         const inline = request.filePath !== undefined && request.line !== undefined;
         const raw = await runApi(
-          inline ? 'pr:comment-inline' : 'pr:review-comment',
+          inline ? 'pr:comment-inline' : 'pr:comment',
           inline
             ? {
                 number: request.number,
@@ -1006,11 +1006,14 @@ function pullRequestNumber(value: unknown): number | undefined {
         } catch {
           read = null;
         }
-        const html = (read ?? {}) as { html_url?: unknown };
-        return {
-          number: request.number ?? 0,
-          url: typeof html.html_url === 'string' ? html.html_url : '',
-        };
+        if (inline) {
+          const html = (read ?? {}) as { html_url?: unknown };
+          return {
+            number: request.number ?? 0,
+            url: typeof html.html_url === 'string' ? html.html_url : '',
+          };
+        }
+        return { number: request.number ?? 0, url: raw.trim() };
       }
 
       if (request.action === 'status') {

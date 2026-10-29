@@ -283,6 +283,7 @@ case "$*" in
   *graphql*) echo '${threads}' ;;
   */pulls/comments/99*) echo '{"html_url":"https://github.com/acme/widget/pull/8#discussion_r99","pull_request_url":"https://api.github.com/repos/acme/widget/pulls/8"}' ;;
   */replies*) echo '{}' ;;
+  *"pr comment"*) echo 'https://github.com/acme/widget/pull/7#issuecomment-1' ;;
   */reviews*) echo '{"html_url":"https://github.com/acme/widget/pull/7#pullrequestreview-1"}' ;;
   */pulls/7/comments*) echo '{"html_url":"https://github.com/acme/widget/pull/7#discussion_r100"}' ;;
   *) echo '{}' ;;
@@ -952,10 +953,9 @@ esac
     });
 
     const args = readFileSync(gh.log, 'utf8');
-    assert.match(args, /\/pulls\/7\/reviews/);
-    assert.match(args, /body=a general remark/);
-    assert.match(args, /event=COMMENT/);
-    assert.equal(pr.url, 'https://github.com/acme/widget/pull/7#pullrequestreview-1');
+    assert.match(args, /pr comment 7/);
+    assert.match(args, /--body a general remark/);
+    assert.equal(pr.url, 'https://github.com/acme/widget/pull/7#issuecomment-1');
     assert.equal(stub.calls.some((call) => call.url.endsWith('/reviews')), false);
   });
 

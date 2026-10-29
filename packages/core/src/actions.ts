@@ -263,23 +263,6 @@ const PR_THREADS: GhAction = {
   },
 };
 
-// GitHub: POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
-const PR_REVIEW_COMMENT: GhAction = {
-  name: 'pr:review-comment',
-  command: ['pr', 'review-comment'],
-  positionals: [{ name: 'number', type: 'number', required: true }],
-  flags: [{ name: 'body', type: 'string', required: true }],
-  permissions: { pull_requests: 'write' },
-  timeoutSeconds: 120,
-  hostUser: false,
-  api: {
-    method: 'POST',
-    endpoint: 'repos/{owner}/{repo}/pulls/{number}/reviews',
-    body: ['body'],
-    staticBody: { event: 'COMMENT' },
-  },
-};
-
 // GitHub: POST /repos/{owner}/{repo}/pulls/{pull_number}/comments
 const PR_COMMENT_INLINE: GhAction = {
   name: 'pr:comment-inline',
@@ -418,7 +401,6 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:reply': PR_REPLY,
   'pr:edit-comment': PR_EDIT_COMMENT,
   'pr:threads': PR_THREADS,
-  'pr:review-comment': PR_REVIEW_COMMENT,
   'pr:comment-inline': PR_COMMENT_INLINE,
   'pr:resolve-check': PR_RESOLVE_CHECK,
   'pr:resolve': PR_RESOLVE,
