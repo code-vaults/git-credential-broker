@@ -12,7 +12,7 @@
  *  - a wildcard is allowed only as a whole segment, never inside one, so a malformed entry
  *    matches nothing and therefore fails closed.
  */
-import type { BrokerConfig, HostConfig, RepoRef } from 'gcb-cli';
+import type { BrokerConfig, HostConfig, RepoRef } from 'gcb-core';
 
 /** One `owner` or `repo` segment: starts alphanumeric, then letters/digits/._- */
 const SEGMENT_RE = /^[a-z0-9][a-z0-9._-]*$/;

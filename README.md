@@ -137,7 +137,7 @@ Inside a checkout, `--repo` can be omitted only when `origin` names a usable Git
 host matches `--host`; otherwise pass `--repo`, or the matching `--host`.
 
 The exact command, flags and required values come from
-[`packages/cli/src/actions.ts`](packages/cli/src/actions.ts); `gcb gh --help` renders that catalog.
+[`packages/core/src/actions.ts`](packages/core/src/actions.ts); `gcb gh --help` renders that catalog.
 
 ## Set up the GitHub App first
 
@@ -146,7 +146,7 @@ The exact command, flags and required values come from
    should open pull requests, **Actions: Read** for `logs`, and **Checks: Read** / **Statuses: Read** /
    **Issues: Read and write** for the corresponding `gcb gh` actions. Grant them in the app, not only
    in the request. The per-action source of truth is the catalog in
-   [`packages/cli/src/actions.ts`](packages/cli/src/actions.ts).
+   [`packages/core/src/actions.ts`](packages/core/src/actions.ts).
 3. Install the app on the account that owns the repositories, granting access to those alone.
 4. Download the **private key**; note the **App ID** and **Client ID**.
 5. Ignore the client secret — this tool never uses it. Installation tokens are obtained by signing a
@@ -578,7 +578,7 @@ this working, and the traps it already paid for, are in [AGENTS.md](AGENTS.md).
 ## Layout
 
 ```
-packages/cli/src/        shared parser, protocol, types, platform helpers and the gh action catalog
+packages/core/src/        shared parser, protocol, types, platform helpers and the gh action catalog
 packages/client/src/     credential helper, setup, probe, logs, pr, gh
 packages/host/src/       YAML config, providers, broker, daemon and host commands
 packages/*/bin/          the two installed gcb bins (client and host)
@@ -634,7 +634,7 @@ ARG GCB_CLIENT_IMAGE=code-vaults/gcb-client:dev
 FROM ${GCB_CLIENT_IMAGE} AS gcb-client
 FROM ${BASE}
 
-COPY --from=gcb-client /usr/local/lib/node_modules/gcb-cli /usr/local/lib/node_modules/gcb-cli
+COPY --from=gcb-client /usr/local/lib/node_modules/gcb-core /usr/local/lib/node_modules/gcb-core
 COPY --from=gcb-client /usr/local/lib/node_modules/gcb-client /usr/local/lib/node_modules/gcb-client
 RUN ln -s /usr/local/lib/node_modules/gcb-client/bin/gcb.js /usr/local/bin/gcb
 ```

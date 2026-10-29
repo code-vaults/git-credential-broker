@@ -21,8 +21,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { canonicalPath } from 'gcb-cli';
-import { fail, insideMountedPath, parseArgs, say, warn, writeSecretFile } from 'gcb-cli';
+import { canonicalPath } from 'gcb-core';
+import { fail, insideMountedPath, parseArgs, say, warn, writeSecretFile } from 'gcb-core';
 
 /** The record `stage` leaves behind, so the running code is identifiable afterwards. */
 export const STAGED_RECORD = 'STAGED.json';

@@ -3,7 +3,7 @@
  *
  * This is the only side that imports `yaml` (through config.ts) and holds the App key.
  */
-import type { CommandBackend } from 'gcb-cli';
+import type { CommandBackend } from 'gcb-core';
 import { assertProxyEnabled } from './proxy.ts';
 
 export * from './gh.ts';

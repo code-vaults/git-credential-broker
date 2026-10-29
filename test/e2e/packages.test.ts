@@ -71,12 +71,12 @@ function bin(prefix: string): string {
 describe('packed npm packages', () => {
   before(() => {
     fs.mkdirSync(packs, { recursive: true });
-    const cli = pack('cli');
+    const core = pack('core');
     const client = pack('client');
     const host = pack('host');
 
-    run('npm', ['install', '-g', '--prefix', clientPrefix, '--no-audit', '--no-fund', cli, client]);
-    run('npm', ['install', '-g', '--prefix', hostPrefix, '--no-audit', '--no-fund', cli, host]);
+    run('npm', ['install', '-g', '--prefix', clientPrefix, '--no-audit', '--no-fund', core, client]);
+    run('npm', ['install', '-g', '--prefix', hostPrefix, '--no-audit', '--no-fund', core, host]);
   });
 
   it('installs a working client without the host parser', () => {

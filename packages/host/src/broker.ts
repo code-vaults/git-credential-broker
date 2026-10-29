@@ -34,12 +34,12 @@ import {
   parseMessage,
   socketPathRefusal,
   tokenFingerprint,
-} from 'gcb-cli';
+} from 'gcb-core';
 import net from 'node:net';
 import path from 'node:path';
 
 import { hostConfig, normalizeRepoPath, repoAllowed } from './policy.ts';
-import type { ActionValues, AuditSink, BrokerConfig, Provider, WireResponse } from 'gcb-cli';
+import type { ActionValues, AuditSink, BrokerConfig, Provider, WireResponse } from 'gcb-core';
 
 /** Reported by the `ping` operation so the container side can prove what it reached. */
 export const BROKER_VERSION = PACKAGE_VERSION;

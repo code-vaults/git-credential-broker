@@ -14,7 +14,7 @@ import { startBroker } from './broker.ts';
 import { assertKeysReadable, assertUserTokensReadable, loadConfig, resolveConfigPath } from './config.ts';
 import { createProvider } from './providers/index.ts';
 import type { ProviderDeps } from './providers/index.ts';
-import type { BrokerConfig, Provider } from 'gcb-cli';
+import type { BrokerConfig, Provider } from 'gcb-core';
 
 /** Usage text. */
 const USAGE =

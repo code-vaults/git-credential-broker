@@ -19,11 +19,11 @@ import { renderCompose, runCompose } from '../../packages/host/src/commands/comp
 import { runDiagnose } from '../../packages/host/src/commands/diagnose.ts';
 import { SIDECAR, loadConfig, resolveConfigPath, deploymentDir } from '../../packages/host/src/config.ts';
 import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit, resolveInitSelection } from '../../packages/host/src/commands/init.ts';
-import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../packages/cli/src/support.ts';
+import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../packages/core/src/support.ts';
 import { performSetup } from '../../packages/client/src/commands/setup.ts';
-import type { BrokerConfig, GithubAppHostConfig } from '../../packages/cli/src/types.ts';
+import type { BrokerConfig, GithubAppHostConfig } from '../../packages/core/src/types.ts';
 import { runProbe } from '../../packages/client/src/commands/probe.ts';
-import { encodeMessage, parseMessage } from '../../packages/cli/src/socket-protocol.ts';
+import { encodeMessage, parseMessage } from '../../packages/core/src/socket-protocol.ts';
 import { runAsync } from '../common/run.ts';
 
 /** Scratch space for the whole file. */

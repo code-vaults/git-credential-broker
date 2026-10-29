@@ -12,7 +12,7 @@
  */
 import { readFileSync } from 'node:fs';
 
-import type { Credential, Provider, StaticHostConfig } from 'gcb-cli';
+import type { Credential, Provider, StaticHostConfig } from 'gcb-core';
 
 /** Options for {@link createStaticProvider}. */
 export interface StaticProviderOptions {

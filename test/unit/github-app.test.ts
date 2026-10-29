@@ -33,9 +33,9 @@ import { describe, it } from 'node:test';
 
 import { createGithubAppProvider, nextLink, signAppJwt } from '../../packages/host/src/providers/github-app.ts';
 import { createProvider } from '../../packages/host/src/providers/index.ts';
-import { tokenFingerprint } from '../../packages/cli/src/fingerprint.ts';
-import type { FetchLike, FetchResponseLike, GithubAppHostConfig } from '../../packages/cli/src/types.ts';
-import { ProviderConfigError } from '../../packages/cli/src/errors.ts';
+import { tokenFingerprint } from '../../packages/core/src/fingerprint.ts';
+import type { FetchLike, FetchResponseLike, GithubAppHostConfig } from '../../packages/core/src/types.ts';
+import { ProviderConfigError } from '../../packages/core/src/errors.ts';
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const PRIVATE_PEM = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();

@@ -1,5 +1,5 @@
 {
-  "name": "gcb-cli",
+  "name": "gcb-core",
   "version": "0.0.0",
   "description": "Shared command runtime and protocol for gcb-client and gcb-host.",
   "license": "MIT",

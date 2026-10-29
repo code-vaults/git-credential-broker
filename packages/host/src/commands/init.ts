@@ -28,7 +28,7 @@ import {
   type DeploymentMode,
 } from '../config.ts';
 import { parseAllowEntry } from '../policy.ts';
-import type { BrokerConfig, GithubAppHostConfig } from 'gcb-cli';
+import type { BrokerConfig, GithubAppHostConfig } from 'gcb-core';
 import {
   brokerPaths,
   DEPLOYMENT_MODES,
@@ -37,7 +37,7 @@ import {
   requireFixedInSidecar,
 } from './deployment.ts';
 import type { BrokerPaths } from './deployment.ts';
-import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from 'gcb-cli';
+import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from 'gcb-core';
 
 /** The environment `init` reasons about, injectable so the guard rails can be tested. */
 export interface InitEnvironment {

@@ -29,8 +29,8 @@ import {
   writeResult,
   type HostOpenRequest,
   type HostOpenResult,
-} from 'gcb-cli';
-import { fail, listFlag, parseArgs, say, warn } from 'gcb-cli';
+} from 'gcb-core';
+import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
 import { applyProxyChoice, parseProxy, type ProxyChoice } from '../http.ts';
 
 const run = promisify(execFile);

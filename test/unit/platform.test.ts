@@ -13,7 +13,7 @@ import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { prepareSocketPath } from '../../packages/host/src/broker.ts';
-import { isNativeWindows, isWindowsBackedPath, isWsl, platformRefusal, socketPathRefusal } from '../../packages/cli/src/platform.ts';
+import { isNativeWindows, isWindowsBackedPath, isWsl, platformRefusal, socketPathRefusal } from '../../packages/core/src/platform.ts';
 
 /** Scratch space for the one test that touches the filesystem. */
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-platform-'));

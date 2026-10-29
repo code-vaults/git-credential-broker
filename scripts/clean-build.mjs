@@ -3,6 +3,6 @@ import { rmSync } from 'node:fs';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '..');
-for (const name of ['cli', 'client', 'host']) {
+for (const name of ['core', 'client', 'host']) {
   rmSync(path.join(root, 'packages', name, 'lib'), { recursive: true, force: true });
 }

@@ -13,8 +13,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { inferMode, loadConfig, resolveConfigPath, deploymentDir, SIDECAR } from '../config.ts';
-import { PACKAGE_VERSION } from 'gcb-cli';
-import { fail, parseArgs, say, warn } from 'gcb-cli';
+import { PACKAGE_VERSION } from 'gcb-core';
+import { fail, parseArgs, say, warn } from 'gcb-core';
 import { USER_TOKEN_FILE } from '../config.ts';
 
 /** Everything `compose` needs, resolved. */

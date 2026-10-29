@@ -21,11 +21,11 @@ import {
   removeResult,
   waitForResult,
   writeRequest,
-} from 'gcb-cli';
+} from 'gcb-core';
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { baseBranchFor, qualifiedBranch, remoteRepo } from './remotes.ts';
 import { runGh } from './gh.ts';
-import { fail, parseArgs, say } from 'gcb-cli';
+import { fail, parseArgs, say } from 'gcb-core';
 
 /** Every flag the flag-only lifecycle understands. */
 const KNOWN_FLAGS = new Set([

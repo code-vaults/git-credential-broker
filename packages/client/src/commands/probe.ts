@@ -5,9 +5,9 @@
  * reports the decision with the credential reduced to a fingerprint, so the output is safe to
  * paste anywhere. Exit codes: 0 allowed, 1 denied, 3 broker unreachable.
  */
-import { tokenFingerprint } from 'gcb-cli';
+import { tokenFingerprint } from 'gcb-core';
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
-import { fail, parseArgs, say } from 'gcb-cli';
+import { fail, parseArgs, say } from 'gcb-core';
 
 /** Usage text for `probe`. */
 export const PROBE_USAGE = `Usage: gcb probe [options]

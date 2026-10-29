@@ -8,7 +8,7 @@ import { describe, it } from 'node:test';
 
 import { startBroker } from '../../packages/host/src/broker.ts';
 import { tryRunAsync, type RunResult } from '../common/run.ts';
-import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../packages/cli/src/types.ts';
+import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../packages/core/src/types.ts';
 
 /** Run the client from source, next to this file rather than from the cwd. */
 const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));

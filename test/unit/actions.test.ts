@@ -7,8 +7,8 @@ import {
   GH_ACTIONS,
   buildGhArgv,
   getGhAction,
-} from '../../packages/cli/src/actions.ts';
-import { MAX_BODY_CHARS, MAX_TITLE_CHARS } from '../../packages/cli/src/host-request.ts';
+} from '../../packages/core/src/actions.ts';
+import { MAX_BODY_CHARS, MAX_TITLE_CHARS } from '../../packages/core/src/host-request.ts';
 
 describe('gh action catalog', () => {
   it('has the roadmap actions and no merge action', () => {

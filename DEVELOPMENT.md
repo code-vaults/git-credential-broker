@@ -78,8 +78,8 @@ As the commands a user of the package gets:
 
 ```sh
 mkdir -p /tmp/gcb-packs
-npm pack ./packages/cli ./packages/host --pack-destination /tmp/gcb-packs
-npm install -g /tmp/gcb-packs/gcb-cli-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
+npm pack ./packages/core ./packages/host --pack-destination /tmp/gcb-packs
+npm install -g /tmp/gcb-packs/gcb-core-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
 gcb --version
 ```
 
@@ -140,7 +140,7 @@ If you add tests, three traps are already paid for in this suite:
 
 ```sh
 corepack yarn pack:check   # shows exactly what each of the three packages would ship
-npm pack ./packages/cli      # the tarball itself
+npm pack ./packages/core      # the tarball itself
 npm pack ./packages/client
 npm pack ./packages/host
 ```
@@ -169,7 +169,7 @@ The release workflow uses npm trusted publishing (OIDC): `id-token: write` is gr
 ## Layout
 
 ```
-packages/cli/src/      parser, help/version, protocol, types, platform and paths
+packages/core/src/      parser, help/version, protocol, types, platform and paths
 packages/client/src/   credential helper, setup, probe, logs and pr
 packages/host/src/     YAML config, providers, broker, daemon and host commands
 packages/*/bin/gcb.js  the two installed bins (client and host)

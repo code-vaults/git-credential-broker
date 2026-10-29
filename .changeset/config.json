@@ -11,7 +11,7 @@
   "updateInternalDependencies": "patch",
   "fixed": [
     [
-      "gcb-cli",
+      "gcb-core",
       "gcb-client",
       "gcb-host"
     ]

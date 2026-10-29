@@ -6,9 +6,9 @@ import path from 'node:path';
 import { describe, it } from 'node:test';
 
 import { CODES, startBroker } from '../../packages/host/src/broker.ts';
-import { MAX_MESSAGE_BYTES } from '../../packages/cli/src/socket-protocol.ts';
+import { MAX_MESSAGE_BYTES } from '../../packages/core/src/socket-protocol.ts';
 import { createStaticProvider } from '../../packages/host/src/providers/static.ts';
-import type { AuditSink, BrokerConfig, Provider, StaticHostConfig, WireResponse } from '../../packages/cli/src/types.ts';
+import type { AuditSink, BrokerConfig, Provider, StaticHostConfig, WireResponse } from '../../packages/core/src/types.ts';
 
 const HOST = 'github.com';
 

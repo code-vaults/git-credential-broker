@@ -34,7 +34,7 @@ host-user delegation/live reload are not implemented.
   not a boundary.
 - **Configuration becomes human-editable** (YAML, see Phase 1), with groups and globs. `yaml` is a
   dependency of the host package, not a bundled artifact.
-- **Three packages, one command.** `gcb-cli` is the shared runtime; `gcb-client` and `gcb-host` are the
+- **Three packages, one command.** `gcb-core` is the shared runtime; `gcb-client` and `gcb-host` are the
   installed entry points and both expose `gcb`. The container never installs host dependencies.
 - **The dsh approval plugin lives in `../idsh`.** This repository only carries its roadmap item and
   the container-facing skill.
@@ -92,9 +92,9 @@ The configuration is the source of truth and must be comfortable to edit by hand
 - [x] Use YAML. `yaml` is the parser: `parseDocument` preserves comments and formatting, it is pure
       JavaScript, and the Document API is what lets `init` update one value without rewriting the file.
 - [x] Split the repository into Yarn workspaces under `packages/`:
-      - `gcb-cli`: shared argument parsing, help, protocol and types; no `yaml`;
-      - `gcb-client`: container side; depends on `gcb-cli`; no host dependencies;
-      - `gcb-host`: host side; depends on `gcb-cli` and `yaml`;
+      - `gcb-core`: shared argument parsing, help, protocol and types; no `yaml`;
+      - `gcb-client`: container side; depends on `gcb-core`; no host dependencies;
+      - `gcb-host`: host side; depends on `gcb-core` and `yaml`;
       - both client and host expose the same `gcb` bin; only one is installed per environment.
 - [x] Do **not** bundle. npm installs dependencies; remove esbuild and the staged bundle build.
       `stage`, if kept, exports a commit and does not build a self-contained artifact.

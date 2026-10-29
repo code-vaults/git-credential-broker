@@ -32,7 +32,7 @@ import {
   warn,
   writeNodeCaBundle,
   writeSecretFile,
-} from 'gcb-cli';
+} from 'gcb-core';
 
 /** Everything `setup` needs, resolved. */
 export interface SetupInput {
