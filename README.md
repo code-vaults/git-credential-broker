@@ -658,7 +658,7 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr close` | `pull_requests: write` |
 | `pr comment` | `pull_requests: write` |
 | `pr review` | `pull_requests: write` |
-| `pr review-view` | `pull_requests: read` |
+| `pr review --id` | `pull_requests: read` |
 | `issue create` | `issues: write` |
 | `run view` | `actions: read` |
 | `run list` | `actions: read` |

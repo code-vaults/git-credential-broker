@@ -1159,6 +1159,12 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(closed.stderr, /only go with --comment/);
   });
 
+  it('routes --id to the review read', () => {
+    const result = cli([...base, '--id', '9']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /no broker socket/);
+  });
+
   it('refuses --close with a value too', () => {
     for (const argv of [['--close', '7'], ['--close=7']]) {
       const moved = cli([...base, ...argv]);

@@ -187,12 +187,12 @@ const PR_CLOSE: GhAction = {
 };
 
 // GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
-const PR_REVIEW_VIEW: GhAction = {
-  name: 'pr:review-view',
-  command: ['pr', 'review-view'],
+const PR_REVIEW_BY_ID: GhAction = {
+  name: 'pr:review-by-id',
+  command: ['pr', 'review-by-id'],
   positionals: [
     { name: 'number', type: 'number', required: true },
-    { name: 'reviewId', type: 'number', required: true },
+    { name: 'id', type: 'number', required: true },
   ],
   flags: [{ name: 'jq', type: 'string' }],
   permissions: { pull_requests: 'read' },
@@ -200,7 +200,7 @@ const PR_REVIEW_VIEW: GhAction = {
   hostUser: false,
   api: {
     method: 'GET',
-    endpoint: 'repos/{owner}/{repo}/pulls/{number}/reviews/{reviewId}',
+    endpoint: 'repos/{owner}/{repo}/pulls/{number}/reviews/{id}',
   },
 };
 
@@ -282,7 +282,7 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:close': PR_CLOSE,
   'pr:comment': PR_COMMENT,
   'pr:review': PR_REVIEW,
-  'pr:review-view': PR_REVIEW_VIEW,
+  'pr:review-by-id': PR_REVIEW_BY_ID,
   'issue:create': ISSUE_CREATE,
   'run:view': RUN_VIEW,
   'run:list': RUN_LIST,

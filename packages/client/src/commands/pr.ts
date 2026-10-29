@@ -30,7 +30,7 @@ import { fail, parseArgs, say } from 'gcb-core';
 /** Every flag the flag-only lifecycle understands. */
 const KNOWN_FLAGS = new Set([
   'help', 'h', 'draft', 'close', 'comment', 'file', 'line', 'side', 'threads',
-  'reply-to', 'edit', 'resolve', 'proxy', 'no-proxy', 'socket', 'host', 'repo',
+  'reply-to', 'edit', 'resolve', 'id', 'proxy', 'no-proxy', 'socket', 'host', 'repo',
   'head', 'base', 'title', 'body', 'body-file', 'number', 'via-host', 'status',
 ]);
 
@@ -73,6 +73,7 @@ Acting on one
   --edit <id>          Replace the body of that review comment, with --body/--body-file
                        (an id --threads prints; no --number is needed)
   --resolve <thread>   Mark that review thread resolved (the id --threads prints)
+  --id <review-id>     Show one existing review (with --number)
   With --number and none of the above, the title, body or base is updated.
 
 Common
@@ -96,6 +97,7 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
   // request itself with the body meant for the comment.
   const present = (name: string): boolean => args.has(name) || args.value(name) !== undefined;
   if (present('resolve')) return 'resolve' as const;
+  if (present('id')) return 'review' as const;
   if (present('reply-to')) return 'reply' as const;
   if (present('edit')) return 'edit' as const;
   if (args.has('threads')) return 'threads' as const;
@@ -244,9 +246,22 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (action === 'edit' && (editId === undefined || !Number.isInteger(Number(editId)) || Number(editId) <= 0)) {
     fail(`--edit needs the id of the review comment being changed, got ${JSON.stringify(editId)}`);
   }
+  const reviewId = args.value('id');
+  if (action === 'review' && (reviewId === undefined || !Number.isInteger(Number(reviewId)) || Number(reviewId) <= 0)) {
+    fail(`--id needs a positive review id, got ${JSON.stringify(reviewId)}`);
+  }
   const resolveId = args.value('resolve');
   if (action === 'resolve' && (resolveId === undefined || resolveId.trim() === '')) {
     fail(`--resolve needs the id of the thread being resolved, got ${JSON.stringify(resolveId)}`);
+  }
+
+  if (action === 'review') {
+    const ghArgs = ['pr', 'review-by-id', String(number), reviewId as string, '--repo', repo, '--host', host];
+    const socketArg = args.value('socket');
+    if (socketArg !== undefined) ghArgs.push('--socket', socketArg);
+    if (args.has('no-proxy')) ghArgs.push('--no-proxy');
+    else if (args.value('proxy') !== undefined) ghArgs.push('--proxy', args.value('proxy') as string);
+    return runGh(ghArgs, { unreachableExitCode: 3 });
   }
 
   if (action === 'update') {
