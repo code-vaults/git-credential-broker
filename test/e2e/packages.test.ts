@@ -22,8 +22,13 @@ const hostPrefix = path.join(scratch, 'host');
 after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
 /** Run a command and return stdout. */
-function run(command: string, args: readonly string[]): string {
-  return execFileSync(command, args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+function run(command: string, args: readonly string[], env?: NodeJS.ProcessEnv): string {
+  return execFileSync(command, args, {
+    cwd: ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    ...(env === undefined ? {} : { env }),
+  });
 }
 
 /** Run a command that is expected to fail, returning its stderr. */
@@ -45,13 +50,11 @@ function pack(name: string): string {
   fs.mkdirSync(path.dirname(copy), { recursive: true });
   fs.cpSync(source, copy, {
     recursive: true,
-    filter: (entry) => !entry.includes(`${path.sep}node_modules`) && !entry.endsWith(`${path.sep}dist`),
+    filter: (entry) => !entry.includes(`${path.sep}node_modules`),
   });
-  const output = execFileSync('npm', ['pack', copy, '--pack-destination', target], {
-    cwd: ROOT,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PATH: `${path.join(ROOT, 'node_modules', '.bin')}${path.delimiter}${process.env['PATH'] ?? ''}` },
+  const output = run('npm', ['pack', copy, '--pack-destination', target], {
+    ...process.env,
+    PATH: `${path.join(ROOT, 'node_modules', '.bin')}${path.delimiter}${process.env['PATH'] ?? ''}`,
   });
   const file = output.trim().split('\n').pop();
   assert.ok(file, `npm pack produced no filename for ${name}`);
