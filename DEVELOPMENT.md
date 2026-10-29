@@ -87,7 +87,7 @@ As an image, build the host stage of the root Dockerfile:
 
 ```sh
 docker build --target host -t gcb-host:local .
-gcb compose --image gcb-host:local > docker-compose.yml
+gcb compose --image gcb-host:local > /tmp/gcb-compose.yml
 ```
 
 Then keep the rendered `sh -c` wrapper (it applies `GCB_PROXY`) and change only the final
