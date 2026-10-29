@@ -1159,6 +1159,42 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(closed.stderr, /only go with --comment/);
   });
 
+  it('routes review --id to the review read', () => {
+    const result = cli(['review', ...base, '--id', '9', '--jq', '.body']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /no broker socket/);
+  });
+
+  it('refuses a noncanonical review id before dispatch', () => {
+    const result = cli(['review', ...base, '--id', '9.0', '--jq', '.body']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--id needs a positive review id/);
+  });
+
+  it('refuses --id beside another action', () => {
+    const result = cli([...base, '--id', '9', '--status']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--id only goes with --number and --jq/);
+  });
+
+  it('refuses --jq without --id', () => {
+    const result = cli([...base, '--jq', '.body']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--jq only goes with --id/);
+  });
+
+  it('refuses a bare --jq', () => {
+    const result = cli(['review', ...base, '--id', '9', '--jq']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--jq needs an expression/);
+  });
+
+  it('refuses an empty --jq', () => {
+    const result = cli(['review', ...base, '--id', '9', '--jq', '']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--jq needs an expression/);
+  });
+
   it('refuses --close with a value too', () => {
     for (const argv of [['--close', '7'], ['--close=7']]) {
       const moved = cli([...base, ...argv]);

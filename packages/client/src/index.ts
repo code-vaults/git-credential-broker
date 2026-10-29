@@ -64,6 +64,9 @@ async function run(argv: readonly string[]): Promise<number> {
       // tell it that --repo is required.
       if (rest.length === 0) return (await import('./commands/gh.ts')).runGh(['pr']);
       const sub = rest[0];
+      if (sub === 'review' && rest.some((argument) => argument === '--id' || argument.startsWith('--id='))) {
+        return (await import('./commands/pr.ts')).runPr(rest.slice(1));
+      }
       if (sub !== undefined && Object.hasOwn(GH_ACTIONS, `pr:${sub}`)) {
         return (await import('./commands/gh.ts')).runGh(['pr', ...rest], { unreachableExitCode: 3 });
       }

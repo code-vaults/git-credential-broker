@@ -40,6 +40,12 @@ export interface FlagSpec {
   readonly required?: boolean;
 }
 
+/** A fixed `gh api` request, with only typed values substituted. */
+export interface ApiSpec {
+  readonly method: 'GET';
+  readonly endpoint: string;
+}
+
 /** One allowed `gh` action. */
 export interface GhAction {
   readonly name: string;
@@ -56,6 +62,8 @@ export interface GhAction {
   readonly timeoutSeconds: number;
   /** Whether the host broker may run this as a person with `--as-user`. */
   readonly hostUser: boolean;
+  /** When set, the executor runs `gh api` for this fixed request instead of the command above. */
+  readonly api?: ApiSpec;
 }
 
 /** Values supplied by the caller, keyed by positional or flag name. */
@@ -178,6 +186,24 @@ const PR_CLOSE: GhAction = {
   hostUser: true,
 };
 
+// GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+const PR_REVIEW_BY_ID: GhAction = {
+  name: 'pr:review-by-id',
+  command: ['pr', 'review-by-id'],
+  positionals: [
+    { name: 'number', type: 'number', required: true },
+    { name: 'id', type: 'number', required: true },
+  ],
+  flags: [{ name: 'jq', type: 'string' }],
+  permissions: { pull_requests: 'read' },
+  timeoutSeconds: 120,
+  hostUser: false,
+  api: {
+    method: 'GET',
+    endpoint: 'repos/{owner}/{repo}/pulls/{number}/reviews/{id}',
+  },
+};
+
 // GitHub: POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
 const PR_REVIEW: GhAction = {
   name: 'pr:review',
@@ -256,6 +282,7 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:close': PR_CLOSE,
   'pr:comment': PR_COMMENT,
   'pr:review': PR_REVIEW,
+  'pr:review-by-id': PR_REVIEW_BY_ID,
   'issue:create': ISSUE_CREATE,
   'run:view': RUN_VIEW,
   'run:list': RUN_LIST,
@@ -292,7 +319,8 @@ const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
  *
  * @param name - the action name.
  * @param values - the caller's positional and flag values.
- * @param repo - the validated `owner/name` repository to inject as `--repo`.
+ * @param repo - the validated `owner/name` repository, injected as `--repo` for a command
+ *   action or substituted into the endpoint for an API action.
  * @returns the argv after the `gh` binary.
  * @throws {ActionError} on an unknown action, key, flag type, or missing required value.
  */
@@ -319,18 +347,42 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
     if (!known.has(key)) throw new ActionError(`unknown option ${JSON.stringify(key)} for ${name}`);
   }
 
-  const argv = [...action.command];
-  for (const positional of action.positionals) {
-    const value = values[positional.name];
-    if (value === undefined) {
-      if (positional.required === true) throw new ActionError(`${name} needs ${positional.name}`);
-      continue;
-    }
-    if (positional.type === 'number') {
-      const number = asNumber(value, positional.name);
-      argv.push(String(number));
-    } else {
-      argv.push(asString(value, positional.name));
+  let argv: string[];
+  if (action.api !== undefined) {
+    const substitutions: Record<string, string> = {
+      owner,
+      repo: repository,
+      ...Object.fromEntries(
+        action.positionals.flatMap((positional) => {
+          const value = values[positional.name];
+          if (value === undefined) {
+            if (positional.required === true) throw new ActionError(`${name} needs ${positional.name}`);
+            return [];
+          }
+          return [[positional.name, positional.type === 'number' ? String(asNumber(value, positional.name)) : asString(value, positional.name)]];
+        }),
+      ),
+    };
+    const endpoint = action.api.endpoint.replace(/\{([a-zA-Z_]+)\}/g, (_match, key: string) => {
+      const value = substitutions[key];
+      if (value === undefined) throw new ActionError(`${name} has no value for {${key}}`);
+      return encodeURIComponent(value);
+    });
+    if (endpoint.includes('{')) throw new ActionError(`${name} left an endpoint placeholder unresolved`);
+    argv = ['api', '--method', action.api.method, endpoint];
+  } else {
+    argv = [...action.command];
+    for (const positional of action.positionals) {
+      const value = values[positional.name];
+      if (value === undefined) {
+        if (positional.required === true) throw new ActionError(`${name} needs ${positional.name}`);
+        continue;
+      }
+      if (positional.type === 'number') {
+        argv.push(String(asNumber(value, positional.name)));
+      } else {
+        argv.push(asString(value, positional.name));
+      }
     }
   }
 
@@ -386,7 +438,7 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
     throw new ActionError(`the body must be at most ${MAX_BODY_CHARS} characters`);
   }
 
-  argv.push('--repo', repo);
+  if (action.api === undefined) argv.push('--repo', repo);
   return argv;
 }
 
@@ -399,8 +451,11 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
  * @throws {ActionError} when the value is not a positive integer.
  */
 function asNumber(value: unknown, label: string): number {
-  if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
-  if (typeof value === 'string' && /^[1-9][0-9]*$/.test(value)) return Number(value);
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return value;
+  if (typeof value === 'string' && /^[1-9][0-9]*$/.test(value)) {
+    const parsed = Number(value);
+    if (Number.isSafeInteger(parsed)) return parsed;
+  }
   throw new ActionError(`${label} must be a positive integer`);
 }
 

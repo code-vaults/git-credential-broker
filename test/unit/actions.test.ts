@@ -21,6 +21,7 @@ describe('gh action catalog', () => {
       'pr:close',
       'pr:comment',
       'pr:review',
+      'pr:review-by-id',
       'issue:create',
       'run:view',
       'run:list',
@@ -92,6 +93,21 @@ describe('buildGhArgv', () => {
       '--repo',
       'acme/widget',
     ]);
+  });
+
+  it('builds a fixed api request without injecting the repository', () => {
+    assert.deepEqual(
+      buildGhArgv('pr:review-by-id', { number: 42, id: 9, jq: '.body' }, 'acme/widget'),
+      ['api', '--method', 'GET', 'repos/acme/widget/pulls/42/reviews/9', '--jq', '.body'],
+    );
+    assert.throws(
+      () => buildGhArgv('pr:review-by-id', { number: 42, id: 0 }, 'acme/widget'),
+      /id/,
+    );
+    assert.throws(
+      () => buildGhArgv('pr:review-by-id', { number: 42, id: 9007199254740993 }, 'acme/widget'),
+      /positive integer/,
+    );
   });
 
   it('builds the edit flags', () => {

@@ -39,6 +39,22 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.doesNotMatch(result.stdout, /host-token/);
   });
 
+  it('keeps the token out of the jq process environment', async () => {
+    const gh = shim('printf "TOKEN=[%s]\nCONFIG=%s\n" "$GH_TOKEN" "$(cat "$GH_CONFIG_DIR/hosts.yml")"');
+    const result = await runGhAction({
+      action: 'pr:view',
+      values: { number: 7, jq: '.body' },
+      repo: 'acme/widget',
+      token: 'app-token',
+      host: 'GitHub.com',
+      ghPath: gh,
+      env: { PATH: process.env.PATH },
+    });
+    assert.equal(result.code, 0);
+    assert.match(result.stdout, /TOKEN=\[\]/);
+    assert.match(result.stdout, /github\.com:\n    oauth_token: app-token/);
+  });
+
   it('kills the process group on timeout', async () => {
     const gh = shim('sleep 5');
     const started = Date.now();

@@ -6,7 +6,7 @@
  * ceiling. The host user's gh configuration and token are never read.
  */
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
@@ -60,12 +60,27 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   const home = mkdtempSync(path.join(tmpdir(), 'gcb-gh-'));
   const configDir = path.join(home, 'gh');
   mkdirSync(configDir, { recursive: true });
+  const host = options.host?.toLowerCase() ?? 'github.com';
+  const usesJq = options.values['jq'] !== undefined;
+  if (usesJq) {
+    // gh runs --jq in the same process, so a caller expression could print GH_TOKEN via env.
+    // Keep the token in the isolated config file instead when jq is present.
+    try {
+      writeFileSync(
+        path.join(configDir, 'hosts.yml'),
+        `${host}:\n    oauth_token: ${options.token}\n    user: gcb\n`,
+        { mode: 0o600 },
+      );
+    } catch (error) {
+      rmSync(home, { recursive: true, force: true });
+      throw error;
+    }
+  }
   const source = options.env ?? process.env;
   const env: NodeJS.ProcessEnv = {
     HOME: home,
     GH_CONFIG_DIR: configDir,
-    GH_TOKEN: options.token,
-    GH_HOST: options.host ?? 'github.com',
+    GH_HOST: host,
     NO_COLOR: '1',
     GH_PROMPT_DISABLED: '1',
     GH_NO_UPDATE_NOTIFIER: '1',
@@ -76,6 +91,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
     const value = source[key];
     if (value !== undefined && value !== '') env[key] = value;
   }
+  if (!usesJq) env.GH_TOKEN = options.token;
   applyProxyChoice(env, options.proxy);
 
   const timeoutMs = options.timeoutMs ?? getGhAction(options.action).timeoutSeconds * 1000;

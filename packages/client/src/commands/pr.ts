@@ -30,7 +30,7 @@ import { fail, parseArgs, say } from 'gcb-core';
 /** Every flag the flag-only lifecycle understands. */
 const KNOWN_FLAGS = new Set([
   'help', 'h', 'draft', 'close', 'comment', 'file', 'line', 'side', 'threads',
-  'reply-to', 'edit', 'resolve', 'proxy', 'no-proxy', 'socket', 'host', 'repo',
+  'reply-to', 'edit', 'resolve', 'id', 'jq', 'proxy', 'no-proxy', 'socket', 'host', 'repo',
   'head', 'base', 'title', 'body', 'body-file', 'number', 'via-host', 'status',
 ]);
 
@@ -73,6 +73,8 @@ Acting on one
   --edit <id>          Replace the body of that review comment, with --body/--body-file
                        (an id --threads prints; no --number is needed)
   --resolve <thread>   Mark that review thread resolved (the id --threads prints)
+  --id <review-id>     Show one existing review (with --number)
+  --jq <expr>          Filter that review's JSON (with --id)
   With --number and none of the above, the title, body or base is updated.
 
 Common
@@ -83,11 +85,15 @@ Common
 `;
 
 
+/** A positive decimal identifier that survives Number() without losing precision. */
+const isPositiveSafeInteger = (value: string | undefined): value is string =>
+  value !== undefined && /^[1-9][0-9]*$/.test(value) && Number.isSafeInteger(Number(value));
+
 /**
  * Read the action out of the flags.
  *
  * @param args - the parsed arguments.
- * @returns `update` or `open`.
+ * @returns the selected action; `--id` is applied by the caller as `review`.
  */
 function actionOf(args: { has(name: string): boolean; value(name: string): string | undefined }) {
   // `--resolve`, `--reply-to` and `--edit` take a value, and a bare one is parsed as a boolean flag with
@@ -161,7 +167,18 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     repo = `${found.owner}/${found.repo}`;
   }
   if (repo.trim() === '') fail('--repo needs a value (e.g. owner/name)');
-  const action = actionOf(args);
+  let action: ReturnType<typeof actionOf> | 'review' = actionOf(args);
+  const hasReviewId = args.has('id') || args.value('id') !== undefined;
+  if (hasReviewId) {
+    const conflicts = [
+      'status', 'comment', 'threads', 'reply-to', 'edit', 'resolve', 'close', 'draft', 'via-host',
+      'head', 'base', 'title', 'body', 'body-file', 'file', 'line', 'side',
+    ];
+    if (conflicts.some((name) => args.has(name) || args.value(name) !== undefined) || (action !== 'update' && action !== 'open')) {
+      fail('--id only goes with --number and --jq');
+    }
+    action = 'review';
+  }
   if (args.has('via-host') && action !== 'open') {
     fail('--via-host only creates a pull request, so it does not go with ' + JSON.stringify(action));
   }
@@ -211,8 +228,15 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   }
   // `--resolve` and `--edit` name their target by id and need no pull request number, but one given
   // anyway still has to be a number.
-  if (number !== undefined && (!Number.isInteger(Number(number)) || Number(number) <= 0)) {
+  if (number !== undefined && !isPositiveSafeInteger(number)) {
     fail(`--number must be a positive integer, got ${JSON.stringify(number)}`);
+  }
+  const jq = args.value('jq');
+  if ((args.has('jq') && jq === undefined) || (jq !== undefined && jq.trim() === '')) {
+    fail('--jq needs an expression');
+  }
+  if (jq !== undefined && action !== 'review') {
+    fail('--jq only goes with --id');
   }
   if (action === 'update' && title === undefined && body === undefined && base === undefined) {
     fail('an update has to change something: pass --title, --body/--body-file or --base');
@@ -244,9 +268,23 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (action === 'edit' && (editId === undefined || !Number.isInteger(Number(editId)) || Number(editId) <= 0)) {
     fail(`--edit needs the id of the review comment being changed, got ${JSON.stringify(editId)}`);
   }
+  const reviewId = args.value('id');
+  if (action === 'review' && !isPositiveSafeInteger(reviewId)) {
+    fail(`--id needs a positive review id, got ${JSON.stringify(reviewId)}`);
+  }
   const resolveId = args.value('resolve');
   if (action === 'resolve' && (resolveId === undefined || resolveId.trim() === '')) {
     fail(`--resolve needs the id of the thread being resolved, got ${JSON.stringify(resolveId)}`);
+  }
+
+  if (action === 'review') {
+    const ghArgs = ['pr', 'review-by-id', String(number), reviewId as string, '--repo', repo, '--host', host];
+    const socketArg = args.value('socket');
+    if (socketArg !== undefined) ghArgs.push('--socket', socketArg);
+    if (args.has('no-proxy')) ghArgs.push('--no-proxy');
+    else if (args.value('proxy') !== undefined) ghArgs.push('--proxy', args.value('proxy') as string);
+    if (jq !== undefined) ghArgs.push('--jq', jq);
+    return runGh(ghArgs, { unreachableExitCode: 3 });
   }
 
   if (action === 'update') {
