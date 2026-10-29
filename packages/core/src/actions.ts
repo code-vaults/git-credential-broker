@@ -451,8 +451,11 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
  * @throws {ActionError} when the value is not a positive integer.
  */
 function asNumber(value: unknown, label: string): number {
-  if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
-  if (typeof value === 'string' && /^[1-9][0-9]*$/.test(value)) return Number(value);
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return value;
+  if (typeof value === 'string' && /^[1-9][0-9]*$/.test(value)) {
+    const parsed = Number(value);
+    if (Number.isSafeInteger(parsed)) return parsed;
+  }
   throw new ActionError(`${label} must be a positive integer`);
 }
 

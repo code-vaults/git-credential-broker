@@ -104,6 +104,10 @@ describe('buildGhArgv', () => {
       () => buildGhArgv('pr:review-by-id', { number: 42, id: 0 }, 'acme/widget'),
       /id/,
     );
+    assert.throws(
+      () => buildGhArgv('pr:review-by-id', { number: 42, id: 9007199254740993 }, 'acme/widget'),
+      /positive integer/,
+    );
   });
 
   it('builds the edit flags', () => {
