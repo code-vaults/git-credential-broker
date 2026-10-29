@@ -98,7 +98,6 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
   // request itself with the body meant for the comment.
   const present = (name: string): boolean => args.has(name) || args.value(name) !== undefined;
   if (present('resolve')) return 'resolve' as const;
-  if (present('id')) return 'review' as const;
   if (present('reply-to')) return 'reply' as const;
   if (present('edit')) return 'edit' as const;
   if (args.has('threads')) return 'threads' as const;
@@ -164,7 +163,18 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     repo = `${found.owner}/${found.repo}`;
   }
   if (repo.trim() === '') fail('--repo needs a value (e.g. owner/name)');
-  const action = actionOf(args);
+  let action: ReturnType<typeof actionOf> | 'review' = actionOf(args);
+  const hasReviewId = args.has('id') || args.value('id') !== undefined;
+  if (hasReviewId) {
+    const conflicts = [
+      'status', 'comment', 'threads', 'reply-to', 'edit', 'resolve', 'close', 'draft', 'via-host',
+      'head', 'base', 'title', 'body', 'body-file', 'file', 'line', 'side',
+    ];
+    if (conflicts.some((name) => args.has(name) || args.value(name) !== undefined) || (action !== 'update' && action !== 'open')) {
+      fail('--id only goes with --number and --jq');
+    }
+    action = 'review';
+  }
   if (args.has('via-host') && action !== 'open') {
     fail('--via-host only creates a pull request, so it does not go with ' + JSON.stringify(action));
   }

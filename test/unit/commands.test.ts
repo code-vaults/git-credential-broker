@@ -1165,6 +1165,12 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(result.stderr, /no broker socket/);
   });
 
+  it('refuses --id beside another action', () => {
+    const result = cli([...base, '--id', '9', '--status']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--id only goes with --number and --jq/);
+  });
+
   it('refuses --jq without --id', () => {
     const result = cli([...base, '--jq', '.body']);
     assert.equal(result.status, 1);
