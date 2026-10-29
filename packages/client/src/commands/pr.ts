@@ -231,10 +231,11 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (number !== undefined && !isPositiveSafeInteger(number)) {
     fail(`--number must be a positive integer, got ${JSON.stringify(number)}`);
   }
-  if (args.has('jq') && args.value('jq') === undefined) {
+  const jq = args.value('jq');
+  if ((args.has('jq') && jq === undefined) || (jq !== undefined && jq.trim() === '')) {
     fail('--jq needs an expression');
   }
-  if (args.value('jq') !== undefined && action !== 'review') {
+  if (jq !== undefined && action !== 'review') {
     fail('--jq only goes with --id');
   }
   if (action === 'update' && title === undefined && body === undefined && base === undefined) {
@@ -282,7 +283,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     if (socketArg !== undefined) ghArgs.push('--socket', socketArg);
     if (args.has('no-proxy')) ghArgs.push('--no-proxy');
     else if (args.value('proxy') !== undefined) ghArgs.push('--proxy', args.value('proxy') as string);
-    if (args.value('jq') !== undefined) ghArgs.push('--jq', args.value('jq') as string);
+    if (jq !== undefined) ghArgs.push('--jq', jq);
     return runGh(ghArgs, { unreachableExitCode: 3 });
   }
 

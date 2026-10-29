@@ -1189,6 +1189,12 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(result.stderr, /--jq needs an expression/);
   });
 
+  it('refuses an empty --jq', () => {
+    const result = cli(['review', ...base, '--id', '9', '--jq', '']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--jq needs an expression/);
+  });
+
   it('refuses --close with a value too', () => {
     for (const argv of [['--close', '7'], ['--close=7']]) {
       const moved = cli([...base, ...argv]);
