@@ -40,10 +40,17 @@ function runFailure(command: string, args: readonly string[]): string {
 function pack(name: string): string {
   const target = path.join(packs, name);
   fs.mkdirSync(target, { recursive: true });
-  const output = run('npm', ['pack', path.join(ROOT, 'packages', name), '--pack-destination', target]);
-  const file = output.trim().split('\n').pop();
-  assert.ok(file, `npm pack produced no filename for ${name}`);
-  return path.join(target, file);
+  const manifestPath = path.join(ROOT, 'packages', name, 'package.json');
+  const manifest = fs.readFileSync(manifestPath, 'utf8');
+  try {
+    const output = run('npm', ['pack', path.join(ROOT, 'packages', name), '--pack-destination', target]);
+    const file = output.trim().split('\n').pop();
+    assert.ok(file, `npm pack produced no filename for ${name}`);
+    return path.join(target, file);
+  } finally {
+    // prepack runs clean-pkg-json in the workspace; restore the source manifest.
+    fs.writeFileSync(manifestPath, manifest);
+  }
 }
 
 /** Find a package below a prefix. */

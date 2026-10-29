@@ -1320,7 +1320,7 @@ describe('the anchor flags, at the CLI boundary', () => {
     await new Promise<void>((resolve) => server.listen(socketPath, resolve));
     try {
       const result = await runAsync(process.execPath, [
-        '--conditions=gcb-development',
+        '--conditions=development',
         path.resolve('packages/client/bin/gcb.js'),
         'pr', '--number', '7', '--status', '--socket', socketPath,
       ], {
@@ -1351,7 +1351,7 @@ describe('the anchor flags, at the CLI boundary', () => {
     await new Promise<void>((resolve) => server.listen(socketPath, resolve));
     try {
       const result = await runAsync(process.execPath, [
-        '--conditions=gcb-development',
+        '--conditions=development',
         'packages/client/bin/gcb.js',
         'pr', '--number', '7', '--title', 'a title', '--repo', 'acme/widget', '--socket', socketPath,
       ], {
@@ -1385,7 +1385,7 @@ describe('the anchor flags, at the CLI boundary', () => {
     await new Promise<void>((resolve) => server.listen(socketPath, resolve));
     try {
       const result = await runAsync(process.execPath, [
-        '--conditions=gcb-development',
+        '--conditions=development',
         'packages/client/bin/gcb.js',
         'pr', '--number', '7', '--body-file', bodyFile, '--repo', 'acme/widget', '--socket', socketPath,
       ], {
@@ -1415,7 +1415,7 @@ describe('the anchor flags, at the CLI boundary', () => {
     await new Promise<void>((resolve) => server.listen(socketPath, resolve));
     try {
       const result = await runAsync(process.execPath, [
-        '--conditions=gcb-development',
+        '--conditions=development',
         'packages/client/bin/gcb.js',
         'pr',
         '--repo', 'acme/widget',

@@ -155,16 +155,24 @@ the checkout of that version beside them.
 Published changes are versioned with Changesets:
 
 1. Add a changeset with `corepack yarn changeset` in the pull request that changes a published package.
+   There is no CI gate for this; a release run with no changesets publishes nothing.
 2. The release workflow uses `changesets/action` to open or update `chore: release packages`. Merging
    that pull request runs `changeset publish`.
-3. `@changesets/changelog-github` writes the changelog entries; each package's `prepublishOnly`
-   runs `clean-pkg-json`, so the published manifest omits the workspace-only `development` export.
+3. `@changesets/changelog-github` writes the changelog entries; each package's `prepack` runs
+   `clean-pkg-json`, so the published manifest omits the workspace-only `development` export.
 4. The same release builds and publishes the `gcb-client` and `gcb-host` images.
 5. Re-render any sidecar you generated: `compose` pins `gcb-host@<version>`, so it takes
    the new version only when it is rendered again.
 
 The release workflow uses npm trusted publishing (OIDC): `id-token: write` is granted, no
 `NPM_TOKEN` secret is read. Configure the npm package's trusted publisher for this repository first.
+
+Also configure:
+
+- `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets; both registry logins happen before
+  the image build, so a missing pair fails the release after npm has already published
+- **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests** on;
+  `changesets/action` cannot open the version pull request without it
 
 ## Layout
 
