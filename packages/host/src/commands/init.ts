@@ -632,7 +632,7 @@ export async function runInit(argv: readonly string[]): Promise<number> {
       if (result.mode === 'sidecar') {
         say('Then start the sidecar, which mounts those paths exactly as recorded:');
         say(
-          `  gcb compose --dir ${shellQuote(path.dirname(result.keyPath))} --config ${shellQuote(result.configPath)} --socket-dir <a directory the pusher mounts> \\`,
+          `  gcb compose --dir ${shellQuote(path.dirname(result.keyPath))} --config ${shellQuote(result.configPath)} --socket-dir <a directory the pusher mounts> --user <pusher uid:gid> \\`,
         );
         say(`    > ${shellQuote(path.join(path.dirname(result.keyPath), 'docker-compose.yml'))}`);
         say(`  cd ${shellQuote(path.dirname(result.keyPath))} && docker compose up -d`);

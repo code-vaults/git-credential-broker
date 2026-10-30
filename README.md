@@ -161,15 +161,21 @@ registry access at boot.
 ```sh
 DEPLOY=/srv/git-cred-broker        # the deployment directory
 SOCKET_DIR=/srv/git-broker-socket  # a host directory the pushing container already mounts
+PUSHER_UID=1000                    # uid of the container that will use the socket
+PUSHER_GID=1000                    # gid of that container
 
 gcb init --mode sidecar --dir "$DEPLOY" \
   --cert ~/Downloads/app.private-key.pem \
   --allow owner/repo --client-id Iv23li… --app-id 123456
 
 gcb compose --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" \
-  > "$DEPLOY/docker-compose.yml"
+  --user "$PUSHER_UID:$PUSHER_GID" > "$DEPLOY/docker-compose.yml"
 cd "$DEPLOY" && docker compose up -d
 ```
+
+`--user` must be the uid:gid of the container that will use the socket; the socket is mode 0660 and
+created by that identity. A sidecar running as a different user cannot connect. If the pusher runs
+as the same user as the sidecar, the default is correct.
 
 A deployment directory holds the config, key, log and compose file; `app/` is only a convention
 for a staged commit, and `--code` accepts any directory outside every mount.
