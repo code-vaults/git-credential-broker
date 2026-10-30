@@ -86,8 +86,8 @@ gcb --version
 As an image, build the host stage of the root Dockerfile:
 
 ```sh
-docker build --target host -t gcb-host:local .
-gcb compose --image gcb-host:local > docker-compose.yml
+docker build --target host -t ghcr.io/code-vaults/gcb-host:dev .
+gcb compose --image ghcr.io/code-vaults/gcb-host:dev > docker-compose.yml
 docker compose config   # parse the rendered file
 ```
 
