@@ -1,5 +1,14 @@
 # gcb-core
 
+## 0.0.2
+
+### Patch Changes
+
+- [#40](https://github.com/code-vaults/git-credential-broker/pull/40) [`25b46e3`](https://github.com/code-vaults/git-credential-broker/commit/25b46e33aabf29540df1aeddb72e43947f9a4da8) Thanks [@JounQin](https://github.com/JounQin)! - Read one pull request review with `gcb pr review --number <n> --id <id>`.
+  
+  When `--jq` is used, the action token is kept in the isolated gh config instead of the
+  environment, so the expression cannot print it.
+
 ## 0.0.1
 
 ### Patch Changes
