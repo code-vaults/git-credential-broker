@@ -205,9 +205,10 @@ host_broker:
       - built-ins first (`setup`, `init`, `stage`, `compose`, `probe`, `diagnose`, `authorize`,
         `app`, `host`, `config`, `version`, `help`);
       - `gcb gh …` explicit;
-      - `gcb pr view …`, `gcb run view …` etc. resolve to the `gh` subcommand. (Wired: any `pr`
-        subcommand the catalog has, plus `run`; the flag-only `gcb pr` stays for the lifecycle `gh`
-        cannot express, and `--close` refuses with a pointer at `gcb gh pr close`.)
+      - `gcb pr view …`, `gcb run view …`, `gcb issue create …` etc. resolve to the `gh`
+        subcommand. (Wired: any `pr` subcommand the catalog has, plus `run` and `issue`; the
+        flag-only `gcb pr` stays for the lifecycle `gh` cannot express, and `--close` refuses with a
+        pointer at `gcb gh pr close`.)
 - [ ] Remove the built-in `pr` and `logs` commands. `gcb run view --job <id> --log` replaces `logs`.
 - [x] Build the command table. Every entry has:
       - canonical subcommand (no aliases, no abbreviations);

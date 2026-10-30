@@ -20,7 +20,7 @@ import { platformRefusal } from './platform.ts';
 import { PACKAGE_VERSION } from './version.ts';
 
 /** Commands implemented by the container-side package. */
-export const CLIENT_COMMANDS = ['setup', 'probe', 'logs', 'pr', 'run', 'gh'] as const;
+export const CLIENT_COMMANDS = ['setup', 'probe', 'logs', 'pr', 'run', 'issue', 'gh'] as const;
 
 /** Commands implemented by the host-side package. */
 export const HOST_COMMANDS = [
