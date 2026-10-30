@@ -17,6 +17,9 @@ import { applyProxyChoice, PROXY_ENV_KEYS } from './http.ts';
 /** The default stdout/stderr ceiling, in bytes per stream. */
 export const DEFAULT_GH_OUTPUT_BYTES = 200_000;
 
+/** Time between SIGTERM and SIGKILL on a timed-out action. */
+export const KILL_GRACE_MS = 2_000;
+
 /** What one gh invocation produced. */
 export interface GhRunResult {
   readonly code: number | null;
@@ -152,6 +155,8 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
 
       const kill = (): void => {
         // Keep SIGKILLing after the parent closes: close does not prove a forked helper is gone.
+        // The timeout path deliberately gives this chase up once the group exits on SIGTERM; it is
+        // the truncation path that must keep SIGKILLing a forked helper that released stdout.
         // The interval stops itself when signalGroup can no longer find the group.
         if (settled || killTimer !== undefined) return;
         if (!signalGroup()) return;
@@ -191,7 +196,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         timedOut = true;
         // Ask politely first; a gh process that ignores SIGTERM is killed on the grace deadline.
         if (!signalGroup('SIGTERM')) return;
-        killGrace = setTimeout(() => kill(), 2_000);
+        killGrace = setTimeout(() => kill(), KILL_GRACE_MS);
         killGrace.unref();
       }, timeoutMs);
 

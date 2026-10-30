@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 
-import { runGhAction } from '../../packages/host/src/gh.ts';
+import { KILL_GRACE_MS, runGhAction } from '../../packages/host/src/gh.ts';
 
 const onWindows = process.platform === 'win32';
 
@@ -64,14 +64,15 @@ describe('runGhAction', { skip: onWindows }, () => {
       repo: 'acme/widget',
       token: 't',
       ghPath: gh,
-      timeoutMs: 50,
+      timeoutMs: 500,
       env: { PATH: process.env.PATH },
     });
     assert.equal(result.timedOut, true);
-    assert.ok(Date.now() - started >= 1800, 'it waits out the SIGTERM grace period');
+    assert.equal(result.signal, 'SIGKILL');
+    assert.ok(Date.now() - started >= KILL_GRACE_MS + 300, 'it waits out the SIGTERM grace period');
   });
 
-  it('kills the process group on timeout', async () => {
+  it('SIGTERMs the process group first on timeout', async () => {
     const gh = shim('sleep 5');
     const started = Date.now();
     const result = await runGhAction({
@@ -84,6 +85,7 @@ describe('runGhAction', { skip: onWindows }, () => {
       env: { PATH: process.env.PATH },
     });
     assert.equal(result.timedOut, true);
+    assert.equal(result.signal, 'SIGTERM');
     assert.ok(Date.now() - started < 2000);
   });
 
