@@ -1,5 +1,13 @@
 # gcb-client
 
+## 0.0.3
+
+### Patch Changes
+
+- [#47](https://github.com/code-vaults/git-credential-broker/pull/47) [`3ecc3d6`](https://github.com/code-vaults/git-credential-broker/commit/3ecc3d6b17ab513294197a6bedd86affb13dc4a0) Thanks [@JounQin](https://github.com/JounQin)! - Add the `gcb issue <subcommand>` shorthand for catalogued issue actions.
+- Updated dependencies []:
+  - gcb-core@0.0.3
+
 ## 0.0.2
 
 ### Patch Changes
