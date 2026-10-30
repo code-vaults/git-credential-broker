@@ -244,7 +244,8 @@ host_broker:
       - capture stdout/stderr with a hard cap;
       - per-action total timeout, `SIGTERM` then `SIGKILL`, kill the process group;
       - no automatic retry. A timed-out write reports that it may have completed. (The timeout
-        starts after preflight/token mint, so the total exceeds the catalogued value by it.)
+        starts after preflight/token mint, so the total exceeds the catalogued value by however long
+        those take.)
 - [x] Token lifecycle:
       - mint per action with only that action's permissions;
       - never cache;

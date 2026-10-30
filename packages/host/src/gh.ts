@@ -155,7 +155,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
 
       const kill = (): void => {
         // Keep SIGKILLing after the parent closes: close does not prove a forked helper is gone.
-        // The timeout path deliberately gives this chase up once the group exits on SIGTERM; it is
+        // The timeout path deliberately gives this chase up once gh itself closes after SIGTERM; it is
         // the truncation path that must keep SIGKILLing a forked helper that released stdout.
         // The interval stops itself when signalGroup can no longer find the group.
         if (settled || killTimer !== undefined) return;

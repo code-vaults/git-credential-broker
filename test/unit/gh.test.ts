@@ -56,6 +56,7 @@ describe('runGhAction', { skip: onWindows }, () => {
   });
 
   it('SIGKILLs after the grace period when the process ignores SIGTERM', async () => {
+    const timeoutMs = 2_000;
     const gh = shim('trap "" TERM; while :; do sleep 1; done');
     const started = Date.now();
     const result = await runGhAction({
@@ -64,12 +65,15 @@ describe('runGhAction', { skip: onWindows }, () => {
       repo: 'acme/widget',
       token: 't',
       ghPath: gh,
-      timeoutMs: 500,
+      timeoutMs,
       env: { PATH: process.env.PATH },
     });
     assert.equal(result.timedOut, true);
     assert.equal(result.signal, 'SIGKILL');
-    assert.ok(Date.now() - started >= KILL_GRACE_MS + 300, 'it waits out the SIGTERM grace period');
+    assert.ok(
+      Date.now() - started >= timeoutMs + KILL_GRACE_MS - 300,
+      'it waits out the SIGTERM grace period',
+    );
   });
 
   it('SIGTERMs the process group first on timeout', async () => {
