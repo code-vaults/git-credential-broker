@@ -12,8 +12,14 @@ Validate the broker configuration without starting the service.
   -h, --help       Show this help
 `;
 
-export async function runConfig(argv: readonly string[]): Promise<number> {
+export function runConfig(argv: readonly string[]): number {
   const args = parseArgs(argv, { booleans: ['help'] });
+  const configArg = args.value('config');
+  if (args.has('config') && configArg === undefined) fail('--config needs a value');
+  if (configArg === '') fail('--config needs a value');
+  for (const name of args.names) {
+    if (name !== 'config' && name !== 'help' && name !== 'h') fail(`unknown option --${name}`);
+  }
   if (args.has('help') || args.has('h')) {
     say(CONFIG_USAGE);
     return 0;
@@ -21,12 +27,12 @@ export async function runConfig(argv: readonly string[]): Promise<number> {
   if (args.positionals[0] !== 'check' || args.positionals.length !== 1) {
     fail('usage: gcb config check [--config <path>]');
   }
-  const path = resolveConfigPath(args.value('config'));
+  const path = resolveConfigPath(configArg);
   try {
     const config = loadConfig(path);
     const hosts = Object.keys(config.hosts);
     say(`ok: ${path} (${inferMode(config)})`);
-    say(`hosts: ${hosts.length === 0 ? '(none)' : hosts.join(', ')}`);
+    say(`hosts: ${hosts.join(', ')}`);
     return 0;
   } catch (error) {
     fail((error as Error).message);

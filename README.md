@@ -294,6 +294,9 @@ gcb diagnose --config /srv/git-cred-broker/broker.config.yml
 safe to share: exit `0` allowed, `1` denied, `3` broker unreachable. `probe` talks to the socket, so
 it runs wherever the pusher runs.
 
+`config check` is host-side and reads only the configuration file: it validates it and prints the
+deployment mode and hosts without starting the broker or reading the key.
+
 `diagnose` asks GitHub what the app can actually see — the only reliable way to tell "repository does
 not exist" from "not selected for this installation", which GitHub reports identically. It reads the
 app's **private key**, so run it where the key is. On a host-process deployment that is the host; for

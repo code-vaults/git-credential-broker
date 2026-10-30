@@ -3,7 +3,7 @@
  *
  * This is the only side that imports `yaml` (through config.ts) and holds the App key.
  */
-import type { CommandBackend } from 'gcb-core';
+import { HOST_COMMANDS, type CommandBackend } from 'gcb-core';
 import { assertProxyEnabled } from './proxy.ts';
 
 export * from './gh.ts';
@@ -58,7 +58,7 @@ async function run(argv: readonly string[]): Promise<number> {
 
 export const hostBackend: CommandBackend = {
   role: 'host',
-  commands: ['app', 'host', 'daemon', 'init', 'stage', 'compose', 'config', 'diagnose', 'authorize', 'host-opener'],
+  commands: HOST_COMMANDS,
   help: HOST_HELP,
   run,
 };

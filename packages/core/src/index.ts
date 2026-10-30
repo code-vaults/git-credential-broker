@@ -30,6 +30,7 @@ export const HOST_COMMANDS = [
   'init',
   'stage',
   'compose',
+  'config',
   'diagnose',
   'authorize',
   'host-opener',

@@ -958,6 +958,40 @@ describe('host flag validation at the CLI boundary', () => {
   }
 });
 
+describe('gcb config check', () => {
+  const run = (args: readonly string[]): { status: number; stdout: string; stderr: string } => {
+    try {
+      const stdout = execFileSync(
+        'node',
+        ['--conditions=development', 'packages/host/bin/gcb.js', 'config', 'check', ...args],
+        { cwd: path.resolve('.'), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      return { status: 0, stdout, stderr: '' };
+    } catch (error) {
+      const failed = error as { status?: number | null; stdout?: string; stderr?: string };
+      return { status: failed.status ?? -1, stdout: String(failed.stdout ?? ''), stderr: String(failed.stderr ?? '') };
+    }
+  };
+
+  it('validates a real configuration and prints its mode and hosts', () => {
+    const result = run(['--config', path.resolve('examples/broker.config.example.yml')]);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /ok: .* \(host\)/);
+    assert.match(result.stdout, /hosts: github\.com/);
+  });
+
+  it('refuses a missing file, a bare --config and an extra positional', () => {
+    for (const args of [
+      ['--config', '/definitely/not/here.yml'],
+      ['--config'],
+      ['check', 'extra'],
+    ]) {
+      const result = run(args);
+      assert.equal(result.status, 1, args.join(' '));
+    }
+  });
+});
+
 describe('config discovery', () => {
   it('prefers --config, then GIT_BROKER_CONFIG, then ./broker.config.yml', () => {
     assert.equal(resolveConfigPath('/a/b.json', {}), '/a/b.json');
