@@ -88,7 +88,9 @@ As an image, build the host stage of the root Dockerfile:
 ```sh
 docker build --target host -t ghcr.io/code-vaults/gcb-host:dev .
 DEPLOY=/path/to/deployment
-gcb compose --dir "$DEPLOY" --image ghcr.io/code-vaults/gcb-host:dev > "$DEPLOY/docker-compose.yml"
+SOCKET_DIR=/path/to/socket
+gcb compose --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" --image ghcr.io/code-vaults/gcb-host:dev \
+  > "$DEPLOY/docker-compose.yml"
 cd "$DEPLOY" && docker compose config   # parse the rendered file
 ```
 
