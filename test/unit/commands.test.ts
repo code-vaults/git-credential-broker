@@ -891,6 +891,41 @@ describe('socket discovery', () => {
   });
 });
 
+describe('host flag validation at the CLI boundary', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-host-home-'));
+  after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  /** Run a client command as a process and return its refusal. */
+  const refuse = (command: string, args: readonly string[]): { status: number; stderr: string } => {
+    try {
+      execFileSync('node', ['--conditions=development', 'packages/client/bin/gcb.js', command, ...args], {
+        cwd: path.resolve('.'),
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+      });
+      return { status: 0, stderr: '' };
+    } catch (error) {
+      const failed = error as { status?: number | null; stderr?: string };
+      return { status: failed.status ?? -1, stderr: String(failed.stderr ?? '') };
+    }
+  };
+
+  for (const command of ['probe', 'logs']) {
+    it(`${command} refuses a bare --host`, () => {
+      const result = refuse(command, ['--host']);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /--host needs a value/);
+    });
+
+    it(`${command} refuses an empty --host`, () => {
+      const result = refuse(command, ['--host', '']);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /--host needs a value/);
+    });
+  }
+});
+
 describe('config discovery', () => {
   it('prefers --config, then GIT_BROKER_CONFIG, then ./broker.config.yml', () => {
     assert.equal(resolveConfigPath('/a/b.json', {}), '/a/b.json');
