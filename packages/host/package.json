@@ -1,6 +1,6 @@
 {
   "name": "gcb-host",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Host-side gcb broker, configuration, providers and administration commands.",
   "license": "MIT",
   "author": "JounQin <admin@1stg.me>",
@@ -28,7 +28,7 @@
     }
   },
   "dependencies": {
-    "gcb-core": "0.0.1",
+    "gcb-core": "0.0.2",
     "node-fetch-native": "^1.6.7",
     "x-fetch": "^0.3.0",
     "yaml": "^2.9.1"
