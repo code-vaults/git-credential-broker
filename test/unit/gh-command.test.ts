@@ -236,7 +236,11 @@ describe('gcb gh', () => {
       assert.equal(close.status, 0);
       const run = await runClient(['run', 'list', '--repo', 'acme/widget', '--socket', socketPath]);
       assert.equal(run.status, 0);
-      assert.deepEqual(actions, ['pr:view', 'pr:close', 'run:list']);
+      const issue = await runClient([
+        'issue', 'create', '--repo', 'acme/widget', '--title', 't', '--body', 'b', '--socket', socketPath,
+      ]);
+      assert.equal(issue.status, 0);
+      assert.deepEqual(actions, ['pr:view', 'pr:close', 'run:list', 'issue:create']);
     } finally {
       await broker.close();
       fs.rmSync(root, { recursive: true, force: true });

@@ -128,8 +128,9 @@ gcb gh run view 123456 --log --repo owner/name
 
 `-R` is the short form of `--repo`, as in `gh` itself.
 
-`gcb pr <subcommand>` and `gcb run <subcommand>` are shorthands for the same actions when the
-catalog has one — `gcb pr view 12`, `gcb pr close 12`, `gcb run list`. The flag-only `gcb pr` form
+`gcb pr <subcommand>`, `gcb run <subcommand>` and `gcb issue <subcommand>` are shorthands for the
+same actions when the catalog has one — `gcb pr view 12`, `gcb pr close 12`, `gcb run list`,
+`gcb issue create`. The flag-only `gcb pr` form
 described below is still what runs the lifecycle `gh` cannot express (opening as a person, review
 threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr close`.
 

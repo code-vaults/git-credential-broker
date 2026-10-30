@@ -3,7 +3,7 @@
  *
  * The host commands are not imported here; installing `gcb-client` never pulls `yaml`.
  */
-import { GH_ACTIONS } from 'gcb-core';
+import { CLIENT_COMMANDS, GH_ACTIONS } from 'gcb-core';
 import type { CommandBackend } from 'gcb-core';
 
 export { runHelper } from './helper.ts';
@@ -87,7 +87,7 @@ async function run(argv: readonly string[]): Promise<number> {
 
 export const clientBackend: CommandBackend = {
   role: 'client',
-  commands: ['setup', 'probe', 'logs', 'pr', 'run', 'gh'],
+  commands: CLIENT_COMMANDS,
   help: CLIENT_HELP,
   run,
 };
