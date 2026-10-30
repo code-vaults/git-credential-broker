@@ -101,11 +101,11 @@ Keep the checkout outside every container mount.
 ## GitHub actions
 
 The action path is wired through the broker; the host image must include `gh` before these commands
-can run. The container never receives the token. Build the image, then pass `--image ghcr.io/code-vaults/gcb-host:dev` to
+can run. The container never receives the token. Build the image, then pass `--image code-vaults/gcb-host:dev` to
 the compose command in [Quick start](#quick-start-sidecar):
 
 ```sh
-docker build --target host -t ghcr.io/code-vaults/gcb-host:dev .
+docker build --target host -t code-vaults/gcb-host:dev .
 ```
 
 The image's `CMD` starts `gcb daemon`, but `compose` still renders the registry-fetching `npx`
@@ -626,12 +626,12 @@ The contract between the pushing container and the broker is deliberately small:
 
 ## Images
 
-Two GHCR repositories mirror the two packages:
+Two local dev images mirror the two packages; the release publishes the same repositories on GHCR:
 
 | Image | Contents | Use |
 |---|---|---|
-| `ghcr.io/code-vaults/gcb-client:dev` | `gcb` client and Node runtime only | idsh base / `COPY --from` |
-| `ghcr.io/code-vaults/gcb-host:dev` | broker, `gh`, and broker dependencies | run `gcb daemon` on the host |
+| `code-vaults/gcb-client:dev` | `gcb` client and Node runtime only | idsh base / `COPY --from` |
+| `code-vaults/gcb-host:dev` | broker, `gh`, and broker dependencies | run `gcb daemon` on the host |
 
 The release publishes both repositories with `latest`, `<version>` and `sha-<sha>` tags. The
 `:dev` tags are local build tags and are not published; do not pull them from GHCR.
@@ -639,8 +639,8 @@ The release publishes both repositories with `latest`, `<version>` and `sha-<sha
 For local development, build and reuse the `:dev` tags:
 
 ```sh
-docker build --target client -t ghcr.io/code-vaults/gcb-client:dev .
-docker build --target host   -t ghcr.io/code-vaults/gcb-host:dev .
+docker build --target client -t code-vaults/gcb-client:dev .
+docker build --target host   -t code-vaults/gcb-host:dev .
 ```
 
 While the image exists locally, Docker uses it instead of pulling from the registry. Another machine
@@ -650,7 +650,7 @@ For idsh's dev image, name the client image as a stage and copy only the gcb pac
 
 ```dockerfile
 ARG BASE=devockr/idsh:base
-ARG GCB_CLIENT_IMAGE=ghcr.io/code-vaults/gcb-client:dev
+ARG GCB_CLIENT_IMAGE=code-vaults/gcb-client:dev
 FROM ${GCB_CLIENT_IMAGE} AS gcb-client
 FROM ${BASE}
 

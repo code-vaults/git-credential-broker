@@ -50,6 +50,7 @@ export async function runLogs(argv: readonly string[]): Promise<number> {
 
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const host = args.value('host') ?? 'github.com';
+  if (host === '') fail('--host needs a value');
   const repo = args.value('repo');
   const rawJob = args.value('job');
   if (!socketPath) {

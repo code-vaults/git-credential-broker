@@ -41,6 +41,7 @@ export async function runProbe(argv: readonly string[]): Promise<number> {
 
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const host = args.value('host') ?? 'github.com';
+  if (host === '') fail('--host needs a value');
   const repo = args.value('repo');
   if (!socketPath) {
     fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `gcb setup`');

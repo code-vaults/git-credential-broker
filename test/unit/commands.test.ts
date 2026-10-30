@@ -880,7 +880,7 @@ describe('socket discovery', () => {
     delete process.env['GIT_BROKER_SOCKET'];
     process.env['GIT_BROKER_SOCKET_FILE'] = socketFile;
     try {
-      const code = await runProbe(['--host', 'github.com', '--repo', 'a/one']);
+      const code = await runProbe(['--repo', 'a/one']);
       assert.equal(code, 3, 'it must use the path from the file and report the broker unreachable');
     } finally {
       if (savedSocket === undefined) delete process.env['GIT_BROKER_SOCKET'];
