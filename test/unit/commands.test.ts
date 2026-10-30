@@ -987,7 +987,15 @@ describe('gcb config check', () => {
 
     const bare = run(['--config']);
     assert.equal(bare.status, 1);
-    assert.match(bare.stderr, /--config needs a value/);
+    assert.match(bare.stderr, /--config may only be given once/);
+
+    const repeated = run(['--config', 'a.yml', '--config', 'b.yml']);
+    assert.equal(repeated.status, 1);
+    assert.match(repeated.stderr, /--config may only be given once/);
+
+    const oneMissing = run(['--config', 'a.yml', '--config']);
+    assert.equal(oneMissing.status, 1);
+    assert.match(oneMissing.stderr, /--config may only be given once/);
 
     const misspelled = run(['--confg', 'x']);
     assert.equal(misspelled.status, 1);

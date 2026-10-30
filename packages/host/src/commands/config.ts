@@ -18,8 +18,9 @@ export function runConfig(argv: readonly string[]): number {
     say(CONFIG_USAGE);
     return 0;
   }
-  const configArg = args.value('config');
-  if (args.has('config') && configArg === undefined) fail('--config needs a value');
+  const configValues = args.values('config');
+  if (args.has('config') || configValues.length > 1) fail('--config may only be given once and needs a value');
+  const configArg = configValues[0];
   if (configArg === '') fail('--config needs a value');
   for (const name of args.names) {
     if (name !== 'config' && name !== 'help' && name !== 'h') fail(`unknown option --${name}`);
