@@ -35,6 +35,7 @@ Commands
   pr         Use the broker's pull-request lifecycle; these run as gh actions:
              ${cataloguedSubcommands('pr')}
   run        Run a workflow run action: ${cataloguedSubcommands('run')}
+  issue      Run an issue action: ${cataloguedSubcommands('issue')}
   gh         Run a catalogued GitHub action through the broker
 
 As a git credential helper
@@ -74,6 +75,8 @@ async function run(argv: readonly string[]): Promise<number> {
     }
     case 'run':
       return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
+    case 'issue':
+      return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
     case 'gh':
       return (await import('./commands/gh.ts')).runGh(rest);
     default:
