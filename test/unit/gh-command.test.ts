@@ -207,7 +207,7 @@ describe('gcb gh', () => {
     }
   });
 
-  it('routes pr subcommands and run through the gh action', async () => {
+  it('routes pr, run and issue subcommands through the gh action', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-shorthand-'));
     const socketPath = path.join(root, 'broker.sock');
     const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] };
