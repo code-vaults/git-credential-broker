@@ -609,14 +609,7 @@ export async function runInit(argv: readonly string[]): Promise<number> {
     if (result.previous) {
       say('Restart the broker to pick this up:');
       if (result.mode === 'sidecar') {
-        const dir = path.dirname(result.keyPath);
-        const legacy = path.join(dir, 'docker-compose.broker.yml');
-        const compose = path.join(dir, 'docker-compose.yml');
-        if (fs.existsSync(legacy) && !fs.existsSync(compose)) {
-          say('Rename the old sidecar file once:');
-          say(`  mv ${shellQuote(legacy)} ${shellQuote(compose)}`);
-        }
-        say(`  cd ${shellQuote(dir)} && docker compose up -d    # sidecar`);
+        say(`  cd ${shellQuote(path.dirname(result.keyPath))} && docker compose up -d    # sidecar`);
       } else {
         say(`  gcb daemon --config ${result.configPath}    # host process`);
       }
