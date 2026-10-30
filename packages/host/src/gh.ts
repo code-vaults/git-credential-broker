@@ -109,6 +109,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
       let settled = false;
       let timer: NodeJS.Timeout | undefined;
       let killTimer: NodeJS.Timeout | undefined;
+      let killGrace: NodeJS.Timeout | undefined;
 
       const child = spawn(options.ghPath ?? 'gh', argv, {
         cwd: home,
@@ -122,6 +123,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         if (settled) return;
         settled = true;
         if (timer !== undefined) clearTimeout(timer);
+        if (killGrace !== undefined) clearTimeout(killGrace);
         // A closed parent does not prove the process group is gone; the repeat-kill interval below
         // chases a fork created between the group signal and its delivery. Keep it until the group
         // no longer exists.
@@ -133,18 +135,18 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         resolve({ ...result, stdout, stderr, truncated, timedOut });
       };
 
-      const signalGroup = (): boolean => {
+      const signalGroup = (signal: 'SIGTERM' | 'SIGKILL' = 'SIGKILL'): boolean => {
         if (child.pid === undefined) return false;
         try {
           // The child is its own process-group leader; kill the group so a gh-spawned helper does
           // not keep the pipe open after timeout or output overflow.
-          process.kill(-child.pid, 'SIGKILL');
+          process.kill(-child.pid, signal);
           return true;
         } catch (error) {
           // ESRCH means the group itself is gone; do not fall back to the parent handle, which can
           // report success while only a zombie remains.
           if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
-          return child.exitCode === null && child.signalCode === null ? child.kill('SIGKILL') : false;
+          return child.exitCode === null && child.signalCode === null ? child.kill(signal) : false;
         }
       };
 
@@ -187,7 +189,10 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
 
       timer = setTimeout(() => {
         timedOut = true;
-        kill();
+        // Ask politely first; a gh process that ignores SIGTERM is killed on the grace deadline.
+        if (!signalGroup('SIGTERM')) return;
+        killGrace = setTimeout(() => kill(), 2_000);
+        killGrace.unref();
       }, timeoutMs);
 
       child.stdout?.on('data', (chunk: Buffer) => take('stdout', chunk));
