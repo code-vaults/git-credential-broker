@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 
-import { runGhAction } from '../../packages/host/src/gh.ts';
+import { KILL_GRACE_MS, runGhAction } from '../../packages/host/src/gh.ts';
 
 const onWindows = process.platform === 'win32';
 
@@ -55,7 +55,67 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.match(result.stdout, /github\.com:\n    oauth_token: app-token/);
   });
 
-  it('kills the process group on timeout', async () => {
+  it('SIGKILLs after the grace period when the process ignores SIGTERM', async () => {
+    const timeoutMs = 2_000;
+    const gh = shim('trap "" TERM; while :; do sleep 1; done');
+    const started = Date.now();
+    const result = await runGhAction({
+      action: 'pr:view',
+      values: { number: 1 },
+      repo: 'acme/widget',
+      token: 't',
+      ghPath: gh,
+      timeoutMs,
+      env: { PATH: process.env.PATH },
+    });
+    assert.equal(result.timedOut, true);
+    assert.equal(result.signal, 'SIGKILL');
+    assert.ok(
+      Date.now() - started >= timeoutMs + KILL_GRACE_MS - 300,
+      'it waits out the SIGTERM grace period',
+    );
+  });
+
+  it('SIGKILLs a descendant that outlives the parent', async () => {
+    const timeoutMs = 2_000;
+    const pidFile = path.join(os.tmpdir(), `gcb-child-${process.pid}-${Date.now()}.pid`);
+    const gh = shim(
+      `sh -c 'trap "" TERM; while :; do sleep 1; done' >/dev/null 2>&1 &\necho $! > ${JSON.stringify(pidFile)}\ntrap 'exit 0' TERM\nwait`,
+    );
+    let pid: number | undefined;
+    try {
+      const started = Date.now();
+      const result = await runGhAction({
+        action: 'pr:view',
+        values: { number: 1 },
+        repo: 'acme/widget',
+        token: 't',
+        ghPath: gh,
+        timeoutMs,
+        env: { PATH: process.env.PATH },
+      });
+      assert.equal(result.timedOut, true);
+      assert.ok(
+        Date.now() - started < timeoutMs + KILL_GRACE_MS / 2,
+        'the parent closed before the grace, so the chase is what kills the descendant',
+      );
+      await new Promise((resolve) => setTimeout(resolve, KILL_GRACE_MS + 500));
+      const childPid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+      pid = childPid;
+      assert.throws(() => process.kill(childPid, 0), /ESRCH/, 'the descendant is gone');
+    } finally {
+      if (pid !== undefined) {
+        try {
+          process.kill(pid, 'SIGKILL');
+        } catch {
+          // already gone
+        }
+      }
+      fs.rmSync(pidFile, { force: true });
+    }
+  });
+
+  it('SIGTERMs the process group first on timeout', async () => {
     const gh = shim('sleep 5');
     const started = Date.now();
     const result = await runGhAction({
@@ -68,6 +128,7 @@ describe('runGhAction', { skip: onWindows }, () => {
       env: { PATH: process.env.PATH },
     });
     assert.equal(result.timedOut, true);
+    assert.equal(result.signal, 'SIGTERM');
     assert.ok(Date.now() - started < 2000);
   });
 

@@ -17,6 +17,9 @@ import { applyProxyChoice, PROXY_ENV_KEYS } from './http.ts';
 /** The default stdout/stderr ceiling, in bytes per stream. */
 export const DEFAULT_GH_OUTPUT_BYTES = 200_000;
 
+/** Time between SIGTERM and SIGKILL on a timed-out action. */
+export const KILL_GRACE_MS = 2_000;
+
 /** What one gh invocation produced. */
 export interface GhRunResult {
   readonly code: number | null;
@@ -133,25 +136,26 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         resolve({ ...result, stdout, stderr, truncated, timedOut });
       };
 
-      const signalGroup = (): boolean => {
+      const signalGroup = (signal: 'SIGTERM' | 'SIGKILL' = 'SIGKILL'): boolean => {
         if (child.pid === undefined) return false;
         try {
           // The child is its own process-group leader; kill the group so a gh-spawned helper does
           // not keep the pipe open after timeout or output overflow.
-          process.kill(-child.pid, 'SIGKILL');
+          process.kill(-child.pid, signal);
           return true;
         } catch (error) {
           // ESRCH means the group itself is gone; do not fall back to the parent handle, which can
           // report success while only a zombie remains.
           if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
-          return child.exitCode === null && child.signalCode === null ? child.kill('SIGKILL') : false;
+          return child.exitCode === null && child.signalCode === null ? child.kill(signal) : false;
         }
       };
 
-      const kill = (): void => {
-        // Keep SIGKILLing after the parent closes: close does not prove a forked helper is gone.
-        // The interval stops itself when signalGroup can no longer find the group.
-        if (settled || killTimer !== undefined) return;
+      // The interval stops itself when signalGroup can no longer find the group. This chase stays
+      // active after close when the timeout path scheduled it, because gh itself may exit on SIGTERM
+      // while a descendant that ignores SIGTERM is still in the group.
+      const chase = (): void => {
+        if (killTimer !== undefined) return;
         if (!signalGroup()) return;
         const handle = setInterval(() => {
           if (signalGroup()) return;
@@ -160,6 +164,13 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         }, 100);
         handle.unref();
         killTimer = handle;
+      };
+
+      const kill = (): void => {
+        // Truncation stops once the action settles; the timeout grace uses chase() directly so a
+        // child that closed does not hide a surviving descendant.
+        if (settled) return;
+        chase();
       };
 
       const take = (stream: 'stdout' | 'stderr', chunk: Buffer): void => {
@@ -187,7 +198,9 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
 
       timer = setTimeout(() => {
         timedOut = true;
-        kill();
+        // Ask politely first; a gh process that ignores SIGTERM is killed on the grace deadline.
+        if (!signalGroup('SIGTERM')) return;
+        setTimeout(() => chase(), KILL_GRACE_MS).unref();
       }, timeoutMs);
 
       child.stdout?.on('data', (chunk: Buffer) => take('stdout', chunk));
