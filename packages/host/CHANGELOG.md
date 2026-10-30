@@ -1,5 +1,16 @@
 # gcb-host
 
+## 0.0.3
+
+### Patch Changes
+
+- [#44](https://github.com/code-vaults/git-credential-broker/pull/44) [`c67103a`](https://github.com/code-vaults/git-credential-broker/commit/c67103a4c67f28197c7c79c8f9339b302281ac78) Thanks [@JounQin](https://github.com/JounQin)! - Add `gcb config check` to validate the broker configuration without starting the daemon.
+
+- [#48](https://github.com/code-vaults/git-credential-broker/pull/48) [`728cad6`](https://github.com/code-vaults/git-credential-broker/commit/728cad6296cb19e9665fdeb9d0b7126cdfd5767f) Thanks [@JounQin](https://github.com/JounQin)! - Terminate a timed-out `gh` action with `SIGTERM` first, then `SIGKILL` after a two-second grace
+  period. The group keeps being chased until a TERM-ignoring descendant is gone.
+- Updated dependencies []:
+  - gcb-core@0.0.3
+
 ## 0.0.2
 
 ### Patch Changes

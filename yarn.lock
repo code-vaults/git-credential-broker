@@ -477,13 +477,13 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "gcb-client@workspace:packages/client"
   dependencies:
-    gcb-core: "npm:0.0.2"
+    gcb-core: "npm:0.0.3"
   bin:
     gcb: ./bin/gcb.js
   languageName: unknown
   linkType: soft
 
-"gcb-core@npm:0.0.2, gcb-core@workspace:packages/core":
+"gcb-core@npm:0.0.3, gcb-core@workspace:packages/core":
   version: 0.0.0-use.local
   resolution: "gcb-core@workspace:packages/core"
   languageName: unknown
@@ -493,7 +493,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "gcb-host@workspace:packages/host"
   dependencies:
-    gcb-core: "npm:0.0.2"
+    gcb-core: "npm:0.0.3"
     node-fetch-native: "npm:^1.6.7"
     x-fetch: "npm:^0.3.0"
     yaml: "npm:^2.9.1"
