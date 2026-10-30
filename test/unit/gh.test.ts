@@ -76,6 +76,39 @@ describe('runGhAction', { skip: onWindows }, () => {
     );
   });
 
+  it('SIGKILLs a descendant that outlives the parent', async () => {
+    const pidFile = path.join(os.tmpdir(), `gcb-child-${process.pid}-${Date.now()}.pid`);
+    const gh = shim(
+      `sh -c 'trap "" TERM; while :; do sleep 1; done' &\necho $! > ${JSON.stringify(pidFile)}\ntrap 'exit 0' TERM\nwait`,
+    );
+    let pid: number | undefined;
+    try {
+      const result = await runGhAction({
+        action: 'pr:view',
+        values: { number: 1 },
+        repo: 'acme/widget',
+        token: 't',
+        ghPath: gh,
+        timeoutMs: 1_000,
+        env: { PATH: process.env.PATH },
+      });
+      assert.equal(result.timedOut, true);
+      await new Promise((resolve) => setTimeout(resolve, KILL_GRACE_MS + 500));
+      const childPid = Number(fs.readFileSync(pidFile, 'utf8').trim());
+      pid = childPid;
+      assert.throws(() => process.kill(childPid, 0), /ESRCH/, 'the descendant is gone');
+    } finally {
+      if (pid !== undefined) {
+        try {
+          process.kill(pid, 'SIGKILL');
+        } catch {
+          // already gone
+        }
+      }
+      fs.rmSync(pidFile, { force: true });
+    }
+  });
+
   it('SIGTERMs the process group first on timeout', async () => {
     const gh = shim('sleep 5');
     const started = Date.now();

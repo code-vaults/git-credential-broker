@@ -126,7 +126,6 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         if (settled) return;
         settled = true;
         if (timer !== undefined) clearTimeout(timer);
-        if (killGrace !== undefined) clearTimeout(killGrace);
         // A closed parent does not prove the process group is gone; the repeat-kill interval below
         // chases a fork created between the group signal and its delivery. Keep it until the group
         // no longer exists.
@@ -153,12 +152,11 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         }
       };
 
-      const kill = (): void => {
-        // Keep SIGKILLing after the parent closes: close does not prove a forked helper is gone.
-        // The timeout path deliberately gives this chase up once gh itself closes after SIGTERM; it is
-        // the truncation path that must keep SIGKILLing a forked helper that released stdout.
-        // The interval stops itself when signalGroup can no longer find the group.
-        if (settled || killTimer !== undefined) return;
+      // The interval stops itself when signalGroup can no longer find the group. This chase stays
+      // active after close when the timeout path scheduled it, because gh itself may exit on SIGTERM
+      // while a descendant that ignores SIGTERM is still in the group.
+      const chase = (): void => {
+        if (killTimer !== undefined) return;
         if (!signalGroup()) return;
         const handle = setInterval(() => {
           if (signalGroup()) return;
@@ -167,6 +165,13 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         }, 100);
         handle.unref();
         killTimer = handle;
+      };
+
+      const kill = (): void => {
+        // Truncation stops once the action settles; the timeout grace uses chase() directly so a
+        // child that closed does not hide a surviving descendant.
+        if (settled) return;
+        chase();
       };
 
       const take = (stream: 'stdout' | 'stderr', chunk: Buffer): void => {
@@ -196,7 +201,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         timedOut = true;
         // Ask politely first; a gh process that ignores SIGTERM is killed on the grace deadline.
         if (!signalGroup('SIGTERM')) return;
-        killGrace = setTimeout(() => kill(), KILL_GRACE_MS);
+        killGrace = setTimeout(() => chase(), KILL_GRACE_MS);
         killGrace.unref();
       }, timeoutMs);
 
