@@ -55,6 +55,22 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.match(result.stdout, /github\.com:\n    oauth_token: app-token/);
   });
 
+  it('SIGKILLs after the grace period when the process ignores SIGTERM', async () => {
+    const gh = shim('trap "" TERM; while :; do sleep 1; done');
+    const started = Date.now();
+    const result = await runGhAction({
+      action: 'pr:view',
+      values: { number: 1 },
+      repo: 'acme/widget',
+      token: 't',
+      ghPath: gh,
+      timeoutMs: 50,
+      env: { PATH: process.env.PATH },
+    });
+    assert.equal(result.timedOut, true);
+    assert.ok(Date.now() - started >= 1800, 'it waits out the SIGTERM grace period');
+  });
+
   it('kills the process group on timeout', async () => {
     const gh = shim('sleep 5');
     const started = Date.now();
