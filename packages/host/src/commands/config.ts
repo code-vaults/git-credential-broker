@@ -14,15 +14,15 @@ Validate the broker configuration without starting the service.
 
 export function runConfig(argv: readonly string[]): number {
   const args = parseArgs(argv, { booleans: ['help'] });
+  if (args.has('help') || args.has('h')) {
+    say(CONFIG_USAGE);
+    return 0;
+  }
   const configArg = args.value('config');
   if (args.has('config') && configArg === undefined) fail('--config needs a value');
   if (configArg === '') fail('--config needs a value');
   for (const name of args.names) {
     if (name !== 'config' && name !== 'help' && name !== 'h') fail(`unknown option --${name}`);
-  }
-  if (args.has('help') || args.has('h')) {
-    say(CONFIG_USAGE);
-    return 0;
   }
   if (args.positionals[0] !== 'check' || args.positionals.length !== 1) {
     fail('usage: gcb config check [--config <path>]');

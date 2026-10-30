@@ -981,14 +981,27 @@ describe('gcb config check', () => {
   });
 
   it('refuses a missing file, a bare --config and an extra positional', () => {
-    for (const args of [
-      ['--config', '/definitely/not/here.yml'],
-      ['--config'],
-      ['check', 'extra'],
-    ]) {
-      const result = run(args);
-      assert.equal(result.status, 1, args.join(' '));
-    }
+    const missing = run(['--config', '/definitely/not/here.yml']);
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /cannot read config/);
+
+    const bare = run(['--config']);
+    assert.equal(bare.status, 1);
+    assert.match(bare.stderr, /--config needs a value/);
+
+    const misspelled = run(['--confg', 'x']);
+    assert.equal(misspelled.status, 1);
+    assert.match(misspelled.stderr, /unknown option --confg/);
+
+    const extra = run(['extra']);
+    assert.equal(extra.status, 1);
+    assert.match(extra.stderr, /usage: gcb config check/);
+  });
+
+  it('prints help before rejecting unknown options', () => {
+    const result = run(['--help', '--bogus']);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /Usage: gcb config check/);
   });
 });
 
