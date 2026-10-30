@@ -958,6 +958,61 @@ describe('host flag validation at the CLI boundary', () => {
   }
 });
 
+describe('gcb config check', () => {
+  const run = (args: readonly string[]): { status: number; stdout: string; stderr: string } => {
+    try {
+      const stdout = execFileSync(
+        'node',
+        ['--conditions=development', 'packages/host/bin/gcb.js', 'config', 'check', ...args],
+        { cwd: path.resolve('.'), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      return { status: 0, stdout, stderr: '' };
+    } catch (error) {
+      const failed = error as { status?: number | null; stdout?: string; stderr?: string };
+      return { status: failed.status ?? -1, stdout: String(failed.stdout ?? ''), stderr: String(failed.stderr ?? '') };
+    }
+  };
+
+  it('validates a real configuration and prints its mode and hosts', () => {
+    const result = run(['--config', path.resolve('examples/broker.config.example.yml')]);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /ok: .* \(host\)/);
+    assert.match(result.stdout, /hosts: github\.com/);
+  });
+
+  it('refuses a missing file, a bare --config and an extra positional', () => {
+    const missing = run(['--config', '/definitely/not/here.yml']);
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /cannot read config/);
+
+    const bare = run(['--config']);
+    assert.equal(bare.status, 1);
+    assert.match(bare.stderr, /--config may only be given once/);
+
+    const repeated = run(['--config', 'a.yml', '--config', 'b.yml']);
+    assert.equal(repeated.status, 1);
+    assert.match(repeated.stderr, /--config may only be given once/);
+
+    const oneMissing = run(['--config', 'a.yml', '--config']);
+    assert.equal(oneMissing.status, 1);
+    assert.match(oneMissing.stderr, /--config may only be given once/);
+
+    const misspelled = run(['--confg', 'x']);
+    assert.equal(misspelled.status, 1);
+    assert.match(misspelled.stderr, /unknown option --confg/);
+
+    const extra = run(['extra']);
+    assert.equal(extra.status, 1);
+    assert.match(extra.stderr, /usage: gcb config check/);
+  });
+
+  it('prints help before rejecting unknown options', () => {
+    const result = run(['--help', '--bogus']);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /Usage: gcb config check/);
+  });
+});
+
 describe('config discovery', () => {
   it('prefers --config, then GIT_BROKER_CONFIG, then ./broker.config.yml', () => {
     assert.equal(resolveConfigPath('/a/b.json', {}), '/a/b.json');

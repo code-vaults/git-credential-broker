@@ -3,7 +3,7 @@
  *
  * This is the only side that imports `yaml` (through config.ts) and holds the App key.
  */
-import type { CommandBackend } from 'gcb-core';
+import { HOST_COMMANDS, type CommandBackend } from 'gcb-core';
 import { assertProxyEnabled } from './proxy.ts';
 
 export * from './gh.ts';
@@ -19,6 +19,7 @@ Commands
   init         Create or update the broker config, and install the key
   stage        Export a reviewed commit to where the broker will run
   compose      Print a Docker sidecar definition for the broker
+  config       Validate the broker configuration
   diagnose     Ask GitHub what the App can actually see
   authorize    Authorize this app once for person-authored pull requests
   host-opener  Watch for the container's pull-request requests and create them
@@ -40,6 +41,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return (await import('./commands/stage.ts')).runStage(rest);
     case 'compose':
       return (await import('./commands/compose.ts')).runCompose(rest);
+    case 'config':
+      return (await import('./commands/config.ts')).runConfig(rest);
     case 'diagnose':
       return (await import('./commands/diagnose.ts')).runDiagnose(rest);
     case 'authorize':
@@ -55,7 +58,7 @@ async function run(argv: readonly string[]): Promise<number> {
 
 export const hostBackend: CommandBackend = {
   role: 'host',
-  commands: ['app', 'host', 'daemon', 'init', 'stage', 'compose', 'diagnose', 'authorize', 'host-opener'],
+  commands: HOST_COMMANDS,
   help: HOST_HELP,
   run,
 };
