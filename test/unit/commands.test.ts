@@ -911,6 +911,38 @@ describe('host flag validation at the CLI boundary', () => {
     }
   };
 
+  it('probe sends github.com when --host is omitted', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-probe-default-'));
+    const socketPath = path.join(root, 'broker.sock');
+    let request: Record<string, unknown> | undefined;
+    const server = net.createServer((socket) => {
+      let buffer = '';
+      socket.on('data', (chunk: Buffer) => {
+        buffer += chunk.toString('utf8');
+        const newline = buffer.indexOf('\n');
+        if (newline < 0) return;
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
+        socket.end(encodeMessage({ ok: true, username: 'x-access-token', password: 'secret' }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    const savedSocket = process.env['GIT_BROKER_SOCKET'];
+    const savedFile = process.env['GIT_BROKER_SOCKET_FILE'];
+    try {
+      process.env['GIT_BROKER_SOCKET'] = socketPath;
+      delete process.env['GIT_BROKER_SOCKET_FILE'];
+      assert.equal(await runProbe(['--repo', 'a/one']), 0);
+      assert.equal(request?.['host'], 'github.com');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      if (savedSocket === undefined) delete process.env['GIT_BROKER_SOCKET'];
+      else process.env['GIT_BROKER_SOCKET'] = savedSocket;
+      if (savedFile === undefined) delete process.env['GIT_BROKER_SOCKET_FILE'];
+      else process.env['GIT_BROKER_SOCKET_FILE'] = savedFile;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   for (const command of ['probe', 'logs']) {
     it(`${command} refuses a bare --host`, () => {
       const result = refuse(command, ['--host']);
