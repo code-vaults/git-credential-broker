@@ -28,6 +28,7 @@ import {
   type DeploymentMode,
 } from '../config.ts';
 import { parseAllowEntry } from '../policy.ts';
+
 import type { BrokerConfig, GithubAppHostConfig } from 'gcb-core';
 import {
   brokerPaths,
@@ -38,6 +39,11 @@ import {
 } from './deployment.ts';
 import type { BrokerPaths } from './deployment.ts';
 import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from 'gcb-core';
+
+/** Quote one value as a single shell word, including paths with spaces. */
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
 
 /** The environment `init` reasons about, injectable so the guard rails can be tested. */
 export interface InitEnvironment {
@@ -604,7 +610,7 @@ export async function runInit(argv: readonly string[]): Promise<number> {
     if (result.previous) {
       say('Restart the broker to pick this up:');
       if (result.mode === 'sidecar') {
-        say('  docker compose -f docker-compose.broker.yml up -d    # sidecar');
+        say(`  cd ${shellQuote(path.dirname(result.keyPath))} && docker compose up -d    # sidecar`);
       } else {
         say(`  gcb daemon --config ${result.configPath}    # host process`);
       }
@@ -626,9 +632,10 @@ export async function runInit(argv: readonly string[]): Promise<number> {
       if (result.mode === 'sidecar') {
         say('Then start the sidecar, which mounts those paths exactly as recorded:');
         say(
-          `  gcb compose --dir ${path.dirname(result.keyPath)} --config ${result.configPath} --socket-dir <a directory the pusher mounts> \\`,
+          `  gcb compose --dir ${shellQuote(path.dirname(result.keyPath))} --config ${shellQuote(result.configPath)} --socket-dir <a directory the pusher mounts> --user <pusher uid:gid> \\`,
         );
-        say('    > docker-compose.broker.yml && docker compose -f docker-compose.broker.yml up -d');
+        say(`    > ${shellQuote(path.join(path.dirname(result.keyPath), 'docker-compose.yml'))}`);
+        say(`  cd ${shellQuote(path.dirname(result.keyPath))} && docker compose up -d`);
       } else {
         say('Then start the broker as a host process:');
         say(`  gcb daemon --config ${result.configPath} --check   # validate, bind nothing`);

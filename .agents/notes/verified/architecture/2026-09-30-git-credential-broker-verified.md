@@ -14,7 +14,7 @@
 ```
 宿主 NAS
   /volume1/docker/git-cred-broker/
-    docker-compose.broker.yml      sidecar 定义
+    docker-compose.yml      sidecar 定义
     app/                           代码（挂载之外，agent 写不到）
     app.pem                        App 私钥 0600  ← 唯一长期凭据
     broker.config.json                    白名单/策略 0600
@@ -125,7 +125,7 @@ git-credential-broker probe --socket /home/app/.dsh/git-broker/broker.sock \
 git-credential-broker diagnose --config /volume1/docker/git-cred-broker/broker.config.json
 
 # sidecar
-docker compose -f /volume1/docker/git-cred-broker/docker-compose.broker.yml ps|logs|restart|down
+docker compose -f /volume1/docker/git-cred-broker/docker-compose.yml ps|logs|restart|down
 
 # 每次签发
 tail -f /volume1/docker/git-cred-broker/log/audit.jsonl

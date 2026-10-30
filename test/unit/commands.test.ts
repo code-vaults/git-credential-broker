@@ -880,7 +880,7 @@ describe('socket discovery', () => {
     delete process.env['GIT_BROKER_SOCKET'];
     process.env['GIT_BROKER_SOCKET_FILE'] = socketFile;
     try {
-      const code = await runProbe(['--host', 'github.com', '--repo', 'a/one']);
+      const code = await runProbe(['--repo', 'a/one']);
       assert.equal(code, 3, 'it must use the path from the file and report the broker unreachable');
     } finally {
       if (savedSocket === undefined) delete process.env['GIT_BROKER_SOCKET'];
@@ -889,6 +889,73 @@ describe('socket discovery', () => {
       else process.env['GIT_BROKER_SOCKET_FILE'] = savedFile;
     }
   });
+});
+
+describe('host flag validation at the CLI boundary', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-host-home-'));
+  after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  /** Run a client command as a process and return its refusal. */
+  const refuse = (command: string, args: readonly string[]): { status: number; stderr: string } => {
+    try {
+      execFileSync('node', ['--conditions=development', 'packages/client/bin/gcb.js', command, ...args], {
+        cwd: path.resolve('.'),
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+      });
+      return { status: 0, stderr: '' };
+    } catch (error) {
+      const failed = error as { status?: number | null; stderr?: string };
+      return { status: failed.status ?? -1, stderr: String(failed.stderr ?? '') };
+    }
+  };
+
+  it('probe sends github.com when --host is omitted', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-probe-default-'));
+    const socketPath = path.join(root, 'broker.sock');
+    let request: Record<string, unknown> | undefined;
+    const server = net.createServer((socket) => {
+      let buffer = '';
+      socket.on('data', (chunk: Buffer) => {
+        buffer += chunk.toString('utf8');
+        const newline = buffer.indexOf('\n');
+        if (newline < 0) return;
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
+        socket.end(encodeMessage({ ok: true, username: 'x-access-token', password: 'secret' }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    const savedSocket = process.env['GIT_BROKER_SOCKET'];
+    const savedFile = process.env['GIT_BROKER_SOCKET_FILE'];
+    try {
+      process.env['GIT_BROKER_SOCKET'] = socketPath;
+      delete process.env['GIT_BROKER_SOCKET_FILE'];
+      assert.equal(await runProbe(['--repo', 'a/one']), 0);
+      assert.equal(request?.['host'], 'github.com');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      if (savedSocket === undefined) delete process.env['GIT_BROKER_SOCKET'];
+      else process.env['GIT_BROKER_SOCKET'] = savedSocket;
+      if (savedFile === undefined) delete process.env['GIT_BROKER_SOCKET_FILE'];
+      else process.env['GIT_BROKER_SOCKET_FILE'] = savedFile;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  for (const command of ['probe', 'logs']) {
+    it(`${command} refuses a bare --host`, () => {
+      const result = refuse(command, ['--host']);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /--host needs a value/);
+    });
+
+    it(`${command} refuses an empty --host`, () => {
+      const result = refuse(command, ['--host', '']);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /--host needs a value/);
+    });
+  }
 });
 
 describe('config discovery', () => {

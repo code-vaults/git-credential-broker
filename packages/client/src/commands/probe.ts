@@ -15,7 +15,7 @@ export const PROBE_USAGE = `Usage: gcb probe [options]
 Ask the broker for a credential without pushing. Prints a fingerprint, never the credential.
 
   --socket <path>   Broker socket (default: $GIT_BROKER_SOCKET or the socket file)
-  --host <host>     Host as git reports it, e.g. github.com        [required]
+  --host <host>     Host as git reports it (default: github.com)
   --repo <owner/name>  Repository path                            [required]
   --protocol <p>    https (default) or http for a host that opted in
   --proxy <url>     Use this proxy for this request
@@ -40,12 +40,14 @@ export async function runProbe(argv: readonly string[]): Promise<number> {
   }
 
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
-  const host = args.value('host');
+  const hostArg = args.value('host');
+  if (args.has('host') && hostArg === undefined) fail('--host needs a value');
+  if (hostArg === '') fail('--host needs a value');
+  const host = hostArg ?? 'github.com';
   const repo = args.value('repo');
   if (!socketPath) {
     fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `gcb setup`');
   }
-  if (!host) fail('--host is required (e.g. github.com)');
   if (!repo) fail('--repo is required (e.g. owner/name)');
 
   const protocol = args.value('protocol') ?? 'https';

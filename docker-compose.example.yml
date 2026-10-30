@@ -3,7 +3,9 @@
 # `gcb compose` prints the sidecar in 1b, already filled in for your paths:
 #
 #   gcb compose --socket-dir <a host directory the DSH container mounts> \
-#     > docker-compose.broker.yml
+#     > docker-compose.yml
+#
+# Then, from that directory: docker compose up -d
 #
 # Generate it rather than retyping it. The mount targets inside the container must match the
 # paths `init --mode sidecar` recorded, and both commands read them from one definition, so a
@@ -55,7 +57,8 @@ services:
     container_name: git-cred-broker
     restart: unless-stopped
     # Must match the uid/gid of the container that will use the socket, or it is unusable.
-    user: "1026:100"
+    # `compose --user "<pusher uid>:<pusher gid>"` renders this from the deployment.
+    user: "1000:1000"
     read_only: true
     tmpfs:
       # npx needs somewhere writable for its cache; /tmp is a tmpfs above.

@@ -101,11 +101,11 @@ Keep the checkout outside every container mount.
 ## GitHub actions
 
 The action path is wired through the broker; the host image must include `gh` before these commands
-can run. The container never receives the token. Build the image, then pass `--image ghcr.io/code-vaults/gcb-host:dev` to
+can run. The container never receives the token. Build the image, then pass `--image code-vaults/gcb-host:dev` to
 the compose command in [Quick start](#quick-start-sidecar):
 
 ```sh
-docker build --target host -t ghcr.io/code-vaults/gcb-host:dev .
+docker build --target host -t code-vaults/gcb-host:dev .
 ```
 
 The image's `CMD` starts `gcb daemon`, but `compose` still renders the registry-fetching `npx`
@@ -159,16 +159,42 @@ the default sidecar fetches `gcb-host` with `npx` at start, while `--code` runs 
 registry access at boot.
 
 ```sh
-DEPLOY=/srv/git-cred-broker        # broker.config.yml, app.pem and log/ live here
+DEPLOY=/srv/git-cred-broker        # the deployment directory
 SOCKET_DIR=/srv/git-broker-socket  # a host directory the pushing container already mounts
+PUSHER_UID=1000                    # uid of the container that will use the socket
+PUSHER_GID=1000                    # gid of that container
 
 gcb init --mode sidecar --dir "$DEPLOY" \
   --cert ~/Downloads/app.private-key.pem \
   --allow owner/repo --client-id Iv23li… --app-id 123456
 
 gcb compose --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" \
-  > "$DEPLOY/docker-compose.broker.yml"
-docker compose -f "$DEPLOY/docker-compose.broker.yml" up -d
+  --user "$PUSHER_UID:$PUSHER_GID" > "$DEPLOY/docker-compose.yml"
+cd "$DEPLOY" && docker compose up -d
+```
+
+`--user` must be the uid:gid of the container that will use the socket; the socket is mode 0660 and
+created by that identity. A sidecar running as a different user cannot connect. If the pusher runs
+as the same user as the sidecar, the default is correct.
+
+`init` writes the configuration and key as the invoking user, with the key mode 0600. If
+`authorize` has run, it also writes `user.refresh` beside the key, mode 0600 and **read-write**:
+the broker rotates that token on every exchange. The sidecar's user must read the config, key and
+`user.refresh`, and write `log/` (including an existing audit file). If `PUSHER_UID` differs from
+the user running `init`/`authorize`, either run both as that uid or `chown` the config, key,
+`user.refresh`, the log directory and its audit file to it; re-run the `chown` after `authorize`
+creates `user.refresh`. Keep the key and `user.refresh` at 0600; do not make them world-readable.
+
+A deployment directory holds the config, key, log and compose file; `app/` is only a convention
+for a staged commit, and `--code` accepts any directory outside every mount.
+
+```text
+$DEPLOY/
+  broker.config.yml
+  app.pem
+  log/
+  docker-compose.yml
+  app/                 optional staged commit
 ```
 
 Nothing above has to name the shared directories. A host process asks the container runtime — docker,
@@ -186,7 +212,8 @@ instead, run `gcb stage --to "$DEPLOY/app"`, install its dependencies in that di
 root you intend to export, or pass `--repo <path>`: it defaults to the current directory and exports
 that repository's `HEAD`, never the working tree. `stage` is export-only: it does not install
 dependencies or build, and it never runs the commit's code. It leaves `STAGED.json` beside the code
-recording the commit.
+recording the commit; `--code` does not require that file, and the directory may have any name outside
+the mounts.
 
 ## Quick start: host process
 
@@ -272,7 +299,8 @@ app's **private key**, so run it where the key is. On a host-process deployment 
 a sidecar it is inside the container:
 
 ```sh
-docker compose -f docker-compose.broker.yml exec gcb \
+DEPLOY=/srv/git-cred-broker
+cd "$DEPLOY" && docker compose exec gcb \
   npx --yes --package gcb-host gcb \
   diagnose --config /etc/git-cred-broker/broker.config.yml
 ```
@@ -583,7 +611,8 @@ packages/client/src/     credential helper, setup, probe, logs, pr, gh
 packages/host/src/       YAML config, providers, broker, daemon and host commands
 packages/*/bin/          the two installed gcb bins (client and host)
 test/                    unit tests, plus an end-to-end push over authenticated smart HTTP
-examples/                configuration and compose snippets
+examples/                configuration snippets
+docker-compose.example.yml  tracked sidecar example
 DEVELOPMENT.md           building from source, tests, releasing
 .agents/notes/           the design, its review, and the measured environment facts
 ```
@@ -605,12 +634,12 @@ The contract between the pushing container and the broker is deliberately small:
 
 ## Images
 
-Two GHCR repositories mirror the two packages:
+Two local dev images mirror the two packages; the release publishes the same repositories on GHCR:
 
 | Image | Contents | Use |
 |---|---|---|
-| `ghcr.io/code-vaults/gcb-client:dev` | `gcb` client and Node runtime only | idsh base / `COPY --from` |
-| `ghcr.io/code-vaults/gcb-host:dev` | broker, `gh`, and broker dependencies | run `gcb daemon` on the host |
+| `code-vaults/gcb-client:dev` | `gcb` client and Node runtime only | idsh base / `COPY --from` |
+| `code-vaults/gcb-host:dev` | broker, `gh`, and broker dependencies | run `gcb daemon` on the host |
 
 The release publishes both repositories with `latest`, `<version>` and `sha-<sha>` tags. The
 `:dev` tags are local build tags and are not published; do not pull them from GHCR.
@@ -618,8 +647,8 @@ The release publishes both repositories with `latest`, `<version>` and `sha-<sha
 For local development, build and reuse the `:dev` tags:
 
 ```sh
-docker build --target client -t ghcr.io/code-vaults/gcb-client:dev .
-docker build --target host   -t ghcr.io/code-vaults/gcb-host:dev .
+docker build --target client -t code-vaults/gcb-client:dev .
+docker build --target host   -t code-vaults/gcb-host:dev .
 ```
 
 While the image exists locally, Docker uses it instead of pulling from the registry. Another machine
@@ -629,7 +658,7 @@ For idsh's dev image, name the client image as a stage and copy only the gcb pac
 
 ```dockerfile
 ARG BASE=devockr/idsh:base
-ARG GCB_CLIENT_IMAGE=ghcr.io/code-vaults/gcb-client:dev
+ARG GCB_CLIENT_IMAGE=code-vaults/gcb-client:dev
 FROM ${GCB_CLIENT_IMAGE} AS gcb-client
 FROM ${BASE}
 

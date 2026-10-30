@@ -24,7 +24,7 @@ export const LOGS_USAGE = `Usage: gcb logs [options]
 Read a workflow job log through the broker, without the credential ever reaching this side.
 
   --socket <path>      Broker socket (default: $GIT_BROKER_SOCKET or the socket file)
-  --host <host>        Host as configured, e.g. github.com          [required]
+  --host <host>        Host as configured (default: github.com)
   --repo <owner/name>  Repository the job belongs to                [required]
   --job <id>           Workflow job id, which is also the check run id   [required]
   --proxy <url>        Use this proxy for this request
@@ -49,13 +49,15 @@ export async function runLogs(argv: readonly string[]): Promise<number> {
   }
 
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
-  const host = args.value('host');
+  const hostArg = args.value('host');
+  if (args.has('host') && hostArg === undefined) fail('--host needs a value');
+  if (hostArg === '') fail('--host needs a value');
+  const host = hostArg ?? 'github.com';
   const repo = args.value('repo');
   const rawJob = args.value('job');
   if (!socketPath) {
     fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `gcb setup`');
   }
-  if (!host) fail('--host is required (e.g. github.com)');
   if (!repo) fail('--repo is required (e.g. owner/name)');
   if (!rawJob) fail('--job is required (the workflow job id, which is also the check run id)');
   const jobId = Number(rawJob);
