@@ -286,6 +286,7 @@ sidecar. Commands find the configuration by convention — `--config`, else `$GI
 
 ```sh
 gcb probe --host github.com --repo owner/repo
+gcb config check --config /srv/git-cred-broker/broker.config.yml
 gcb diagnose --config /srv/git-cred-broker/broker.config.yml
 ```
 
