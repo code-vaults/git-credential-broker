@@ -177,6 +177,11 @@ cd "$DEPLOY" && docker compose up -d
 created by that identity. A sidecar running as a different user cannot connect. If the pusher runs
 as the same user as the sidecar, the default is correct.
 
+`init` writes the configuration and key as the invoking user, with the key mode 0600; the
+sidecar's user must be able to read both and write `log/`. If `PUSHER_UID` differs from the user
+running `init`, either run `init` as that uid or `chown` the config, key and log directory to it
+(keep the key 0600). Do not make the key world-readable.
+
 A deployment directory holds the config, key, log and compose file; `app/` is only a convention
 for a staged commit, and `--code` accepts any directory outside every mount.
 

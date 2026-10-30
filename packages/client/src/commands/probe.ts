@@ -40,8 +40,10 @@ export async function runProbe(argv: readonly string[]): Promise<number> {
   }
 
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
-  const host = args.value('host') ?? 'github.com';
-  if (host === '') fail('--host needs a value');
+  const hostArg = args.value('host');
+  if (args.has('host') && hostArg === undefined) fail('--host needs a value');
+  if (hostArg === '') fail('--host needs a value');
+  const host = hostArg ?? 'github.com';
   const repo = args.value('repo');
   if (!socketPath) {
     fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `gcb setup`');
