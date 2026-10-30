@@ -77,22 +77,28 @@ describe('runGhAction', { skip: onWindows }, () => {
   });
 
   it('SIGKILLs a descendant that outlives the parent', async () => {
+    const timeoutMs = 2_000;
     const pidFile = path.join(os.tmpdir(), `gcb-child-${process.pid}-${Date.now()}.pid`);
     const gh = shim(
-      `sh -c 'trap "" TERM; while :; do sleep 1; done' &\necho $! > ${JSON.stringify(pidFile)}\ntrap 'exit 0' TERM\nwait`,
+      `sh -c 'trap "" TERM; while :; do sleep 1; done' >/dev/null 2>&1 &\necho $! > ${JSON.stringify(pidFile)}\ntrap 'exit 0' TERM\nwait`,
     );
     let pid: number | undefined;
     try {
+      const started = Date.now();
       const result = await runGhAction({
         action: 'pr:view',
         values: { number: 1 },
         repo: 'acme/widget',
         token: 't',
         ghPath: gh,
-        timeoutMs: 1_000,
+        timeoutMs,
         env: { PATH: process.env.PATH },
       });
       assert.equal(result.timedOut, true);
+      assert.ok(
+        Date.now() - started < timeoutMs + KILL_GRACE_MS / 2,
+        'the parent closed before the grace, so the chase is what kills the descendant',
+      );
       await new Promise((resolve) => setTimeout(resolve, KILL_GRACE_MS + 500));
       const childPid = Number(fs.readFileSync(pidFile, 'utf8').trim());
       pid = childPid;

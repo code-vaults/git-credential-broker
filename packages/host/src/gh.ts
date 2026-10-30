@@ -112,7 +112,6 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
       let settled = false;
       let timer: NodeJS.Timeout | undefined;
       let killTimer: NodeJS.Timeout | undefined;
-      let killGrace: NodeJS.Timeout | undefined;
 
       const child = spawn(options.ghPath ?? 'gh', argv, {
         cwd: home,
@@ -201,8 +200,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         timedOut = true;
         // Ask politely first; a gh process that ignores SIGTERM is killed on the grace deadline.
         if (!signalGroup('SIGTERM')) return;
-        killGrace = setTimeout(() => chase(), KILL_GRACE_MS);
-        killGrace.unref();
+        setTimeout(() => chase(), KILL_GRACE_MS).unref();
       }, timeoutMs);
 
       child.stdout?.on('data', (chunk: Buffer) => take('stdout', chunk));
