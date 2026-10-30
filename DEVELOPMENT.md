@@ -87,7 +87,8 @@ As an image, build the host stage of the root Dockerfile:
 
 ```sh
 docker build --target host -t gcb-host:local .
-gcb compose --image gcb-host:local > /tmp/gcb-compose.yml
+gcb compose --image gcb-host:local > docker-compose.yml
+docker compose config   # parse the rendered file
 ```
 
 Then keep the rendered `sh -c` wrapper (it applies `GCB_PROXY`) and change only the final
@@ -105,6 +106,9 @@ Then keep the rendered `sh -c` wrapper (it applies `GCB_PROXY`) and change only 
         esac
         exec gcb daemon --config /etc/git-cred-broker/broker.config.yml
 ```
+
+Run it from that deployment directory with `docker compose up -d`. The config path defaults to
+`./broker.config.yml`, so this is a deployment directory, not the repository root.
 
 ## Tests
 
