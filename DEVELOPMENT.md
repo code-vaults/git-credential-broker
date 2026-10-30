@@ -89,8 +89,10 @@ As an image, build the host stage of the root Dockerfile:
 docker build --target host -t ghcr.io/code-vaults/gcb-host:dev .
 DEPLOY=/path/to/deployment
 SOCKET_DIR=/path/to/socket
-gcb compose --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" --image ghcr.io/code-vaults/gcb-host:dev \
-  > "$DEPLOY/docker-compose.yml"
+PUSHER_UID=1000   # uid of the container that pushes
+PUSHER_GID=1000   # gid of the container that pushes
+gcb compose --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" --user "$PUSHER_UID:$PUSHER_GID" \
+  --image ghcr.io/code-vaults/gcb-host:dev > "$DEPLOY/docker-compose.yml"
 cd "$DEPLOY" && docker compose config   # parse the rendered file
 ```
 
