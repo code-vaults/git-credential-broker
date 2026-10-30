@@ -29,10 +29,6 @@ import {
 } from '../config.ts';
 import { parseAllowEntry } from '../policy.ts';
 
-/** Quote one value as a single shell word, including paths with spaces. */
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
 import type { BrokerConfig, GithubAppHostConfig } from 'gcb-core';
 import {
   brokerPaths,
@@ -43,6 +39,11 @@ import {
 } from './deployment.ts';
 import type { BrokerPaths } from './deployment.ts';
 import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from 'gcb-core';
+
+/** Quote one value as a single shell word, including paths with spaces. */
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
 
 /** The environment `init` reasons about, injectable so the guard rails can be tested. */
 export interface InitEnvironment {

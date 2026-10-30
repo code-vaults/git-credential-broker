@@ -87,8 +87,9 @@ As an image, build the host stage of the root Dockerfile:
 
 ```sh
 docker build --target host -t ghcr.io/code-vaults/gcb-host:dev .
-gcb compose --image ghcr.io/code-vaults/gcb-host:dev > docker-compose.yml
-docker compose config   # parse the rendered file
+DEPLOY=/path/to/deployment
+gcb compose --dir "$DEPLOY" --image ghcr.io/code-vaults/gcb-host:dev > "$DEPLOY/docker-compose.yml"
+cd "$DEPLOY" && docker compose config   # parse the rendered file
 ```
 
 Then keep the rendered `sh -c` wrapper (it applies `GCB_PROXY`) and change only the final
