@@ -19,7 +19,7 @@ Commands
   init         Create or update the broker config, and install the key
   stage        Export a reviewed commit to where the broker will run
   compose      Print a Docker sidecar definition for the broker
-  config       Validate the broker configuration
+  config       Validate or edit the broker configuration
   diagnose     Ask GitHub what the App can actually see
   authorize    Authorize this app once for person-authored pull requests
   host-opener  Watch for the container's pull-request requests and create them
