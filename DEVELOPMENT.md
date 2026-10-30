@@ -83,37 +83,48 @@ npm install -g /tmp/gcb-packs/gcb-core-*.tgz /tmp/gcb-packs/gcb-host-*.tgz
 gcb --version
 ```
 
-As an image, build the host stage of the root Dockerfile:
+### Deploying the dev images
+
+The two dev tags are built from the current checkout and are never pushed:
 
 ```sh
-docker build --target host -t ghcr.io/code-vaults/gcb-host:dev .
+docker build --network=host --target host   -t code-vaults/gcb-host:dev .
+docker build --network=host --target client -t code-vaults/gcb-client:dev .
+```
+
+The `host` image carries `gcb` and `gh` and runs the broker. The `client` image is the
+embedding source for an idsh-style base (`COPY --from=...`); it is not a second broker.
+
+Render a deployment for the host image on the host that runs it:
+
+```sh
 DEPLOY=/path/to/deployment
-SOCKET_DIR=/path/to/socket
-PUSHER_UID=1000   # uid of the container that pushes
-PUSHER_GID=1000   # gid of the container that pushes
-gcb compose --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" --user "$PUSHER_UID:$PUSHER_GID" \
-  --image ghcr.io/code-vaults/gcb-host:dev > "$DEPLOY/docker-compose.yml"
-cd "$DEPLOY" && docker compose config   # parse the rendered file
+SOCKET_DIR=/path/to/shared/socket
+PUSHER_UID=1000
+PUSHER_GID=1000
+gcb compose --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" \
+  --user "$PUSHER_UID:$PUSHER_GID" --image code-vaults/gcb-host:dev \
+  > "$DEPLOY/docker-compose.yml"
 ```
 
-Then keep the rendered `sh -c` wrapper (it applies `GCB_PROXY`) and change only the final
-`exec npx ...` to the binary the image installed, since the default one fetches the published package:
+Change only the generated final `exec npx ...` to `exec gcb daemon`, because the dev image already
+installs the package; do **not** keep a staged `/opt/gcb` mount, or the image's code is ignored.
+Then recreate from the deployment directory, choosing the proxy at runtime:
 
-```yaml
-    command:
-      - sh
-      - -c
-      - |
-        case "${GCB_PROXY-default}" in
-          default) ;;
-          "") unset http_proxy https_proxy all_proxy no_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY NODE_USE_ENV_PROXY ;;
-          *) export http_proxy="$GCB_PROXY" https_proxy="$GCB_PROXY" no_proxy=localhost,127.0.0.1 NODE_USE_ENV_PROXY=1 ;;
-        esac
-        exec gcb daemon --config /etc/git-cred-broker/broker.config.yml
+```sh
+cd "$DEPLOY"
+GCB_PROXY=http://proxy.example:7890 docker compose up -d --force-recreate
+docker compose logs --tail 20 gcb
 ```
 
-Run it from that deployment directory with `docker compose up -d`. The config path defaults to
-`./broker.config.yml`, so this is a deployment directory, not the repository root.
+Verify from the pushing side:
+
+```sh
+gcb probe --repo owner/repo
+```
+
+`GCB_PROXY` is read at `docker compose up` time. An unset value keeps the host proxy variables, an
+empty value goes direct, and a URL overrides them; changing it needs `--force-recreate`.
 
 ## Tests
 
