@@ -58,7 +58,7 @@ services:
     restart: unless-stopped
     # Must match the uid/gid of the container that will use the socket, or it is unusable.
     # `compose --user "<pusher uid>:<pusher gid>"` renders this from the deployment.
-    user: "1026:100"
+    user: "1000:1000"
     read_only: true
     tmpfs:
       # npx needs somewhere writable for its cache; /tmp is a tmpfs above.
