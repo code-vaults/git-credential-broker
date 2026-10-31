@@ -438,10 +438,11 @@ belongs to one user or organization and cannot span two, so two owners need two 
 with **Pull requests: Read and write**, **Contents: Read** and **Metadata: Read**, and give it access
 to **only the repositories the allowlist already names**. No contents *write* means
 GitHub itself refuses to let that token push or merge, so "it may only open pull requests" is
-enforced by GitHub rather than promised here. The token is used only when `--as-user` is passed,
-and only for opening or resolving; `user.refresh` from `authorize` wins when it exists. A plain
-`gcb pr` stays on the app's installation token. Dropping the field does not change the default; it
-only makes bare `--as-user` fail with `no authorized user token`.
+enforced by GitHub rather than promised here. `userTokens` is consulted only when `--as-user` is
+passed: bare `--as-user` opens as that person, and resolution uses the user identity by default.
+`user.refresh` from `authorize` wins over it when that file exists. A plain `gcb pr` stays on the
+app's installation token. Dropping the field does not change the default; it only makes bare
+`--as-user` fail with `no authorized user token`.
 
 #### Authorizing as a person instead
 Two things the app needs: its **client id** in the configuration (the App ID will not do), and

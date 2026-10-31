@@ -189,6 +189,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const accounts = args.values('as-user');
   const asUser = args.has('as-user');
   if (accounts.length > 1) fail('--as-user may only be given once');
+  if (asUser && accounts.length > 0) fail('--as-user may only be given once');
   const account = accounts[0];
   if (account !== undefined && action !== 'open') {
     fail('--as-user only creates a pull request through the opener, so it does not go with ' + JSON.stringify(action));
