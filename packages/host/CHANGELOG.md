@@ -1,5 +1,14 @@
 # gcb-host
 
+## 0.0.4
+
+### Patch Changes
+
+- [#46](https://github.com/code-vaults/git-credential-broker/pull/46) [`3475d35`](https://github.com/code-vaults/git-credential-broker/commit/3475d359849ed6ffd7f0c3fec07e5a8e99c1ab0b) Thanks [@JounQin](https://github.com/JounQin)! - Add `gcb config edit` to open the broker configuration in `$VISUAL`/`$EDITOR` and validate the
+  saved file.
+- Updated dependencies []:
+  - gcb-core@0.0.4
+
 ## 0.0.3
 
 ### Patch Changes
