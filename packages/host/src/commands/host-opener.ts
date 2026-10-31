@@ -11,7 +11,7 @@
  * program it calls is configuration, and it is called with an argument list built here.
  */
 import { execFile } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -225,7 +225,7 @@ function openerEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
   const env = { ...process.env };
   if (account !== undefined) {
     const dir = join(homedir(), '.config', `gh-${account}`);
-    if (!existsSync(dir)) {
+    if (!existsSync(dir) || !statSync(dir).isDirectory()) {
       throw new Error(`no gh config for account ${JSON.stringify(account)} at ${dir}`);
     }
     // Tokens in the opener's own environment would override the selected account's config.

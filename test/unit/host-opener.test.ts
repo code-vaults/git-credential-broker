@@ -202,13 +202,18 @@ describe('the opener account selection', () => {
       'utf8',
     );
     chmodSync(command, 0o755);
+    const configRoot = join(root, '.config');
+    mkdirSync(configRoot, { recursive: true });
+    writeFileSync(join(configRoot, 'gh-file'), '');
     const previousHome = process.env['HOME'];
     process.env['HOME'] = root;
     try {
-      const id = writeRequest(dir, { head: 'feat/ok', base: 'main', title: 'x', body: '', account: 'ghost' });
+      const ghost = writeRequest(dir, { head: 'feat/ok', base: 'main', title: 'x', body: '', account: 'ghost' });
+      const file = writeRequest(dir, { head: 'feat/ok', base: 'main', title: 'x', body: '', account: 'file' });
       const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
       assert.equal(code, 0);
-      assert.match(readResult(dir, id)?.error ?? '', /no gh config for account "ghost"/);
+      assert.match(readResult(dir, ghost)?.error ?? '', /no gh config for account "ghost"/);
+      assert.match(readResult(dir, file)?.error ?? '', /no gh config for account "file"/);
       assert.equal(existsSync(envFile), false, 'the program must not run');
     } finally {
       if (previousHome === undefined) delete process.env['HOME'];
