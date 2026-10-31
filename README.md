@@ -444,7 +444,8 @@ resolve when no `user.refresh` exists. Resolving a review thread needs **Content
 that trade is not acceptable, resolve through `authorize`, whose token is the person's own.
 `user.refresh` wins over `userTokens` when it exists. A plain `gcb pr` stays on the app's
 installation token. Dropping the field does not change the default; it only makes bare `--as-user`
-fail with `no authorized user token`.
+fail with `no authorized user token`. An older broker ignores the identity field; upgrade `gcb-host`
+before relying on this default.
 
 #### Authorizing as a person instead
 Two things the app needs: its **client id** in the configuration (the App ID will not do), and
