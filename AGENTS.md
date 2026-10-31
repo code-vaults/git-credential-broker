@@ -206,13 +206,13 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   `pull_request`, so the branch gets the three jobs before anyone merges.
 
 - **A pull request authored by the app is one automated reviewers may skip, so a person can be the
-  author instead — through the host opener, and only for creating.** `pr --via-host` writes a request
+  author instead — through the host opener, and only for creating.** `pr --as-user <login>` writes a request
   under `<git dir>/gcb/pr-requests` (shared with the host, and untracked, so it
   dirties nothing) and waits for the answer; `gcb host-opener` on the host turns it
-  into a pull request with the credentials of whoever runs it. That process is deliberately the only
+  into a pull request with the gh account each request names. That process is deliberately the only
   thing that acts as a person: it runs no shell, its program is configuration, and it cannot push,
   merge, close or read. Everything else stays on the socket, where the app is the only actor. Default
-  is still the broker — `--via-host` is asked for, never assumed.
+  is still the broker — `--as-user` is asked for, never assumed.
 
   The opener is started once per machine, not once per repository: it discovers the checkouts under
   its `--root`s (default `$HOME`) within `--depth` levels of each (4 by default), so anything added
@@ -222,6 +222,9 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   of the same `.git` directory — so only the roots it scans are host-side paths. A request is served in the
   checkout it was written in. That is a mechanism, not a boundary: the container can edit any checkout it can
   write, its remote included, so what a deployment controls is which roots are served and which program runs.
+  A request also selects an account directory: any `~/.config/gh-<login>` that exists can be named, and
+  a request that names none runs as the opener's own login. That is a selector, not a gate; a
+  deployment controls which account directories exist, and the container chooses among them.
 
   **More than one way to be the author exists, and none of them replaces another.** The opener (no
   long-lived secret, one process), `userTokens` (one process, a token per owner), and authorization on
@@ -250,7 +253,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   listing the installations and the repositories each one reaches; asking for a credential for a
   repository the app *is* installed on is the control that needs no such command.
 
-  **Which actions are left is the operational half.** `pr --via-host` is create-only — the opener runs
+  **Which actions are left is the operational half.** `pr --as-user` is create-only — the opener runs
   `gh pr create` and nothing else — and every other action goes through the installation token. So on a
   repository the app is not installed on, a pull request can be opened but not edited, closed or merged,
   and neither the container nor the host opener has a route to its metadata. That is not a gap to close

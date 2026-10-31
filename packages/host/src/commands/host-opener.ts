@@ -1,8 +1,9 @@
 /**
- * `host-opener` — fulfil the container's requests to open pull requests, as the person running it.
+ * `host-opener` — fulfil the container's requests to open pull requests with the gh account each
+ * request names.
  *
  * This runs on the host, beside the checkout the container also sees, and it does exactly one thing:
- * it turns a request file into a pull request, using the credentials of whoever started it. That is
+ * it turns a request file into a pull request, using the gh account the request names. That is
  * the whole point — a pull request authored by a person is one that automated reviewers will actually
  * review, and the app cannot be that person.
  *
@@ -10,7 +11,7 @@
  * program it calls is configuration, and it is called with an argument list built here.
  */
 import { execFile } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -43,7 +44,7 @@ export const HOST_OPENER_USAGE = `Usage: gcb host-opener [options]
 
 Run on the host, once, beside the trees the container also sees. It finds the checkouts under the
 roots it is given — ones created later included — and fulfils their requests to open a pull request
-with the credentials of whoever runs it, so the pull request is authored by a person rather than by
+with the gh account each request names, so the pull request is authored by a person rather than by
 the app's bot. It does nothing else: it cannot push, merge or close anything.
 
   --root <dir>          A tree to serve, repeatable (default: $HOME)
@@ -56,7 +57,7 @@ the app's bot. It does nothing else: it cannot push, merge or close anything.
   --once                Fulfil what is waiting, then exit
   -h, --help            Show this help
 
-The container asks for this by passing --via-host to \`pr\`. Requests are files under
+The container asks for this by passing --as-user to \`pr\`. Requests are files under
 <git dir>/gcb/pr-requests, which is shared with the container and untracked by git
 — so the paths on the two sides never have to match: each writes and reads its own view of the same
 directory, and only the roots this process scans are host-side paths.
@@ -139,7 +140,9 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
   process.on('SIGTERM', stop);
 
   say(single === undefined ? `serving the checkouts under ${scanned.join(', ')}` : `serving ${single}`);
-  say(`creating pull requests with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as ${process.env['USER'] ?? 'this user'}`);
+  say(
+    `creating pull requests with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
+  );
 
   for (;;) {
     for (const { repo, dir } of targets()) {
@@ -202,7 +205,7 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
     if (result.error !== undefined) {
       warn(`failed to open ${request.head}: ${result.error}`);
     } else {
-      say(`opened #${result.number}: ${result.url}`);
+      say(`opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`);
     }
     answered += 1;
   }
@@ -218,8 +221,21 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
  * @param request - what to create.
  * @returns the number and URL, or the reason it did not work.
  */
-function openerEnv(proxy: ProxyChoice): NodeJS.ProcessEnv {
+function openerEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
   const env = { ...process.env };
+  if (account !== undefined) {
+    const dir = join(homedir(), '.config', `gh-${account}`);
+    if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+      throw new Error(`no gh config for account ${JSON.stringify(account)} at ${dir}`);
+    }
+    // Tokens in the opener's own environment would override the selected account's config.
+    delete env['GH_TOKEN'];
+    delete env['GITHUB_TOKEN'];
+    delete env['GH_ENTERPRISE_TOKEN'];
+    delete env['GITHUB_ENTERPRISE_TOKEN'];
+    delete env['GH_HOST'];
+    env['GH_CONFIG_DIR'] = dir;
+  }
   applyProxyChoice(env, proxy);
   return env;
 }
@@ -243,8 +259,9 @@ async function openOne(
         'create',
         // No `--repo`: gh resolves the repository from the checkout it runs in, which is the checkout the
         // request was written in. That is a mechanism, not a boundary — the container can edit that checkout,
-        // its remote included. What a deployment controls is which roots are served and which program runs;
-        // what this reaches is whatever the person running it can reach.
+        // its remote included. What a deployment controls is which roots are served, which program runs
+        // and which account directories exist; what this reaches is whatever the account the request
+        // names can reach.
         ...(request.draft === true ? ['--draft'] : []),
         '--base',
         request.base,
@@ -255,7 +272,7 @@ async function openOne(
         '--body-file',
         bodyFile,
       ],
-      { cwd: repo, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: openerEnv(request.proxy) },
+      { cwd: repo, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: openerEnv(request.proxy, request.account) },
     );
     const found = pullRequestUrl(stdout);
     if (!found) {
