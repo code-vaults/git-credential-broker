@@ -6,7 +6,8 @@
  * app may not be installed on the repository and a person's account is the only route that can create
  * an issue there.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   ANSWER_TIMEOUT_MS,
@@ -41,6 +42,9 @@ through the app broker as usual.
   --proxy <url>        Use this proxy for the opener's gh call
   --no-proxy           Reach GitHub directly for the opener's gh call
   -h, --help           Show this help
+
+The broker route (no --as-user) takes --body and catalogued flags such as --label/--assignee;
+this host route takes --body/--body-file only.
 `;
 
 /**
@@ -68,6 +72,15 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     if (!KNOWN_FLAGS.has(name)) fail('unknown option --' + name + ' for gcb issue create --as-user');
   }
   if (args.positionals.length > 1) fail('unexpected argument ' + JSON.stringify(args.positionals[1]));
+  const proxyValues = args.values('proxy');
+  if (args.has('proxy') && proxyValues.length === 0) fail('--proxy needs a value');
+  if (args.has('no-proxy') && (args.has('proxy') || proxyValues.length > 0)) {
+    fail('--proxy and --no-proxy are mutually exclusive');
+  }
+  const repo = args.value('repo');
+  if (args.has('repo') && (repo === undefined || repo.trim() === '')) {
+    fail('--repo needs a value (e.g. owner/name)');
+  }
 
   const title = args.value('title');
   if (title === undefined) fail('--title is required to create an issue');
@@ -96,7 +109,7 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   try {
     id = writeRequest(dir, {
       kind: 'issue',
-      ...(args.value('repo') === undefined ? {} : { repo: args.value('repo') as string }),
+      ...(repo === undefined ? {} : { repo }),
       title,
       body,
       account,
@@ -110,6 +123,14 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   const answer = await waitForResult(dir, id, ANSWER_TIMEOUT_MS);
   removeResult(dir, id);
   if (answer === undefined) {
+    const pending = existsSync(join(dir, `${id}.json`));
+    const claimed = existsSync(join(dir, `${id}.json.working`));
+    if (!pending && !claimed) {
+      fail(
+        `the host opener took ${id} and dropped it without answering\n` +
+          '  it probably does not understand issue requests; restart it from this gcb-host version',
+      );
+    }
     fail(
       `the host opener did not answer ${id} within ${Math.round(ANSWER_TIMEOUT_MS / 1000)}s\n` +
         '  it may still be working: the request is not cancelled, and the opener removes it only once\n' +

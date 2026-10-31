@@ -3,9 +3,9 @@
  * each request names.
  *
  * This runs on the host, beside the checkout the container also sees, and it does exactly one thing:
- * it turns a request file into a pull request, using the gh account the request names. That is
- * the whole point — a pull request authored by a person is one that automated reviewers will actually
- * review, and the app cannot be that person.
+ * it turns a request file into a pull request or issue, using the gh account the request names. That
+ * is the whole point — content authored by a person is what automated reviewers will actually review,
+ * and the app cannot be that person.
  *
  * It has no other power. It cannot push, merge, close or read anything, and it never runs a shell: the
  * program it calls is configuration, and it is called with an argument list built here.
@@ -36,7 +36,7 @@ import { applyProxyChoice, parseProxy, type ProxyChoice } from '../http.ts';
 
 const run = promisify(execFile);
 
-/** How long one `pr create` may take. */
+/** How long one `pr create` or `issue create` may take. */
 const CREATE_TIMEOUT_MS = 120_000;
 
 /** Usage text for `host-opener`. */
@@ -50,7 +50,7 @@ the app's bot. It does nothing else: it cannot push, merge or close anything.
   --root <dir>          A tree to serve, repeatable (default: $HOME)
   --depth <n>           How far below a root to look for checkouts (default: 4)
   --repo <path>         Serve this one checkout instead of discovering any
-  --command <path>      The program that creates a pull request
+  --command <path>      The program that creates a pull request or issue
                         (default: $GIT_BROKER_PR_COMMAND, else gh)
   --arg <token>         An extra argument for that program, before the subcommand (repeatable)
   --interval <seconds>  How often to look for requests (default: 5)
@@ -154,7 +154,7 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
 
   say(single === undefined ? `serving the checkouts under ${scanned.join(', ')}` : `serving ${single}`);
   say(
-    `creating pull requests with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
+    `creating pull requests and issues with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
   );
 
   for (;;) {
@@ -177,7 +177,7 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
  * Answer everything waiting in the channel.
  *
  * @param dir - the channel directory.
- * @param repo - the checkout to create pull requests in.
+ * @param repo - the checkout to create pull requests or issues in.
  * @param command - the program to call.
  * @param extra - arguments to pass before the subcommand.
  * @returns how many requests were answered.
@@ -186,7 +186,7 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
   let answered = 0;
   for (const id of listRequests(dir)) {
     // Claimed, not read: two openers — a service and a hand-run --once — would otherwise both act on the
-    // same request and each create the pull request, under the person's name.
+    // same request and each create it, under the person's name.
     const request = claimRequest(dir, id);
     if (!request) {
       // Either unreadable or already claimed, and the two are not worth telling apart here: removing
@@ -225,15 +225,7 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
   return answered;
 }
 
-/**
- * Create one pull request.
- *
- * @param repo - the checkout to create it in.
- * @param command - the program to call.
- * @param extra - arguments to pass before the subcommand.
- * @param request - what to create.
- * @returns the number and URL, or the reason it did not work.
- */
+/** Environment for one gh call: the selected account or inherited config, plus the proxy choice. */
 function openerEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
   const env = { ...process.env };
   if (account !== undefined) {
@@ -253,6 +245,15 @@ function openerEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
   return env;
 }
 
+/**
+ * Create one pull request or issue.
+ *
+ * @param repo - the checkout to create it in.
+ * @param command - the program to call.
+ * @param extra - arguments to pass before the subcommand.
+ * @param request - what to create.
+ * @returns the number and URL, or the reason it did not work.
+ */
 async function openOne(
   repo: string,
   command: string,

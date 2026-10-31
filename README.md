@@ -369,9 +369,9 @@ a pull request's review threads and their comments; `--reply-to` adds a reply in
 pull request — so `--edit` takes no `--number`. GitHub lets only an author change a comment, and the
 comments this command posts are the app's, so `--edit` changes those rather than a person's.
 
-### Opening one as yourself
+### Opening a pull request or issue as yourself
 
-There are three ways to have a pull request authored by a person, and they stay alternatives: the **host
+There are three ways to have a pull request or issue authored by a person, and they stay alternatives: the **host
 opener** below needs no long-lived secret anywhere and costs a process you keep running; **`userTokens`**
 needs no second process and costs a token per owner; and **authorizing the app** needs neither, at the cost
 of a token as wide as your own access to GitHub. A deployment picks the trade it prefers, and none of them
@@ -420,7 +420,6 @@ and no opener running they fail; they do not fall back to the broker route.
 # in the container
 gcb issue create --as-user octocat --title "An issue title" --body-file issue.md
 ```
-
 
 A pull request opened with the app's installation token is authored by the app, and automated
 reviewers are entitled to skip those. The simplest way to have one authored by you is a

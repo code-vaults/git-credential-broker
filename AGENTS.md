@@ -315,7 +315,7 @@ Full detail and the measurements behind them:
 |---|---|
 | `packages/core/src/` | shared parser, help/version, protocol, types, platform, paths and the gh action catalog |
 | `packages/client/src/helper.ts` | the container-side credential helper |
-| `packages/client/src/commands/` | setup, probe, logs, pr, gh and remotes |
+| `packages/client/src/commands/` | setup, probe, logs, pr, issue, gh and remotes |
 | `packages/host/src/broker.ts` | unix socket server, refusal codes, audit records |
 | `packages/host/src/config.ts` | YAML configuration |
 | `packages/host/src/gh.ts` | the isolated gh action executor |
