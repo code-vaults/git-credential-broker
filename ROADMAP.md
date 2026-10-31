@@ -285,10 +285,10 @@ fail closed.
 
 ## Phase 3 — host-user delegation and multiple host accounts
 
-Naming: `--via-host` describes where it runs, not who acts. Recommended replacement:
+Naming: `--via-host` described where it runs, not who acts. It is replaced by
 **`--as-user <login>`**, with `--as-app` as the explicit default. Alternatives considered:
-`--host-user`, `--author`, `--delegate`, `--as-human`. `--as-user` covers create, review, and issue
-creation and leaves room for a login.
+`--host-user`, `--author`, `--delegate`, `--as-human`. Create is wired to the host opener today;
+review and issue creation still need the host broker path.
 
 Deployment: keep the host broker on the **host**, as a host process, not in a container.
 

@@ -385,21 +385,27 @@ checkout would let anything that can write the checkout decide what your credent
 
 ```sh
 # in the container
-gcb pr --via-host --repo owner/repo --head feature --base main \
+gcb pr --as-user octocat --repo owner/repo --head feature --base main \
   --title "a title" --body-file pr.md
 ```
 
-The opener creates pull requests with the credentials of whoever started it, which is the point;
-it never runs a shell, and the program it calls is configuration rather than a hard-coded `gh`:
-`--command /path/to/gh`, or `$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
+The opener creates pull requests with the gh account named by the request. `--as-user <login>`
+selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
+directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. The directory must
+already exist, and inherited `GH_TOKEN`/`GITHUB_TOKEN`/`GH_ENTERPRISE_TOKEN`/`GITHUB_ENTERPRISE_TOKEN`/`GH_HOST` are ignored
+for that request. Any existing account directory can be named, so this is a selector rather than a
+gate. A request with no `--as-user` uses the broker route and does not select the opener's login.
+The opener never runs a shell, and
+the program it calls is configuration rather than a hard-coded `gh`: `--command /path/to/gh`, or
+`$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
 anything. `--root` may be repeated and defaults to `$HOME`; checkouts within `--depth` levels of a root
 (4 by default) are served with no further setup, including ones created later, which the next sweep
 picks up. The bound exists because the walk repeats every `--interval` seconds; raise `--depth` for
 deeper layouts. To start it once and keep it,
 `examples/host-opener.service` is a systemd user unit; on a system without user services,
 `examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
-instance at a time, and its output in a log file. Without `--via-host`, or with no opener running, `pr` behaves
-exactly as before.
+instance at a time, and its output in a log file. Without `--as-user`, `pr` uses the broker route.
+With `--as-user` and no opener running it fails; it does not fall back to the broker route.
 
 
 A pull request opened with the app's installation token is authored by the app, and automated
@@ -425,7 +431,7 @@ to **only the repositories the allowlist already names**. No contents *write* me
 GitHub itself refuses to let that token push or merge, so "it may only open pull requests" is
 enforced by GitHub rather than promised here. The token is used for creating and nothing else:
 closing, merging, updating and reading a state all stay on the app's installation token. Drop the
-field to go back to app-authored pull requests; `--via-host` still works either way.
+field to go back to app-authored pull requests; `--as-user` still works either way.
 
 #### Authorizing as a person instead
 Two things the app needs: its **client id** in the configuration (the App ID will not do), and
@@ -492,13 +498,13 @@ broker mints the token; Git's own HTTP transport still uses `http.proxy` / `HTTP
 
 `gh` receives the choice through its process environment; the broker builds a separate
 `node-fetch-native` instance for each proxy value and caches it, so commands sharing a choice reuse the
-same connection pool. `--via-host` carries the same choice to the host opener, which applies it to its
+same connection pool. `--as-user` carries the same choice to the host opener, which applies it to its
 own `gh pr create`.
 
 The choice comes from the pushing container, so it can override a host proxy policy. A deployment that
 must force all egress through one route should not give `gcb-client` to a container it does not trust;
 the allowlist and the broker key still bound what that container can reach, not which network path it
-uses. The `--via-host` opener honours the same choice while acting as the person, and the person's
+uses. The `--as-user` opener honours the same choice while acting as the person, and the person's
 token is not bounded by the app key, so only serve checkouts from a container you trust.
 
 The broker, `authorize` and `diagnose` **refuse to start** when a proxy variable is set and `NODE_USE_ENV_PROXY` is
