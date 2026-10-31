@@ -9,7 +9,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
-import { channelDir, listRequests, writeOpener, writeResult } from '../../packages/core/src/host-request.ts';
+import {
+  channelDir,
+  listRequests,
+  readRequest,
+  writeOpener,
+  writeResult,
+} from '../../packages/core/src/host-request.ts';
 import { sleep, tryRunAsync, type RunResult } from '../common/run.ts';
 
 const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));
@@ -32,7 +38,7 @@ function fixture(): { root: string; dir: string; cleanup: () => void } {
 }
 
 function requests(dir: string): string[] {
-  return listRequests(dir).filter((id) => id !== 'opener');
+  return listRequests(dir);
 }
 
 describe('gcb issue create --as-user', () => {
@@ -68,7 +74,18 @@ describe('gcb issue create --as-user', () => {
     try {
       writeOpener(host.dir, { pid: process.pid, kinds: ['pull-request', 'issue'] });
       const pending = runClient(
-        ['issue', 'create', '--as-user', 'alice', '--title', 'a title', '--body', 'a body'],
+        [
+          'issue',
+          'create',
+          '--as-user',
+          'alice',
+          '--title',
+          'a title',
+          '--body',
+          'a body',
+          '--proxy',
+          'http://p:1',
+        ],
         host.root,
       );
       let id: string | undefined;
@@ -77,6 +94,12 @@ describe('gcb issue create --as-user', () => {
         if (id === undefined) await sleep(10);
       }
       assert.ok(id !== undefined, 'the client wrote the request');
+      const request = readRequest(host.dir, id);
+      assert.equal(request?.kind, 'issue');
+      assert.equal(request?.title, 'a title');
+      assert.equal(request?.body, 'a body');
+      assert.equal(request?.account, 'alice');
+      assert.equal(request?.proxy, 'http://p:1');
       writeResult(host.dir, id, { number: 42, url: 'https://github.com/acme/widget/issues/42' });
       const result = await pending;
       assert.equal(result.status, 0);
