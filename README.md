@@ -369,9 +369,9 @@ a pull request's review threads and their comments; `--reply-to` adds a reply in
 pull request — so `--edit` takes no `--number`. GitHub lets only an author change a comment, and the
 comments this command posts are the app's, so `--edit` changes those rather than a person's.
 
-### Opening one as yourself
+### Opening a pull request or issue as yourself
 
-There are three ways to have a pull request authored by a person, and they stay alternatives: the **host
+There are three ways to have a pull request or issue authored by a person, and they stay alternatives: the **host
 opener** below needs no long-lived secret anywhere and costs a process you keep running; **`userTokens`**
 needs no second process and costs a token per owner; and **authorizing the app** needs neither, at the cost
 of a token as wide as your own access to GitHub. A deployment picks the trade it prefers, and none of them
@@ -397,7 +397,7 @@ gcb pr --as-user octocat --repo owner/repo --head feature --base main \
   --title "a title" --body-file pr.md
 ```
 
-The opener creates pull requests with the gh account named by the request. `--as-user <login>`
+The opener creates pull requests and issues with the gh account named by the request. `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
 directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. The directory must
 already exist, and inherited `GH_TOKEN`/`GITHUB_TOKEN`/`GH_ENTERPRISE_TOKEN`/`GITHUB_ENTERPRISE_TOKEN`/`GH_HOST` are ignored
@@ -412,10 +412,14 @@ picks up. The bound exists because the walk repeats every `--interval` seconds; 
 deeper layouts. To start it once and keep it,
 `examples/host-opener.service` is a systemd user unit; on a system without user services,
 `examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
-instance at a time, and its output in a log file. Without `--as-user`, or with bare `--as-user`, `pr`
-uses the broker route. With `--as-user <login>` and no opener running it fails; it does not fall back
-to the broker route.
+instance at a time, and its output in a log file. Without `--as-user`, `pr` and `issue create` use
+the broker route; bare `pr --as-user` selects the broker's authorized person. With `--as-user <login>`
+and no opener running they fail; they do not fall back to the broker route.
 
+```sh
+# in the container
+gcb issue create --as-user octocat --title "An issue title" --body-file issue.md
+```
 
 A pull request opened with the app's installation token is authored by the app, and automated
 reviewers are entitled to skip those. The simplest way to have one authored by you is a

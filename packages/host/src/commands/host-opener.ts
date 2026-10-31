@@ -1,11 +1,11 @@
 /**
- * `host-opener` — fulfil the container's requests to open pull requests with the gh account each
- * request names.
+ * `host-opener` — fulfil the container's requests to open pull requests or issues with the gh account
+ * each request names.
  *
  * This runs on the host, beside the checkout the container also sees, and it does exactly one thing:
- * it turns a request file into a pull request, using the gh account the request names. That is
- * the whole point — a pull request authored by a person is one that automated reviewers will actually
- * review, and the app cannot be that person.
+ * it turns a request file into a pull request or issue, using the gh account the request names. That
+ * is the whole point — content authored by a person is what automated reviewers will actually review,
+ * and the app cannot be that person.
  *
  * It has no other power. It cannot push, merge, close or read anything, and it never runs a shell: the
  * program it calls is configuration, and it is called with an argument list built here.
@@ -28,7 +28,7 @@ import {
   requestProblems,
   writeOpener,
   writeResult,
-  type HostOpenRequest,
+  type HostRequest,
   type HostOpenResult,
 } from 'gcb-core';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
@@ -36,21 +36,21 @@ import { applyProxyChoice, parseProxy, type ProxyChoice } from '../http.ts';
 
 const run = promisify(execFile);
 
-/** How long one `pr create` may take. */
+/** How long one `pr create` or `issue create` may take. */
 const CREATE_TIMEOUT_MS = 120_000;
 
 /** Usage text for `host-opener`. */
 export const HOST_OPENER_USAGE = `Usage: gcb host-opener [options]
 
 Run on the host, once, beside the trees the container also sees. It finds the checkouts under the
-roots it is given — ones created later included — and fulfils their requests to open a pull request
-with the gh account each request names, so the pull request is authored by a person rather than by
+roots it is given — ones created later included — and fulfils their requests to create a pull request
+or issue with the gh account each request names, so the result is authored by a person rather than by
 the app's bot. It does nothing else: it cannot push, merge or close anything.
 
   --root <dir>          A tree to serve, repeatable (default: $HOME)
   --depth <n>           How far below a root to look for checkouts (default: 4)
   --repo <path>         Serve this one checkout instead of discovering any
-  --command <path>      The program that creates a pull request
+  --command <path>      The program that creates a pull request or issue
                         (default: $GIT_BROKER_PR_COMMAND, else gh)
   --arg <token>         An extra argument for that program, before the subcommand (repeatable)
   --interval <seconds>  How often to look for requests (default: 5)
@@ -74,6 +74,19 @@ directory, and only the roots this process scans are host-side paths.
  */
 export function pullRequestUrl(output: string): { number: number; url: string } | undefined {
   const match = /https:\/\/[^\s]+\/pull\/(\d+)/.exec(output);
+  const digits = match?.[1];
+  if (!match || digits === undefined) return undefined;
+  return { number: Number(digits), url: match[0] };
+}
+
+/**
+ * Pull the issue number and URL out of the program's output.
+ *
+ * @param output - the program's standard output.
+ * @returns the number and URL, or `undefined`.
+ */
+export function issueUrl(output: string): { number: number; url: string } | undefined {
+  const match = /https:\/\/[^\s]+\/issues\/(\d+)/.exec(output);
   const digits = match?.[1];
   if (!match || digits === undefined) return undefined;
   return { number: Number(digits), url: match[0] };
@@ -120,7 +133,12 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
   const advertise = (dir: string): void => {
     advertised.add(dir);
     if (readOpener(dir)?.pid !== process.pid) {
-      writeOpener(dir, { pid: process.pid, command, startedAt: new Date().toISOString() });
+      writeOpener(dir, {
+        pid: process.pid,
+        command,
+        startedAt: new Date().toISOString(),
+        kinds: ['pull-request', 'issue'],
+      });
     }
   };
   // However this process ends — a signal, --once, an exception — its markers go with it. A stale
@@ -141,7 +159,7 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
 
   say(single === undefined ? `serving the checkouts under ${scanned.join(', ')}` : `serving ${single}`);
   say(
-    `creating pull requests with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
+    `creating pull requests and issues with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
   );
 
   for (;;) {
@@ -164,7 +182,7 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
  * Answer everything waiting in the channel.
  *
  * @param dir - the channel directory.
- * @param repo - the checkout to create pull requests in.
+ * @param repo - the checkout to create pull requests or issues in.
  * @param command - the program to call.
  * @param extra - arguments to pass before the subcommand.
  * @returns how many requests were answered.
@@ -173,7 +191,7 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
   let answered = 0;
   for (const id of listRequests(dir)) {
     // Claimed, not read: two openers — a service and a hand-run --once — would otherwise both act on the
-    // same request and each create the pull request, under the person's name.
+    // same request and each create it, under the person's name.
     const request = claimRequest(dir, id);
     if (!request) {
       // Either unreadable or already claimed, and the two are not worth telling apart here: removing
@@ -203,7 +221,7 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
     writeResult(dir, id, result);
     removeRequest(dir, id);
     if (result.error !== undefined) {
-      warn(`failed to open ${request.head}: ${result.error}`);
+      warn(`failed to open ${request.kind === 'issue' ? 'issue' : request.head}: ${result.error}`);
     } else {
       say(`opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`);
     }
@@ -212,15 +230,7 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
   return answered;
 }
 
-/**
- * Create one pull request.
- *
- * @param repo - the checkout to create it in.
- * @param command - the program to call.
- * @param extra - arguments to pass before the subcommand.
- * @param request - what to create.
- * @returns the number and URL, or the reason it did not work.
- */
+/** Environment for one gh call: the selected account or inherited config, plus the proxy choice. */
 function openerEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
   const env = { ...process.env };
   if (account !== undefined) {
@@ -240,33 +250,40 @@ function openerEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
   return env;
 }
 
+/**
+ * Create one pull request or issue.
+ *
+ * @param repo - the checkout to create it in.
+ * @param command - the program to call.
+ * @param extra - arguments to pass before the subcommand.
+ * @param request - what to create.
+ * @returns the number and URL, or the reason it did not work.
+ */
 async function openOne(
   repo: string,
   command: string,
   extra: readonly string[],
-  request: HostOpenRequest,
+  request: HostRequest,
 ): Promise<HostOpenResult> {
   // The body goes to a private temp file: the program is given a path, never a string to interpret.
   const scratch = mkdtempSync(join(tmpdir(), 'gcb-'));
   const bodyFile = join(scratch, 'body.md');
   writeFileSync(bodyFile, request.body, 'utf8');
+  const issue = request.kind === 'issue';
   try {
     const { stdout, stderr } = await run(
       command,
       [
         ...extra,
-        'pr',
+        issue ? 'issue' : 'pr',
         'create',
         // No `--repo`: gh resolves the repository from the checkout it runs in, which is the checkout the
         // request was written in. That is a mechanism, not a boundary — the container can edit that checkout,
         // its remote included. What a deployment controls is which roots are served, which program runs
         // and which account directories exist; what this reaches is whatever the account the request
         // names can reach.
-        ...(request.draft === true ? ['--draft'] : []),
-        '--base',
-        request.base,
-        '--head',
-        request.head,
+        ...(!issue && request.draft === true ? ['--draft'] : []),
+        ...(issue ? [] : ['--base', request.base, '--head', request.head]),
         '--title',
         request.title,
         '--body-file',
@@ -274,9 +291,11 @@ async function openOne(
       ],
       { cwd: repo, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: openerEnv(request.proxy, request.account) },
     );
-    const found = pullRequestUrl(stdout);
+    const found = issue ? issueUrl(stdout) : pullRequestUrl(stdout);
     if (!found) {
-      return { error: `no pull request URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}` };
+      return {
+        error: `no ${issue ? 'issue' : 'pull request'} URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}`,
+      };
     }
     return found;
   } catch (error) {

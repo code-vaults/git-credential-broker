@@ -202,6 +202,15 @@ export async function runGh(
   for (const argument of rest) {
     if (argument === '--') break;
     const match = /^--([^=]+)/.exec(argument);
+    if (match?.[1] === 'as-user') {
+      fail(
+        domain === 'issue' && command === 'create'
+          ? 'use gcb issue create --as-user <login>'
+          : domain === 'pr' && command === 'create'
+            ? 'use gcb pr --as-user <login>'
+            : '--as-user only creates a pull request or issue',
+      );
+    }
     if (match?.[1] !== undefined && !allowed.has(match[1])) {
       fail(`unknown option --${match[1]} for gcb gh ${domain} ${command}`);
     }

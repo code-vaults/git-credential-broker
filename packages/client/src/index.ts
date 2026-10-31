@@ -76,7 +76,7 @@ async function run(argv: readonly string[]): Promise<number> {
     case 'run':
       return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
     case 'issue':
-      return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
+      return (await import('./commands/issue.ts')).runIssue(rest);
     case 'gh':
       return (await import('./commands/gh.ts')).runGh(rest);
     default:

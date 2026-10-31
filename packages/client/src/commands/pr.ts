@@ -13,19 +13,11 @@
  */
 import { readFileSync } from 'node:fs';
 
-import {
-  ANSWER_TIMEOUT_MS,
-  LOGIN,
-  channelDir,
-  findGitDir,
-  readOpener,
-  removeResult,
-  waitForResult,
-  writeRequest,
-} from 'gcb-core';
+import { LOGIN } from 'gcb-core';
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { baseBranchFor, qualifiedBranch, remoteRepo } from './remotes.ts';
 import { runGh } from './gh.ts';
+import { submitToOpener } from './host-submit.ts';
 import { fail, parseArgs, say } from 'gcb-core';
 
 /** Every flag the flag-only lifecycle understands. */
@@ -319,21 +311,8 @@ export async function runPr(argv: readonly string[]): Promise<number> {
 
   if (account !== undefined) {
     if (head === undefined || title === undefined) fail('--as-user needs --head and --title');
-    const gitDir = findGitDir(process.cwd());
-    if (gitDir === undefined) fail('--as-user needs a git repository: run it from the checkout');
-    const dir = channelDir(gitDir);
-    if (readOpener(dir) === undefined) {
-      fail(
-        `no host opener is watching ${dir}\n` +
-          '  start one on the host: gcb host-opener --repo <that checkout>\n' +
-          '  or drop --as-user to open it as the app instead',
-      );
-    }
-    // writeRequest refuses a request the opener would have to refuse: a title past its limit, a body past
-    // its limit, a head equal to its base. It throws, and a stack trace tells the caller none of that.
-    let id: string;
-    try {
-      id = writeRequest(dir, {
+    return submitToOpener(
+      {
         repo,
         head,
         base: base ?? 'main',
@@ -344,26 +323,11 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         account,
         session: 'pr',
         pid: process.pid,
-      });
-    } catch (error) {
-      fail((error as Error).message);
-    }
-    const answer = await waitForResult(dir, id, ANSWER_TIMEOUT_MS);
-    removeResult(dir, id);
-    if (answer === undefined) {
-      fail(
-        `the host opener did not answer ${id} within ${Math.round(ANSWER_TIMEOUT_MS / 1000)}s\n` +
-          '  it may still be working: the request is not cancelled, and the opener removes it only once\n' +
-          '  it has created the pull request or failed. Check the pull request list before asking again.',
-      );
-    }
-    if (answer.error !== undefined) fail(`the host opener could not open it: ${answer.error}`);
-    say(
-      `opened #${answer.number ?? '?'} (as ${account}, through the host opener): ${answer.url ?? '(no url)'}`,
+      },
+      (answer) =>
+        `opened #${answer.number ?? '?'} (as ${account}, through the host opener): ${answer.url ?? '(no url)'}`,
     );
-    return 0;
   }
-
   if (socketPath === undefined) {
     fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `gcb setup`');
   }
