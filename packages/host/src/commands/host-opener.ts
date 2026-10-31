@@ -258,8 +258,9 @@ async function openOne(
         'create',
         // No `--repo`: gh resolves the repository from the checkout it runs in, which is the checkout the
         // request was written in. That is a mechanism, not a boundary — the container can edit that checkout,
-        // its remote included. What a deployment controls is which roots are served and which program runs;
-        // what this reaches is whatever the person running it can reach.
+        // its remote included. What a deployment controls is which roots are served, which program runs
+        // and which account directories exist; what this reaches is whatever the account the request
+        // names can reach.
         ...(request.draft === true ? ['--draft'] : []),
         '--base',
         request.base,
