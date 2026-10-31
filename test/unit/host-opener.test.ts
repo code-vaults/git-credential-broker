@@ -162,6 +162,32 @@ describe('the opener account selection', () => {
     }
   });
 
+  it('refuses a request whose account is not a string', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-opener-account-shape-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(join(repo, '.git'));
+    const envFile = join(root, 'env');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf ran > ' + envFile + '\necho "https://github.com/acme/widget/pull/7"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    const id = writeRequest(dir, { head: 'feat/ok', base: 'main', title: 'x', body: '' });
+    writeFileSync(
+      join(dir, id + '.json'),
+      JSON.stringify({ head: 'feat/ok', base: 'main', title: 'x', body: '', account: ['alice'] }),
+    );
+    const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+    assert.equal(code, 0);
+    assert.equal(readResult(dir, id), undefined);
+    assert.equal(existsSync(envFile), false, 'the program must not run');
+    rmSync(root, { recursive: true, force: true });
+  });
+
   it('refuses an account with no gh config directory', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-opener-account-missing-'));
     const repo = join(root, 'checkout');

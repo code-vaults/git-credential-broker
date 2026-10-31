@@ -402,7 +402,9 @@ export function claimRequest(dir: string, id: string): HostOpenRequest | undefin
     typeof request.head === 'string' &&
     typeof request.base === 'string' &&
     typeof request.title === 'string' &&
-    typeof request.body === 'string';
+    typeof request.body === 'string' &&
+    // Untyped JSON: the file can spell account as an array or a number even though the type cannot.
+    (request.account === undefined || typeof request.account === 'string');
   if (!shaped) {
     rmSync(claimed, { force: true, recursive: true });
     return undefined;
