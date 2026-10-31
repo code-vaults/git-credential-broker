@@ -20,6 +20,31 @@ import type { HostOpenResult, HostRequest } from 'gcb-core';
 import { fail, say } from 'gcb-core';
 
 /**
+ * Explain why an opener request produced no answer.
+ *
+ * @param dir - the channel directory.
+ * @param id - the request id.
+ * @param noun - `pull request` or `issue`.
+ * @param timeoutMs - the wait that elapsed.
+ * @returns the message to show the caller.
+ */
+export function noAnswerMessage(dir: string, id: string, noun: string, timeoutMs: number): string {
+  const pending = existsSync(join(dir, `${id}.json`));
+  const claimed = existsSync(join(dir, `${id}.json.working`));
+  if (!pending && !claimed) {
+    return (
+      `the host opener took ${id} and dropped it without answering\n` +
+      `  it probably does not understand ${noun} requests; restart it from this gcb-host version`
+    );
+  }
+  return (
+    `the host opener did not answer ${id} within ${Math.round(timeoutMs / 1000)}s\n` +
+    '  it may still be working: the request is not cancelled, and the opener removes it only once\n' +
+    `  it has created the ${noun} or failed. Check the ${noun} list before asking again.`
+  );
+}
+
+/**
  * Write, wait for and report one opener request.
  *
  * @param request - the validated request.
@@ -54,23 +79,10 @@ export async function submitToOpener(
   } catch (error) {
     fail((error as Error).message);
   }
-  const answer = await waitForResult(dir, id, ANSWER_TIMEOUT_MS);
+  const timeoutMs = ANSWER_TIMEOUT_MS;
+  const answer = await waitForResult(dir, id, timeoutMs);
   removeResult(dir, id);
-  if (answer === undefined) {
-    const pending = existsSync(join(dir, `${id}.json`));
-    const claimed = existsSync(join(dir, `${id}.json.working`));
-    if (!pending && !claimed) {
-      fail(
-        `the host opener took ${id} and dropped it without answering\n` +
-          `  it probably does not understand ${noun} requests; restart it from this gcb-host version`,
-      );
-    }
-    fail(
-      `the host opener did not answer ${id} within ${Math.round(ANSWER_TIMEOUT_MS / 1000)}s\n` +
-        '  it may still be working: the request is not cancelled, and the opener removes it only once\n' +
-        `  it has created the ${noun} or failed. Check the ${noun} list before asking again.`,
-    );
-  }
+  if (answer === undefined) fail(noAnswerMessage(dir, id, noun, timeoutMs));
   if (answer.error !== undefined) fail(`the host opener could not open it: ${answer.error}`);
   say(success(answer));
   return 0;
