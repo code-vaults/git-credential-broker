@@ -4,6 +4,5 @@
 'gcb-host': minor
 ---
 
-Make the pull-request identity explicit: `--as-app` uses the installation token (default),
-`--as-user` without a login uses the broker's authorized user token, and `--as-user <login>` keeps
-the host-opener route.
+Make the pull-request identity explicit: app installation token by default, `--as-user` without a
+login for the broker's authorized user token, and `--as-user <login>` for the host-opener route.

@@ -32,7 +32,7 @@ import { fail, parseArgs, say } from 'gcb-core';
 const KNOWN_FLAGS = new Set([
   'help', 'h', 'draft', 'close', 'comment', 'file', 'line', 'side', 'threads',
   'reply-to', 'edit', 'resolve', 'id', 'jq', 'proxy', 'no-proxy', 'socket', 'host', 'repo',
-  'head', 'base', 'title', 'body', 'body-file', 'number', 'as-user', 'as-app', 'via-host', 'status',
+  'head', 'base', 'title', 'body', 'body-file', 'number', 'as-user', 'via-host', 'status',
 ]);
 
 /** Longer than a credential request: a token is minted, then the action is performed. */
@@ -56,9 +56,9 @@ Opening (the default)
   --body <text>        The body, inline
   --body-file <path>   The body, read from a file — a pull request body is usually long
   --draft              Open it as a draft
-  --as-app             Act as the app's installation token (default)
   --as-user            Act as the authorized person through the broker; fails if no
-                       user token is configured
+                       user token is configured. Without this flag the creation uses
+                       the app's installation token
   --as-user <login>    Create it through the host opener, using ~/.config/gh-<login>
                        (run 'gcb host-opener' on the host)
 
@@ -178,7 +178,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const hasReviewId = args.has('id') || args.value('id') !== undefined;
   if (hasReviewId) {
     const conflicts = [
-      'status', 'comment', 'threads', 'reply-to', 'edit', 'resolve', 'close', 'draft', 'as-user', 'as-app',
+      'status', 'comment', 'threads', 'reply-to', 'edit', 'resolve', 'close', 'draft', 'as-user',
       'head', 'base', 'title', 'body', 'body-file', 'file', 'line', 'side',
     ];
     if (conflicts.some((name) => args.has(name) || args.value(name) !== undefined) || (action !== 'update' && action !== 'open')) {
@@ -188,11 +188,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   }
   const accounts = args.values('as-user');
   const asUser = args.has('as-user');
-  const asApp = args.has('as-app');
   if (accounts.length > 1) fail('--as-user may only be given once');
-  if (asApp && (asUser || accounts.length > 0)) {
-    fail('--as-app and --as-user are mutually exclusive');
-  }
   const account = accounts[0];
   if (account !== undefined && action !== 'open') {
     fail('--as-user only creates a pull request through the opener, so it does not go with ' + JSON.stringify(action));
@@ -203,7 +199,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (account !== undefined && !LOGIN.test(account)) {
     fail(`--as-user must be a GitHub login or no value, got ${JSON.stringify(account)}`);
   }
-  const identity = asUser || (action === 'resolve' && !asApp) ? 'user' : 'app';
+  const identity = asUser || action === 'resolve' ? 'user' : 'app';
 
   const number = args.value('number');
   // `--head origin:feat/x` and `--base upstream:main` name a configured remote instead of a repository

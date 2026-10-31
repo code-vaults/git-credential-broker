@@ -134,10 +134,9 @@ same actions when the catalog has one — `gcb pr view 12`, `gcb pr close 12`, `
 described below is still what runs the lifecycle `gh` cannot express (opening as a person, review
 threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr close`.
 
-For that flag-only form, the identity is explicit: `--as-app` uses the installation token (the
-default), `--as-user` without a value uses the broker's authorized user token, and `--as-user
-<login>` uses the host opener. Resolving a review thread defaults to the user identity because GitHub
-refuses that for an app.
+For that flag-only form, creation uses the app's installation token by default; `--as-user` without
+a value uses the broker's authorized user token, and `--as-user <login>` uses the host opener.
+Resolving a review thread defaults to the user identity because GitHub refuses that for an app.
 
 Inside a checkout, `--repo` can be omitted only when `origin` names a usable GitHub repository whose
 host matches `--host`; otherwise pass `--repo`, or the matching `--host`.
@@ -375,8 +374,8 @@ needs no second process and costs a token per owner; and **authorizing the app**
 of a token as wide as your own access to GitHub. A deployment picks the trade it prefers, and none of them
 replaces another.
 
-A pull request opened through the broker with the default `--as-app` identity is authored by the
-app, and automated reviewers are entitled to skip those. To have one authored by you, either use the
+A pull request opened through the broker by default is authored by the app, and automated reviewers
+are entitled to skip those. To have one authored by you, either use the
 broker's authorized user token with `--as-user` (after `gcb authorize`), or run the opener on the
 host, beside the same checkout, and ask for it with `--as-user <login>` from the container:
 

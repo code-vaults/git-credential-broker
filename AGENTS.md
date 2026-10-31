@@ -211,8 +211,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   dirties nothing) and waits for the answer; `gcb host-opener` on the host turns it
   into a pull request with the gh account each request names. That process is deliberately the only
   thing that acts as a person: it runs no shell, its program is configuration, and it cannot push,
-  merge, close or read. On the broker, `--as-app` is the default and `--as-user` without a login uses
-  the authorized person; the host-opener route is the one that takes a login.
+  merge, close or read. On the broker, the app identity is the default and `--as-user` without a login uses the authorized
+  person; the host-opener route is the one that takes a login.
 
   The opener is started once per machine, not once per repository: it discovers the checkouts under
   its `--root`s (default `$HOME`) within `--depth` levels of each (4 by default), so anything added
