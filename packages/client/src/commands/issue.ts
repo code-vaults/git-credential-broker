@@ -98,5 +98,4 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     },
     (answer) => `opened issue #${answer.number ?? '?'} as ${account}: ${answer.url ?? '(no url)'}`,
   );
-  return 0;
 }
