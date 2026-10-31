@@ -44,7 +44,10 @@ export function runConfig(argv: readonly string[]): number {
     // `$VISUAL`/`$EDITOR` is a shell command in git's own semantics; `$@` keeps the path intact.
     const result = spawnSync('/bin/sh', ['-c', `${editor} "$@"`, editor, path], { stdio: 'inherit' });
     if (result.error !== undefined) fail(`cannot run editor ${JSON.stringify(editor)}: ${result.error.message}`);
-    if (result.status !== 0) fail(`editor exited with status ${String(result.status)}`);
+    if (result.status !== 0) {
+      const how = result.status === null ? `signal ${String(result.signal)}` : `status ${String(result.status)}`;
+      fail(`editor exited with ${how}`);
+    }
   }
 
   try {

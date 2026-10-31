@@ -1019,6 +1019,19 @@ describe('gcb config check', () => {
     assert.match(result.stdout, /ok: .* \(host\)/);
   });
 
+  it('passes the path as one argument to an editor command with arguments', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb config edit-'));
+    const config = path.join(dir, 'broker.config.yml');
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
+    try {
+      const result = run('edit', ['--config', config], { VISUAL: 'printf %s', EDITOR: 'printf %s' });
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /gcb config edit-[^/]*\/broker\.config\.yml/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('stops when the editor fails', () => {
     const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
       VISUAL: 'false',
