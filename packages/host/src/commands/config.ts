@@ -1,13 +1,18 @@
 /**
- * `config` — inspect and validate the broker configuration.
+ * `config` — inspect, edit and validate the broker configuration.
  */
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+
 import { inferMode, loadConfig, resolveConfigPath } from '../config.ts';
 import { fail, parseArgs, say } from 'gcb-core';
 
-export const CONFIG_USAGE = `Usage: gcb config check [options]
+export const CONFIG_USAGE = `Usage: gcb config check|edit [options]
 
-Validate the broker configuration without starting the service.
+Validate the broker configuration, or open it in $VISUAL/$EDITOR and validate the result.
 
+  check            Validate the file without changing it
+  edit             Open it, then validate the saved file
   --config <path>  Config file (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   -h, --help       Show this help
 `;
@@ -25,10 +30,26 @@ export function runConfig(argv: readonly string[]): number {
   for (const name of args.names) {
     if (name !== 'config' && name !== 'help' && name !== 'h') fail(`unknown option --${name}`);
   }
-  if (args.positionals[0] !== 'check' || args.positionals.length !== 1) {
-    fail('usage: gcb config check [--config <path>]');
+  const command = args.positionals[0];
+  if (command !== 'check' && command !== 'edit') {
+    fail('usage: gcb config check|edit [--config <path>]');
   }
+  if (args.positionals.length !== 1) fail(`usage: gcb config ${command} [--config <path>]`);
+
   const path = resolveConfigPath(configArg);
+  if (command === 'edit') {
+    if (!existsSync(path)) fail(`cannot edit missing config ${path}`);
+    const editor = process.env['VISUAL'] ?? process.env['EDITOR'];
+    if (editor === undefined || editor.trim() === '') fail('config edit needs $VISUAL or $EDITOR');
+    // `$VISUAL`/`$EDITOR` is a shell command in git's own semantics; `$@` keeps the path intact.
+    const result = spawnSync('/bin/sh', ['-c', `${editor} "$@"`, editor, path], { stdio: 'inherit' });
+    if (result.error !== undefined) fail(`cannot run editor ${JSON.stringify(editor)}: ${result.error.message}`);
+    if (result.status !== 0) {
+      const how = result.status === null ? `signal ${String(result.signal)}` : `status ${String(result.status)}`;
+      fail(`editor exited with ${how}`);
+    }
+  }
+
   try {
     const config = loadConfig(path);
     const hosts = Object.keys(config.hosts);

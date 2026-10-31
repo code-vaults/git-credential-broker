@@ -959,12 +959,16 @@ describe('host flag validation at the CLI boundary', () => {
 });
 
 describe('gcb config check', () => {
-  const run = (args: readonly string[]): { status: number; stdout: string; stderr: string } => {
+  const run = (
+    command: 'check' | 'edit',
+    args: readonly string[],
+    extraEnv: NodeJS.ProcessEnv = {},
+  ): { status: number; stdout: string; stderr: string } => {
     try {
       const stdout = execFileSync(
         'node',
-        ['--conditions=development', 'packages/host/bin/gcb.js', 'config', 'check', ...args],
-        { cwd: path.resolve('.'), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+        ['--conditions=development', 'packages/host/bin/gcb.js', 'config', command, ...args],
+        { cwd: path.resolve('.'), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...extraEnv } },
       );
       return { status: 0, stdout, stderr: '' };
     } catch (error) {
@@ -974,40 +978,107 @@ describe('gcb config check', () => {
   };
 
   it('validates a real configuration and prints its mode and hosts', () => {
-    const result = run(['--config', path.resolve('examples/broker.config.example.yml')]);
+    const result = run('check', ['--config', path.resolve('examples/broker.config.example.yml')]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /ok: .* \(host\)/);
     assert.match(result.stdout, /hosts: github\.com/);
   });
 
   it('refuses a missing file, a bare --config and an extra positional', () => {
-    const missing = run(['--config', '/definitely/not/here.yml']);
+    const missing = run('check', ['--config', '/definitely/not/here.yml']);
     assert.equal(missing.status, 1);
     assert.match(missing.stderr, /cannot read config/);
 
-    const bare = run(['--config']);
+    const bare = run('check', ['--config']);
     assert.equal(bare.status, 1);
     assert.match(bare.stderr, /--config may only be given once/);
 
-    const repeated = run(['--config', 'a.yml', '--config', 'b.yml']);
+    const repeated = run('check', ['--config', 'a.yml', '--config', 'b.yml']);
     assert.equal(repeated.status, 1);
     assert.match(repeated.stderr, /--config may only be given once/);
 
-    const oneMissing = run(['--config', 'a.yml', '--config']);
+    const oneMissing = run('check', ['--config', 'a.yml', '--config']);
     assert.equal(oneMissing.status, 1);
     assert.match(oneMissing.stderr, /--config may only be given once/);
 
-    const misspelled = run(['--confg', 'x']);
+    const misspelled = run('check', ['--confg', 'x']);
     assert.equal(misspelled.status, 1);
     assert.match(misspelled.stderr, /unknown option --confg/);
 
-    const extra = run(['extra']);
+    const extra = run('check', ['extra']);
     assert.equal(extra.status, 1);
     assert.match(extra.stderr, /usage: gcb config check/);
   });
 
+  it('opens the config in the editor and validates it', () => {
+    const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
+      VISUAL: 'true',
+      EDITOR: 'true',
+    });
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /ok: .* \(host\)/);
+  });
+
+  it('passes the path as one argument to an editor command with arguments', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb config edit-'));
+    const config = path.join(dir, 'broker.config.yml');
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
+    try {
+      const result = run('edit', ['--config', config], {
+        VISUAL: 'printf [%s]\\n',
+        EDITOR: 'printf [%s]\\n',
+      });
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /\[\/.*gcb config edit-[^/]*\/broker\.config\.yml\]/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stops when the editor fails', () => {
+    const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
+      VISUAL: 'false',
+      EDITOR: 'false',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /editor exited with status 1/);
+  });
+
+  it('validates the file the editor saved, not the one it opened', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-'));
+    const config = path.join(dir, 'broker.config.yml');
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
+    const editor = path.join(dir, 'editor.sh');
+    fs.writeFileSync(editor, '#!/bin/sh\nprintf \'hosts: [\' > "$1"\n', { mode: 0o755 });
+    try {
+      const result = run('edit', ['--config', config], { VISUAL: editor, EDITOR: editor });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /not valid YAML/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports an editor killed by a signal', () => {
+    const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
+      VISUAL: 'kill -KILL $$',
+      EDITOR: 'kill -KILL $$',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /editor exited with signal SIGKILL/);
+  });
+
+  it('refuses config edit without an editor', () => {
+    const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
+      VISUAL: '',
+      EDITOR: '',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /needs \$VISUAL or \$EDITOR/);
+  });
+
   it('prints help before rejecting unknown options', () => {
-    const result = run(['--help', '--bogus']);
+    const result = run('check', ['--help', '--bogus']);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /Usage: gcb config check/);
   });
