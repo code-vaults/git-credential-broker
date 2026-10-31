@@ -1059,6 +1059,15 @@ describe('gcb config check', () => {
     }
   });
 
+  it('reports an editor killed by a signal', () => {
+    const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
+      VISUAL: 'kill -KILL $$',
+      EDITOR: 'kill -KILL $$',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /editor exited with signal SIGKILL/);
+  });
+
   it('refuses config edit without an editor', () => {
     const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
       VISUAL: '',
