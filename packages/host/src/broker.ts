@@ -401,6 +401,10 @@ export function createRequestHandler(
       const threadId = message['threadId'];
       const head = message['head'];
       const base = message['base'];
+      const identity = message['identity'];
+      if (identity !== undefined && identity !== 'app' && identity !== 'user') {
+        return deny(context, CODES.BAD_REQUEST, `bad identity ${JSON.stringify(identity)}`, 'the identity must be app or user');
+      }
       const title = message['title'];
       const body = message['body'];
       const filePath = message['filePath'];
@@ -479,6 +483,7 @@ export function createRequestHandler(
           owner: repo.owner,
           repo: repo.repo,
           action,
+          ...(identity === 'app' || identity === 'user' ? { identity } : {}),
           proxy,
           ...(typeof number === 'number' ? { number } : {}),
           ...(typeof commentId === 'number' ? { commentId } : {}),
@@ -497,6 +502,7 @@ export function createRequestHandler(
           decision: 'allow',
           ...context,
           action,
+          ...(identity === 'app' || identity === 'user' ? { identity } : {}),
           ...(typeof number === 'number' ? { number } : {}),
           // The comment an edit changes is the one thing the entry would otherwise not say, and the
           // number alone does not name it. Recorded for a reply too, which also carries an id.

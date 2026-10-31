@@ -78,7 +78,7 @@ No code until these are settled.
       (`../notes/proposed/architecture/2026-10-25-host-side-gh.md`).
 - [x] Decide the configuration format and the dependency strategy: YAML, `yaml`, no bundle; three
       workspace packages (see Phase 1).
-- [x] Decide the host-user flag name: `--as-user <login>`; `--as-app` is the explicit default.
+- [x] Decide the host-user flag name: `--as-user <login>`; the app identity is the default and has no flag.
 - [ ] Decide the final built-in command list and the `gcb <gh-subcommand>` shorthand.
 - [x] Update `AGENTS.md` and `README.md` to point at this roadmap and state the current baseline.
 
@@ -286,9 +286,10 @@ fail closed.
 ## Phase 3 — host-user delegation and multiple host accounts
 
 Naming: `--via-host` described where it runs, not who acts. It is replaced by
-**`--as-user <login>`**, with `--as-app` as the explicit default. Alternatives considered:
-`--host-user`, `--author`, `--delegate`, `--as-human`. Create is wired to the host opener today;
-review and issue creation still need the host broker path.
+**`--as-user <login>`** for the host opener and **`--as-user`** (no value) for the broker's authorized
+person; the app identity is the default and has no flag. Alternatives considered: `--host-user`,
+`--author`, `--delegate`, `--as-human`. Create is wired to the host opener today; review and issue
+creation still need the host broker path.
 
 Deployment: keep the host broker on the **host**, as a host process, not in a container.
 

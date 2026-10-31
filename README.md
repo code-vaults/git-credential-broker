@@ -134,6 +134,13 @@ same actions when the catalog has one — `gcb pr view 12`, `gcb pr close 12`, `
 described below is still what runs the lifecycle `gh` cannot express (opening as a person, review
 threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr close`.
 
+For that flag-only form, creation uses the app's installation token by default; `--as-user` without
+a value uses the broker's authorized user token, and `--as-user <login>` uses the host opener.
+Resolving a review thread defaults to the user identity because the pull-request token this broker
+mints is narrowed to `pull_requests: write` and `contents: read`, while `resolveReviewThread` needs
+`contents: write` — a grant the broker gives only to the credential git pushes with, never to a
+pull-request token.
+
 Inside a checkout, `--repo` can be omitted only when `origin` names a usable GitHub repository whose
 host matches `--host`; otherwise pass `--repo`, or the matching `--host`.
 
@@ -370,9 +377,10 @@ needs no second process and costs a token per owner; and **authorizing the app**
 of a token as wide as your own access to GitHub. A deployment picks the trade it prefers, and none of them
 replaces another.
 
-A pull request opened through the broker is authored by the app, and automated reviewers are
-entitled to skip those. To have one authored by you instead, run the opener on the host, beside the
-same checkout, and ask for it from the container:
+A pull request opened through the broker by default is authored by the app, and automated reviewers
+are entitled to skip those. To have one authored by you, either use the
+broker's authorized user token with `--as-user` (after `gcb authorize`), or run the opener on the
+host, beside the same checkout, and ask for it with `--as-user <login>` from the container:
 
 ```sh
 # on the host, once — it serves every checkout below $HOME and does nothing else
@@ -404,8 +412,9 @@ picks up. The bound exists because the walk repeats every `--interval` seconds; 
 deeper layouts. To start it once and keep it,
 `examples/host-opener.service` is a systemd user unit; on a system without user services,
 `examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
-instance at a time, and its output in a log file. Without `--as-user`, `pr` uses the broker route.
-With `--as-user` and no opener running it fails; it does not fall back to the broker route.
+instance at a time, and its output in a log file. Without `--as-user`, or with bare `--as-user`, `pr`
+uses the broker route. With `--as-user <login>` and no opener running it fails; it does not fall back
+to the broker route.
 
 
 A pull request opened with the app's installation token is authored by the app, and automated
@@ -427,11 +436,15 @@ reviewers are entitled to skip those. The simplest way to have one authored by y
 `userTokens` is keyed by owner because that is GitHub's own granularity: a fine-grained token
 belongs to one user or organization and cannot span two, so two owners need two tokens. Create each
 with **Pull requests: Read and write**, **Contents: Read** and **Metadata: Read**, and give it access
-to **only the repositories the allowlist already names**. No contents *write* means
-GitHub itself refuses to let that token push or merge, so "it may only open pull requests" is
-enforced by GitHub rather than promised here. The token is used for creating and nothing else:
-closing, merging, updating and reading a state all stay on the app's installation token. Drop the
-field to go back to app-authored pull requests; `--as-user` still works either way.
+to **only the repositories the allowlist already names**. With Contents: Read, GitHub itself refuses
+to let that token push or merge, so "it may only open pull requests" is enforced by GitHub rather
+than promised here. `userTokens` is consulted for opening when `--as-user` is passed, and for a
+resolve when no `user.refresh` exists. Resolving a review thread needs **Contents: Read and write**
+(`resolveReviewThread` is refused without it), which would also let that token push and merge; if
+that trade is not acceptable, resolve through `authorize`, whose token is the person's own.
+`user.refresh` wins over `userTokens` when it exists. A plain `gcb pr` stays on the app's
+installation token. Dropping the field does not change the default; it only makes bare `--as-user`
+fail with `no authorized user token`.
 
 #### Authorizing as a person instead
 Two things the app needs: its **client id** in the configuration (the App ID will not do), and

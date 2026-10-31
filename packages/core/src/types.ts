@@ -115,6 +115,8 @@ export type PullRequestAction =
 
 /** What a provider is asked to do to a pull request. */
 export interface PullRequestRequest {
+  /** Who acts: `app` = installation token, `user` = the authorized person or per-owner token. */
+  readonly identity?: 'app' | 'user';
   readonly host: string;
   readonly owner: string;
   readonly repo: string;
@@ -246,6 +248,7 @@ export interface WireRequest {
   readonly values?: Record<string, unknown>;
   /** For `op: "pull-request"`. */
   readonly action?: string;
+  readonly identity?: 'app' | 'user';
   readonly number?: number;
   readonly commentId?: number;
   readonly threadId?: string;
