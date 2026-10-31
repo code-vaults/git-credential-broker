@@ -436,13 +436,15 @@ reviewers are entitled to skip those. The simplest way to have one authored by y
 `userTokens` is keyed by owner because that is GitHub's own granularity: a fine-grained token
 belongs to one user or organization and cannot span two, so two owners need two tokens. Create each
 with **Pull requests: Read and write**, **Contents: Read** and **Metadata: Read**, and give it access
-to **only the repositories the allowlist already names**. No contents *write* means
-GitHub itself refuses to let that token push or merge, so "it may only open pull requests" is
-enforced by GitHub rather than promised here. `userTokens` is consulted for opening only when `--as-user` is passed, and for every `--resolve`:
-bare `--as-user` opens as that person, and resolution uses the user identity by default.
-`user.refresh` from `authorize` wins over it when that file exists. A plain `gcb pr` stays on the
-app's installation token. Dropping the field does not change the default; it only makes bare
-`--as-user` fail with `no authorized user token`.
+to **only the repositories the allowlist already names**. With Contents: Read, GitHub itself refuses
+to let that token push or merge, so "it may only open pull requests" is enforced by GitHub rather
+than promised here. `userTokens` is consulted for opening when `--as-user` is passed, and for a
+resolve when no `user.refresh` exists. Resolving a review thread needs **Contents: Read and write**
+(`resolveReviewThread` is refused without it), which would also let that token push and merge; if
+that trade is not acceptable, resolve through `authorize`, whose token is the person's own.
+`user.refresh` wins over `userTokens` when it exists. A plain `gcb pr` stays on the app's
+installation token. Dropping the field does not change the default; it only makes bare `--as-user`
+fail with `no authorized user token`.
 
 #### Authorizing as a person instead
 Two things the app needs: its **client id** in the configuration (the App ID will not do), and
