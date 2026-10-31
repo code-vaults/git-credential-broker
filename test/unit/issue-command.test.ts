@@ -86,6 +86,33 @@ describe('gcb issue create --as-user', () => {
     }
   });
 
+  it('keeps the catalogue help and refuses --as-user outside create', async () => {
+    const host = fixture();
+    try {
+      const catalogue = await runClient(['issue', '--help'], host.root);
+      assert.equal(catalogue.status, 0);
+      assert.match(catalogue.stdout, /Usage: gcb gh/u);
+
+      const view = await runClient(['issue', 'view', '--help'], host.root);
+      assert.equal(view.status, 0);
+      assert.match(view.stdout, /Usage: gcb gh/u);
+
+      const create = await runClient(['issue', 'create', '--help'], host.root);
+      assert.equal(create.status, 0);
+      assert.match(create.stdout, /Usage: gcb issue create --as-user/u);
+
+      const top = await runClient(['issue', '--as-user'], host.root);
+      assert.equal(top.status, 1);
+      assert.match(top.stderr, /--as-user only creates an issue/u);
+
+      const other = await runClient(['issue', 'view', '1', '--as-user', 'alice'], host.root);
+      assert.equal(other.status, 1);
+      assert.match(other.stderr, /--as-user only creates an issue/u);
+    } finally {
+      host.cleanup();
+    }
+  });
+
   it('refuses flags the host route does not carry', async () => {
     const host = fixture();
     try {
