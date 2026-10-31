@@ -394,9 +394,9 @@ selects `~/.config/gh-<login>` on the host, matching the login exactly including
 directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. The directory must
 already exist, and inherited `GH_TOKEN`/`GITHUB_TOKEN`/`GH_ENTERPRISE_TOKEN`/`GH_HOST` are ignored
 for that request. Any existing account directory can be named, so this is a selector rather than a
-gate; a request that names none uses the opener's own login. The opener never runs a shell, and the program it calls is configuration rather
-than a hard-coded `gh`:
-`--command /path/to/gh`, or `$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
+gate; a request that names none uses the opener's own login. The opener never runs a shell, and
+the program it calls is configuration rather than a hard-coded `gh`: `--command /path/to/gh`, or
+`$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
 anything. `--root` may be repeated and defaults to `$HOME`; checkouts within `--depth` levels of a root
 (4 by default) are served with no further setup, including ones created later, which the next sweep
 picks up. The bound exists because the walk repeats every `--interval` seconds; raise `--depth` for

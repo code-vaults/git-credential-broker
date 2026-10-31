@@ -6,7 +6,7 @@
  * the app cannot pose as a person — that would defeat the point of it holding only a scoped token.
  *
  * So the container leaves a *request* in the shared checkout, a host-side process the operator started
- * fulfils it with their own credentials, and the answer comes back the same way. The directory sits
+ * fulfils it with the credentials of the account it names, and the answer comes back the same way. The directory sits
  * under the git directory, which both sides of the mount see and git never tracks, so a pending
  * request dirties no working tree and the two processes need no protocol beyond a file appearing and
  * another appearing back.

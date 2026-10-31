@@ -1,8 +1,9 @@
 /**
- * `host-opener` — fulfil the container's requests to open pull requests, as the person running it.
+ * `host-opener` — fulfil the container's requests to open pull requests with the gh account each
+ * request names.
  *
  * This runs on the host, beside the checkout the container also sees, and it does exactly one thing:
- * it turns a request file into a pull request, using the credentials of whoever started it. That is
+ * it turns a request file into a pull request, using the gh account the request names. That is
  * the whole point — a pull request authored by a person is one that automated reviewers will actually
  * review, and the app cannot be that person.
  *
