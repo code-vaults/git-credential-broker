@@ -392,7 +392,7 @@ gcb pr --as-user octocat --repo owner/repo --head feature --base main \
 The opener creates pull requests with the gh account named by the request. `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
 directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. The directory must
-already exist, and inherited `GH_TOKEN`/`GITHUB_TOKEN`/`GH_ENTERPRISE_TOKEN`/`GH_HOST` are ignored
+already exist, and inherited `GH_TOKEN`/`GITHUB_TOKEN`/`GH_ENTERPRISE_TOKEN`/`GITHUB_ENTERPRISE_TOKEN`/`GH_HOST` are ignored
 for that request. Any existing account directory can be named, so this is a selector rather than a
 gate; a request that names none uses the opener's own login. The opener never runs a shell, and
 the program it calls is configuration rather than a hard-coded `gh`: `--command /path/to/gh`, or
