@@ -183,8 +183,10 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     }
     action = 'review';
   }
-  const account = args.value('as-user');
+  const accounts = args.values('as-user');
   if (args.has('as-user')) fail('--as-user needs a GitHub login');
+  if (accounts.length > 1) fail('--as-user may only be given once');
+  const account = accounts[0];
   if (account !== undefined && action !== 'open') {
     fail('--as-user only creates a pull request, so it does not go with ' + JSON.stringify(action));
   }
