@@ -1024,9 +1024,12 @@ describe('gcb config check', () => {
     const config = path.join(dir, 'broker.config.yml');
     fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
     try {
-      const result = run('edit', ['--config', config], { VISUAL: 'printf %s', EDITOR: 'printf %s' });
+      const result = run('edit', ['--config', config], {
+        VISUAL: 'printf [%s]\\n',
+        EDITOR: 'printf [%s]\\n',
+      });
       assert.equal(result.status, 0);
-      assert.match(result.stdout, /gcb config edit-[^/]*\/broker\.config\.yml/);
+      assert.match(result.stdout, /\[\/.*gcb config edit-[^/]*\/broker\.config\.yml\]/);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
