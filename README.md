@@ -136,9 +136,10 @@ threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr clos
 
 For that flag-only form, creation uses the app's installation token by default; `--as-user` without
 a value uses the broker's authorized user token, and `--as-user <login>` uses the host opener.
-Resolving a review thread defaults to the user identity because an installation token narrowed to
-`pull_requests: write` cannot call `resolveReviewThread`; GitHub requires `contents: write`, which
-this broker deliberately never grants.
+Resolving a review thread defaults to the user identity because the pull-request token this broker
+mints is narrowed to `pull_requests: write` and `contents: read`, while `resolveReviewThread` needs
+`contents: write` — a grant the broker gives only to the credential git pushes with, never to a
+pull-request token.
 
 Inside a checkout, `--repo` can be omitted only when `origin` names a usable GitHub repository whose
 host matches `--host`; otherwise pass `--repo`, or the matching `--host`.
