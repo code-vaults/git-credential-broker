@@ -125,7 +125,7 @@ describe('the opener account selection', () => {
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\nprintf \'%s|%s|%s|%s|%s\\n\' "$GH_CONFIG_DIR" "${GH_TOKEN-}" "${GITHUB_TOKEN-}" "${GH_ENTERPRISE_TOKEN-}" "${GH_HOST-}" > ' +
+      '#!/bin/sh\nprintf \'%s|%s|%s|%s|%s|%s\\n\' "$GH_CONFIG_DIR" "${GH_TOKEN-}" "${GITHUB_TOKEN-}" "${GH_ENTERPRISE_TOKEN-}" "${GITHUB_ENTERPRISE_TOKEN-}" "${GH_HOST-}" > ' +
         envFile +
         '\necho "https://github.com/acme/widget/pull/7"\n',
       'utf8',
@@ -138,19 +138,21 @@ describe('the opener account selection', () => {
       GH_TOKEN: process.env['GH_TOKEN'],
       GITHUB_TOKEN: process.env['GITHUB_TOKEN'],
       GH_ENTERPRISE_TOKEN: process.env['GH_ENTERPRISE_TOKEN'],
+      GITHUB_ENTERPRISE_TOKEN: process.env['GITHUB_ENTERPRISE_TOKEN'],
       GH_HOST: process.env['GH_HOST'],
     };
     process.env['HOME'] = root;
     process.env['GH_TOKEN'] = 'inherited';
     process.env['GITHUB_TOKEN'] = 'inherited';
     process.env['GH_ENTERPRISE_TOKEN'] = 'inherited';
+    process.env['GITHUB_ENTERPRISE_TOKEN'] = 'inherited';
     process.env['GH_HOST'] = 'enterprise.example';
     try {
       const id = writeRequest(dir, { head: 'feat/ok', base: 'main', title: 'x', body: '', account: 'alice' });
       const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.error, undefined);
-      assert.equal(readFileSync(envFile, 'utf8').trim(), configDir + '||||');
+      assert.equal(readFileSync(envFile, 'utf8').trim(), configDir + '|||||');
     } finally {
       for (const [key, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[key];

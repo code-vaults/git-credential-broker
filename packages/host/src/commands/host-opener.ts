@@ -232,6 +232,7 @@ function openerEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
     delete env['GH_TOKEN'];
     delete env['GITHUB_TOKEN'];
     delete env['GH_ENTERPRISE_TOKEN'];
+    delete env['GITHUB_ENTERPRISE_TOKEN'];
     delete env['GH_HOST'];
     env['GH_CONFIG_DIR'] = dir;
   }
