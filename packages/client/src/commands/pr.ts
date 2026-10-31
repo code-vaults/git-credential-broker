@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs';
 
 import {
   ANSWER_TIMEOUT_MS,
+  LOGIN,
   channelDir,
   findGitDir,
   readOpener,
@@ -31,7 +32,7 @@ import { fail, parseArgs, say } from 'gcb-core';
 const KNOWN_FLAGS = new Set([
   'help', 'h', 'draft', 'close', 'comment', 'file', 'line', 'side', 'threads',
   'reply-to', 'edit', 'resolve', 'id', 'jq', 'proxy', 'no-proxy', 'socket', 'host', 'repo',
-  'head', 'base', 'title', 'body', 'body-file', 'number', 'via-host', 'status',
+  'head', 'base', 'title', 'body', 'body-file', 'number', 'via-host', 'as-user', 'status',
 ]);
 
 /** Longer than a credential request: a token is minted, then the action is performed. */
@@ -57,6 +58,7 @@ Opening (the default)
   --draft              Open it as a draft
   --via-host           Ask a host-side opener to create it, as you, instead of as the app
                        (run 'gcb host-opener' on the host to provide one)
+  --as-user <login>    With --via-host, use ~/.config/gh-<login> as that person
 
 Acting on one
   --number <n>         The pull request number                       [required]
@@ -171,7 +173,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const hasReviewId = args.has('id') || args.value('id') !== undefined;
   if (hasReviewId) {
     const conflicts = [
-      'status', 'comment', 'threads', 'reply-to', 'edit', 'resolve', 'close', 'draft', 'via-host',
+      'status', 'comment', 'threads', 'reply-to', 'edit', 'resolve', 'close', 'draft', 'via-host', 'as-user',
       'head', 'base', 'title', 'body', 'body-file', 'file', 'line', 'side',
     ];
     if (conflicts.some((name) => args.has(name) || args.value(name) !== undefined) || (action !== 'update' && action !== 'open')) {
@@ -183,6 +185,12 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     fail('--via-host only creates a pull request, so it does not go with ' + JSON.stringify(action));
   }
   const viaHost = action === 'open' && args.has('via-host');
+  const account = args.value('as-user');
+  if (args.has('as-user') && account === undefined) fail('--as-user needs a GitHub login');
+  if (account !== undefined && !viaHost) fail('--as-user only goes with --via-host');
+  if (account !== undefined && !LOGIN.test(account)) {
+    fail(`--as-user must be a GitHub login, got ${JSON.stringify(account)}`);
+  }
 
   const number = args.value('number');
   // `--head origin:feat/x` and `--base upstream:main` name a configured remote instead of a repository
@@ -323,6 +331,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         body: body ?? '',
         draft: args.has('draft'),
         proxy,
+        ...(account === undefined ? {} : { account }),
         session: 'pr',
         pid: process.pid,
       });
@@ -339,7 +348,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
       );
     }
     if (answer.error !== undefined) fail(`the host opener could not open it: ${answer.error}`);
-    say(`opened #${answer.number ?? '?'} (as you, through the host opener): ${answer.url ?? '(no url)'}`);
+    say(
+      `opened #${answer.number ?? '?'} (as ${account ?? 'you'}, through the host opener): ${answer.url ?? '(no url)'}`,
+    );
     return 0;
   }
 

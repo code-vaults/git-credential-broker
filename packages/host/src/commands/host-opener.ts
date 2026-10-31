@@ -10,7 +10,7 @@
  * program it calls is configuration, and it is called with an argument list built here.
  */
 import { execFile } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -218,8 +218,18 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
  * @param request - what to create.
  * @returns the number and URL, or the reason it did not work.
  */
-function openerEnv(proxy: ProxyChoice): NodeJS.ProcessEnv {
+function openerEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
   const env = { ...process.env };
+  if (account !== undefined) {
+    const dir = join(homedir(), '.config', `gh-${account}`);
+    if (!existsSync(dir)) {
+      throw new Error(`no gh config for account ${JSON.stringify(account)} at ${dir}`);
+    }
+    // A token in the opener's own environment would override the selected account's config.
+    delete env['GH_TOKEN'];
+    delete env['GITHUB_TOKEN'];
+    env['GH_CONFIG_DIR'] = dir;
+  }
   applyProxyChoice(env, proxy);
   return env;
 }
@@ -255,7 +265,7 @@ async function openOne(
         '--body-file',
         bodyFile,
       ],
-      { cwd: repo, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: openerEnv(request.proxy) },
+      { cwd: repo, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: openerEnv(request.proxy, request.account) },
     );
     const found = pullRequestUrl(stdout);
     if (!found) {

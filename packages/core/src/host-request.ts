@@ -43,6 +43,9 @@ export const ANSWER_TIMEOUT_MS = 180_000;
 export const MAX_TITLE_CHARS = 256;
 export const MAX_BODY_CHARS = 65_536;
 
+/** A GitHub login, used to pick the host's gh config directory for `--as-user`. */
+export const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+
 /** Branch names that are passed on, matching the broker's rule: plausible, and never `..`. */
 // An optional `owner:` prefix, which is how GitHub spells "this branch lives in a fork". Exported because
 // the broker validates the same two fields on the socket, and a second copy of this rule is how the two
@@ -62,6 +65,8 @@ export interface HostOpenRequest {
   readonly draft?: boolean;
   /** Egress for the opener's gh call: absent = its environment, null = direct, string = proxy URL. */
   readonly proxy?: string | null;
+  /** GitHub login whose `~/.config/gh-<login>` the opener uses; absent = its own gh config. */
+  readonly account?: string;
   readonly session?: string;
   readonly pid?: number;
 }
@@ -270,6 +275,9 @@ export function requestProblems(request: HostOpenRequest): string[] {
   if (request.body.length > MAX_BODY_CHARS) {
     problems.push(`the body must be at most ${MAX_BODY_CHARS} characters`);
   }
+  if (request.account !== undefined && !LOGIN.test(request.account)) {
+    problems.push('the account is not a usable GitHub login');
+  }
   return problems;
 }
 
@@ -311,6 +319,7 @@ export function readRequest(dir: string, id: string): HostOpenRequest | undefine
     body: typeof parsed.body === 'string' ? parsed.body : '',
     draft: parsed.draft === true,
     ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
+    ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
     session: parsed.session,
     pid: parsed.pid,
   };

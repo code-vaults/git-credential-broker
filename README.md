@@ -390,7 +390,10 @@ gcb pr --via-host --repo owner/repo --head feature --base main \
 ```
 
 The opener creates pull requests with the credentials of whoever started it, which is the point;
-it never runs a shell, and the program it calls is configuration rather than a hard-coded `gh`:
+`--as-user <login>` selects `~/.config/gh-<login>` on the host instead of the opener's own gh
+configuration, and inherited `GH_TOKEN`/`GITHUB_TOKEN` are ignored for that request. The directory
+must already exist. The opener never runs a shell, and the program it calls is configuration rather
+than a hard-coded `gh`:
 `--command /path/to/gh`, or `$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
 anything. `--root` may be repeated and defaults to `$HOME`; checkouts within `--depth` levels of a root
 (4 by default) are served with no further setup, including ones created later, which the next sweep

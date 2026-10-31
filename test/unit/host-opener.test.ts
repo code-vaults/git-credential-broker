@@ -114,6 +114,49 @@ describe('a claim that someone else holds', () => {
   });
 });
 
+describe('the opener account selection', () => {
+  it('uses ~/.config/gh-<login> and clears inherited tokens', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-opener-account-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(join(repo, '.git'));
+    const envFile = join(root, 'env');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf \'%s|%s|%s\\n\' "$GH_CONFIG_DIR" "${GH_TOKEN-}" "${GITHUB_TOKEN-}" > ' +
+        envFile +
+        '\necho "https://github.com/acme/widget/pull/7"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    const configDir = join(root, '.config', 'gh-alice');
+    mkdirSync(configDir, { recursive: true });
+    const previous = {
+      HOME: process.env['HOME'],
+      GH_TOKEN: process.env['GH_TOKEN'],
+      GITHUB_TOKEN: process.env['GITHUB_TOKEN'],
+    };
+    process.env['HOME'] = root;
+    process.env['GH_TOKEN'] = 'inherited';
+    process.env['GITHUB_TOKEN'] = 'inherited';
+    try {
+      const id = writeRequest(dir, { head: 'feat/ok', base: 'main', title: 'x', body: '', account: 'alice' });
+      const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+      assert.equal(code, 0);
+      assert.equal(readResult(dir, id)?.error, undefined);
+      assert.equal(readFileSync(envFile, 'utf8').trim(), configDir + '||');
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('the opener proxy choice', () => {
   it('applies, keeps or clears the proxy environment per request', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-opener-proxy-'));
