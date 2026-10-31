@@ -133,7 +133,12 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
   const advertise = (dir: string): void => {
     advertised.add(dir);
     if (readOpener(dir)?.pid !== process.pid) {
-      writeOpener(dir, { pid: process.pid, command, startedAt: new Date().toISOString() });
+      writeOpener(dir, {
+        pid: process.pid,
+        command,
+        startedAt: new Date().toISOString(),
+        kinds: ['pull-request', 'issue'],
+      });
     }
   };
   // However this process ends — a signal, --once, an exception — its markers go with it. A stale

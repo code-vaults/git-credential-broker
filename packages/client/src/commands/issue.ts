@@ -97,12 +97,16 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   const gitDir = findGitDir(process.cwd());
   if (gitDir === undefined) fail('--as-user needs a git repository: run it from the checkout');
   const dir = channelDir(gitDir);
-  if (readOpener(dir) === undefined) {
+  const opener = readOpener(dir);
+  if (opener === undefined) {
     fail(
       `no host opener is watching ${dir}\n` +
         '  start one on the host: gcb host-opener --repo <that checkout>\n' +
         '  or drop --as-user to open it as the app instead',
     );
+  }
+  if (!opener.kinds?.includes('issue')) {
+    fail('the host opener does not advertise issue support; restart it from this gcb-host version');
   }
 
   let id: string;

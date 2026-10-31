@@ -95,6 +95,8 @@ export interface OpenerInfo {
   readonly pid?: number;
   readonly command?: string;
   readonly startedAt?: string;
+  /** Request kinds this build can fulfil; absent means the pre-issue build. */
+  readonly kinds?: readonly string[];
 }
 
 /**
