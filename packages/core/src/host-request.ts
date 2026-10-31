@@ -275,10 +275,7 @@ export function requestProblems(request: HostOpenRequest): string[] {
   if (request.body.length > MAX_BODY_CHARS) {
     problems.push(`the body must be at most ${MAX_BODY_CHARS} characters`);
   }
-  if (
-    request.account !== undefined &&
-    (typeof request.account !== 'string' || !LOGIN.test(request.account))
-  ) {
+  if (request.account !== undefined && !LOGIN.test(request.account)) {
     problems.push('the account is not a usable GitHub login');
   }
   return problems;
