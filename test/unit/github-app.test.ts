@@ -820,6 +820,56 @@ describe('createGithubAppProvider', () => {
   });
 
 
+  it('forces the app identity when asked, even with a user token on disk', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'identity-app-'));
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      appPermissions: { pull_requests: 'write', contents: 'read' },
+      installationPermissions: { pull_requests: 'write', contents: 'read' },
+    });
+    await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
+      identity: 'app',
+      action: 'open',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      head: 'feat/thing',
+      base: 'main',
+      title: 'a title',
+      body: 'a body',
+    });
+    assert.equal(
+      stub.calls.some((call) => call.url.includes('/login/oauth/access_token')),
+      false,
+      'the user refresh token is not exchanged',
+    );
+    const created = stub.calls.find((call) => call.url.endsWith('/pulls'));
+    assert.equal(created?.authorization, 'Bearer ghs_stub_token_value');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('refuses the user identity when no user token is configured', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'identity-user-missing-'));
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    await assert.rejects(
+      providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
+        identity: 'user',
+        action: 'open',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        head: 'feat/thing',
+        base: 'main',
+        title: 'a title',
+        body: 'a body',
+      }),
+      /no authorized user token/,
+    );
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it("creates the pull request without an installation when a person has authorized one", async () => {
     const dir = mkdtempSync(join(tmpdir(), 'no-installation-'));
     writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');

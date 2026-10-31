@@ -691,7 +691,9 @@ function pullRequestNumber(value: unknown): number | undefined {
       // deployment, their token is the whole authority for them, and requiring an installation as well
       // would refuse a repository the app was never installed on — the fork-to-upstream case the allowlist
       // exists to permit. Everything else still acts as the app, and only ever could.
-      const personalForThis = request.action === 'open' || request.action === 'resolve';
+      const wantsApp = request.identity === 'app';
+      const wantsUser = request.identity === 'user';
+      const personalForThis = !wantsApp && (request.action === 'open' || request.action === 'resolve');
       const personToken = personalForThis ? await personalToken() : undefined;
 
       // `--status` also reads /actions/runs, which is checked against actions: read. Pre-flighting
@@ -706,12 +708,17 @@ function pullRequestNumber(value: unknown): number | undefined {
       // whoever is acting, requiring an installation as well would refuse a repository the app was never
       // installed on — the fork-to-upstream case the allowlist exists to permit.
       const fileToken =
-        request.action === 'open' || request.action === 'resolve'
+        !wantsApp && (request.action === 'open' || request.action === 'resolve')
           ? cfg.userTokens?.[request.owner]
           : undefined;
       const actingToken =
         personToken ?? (fileToken === undefined ? undefined : readFileSync(fileToken, 'utf8').trim());
 
+      if (wantsUser && actingToken === undefined) {
+        throw new ProviderConfigError(
+          'no authorized user token for this request; run gcb authorize or configure userTokens',
+        );
+      }
       if (actingToken === undefined) {
         await ensurePermissions(request.owner, wanted);
         const installationId = await resolveInstallationId(request.owner);

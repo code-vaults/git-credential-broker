@@ -401,6 +401,10 @@ export function createRequestHandler(
       const threadId = message['threadId'];
       const head = message['head'];
       const base = message['base'];
+      const identity = message['identity'];
+      if (identity !== undefined && identity !== 'app' && identity !== 'user') {
+        return deny(context, CODES.BAD_REQUEST, `bad identity ${JSON.stringify(identity)}`, 'the identity must be app or user');
+      }
       const title = message['title'];
       const body = message['body'];
       const filePath = message['filePath'];
@@ -479,6 +483,7 @@ export function createRequestHandler(
           owner: repo.owner,
           repo: repo.repo,
           action,
+          ...(identity === 'app' || identity === 'user' ? { identity } : {}),
           proxy,
           ...(typeof number === 'number' ? { number } : {}),
           ...(typeof commentId === 'number' ? { commentId } : {}),
