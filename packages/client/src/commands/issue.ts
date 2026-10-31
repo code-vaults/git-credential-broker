@@ -6,22 +6,13 @@
  * app may not be installed on the repository and a person's account is the only route that can create
  * an issue there.
  */
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
-import {
-  ANSWER_TIMEOUT_MS,
-  LOGIN,
-  channelDir,
-  findGitDir,
-  readOpener,
-  removeResult,
-  waitForResult,
-  writeRequest,
-} from 'gcb-core';
+import { LOGIN } from 'gcb-core';
 import { fail, parseArgs, say } from 'gcb-core';
 
 import { runGh } from './gh.ts';
+import { submitToOpener } from './host-submit.ts';
 
 /** Every flag the `--as-user` create path understands. */
 const KNOWN_FLAGS = new Set([
@@ -94,24 +85,8 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     }
   }
 
-  const gitDir = findGitDir(process.cwd());
-  if (gitDir === undefined) fail('--as-user needs a git repository: run it from the checkout');
-  const dir = channelDir(gitDir);
-  const opener = readOpener(dir);
-  if (opener === undefined) {
-    fail(
-      `no host opener is watching ${dir}\n` +
-        '  start one on the host: gcb host-opener --repo <that checkout>\n' +
-        '  or drop --as-user to open it as the app instead',
-    );
-  }
-  if (!opener.kinds?.includes('issue')) {
-    fail('the host opener does not advertise issue support; restart it from this gcb-host version');
-  }
-
-  let id: string;
-  try {
-    id = writeRequest(dir, {
+  return submitToOpener(
+    {
       kind: 'issue',
       ...(repo === undefined ? {} : { repo }),
       title,
@@ -120,28 +95,8 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
       proxy: args.has('no-proxy') ? null : args.value('proxy'),
       session: 'issue',
       pid: process.pid,
-    });
-  } catch (error) {
-    fail((error as Error).message);
-  }
-  const answer = await waitForResult(dir, id, ANSWER_TIMEOUT_MS);
-  removeResult(dir, id);
-  if (answer === undefined) {
-    const pending = existsSync(join(dir, `${id}.json`));
-    const claimed = existsSync(join(dir, `${id}.json.working`));
-    if (!pending && !claimed) {
-      fail(
-        `the host opener took ${id} and dropped it without answering\n` +
-          '  it probably does not understand issue requests; restart it from this gcb-host version',
-      );
-    }
-    fail(
-      `the host opener did not answer ${id} within ${Math.round(ANSWER_TIMEOUT_MS / 1000)}s\n` +
-        '  it may still be working: the request is not cancelled, and the opener removes it only once\n' +
-        '  it has created the issue or failed. Check the issue list before asking again.',
-    );
-  }
-  if (answer.error !== undefined) fail(`the host opener could not open it: ${answer.error}`);
-  say(`opened issue #${answer.number ?? '?'} as ${account}: ${answer.url ?? '(no url)'}`);
+    },
+    (answer) => `opened issue #${answer.number ?? '?'} as ${account}: ${answer.url ?? '(no url)'}`,
+  );
   return 0;
 }
