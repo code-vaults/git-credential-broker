@@ -136,7 +136,9 @@ threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr clos
 
 For that flag-only form, creation uses the app's installation token by default; `--as-user` without
 a value uses the broker's authorized user token, and `--as-user <login>` uses the host opener.
-Resolving a review thread defaults to the user identity because GitHub refuses that for an app.
+Resolving a review thread defaults to the user identity because an installation token narrowed to
+`pull_requests: write` cannot call `resolveReviewThread`; GitHub requires `contents: write`, which
+this broker deliberately never grants.
 
 Inside a checkout, `--repo` can be omitted only when `origin` names a usable GitHub repository whose
 host matches `--host`; otherwise pass `--repo`, or the matching `--host`.
@@ -409,8 +411,9 @@ picks up. The bound exists because the walk repeats every `--interval` seconds; 
 deeper layouts. To start it once and keep it,
 `examples/host-opener.service` is a systemd user unit; on a system without user services,
 `examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
-instance at a time, and its output in a log file. Without `--as-user`, `pr` uses the broker route.
-With `--as-user` and no opener running it fails; it does not fall back to the broker route.
+instance at a time, and its output in a log file. Without `--as-user`, or with bare `--as-user`, `pr`
+uses the broker route. With `--as-user <login>` and no opener running it fails; it does not fall back
+to the broker route.
 
 
 A pull request opened with the app's installation token is authored by the app, and automated
@@ -434,9 +437,10 @@ belongs to one user or organization and cannot span two, so two owners need two 
 with **Pull requests: Read and write**, **Contents: Read** and **Metadata: Read**, and give it access
 to **only the repositories the allowlist already names**. No contents *write* means
 GitHub itself refuses to let that token push or merge, so "it may only open pull requests" is
-enforced by GitHub rather than promised here. The token is used for creating and nothing else:
-closing, merging, updating and reading a state all stay on the app's installation token. Drop the
-field to go back to app-authored pull requests; `--as-user` still works either way.
+enforced by GitHub rather than promised here. The token is used only when `--as-user` is passed,
+and only for opening or resolving; `user.refresh` from `authorize` wins when it exists. A plain
+`gcb pr` stays on the app's installation token. Dropping the field does not change the default; it
+only makes bare `--as-user` fail with `no authorized user token`.
 
 #### Authorizing as a person instead
 Two things the app needs: its **client id** in the configuration (the App ID will not do), and

@@ -707,10 +707,7 @@ function pullRequestNumber(value: unknown): number | undefined {
       // A token per owner is the other way a person acts. It counts exactly as the authorized token does:
       // whoever is acting, requiring an installation as well would refuse a repository the app was never
       // installed on — the fork-to-upstream case the allowlist exists to permit.
-      const fileToken =
-        !wantsApp && (request.action === 'open' || request.action === 'resolve')
-          ? cfg.userTokens?.[request.owner]
-          : undefined;
+      const fileToken = personalForThis ? cfg.userTokens?.[request.owner] : undefined;
       const actingToken =
         personToken ?? (fileToken === undefined ? undefined : readFileSync(fileToken, 'utf8').trim());
 

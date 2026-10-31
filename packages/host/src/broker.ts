@@ -502,6 +502,7 @@ export function createRequestHandler(
           decision: 'allow',
           ...context,
           action,
+          ...(identity === 'app' || identity === 'user' ? { identity } : {}),
           ...(typeof number === 'number' ? { number } : {}),
           // The comment an edit changes is the one thing the entry would otherwise not say, and the
           // number alone does not name it. Recorded for a reply too, which also carries an id.
