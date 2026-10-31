@@ -43,7 +43,7 @@ export const HOST_OPENER_USAGE = `Usage: gcb host-opener [options]
 
 Run on the host, once, beside the trees the container also sees. It finds the checkouts under the
 roots it is given — ones created later included — and fulfils their requests to open a pull request
-with the credentials of whoever runs it, so the pull request is authored by a person rather than by
+with the gh account each request names, so the pull request is authored by a person rather than by
 the app's bot. It does nothing else: it cannot push, merge or close anything.
 
   --root <dir>          A tree to serve, repeatable (default: $HOME)
@@ -139,7 +139,9 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
   process.on('SIGTERM', stop);
 
   say(single === undefined ? `serving the checkouts under ${scanned.join(', ')}` : `serving ${single}`);
-  say(`creating pull requests with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as ${process.env['USER'] ?? 'this user'}`);
+  say(
+    `creating pull requests with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
+  );
 
   for (;;) {
     for (const { repo, dir } of targets()) {
@@ -202,7 +204,7 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
     if (result.error !== undefined) {
       warn(`failed to open ${request.head}: ${result.error}`);
     } else {
-      say(`opened #${result.number}: ${result.url}`);
+      say(`opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`);
     }
     answered += 1;
   }
@@ -225,9 +227,11 @@ function openerEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
     if (!existsSync(dir)) {
       throw new Error(`no gh config for account ${JSON.stringify(account)} at ${dir}`);
     }
-    // A token in the opener's own environment would override the selected account's config.
+    // Tokens in the opener's own environment would override the selected account's config.
     delete env['GH_TOKEN'];
     delete env['GITHUB_TOKEN'];
+    delete env['GH_ENTERPRISE_TOKEN'];
+    delete env['GH_HOST'];
     env['GH_CONFIG_DIR'] = dir;
   }
   applyProxyChoice(env, proxy);

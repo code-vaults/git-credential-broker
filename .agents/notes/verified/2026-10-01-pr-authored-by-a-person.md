@@ -9,7 +9,7 @@ A pull request created with an installation token is authored by the app, and au
 entitled to skip those — CodeRabbit skipped #2 for exactly that reason, and once its check was
 required the merge queue had nothing to wait for.
 
-Two answers exist in the tree. `pr --via-host` asks a host-side opener to create it with the
+Two answers exist in the tree. `pr --as-user` asks a host-side opener to create it with the
 operator's own `gh` login; `userTokens` names a fine-grained token per owner. Both work. The first
 costs a second process to keep running. The second costs one token per user or organization, because
 that is the granularity GitHub gives a fine-grained token, and rotating all of them is the kind of

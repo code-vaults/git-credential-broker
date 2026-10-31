@@ -32,7 +32,7 @@ import { fail, parseArgs, say } from 'gcb-core';
 const KNOWN_FLAGS = new Set([
   'help', 'h', 'draft', 'close', 'comment', 'file', 'line', 'side', 'threads',
   'reply-to', 'edit', 'resolve', 'id', 'jq', 'proxy', 'no-proxy', 'socket', 'host', 'repo',
-  'head', 'base', 'title', 'body', 'body-file', 'number', 'as-user', 'status',
+  'head', 'base', 'title', 'body', 'body-file', 'number', 'as-user', 'via-host', 'status',
 ]);
 
 /** Longer than a credential request: a token is minted, then the action is performed. */
@@ -125,6 +125,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
     return 0;
+  }
+  if (args.has('via-host') || args.value('via-host') !== undefined) {
+    fail('--via-host was replaced by --as-user <login>');
   }
   // Unknown options are refused rather than ignored: a typo must not silently fall through to an update.
   for (const name of args.names) {

@@ -125,7 +125,7 @@ describe('the opener account selection', () => {
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\nprintf \'%s|%s|%s\\n\' "$GH_CONFIG_DIR" "${GH_TOKEN-}" "${GITHUB_TOKEN-}" > ' +
+      '#!/bin/sh\nprintf \'%s|%s|%s|%s|%s\\n\' "$GH_CONFIG_DIR" "${GH_TOKEN-}" "${GITHUB_TOKEN-}" "${GH_ENTERPRISE_TOKEN-}" "${GH_HOST-}" > ' +
         envFile +
         '\necho "https://github.com/acme/widget/pull/7"\n',
       'utf8',
@@ -137,21 +137,54 @@ describe('the opener account selection', () => {
       HOME: process.env['HOME'],
       GH_TOKEN: process.env['GH_TOKEN'],
       GITHUB_TOKEN: process.env['GITHUB_TOKEN'],
+      GH_ENTERPRISE_TOKEN: process.env['GH_ENTERPRISE_TOKEN'],
+      GH_HOST: process.env['GH_HOST'],
     };
     process.env['HOME'] = root;
     process.env['GH_TOKEN'] = 'inherited';
     process.env['GITHUB_TOKEN'] = 'inherited';
+    process.env['GH_ENTERPRISE_TOKEN'] = 'inherited';
+    process.env['GH_HOST'] = 'enterprise.example';
     try {
       const id = writeRequest(dir, { head: 'feat/ok', base: 'main', title: 'x', body: '', account: 'alice' });
       const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.error, undefined);
-      assert.equal(readFileSync(envFile, 'utf8').trim(), configDir + '||');
+      assert.equal(readFileSync(envFile, 'utf8').trim(), configDir + '||||');
     } finally {
       for (const [key, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[key];
         else process.env[key] = value;
       }
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses an account with no gh config directory', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-opener-account-missing-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(join(repo, '.git'));
+    const envFile = join(root, 'env');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf ran > ' + envFile + '\necho "https://github.com/acme/widget/pull/7"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    const previousHome = process.env['HOME'];
+    process.env['HOME'] = root;
+    try {
+      const id = writeRequest(dir, { head: 'feat/ok', base: 'main', title: 'x', body: '', account: 'ghost' });
+      const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+      assert.equal(code, 0);
+      assert.match(readResult(dir, id)?.error ?? '', /no gh config for account "ghost"/);
+      assert.equal(existsSync(envFile), false, 'the program must not run');
+    } finally {
+      if (previousHome === undefined) delete process.env['HOME'];
+      else process.env['HOME'] = previousHome;
       rmSync(root, { recursive: true, force: true });
     }
   });

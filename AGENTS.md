@@ -209,7 +209,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   author instead — through the host opener, and only for creating.** `pr --as-user <login>` writes a request
   under `<git dir>/gcb/pr-requests` (shared with the host, and untracked, so it
   dirties nothing) and waits for the answer; `gcb host-opener` on the host turns it
-  into a pull request with the credentials of whoever runs it. That process is deliberately the only
+  into a pull request with the gh account each request names. That process is deliberately the only
   thing that acts as a person: it runs no shell, its program is configuration, and it cannot push,
   merge, close or read. Everything else stays on the socket, where the app is the only actor. Default
   is still the broker — `--as-user` is asked for, never assumed.
@@ -222,6 +222,9 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   of the same `.git` directory — so only the roots it scans are host-side paths. A request is served in the
   checkout it was written in. That is a mechanism, not a boundary: the container can edit any checkout it can
   write, its remote included, so what a deployment controls is which roots are served and which program runs.
+  A request also selects an account directory: any `~/.config/gh-<login>` that exists can be named, and
+  a request that names none runs as the opener's own login. That is a selector, not a gate; a
+  deployment controls which account directories exist, and the container chooses among them.
 
   **More than one way to be the author exists, and none of them replaces another.** The opener (no
   long-lived secret, one process), `userTokens` (one process, a token per owner), and authorization on
