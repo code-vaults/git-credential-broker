@@ -78,7 +78,7 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     fail('--proxy and --no-proxy are mutually exclusive');
   }
   const repo = args.value('repo');
-  if (args.has('repo') && (repo === undefined || repo.trim() === '')) {
+  if ((args.has('repo') || args.values('repo').length > 0) && (repo === undefined || repo.trim() === '')) {
     fail('--repo needs a value (e.g. owner/name)');
   }
 
