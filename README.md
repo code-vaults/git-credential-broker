@@ -298,7 +298,8 @@ it runs wherever the pusher runs.
 
 `config check` is host-side and reads only the configuration file: it validates it and prints the
 deployment mode and hosts without starting the broker or reading the key. `config edit` opens the
-same file in `$VISUAL`/`$EDITOR` and validates it after the editor exits.
+existing file in `$VISUAL`/`$EDITOR` (it does not create a missing one; run `init` first) and
+validates it after the editor exits.
 
 `diagnose` asks GitHub what the app can actually see — the only reliable way to tell "repository does
 not exist" from "not selected for this installation", which GitHub reports identically. It reads the

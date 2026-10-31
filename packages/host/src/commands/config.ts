@@ -41,7 +41,8 @@ export function runConfig(argv: readonly string[]): number {
     if (!existsSync(path)) fail(`cannot edit missing config ${path}`);
     const editor = process.env['VISUAL'] ?? process.env['EDITOR'];
     if (editor === undefined || editor.trim() === '') fail('config edit needs $VISUAL or $EDITOR');
-    const result = spawnSync(editor, [path], { stdio: 'inherit' });
+    // `$VISUAL`/`$EDITOR` is a shell command in git's own semantics; `$@` keeps the path intact.
+    const result = spawnSync('/bin/sh', ['-c', `${editor} "$@"`, editor, path], { stdio: 'inherit' });
     if (result.error !== undefined) fail(`cannot run editor ${JSON.stringify(editor)}: ${result.error.message}`);
     if (result.status !== 0) fail(`editor exited with status ${String(result.status)}`);
   }

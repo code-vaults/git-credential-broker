@@ -1019,6 +1019,30 @@ describe('gcb config check', () => {
     assert.match(result.stdout, /ok: .* \(host\)/);
   });
 
+  it('stops when the editor fails', () => {
+    const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
+      VISUAL: 'false',
+      EDITOR: 'false',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /editor exited with status 1/);
+  });
+
+  it('validates the file the editor saved, not the one it opened', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-'));
+    const config = path.join(dir, 'broker.config.yml');
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
+    const editor = path.join(dir, 'editor.sh');
+    fs.writeFileSync(editor, '#!/bin/sh\nprintf \'hosts: [\' > "$1"\n', { mode: 0o755 });
+    try {
+      const result = run('edit', ['--config', config], { VISUAL: editor, EDITOR: editor });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /not valid YAML/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('refuses config edit without an editor', () => {
     const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
       VISUAL: '',
