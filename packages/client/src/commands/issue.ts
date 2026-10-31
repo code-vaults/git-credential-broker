@@ -46,17 +46,17 @@ this host route takes --body/--body-file only.
  */
 export async function runIssue(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, { booleans: ['help', 'no-proxy'] });
+  const account = args.values('as-user')[0];
+  if (args.positionals[0] !== 'create') {
+    if (args.has('as-user') || account !== undefined) fail('--as-user only creates an issue');
+    return runGh(['issue', ...argv]);
+  }
   if (args.has('help') || args.has('h')) {
     say(ISSUE_USAGE);
     return 0;
   }
-  const account = args.values('as-user')[0];
   if (args.has('as-user')) fail('--as-user needs a GitHub login');
   if (args.values('as-user').length > 1) fail('--as-user may only be given once');
-  if (args.positionals[0] !== 'create') {
-    if (account !== undefined) fail('--as-user only creates an issue');
-    return runGh(['issue', ...argv]);
-  }
   if (account === undefined) return runGh(['issue', ...argv]);
   if (!LOGIN.test(account)) fail(`--as-user must be a GitHub login, got ${JSON.stringify(account)}`);
   for (const name of args.names) {
