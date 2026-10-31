@@ -32,7 +32,7 @@ import { fail, parseArgs, say } from 'gcb-core';
 const KNOWN_FLAGS = new Set([
   'help', 'h', 'draft', 'close', 'comment', 'file', 'line', 'side', 'threads',
   'reply-to', 'edit', 'resolve', 'id', 'jq', 'proxy', 'no-proxy', 'socket', 'host', 'repo',
-  'head', 'base', 'title', 'body', 'body-file', 'number', 'via-host', 'as-user', 'status',
+  'head', 'base', 'title', 'body', 'body-file', 'number', 'as-user', 'status',
 ]);
 
 /** Longer than a credential request: a token is minted, then the action is performed. */
@@ -56,9 +56,8 @@ Opening (the default)
   --body <text>        The body, inline
   --body-file <path>   The body, read from a file — a pull request body is usually long
   --draft              Open it as a draft
-  --via-host           Ask a host-side opener to create it, as you, instead of as the app
-                       (run 'gcb host-opener' on the host to provide one)
-  --as-user <login>    With --via-host, use ~/.config/gh-<login> as that person
+  --as-user <login>    Create it as that person through the host opener, using
+                       ~/.config/gh-<login> (run 'gcb host-opener' on the host)
 
 Acting on one
   --number <n>         The pull request number                       [required]
@@ -121,7 +120,7 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
  */
 export async function runPr(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, {
-    booleans: ['help', 'draft', 'status', 'comment', 'threads', 'via-host', 'no-proxy'],
+    booleans: ['help', 'draft', 'status', 'comment', 'threads', 'no-proxy'],
   });
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
@@ -173,7 +172,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const hasReviewId = args.has('id') || args.value('id') !== undefined;
   if (hasReviewId) {
     const conflicts = [
-      'status', 'comment', 'threads', 'reply-to', 'edit', 'resolve', 'close', 'draft', 'via-host', 'as-user',
+      'status', 'comment', 'threads', 'reply-to', 'edit', 'resolve', 'close', 'draft', 'as-user',
       'head', 'base', 'title', 'body', 'body-file', 'file', 'line', 'side',
     ];
     if (conflicts.some((name) => args.has(name) || args.value(name) !== undefined) || (action !== 'update' && action !== 'open')) {
@@ -181,13 +180,11 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     }
     action = 'review';
   }
-  if (args.has('via-host') && action !== 'open') {
-    fail('--via-host only creates a pull request, so it does not go with ' + JSON.stringify(action));
-  }
-  const viaHost = action === 'open' && args.has('via-host');
   const account = args.value('as-user');
   if (args.has('as-user') && account === undefined) fail('--as-user needs a GitHub login');
-  if (account !== undefined && !viaHost) fail('--as-user only goes with --via-host');
+  if (account !== undefined && action !== 'open') {
+    fail('--as-user only creates a pull request, so it does not go with ' + JSON.stringify(action));
+  }
   if (account !== undefined && !LOGIN.test(account)) {
     fail(`--as-user must be a GitHub login, got ${JSON.stringify(account)}`);
   }
@@ -307,16 +304,16 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     return runGh(ghArgs, { unreachableExitCode: 3 });
   }
 
-  if (viaHost) {
-    if (head === undefined || title === undefined) fail('--via-host needs --head and --title');
+  if (account !== undefined) {
+    if (head === undefined || title === undefined) fail('--as-user needs --head and --title');
     const gitDir = findGitDir(process.cwd());
-    if (gitDir === undefined) fail('--via-host needs a git repository: run it from the checkout');
+    if (gitDir === undefined) fail('--as-user needs a git repository: run it from the checkout');
     const dir = channelDir(gitDir);
     if (readOpener(dir) === undefined) {
       fail(
         `no host opener is watching ${dir}\n` +
           '  start one on the host: gcb host-opener --repo <that checkout>\n' +
-          '  or drop --via-host to open it as the app instead',
+          '  or drop --as-user to open it as the app instead',
       );
     }
     // writeRequest refuses a request the opener would have to refuse: a title past its limit, a body past
@@ -331,7 +328,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         body: body ?? '',
         draft: args.has('draft'),
         proxy,
-        ...(account === undefined ? {} : { account }),
+        account,
         session: 'pr',
         pid: process.pid,
       });
@@ -349,7 +346,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     }
     if (answer.error !== undefined) fail(`the host opener could not open it: ${answer.error}`);
     say(
-      `opened #${answer.number ?? '?'} (as ${account ?? 'you'}, through the host opener): ${answer.url ?? '(no url)'}`,
+      `opened #${answer.number ?? '?'} (as ${account}, through the host opener): ${answer.url ?? '(no url)'}`,
     );
     return 0;
   }
