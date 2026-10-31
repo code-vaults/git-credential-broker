@@ -208,10 +208,10 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 - **A pull request authored by the app is one automated reviewers may skip, so a person can be the
   author instead — through the broker's authorized user token or the host opener, and only for
   creating.** A plain `gcb pr` uses the app identity; `pr --as-user` (no login) asks the broker for
-  the authorized person, and `pr --as-user <login>` writes a request under
-  `<git dir>/gcb/pr-requests` (shared with the host, untracked) for `gcb host-opener` to create with
-  that gh account. The opener runs no shell, its program is configuration, and it cannot push,
-  merge, close or read.
+  the authorized person; `pr --as-user <login>` and `issue create --as-user <login>` write a request
+  under `<git dir>/gcb/pr-requests` (shared with the host, untracked) for `gcb host-opener` to create
+  a pull request or issue with that gh account. The opener runs no shell, its program is
+  configuration, and it cannot push, merge, close or read.
 
   The opener is started once per machine, not once per repository: it discovers the checkouts under
   its `--root`s (default `$HOME`) within `--depth` levels of each (4 by default), so anything added
@@ -252,8 +252,9 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   listing the installations and the repositories each one reaches; asking for a credential for a
   repository the app *is* installed on is the control that needs no such command.
 
-  **Which actions are left is the operational half.** `pr --as-user` is create-only — the opener runs
-  `gh pr create` and nothing else — and every other action goes through the installation token. So on a
+  **Which actions are left is the operational half.** `pr --as-user` and `issue create --as-user` are
+  create-only — the opener runs `gh pr create` or `gh issue create` and nothing else — and every
+  other action goes through the installation token. So on a
   repository the app is not installed on, a pull request can be opened but not edited, closed or merged,
   and neither the container nor the host opener has a route to its metadata. That is not a gap to close
   with a flag: acting as a person, from a checkout on the host that holds the person's own credentials,

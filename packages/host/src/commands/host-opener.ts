@@ -1,6 +1,6 @@
 /**
- * `host-opener` — fulfil the container's requests to open pull requests with the gh account each
- * request names.
+ * `host-opener` — fulfil the container's requests to open pull requests or issues with the gh account
+ * each request names.
  *
  * This runs on the host, beside the checkout the container also sees, and it does exactly one thing:
  * it turns a request file into a pull request, using the gh account the request names. That is
@@ -28,7 +28,7 @@ import {
   requestProblems,
   writeOpener,
   writeResult,
-  type HostOpenRequest,
+  type HostRequest,
   type HostOpenResult,
 } from 'gcb-core';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
@@ -43,8 +43,8 @@ const CREATE_TIMEOUT_MS = 120_000;
 export const HOST_OPENER_USAGE = `Usage: gcb host-opener [options]
 
 Run on the host, once, beside the trees the container also sees. It finds the checkouts under the
-roots it is given — ones created later included — and fulfils their requests to open a pull request
-with the gh account each request names, so the pull request is authored by a person rather than by
+roots it is given — ones created later included — and fulfils their requests to create a pull request
+or issue with the gh account each request names, so the result is authored by a person rather than by
 the app's bot. It does nothing else: it cannot push, merge or close anything.
 
   --root <dir>          A tree to serve, repeatable (default: $HOME)
@@ -74,6 +74,19 @@ directory, and only the roots this process scans are host-side paths.
  */
 export function pullRequestUrl(output: string): { number: number; url: string } | undefined {
   const match = /https:\/\/[^\s]+\/pull\/(\d+)/.exec(output);
+  const digits = match?.[1];
+  if (!match || digits === undefined) return undefined;
+  return { number: Number(digits), url: match[0] };
+}
+
+/**
+ * Pull the issue number and URL out of the program's output.
+ *
+ * @param output - the program's standard output.
+ * @returns the number and URL, or `undefined`.
+ */
+export function issueUrl(output: string): { number: number; url: string } | undefined {
+  const match = /https:\/\/[^\s]+\/issues\/(\d+)/.exec(output);
   const digits = match?.[1];
   if (!match || digits === undefined) return undefined;
   return { number: Number(digits), url: match[0] };
@@ -203,7 +216,7 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
     writeResult(dir, id, result);
     removeRequest(dir, id);
     if (result.error !== undefined) {
-      warn(`failed to open ${request.head}: ${result.error}`);
+      warn(`failed to open ${request.kind === 'issue' ? 'issue' : request.head}: ${result.error}`);
     } else {
       say(`opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`);
     }
@@ -244,29 +257,27 @@ async function openOne(
   repo: string,
   command: string,
   extra: readonly string[],
-  request: HostOpenRequest,
+  request: HostRequest,
 ): Promise<HostOpenResult> {
   // The body goes to a private temp file: the program is given a path, never a string to interpret.
   const scratch = mkdtempSync(join(tmpdir(), 'gcb-'));
   const bodyFile = join(scratch, 'body.md');
   writeFileSync(bodyFile, request.body, 'utf8');
+  const issue = request.kind === 'issue';
   try {
     const { stdout, stderr } = await run(
       command,
       [
         ...extra,
-        'pr',
+        issue ? 'issue' : 'pr',
         'create',
         // No `--repo`: gh resolves the repository from the checkout it runs in, which is the checkout the
         // request was written in. That is a mechanism, not a boundary — the container can edit that checkout,
         // its remote included. What a deployment controls is which roots are served, which program runs
         // and which account directories exist; what this reaches is whatever the account the request
         // names can reach.
-        ...(request.draft === true ? ['--draft'] : []),
-        '--base',
-        request.base,
-        '--head',
-        request.head,
+        ...(!issue && request.draft === true ? ['--draft'] : []),
+        ...(issue ? [] : ['--base', request.base, '--head', request.head]),
         '--title',
         request.title,
         '--body-file',
@@ -274,9 +285,11 @@ async function openOne(
       ],
       { cwd: repo, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: openerEnv(request.proxy, request.account) },
     );
-    const found = pullRequestUrl(stdout);
+    const found = issue ? issueUrl(stdout) : pullRequestUrl(stdout);
     if (!found) {
-      return { error: `no pull request URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}` };
+      return {
+        error: `no ${issue ? 'issue' : 'pull request'} URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}`,
+      };
     }
     return found;
   } catch (error) {

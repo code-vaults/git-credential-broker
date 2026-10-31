@@ -146,6 +146,22 @@ describe('the host request channel', () => {
     assert.deepEqual(listRequests(dir), [], 'and a refused request is not waiting');
   });
 
+  it('carries an issue request without branch fields', async () => {
+    const issue = { kind: 'issue' as const, title: 'a title', body: 'a body', account: 'octocat' };
+    assert.deepEqual(requestProblems(issue), []);
+    const id = writeRequest(dir, issue);
+    assert.deepEqual(readRequest(dir, id), {
+      kind: 'issue',
+      title: 'a title',
+      body: 'a body',
+      account: 'octocat',
+      repo: undefined,
+      session: undefined,
+      pid: undefined,
+    });
+    removeRequest(dir, id);
+  });
+
   it('names a request after the clock, with something to break a tie', () => {
     // The shape is the contract. Whether two calls in the same millisecond differ is luck, and a
     // test that depends on luck is a test that goes red for the wrong reason.

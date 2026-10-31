@@ -288,8 +288,8 @@ fail closed.
 Naming: `--via-host` described where it runs, not who acts. It is replaced by
 **`--as-user <login>`** for the host opener and **`--as-user`** (no value) for the broker's authorized
 person; the app identity is the default and has no flag. Alternatives considered: `--host-user`,
-`--author`, `--delegate`, `--as-human`. Create is wired to the host opener today; review and issue
-creation still need the host broker path.
+`--author`, `--delegate`, `--as-human`. Pull-request and issue creation are wired to the host opener
+today; review still needs the host broker path.
 
 Deployment: keep the host broker on the **host**, as a host process, not in a container.
 

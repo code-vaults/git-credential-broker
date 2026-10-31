@@ -1,8 +1,8 @@
 /**
  * The channel between this side and a host-side opener.
  *
- * Opening a pull request is the one operation that has to happen as a person rather than as the app:
- * a pull request authored by the app's bot is something automated reviewers are entitled to skip, and
+ * Creating a pull request or issue is the operation that has to happen as a person rather than as the
+ * app: content authored by the app's bot is something automated reviewers are entitled to skip, and
  * the app cannot pose as a person — that would defeat the point of it holding only a scoped token.
  *
  * So the container leaves a *request* in the shared checkout, a host-side process the operator started
@@ -52,17 +52,12 @@ export const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 // ends came to disagree about what a branch may look like.
 export const BRANCH = /^([A-Za-z0-9][A-Za-z0-9._-]{0,38}:)?[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
 
-/** One request to open a pull request. */
-export interface HostOpenRequest {
+interface HostRequestFields {
   /** `owner/name` as the caller believed it. Recorded, and deliberately never used: the checkout a
    *  request was written in decides which repository it means. */
   readonly repo?: string;
-  readonly head: string;
-  readonly base: string;
   readonly title: string;
   readonly body: string;
-  /** Open it as a draft. */
-  readonly draft?: boolean;
   /** Egress for the opener's gh call: absent = its environment, null = direct, string = proxy URL. */
   readonly proxy?: string | null;
   /** GitHub login whose `~/.config/gh-<login>` the opener uses; absent = its own gh config. */
@@ -70,6 +65,23 @@ export interface HostOpenRequest {
   readonly session?: string;
   readonly pid?: number;
 }
+
+/** One request to open a pull request. */
+export interface HostOpenRequest extends HostRequestFields {
+  readonly kind?: 'pull-request';
+  readonly head: string;
+  readonly base: string;
+  /** Open it as a draft. */
+  readonly draft?: boolean;
+}
+
+/** One request to open an issue. */
+export interface HostIssueRequest extends HostRequestFields {
+  readonly kind: 'issue';
+}
+
+/** Either request the opener can fulfil. */
+export type HostRequest = HostOpenRequest | HostIssueRequest;
 
 /** What the opener answered. */
 export interface HostOpenResult {
@@ -260,15 +272,17 @@ export function newId(now: Date = new Date()): string {
  * @param request - the request to check.
  * @returns one message per problem, empty when there is none.
  */
-export function requestProblems(request: HostOpenRequest): string[] {
+export function requestProblems(request: HostRequest): string[] {
   const problems: string[] = [];
-  if (!BRANCH.test(request.head) || request.head.includes('..')) {
-    problems.push('the head branch name is not usable');
+  if (request.kind !== 'issue') {
+    if (!BRANCH.test(request.head) || request.head.includes('..')) {
+      problems.push('the head branch name is not usable');
+    }
+    if (!BRANCH.test(request.base) || request.base.includes('..')) {
+      problems.push('the base branch name is not usable');
+    }
+    if (request.head === request.base) problems.push('the head and the base are the same branch');
   }
-  if (!BRANCH.test(request.base) || request.base.includes('..')) {
-    problems.push('the base branch name is not usable');
-  }
-  if (request.head === request.base) problems.push('the head and the base are the same branch');
   if (request.title.trim() === '' || request.title.length > MAX_TITLE_CHARS) {
     problems.push(`the title must be 1 to ${MAX_TITLE_CHARS} characters`);
   }
@@ -289,7 +303,7 @@ export function requestProblems(request: HostOpenRequest): string[] {
  * @returns the identifier the answer will carry.
  * @throws {Error} when the request is not one the opener would accept.
  */
-export function writeRequest(dir: string, request: HostOpenRequest): string {
+export function writeRequest(dir: string, request: HostRequest): string {
   const problems = requestProblems(request);
   if (problems.length > 0) throw new Error(problems.join('; '));
   mkdirSync(dir, { recursive: true });
@@ -305,24 +319,23 @@ export function writeRequest(dir: string, request: HostOpenRequest): string {
  * @param id - the identifier.
  * @returns the request, or `undefined` when it is gone or unreadable.
  */
-export function readRequest(dir: string, id: string): HostOpenRequest | undefined {
-  const parsed = readJson(join(dir, `${id}.json`)) as Partial<HostOpenRequest> | undefined;
-  if (!parsed) return undefined;
-  if (typeof parsed.head !== 'string' || typeof parsed.base !== 'string' || typeof parsed.title !== 'string') {
-    return undefined;
-  }
-  return {
+export function readRequest(dir: string, id: string): HostRequest | undefined {
+  const parsed = readJson(join(dir, `${id}.json`)) as
+    | (Partial<HostOpenRequest> & Partial<HostIssueRequest>)
+    | undefined;
+  if (!parsed || typeof parsed.title !== 'string') return undefined;
+  const common = {
     repo: typeof parsed.repo === 'string' ? parsed.repo : undefined,
-    head: parsed.head,
-    base: parsed.base,
     title: parsed.title,
     body: typeof parsed.body === 'string' ? parsed.body : '',
-    draft: parsed.draft === true,
     ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
     ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
     session: parsed.session,
     pid: parsed.pid,
   };
+  if (parsed.kind === 'issue') return { kind: 'issue', ...common };
+  if (typeof parsed.head !== 'string' || typeof parsed.base !== 'string') return undefined;
+  return { ...common, head: parsed.head, base: parsed.base, draft: parsed.draft === true };
 }
 
 /**
@@ -387,24 +400,25 @@ export function writeResult(dir: string, id: string, result: HostOpenResult): vo
  * @param id - the request id.
  * @returns the request, or undefined when it was gone or is already claimed.
  */
-export function claimRequest(dir: string, id: string): HostOpenRequest | undefined {
+export function claimRequest(dir: string, id: string): HostRequest | undefined {
   const claimed = join(dir, `${id}.json.working`);
   try {
     renameSync(join(dir, `${id}.json`), claimed);
   } catch {
     return undefined;
   }
-  const request = readJson(claimed) as HostOpenRequest | undefined;
+  const request = readJson(claimed) as HostRequest | undefined;
   // The channel is written by the container, so the shape is not a given: the opener's own checks run on
   // this next, and a request missing a string field would make them index undefined and take it down.
   const shaped =
     request !== undefined &&
-    typeof request.head === 'string' &&
-    typeof request.base === 'string' &&
     typeof request.title === 'string' &&
     typeof request.body === 'string' &&
     // Untyped JSON: the file can spell account as an array or a number even though the type cannot.
-    (request.account === undefined || typeof request.account === 'string');
+    (request.account === undefined || typeof request.account === 'string') &&
+    (request.kind === 'issue'
+      ? true
+      : typeof request.head === 'string' && typeof request.base === 'string');
   if (!shaped) {
     rmSync(claimed, { force: true, recursive: true });
     return undefined;

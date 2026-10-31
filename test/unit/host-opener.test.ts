@@ -87,6 +87,38 @@ describe('the opener, once', () => {
   });
 });
 
+describe('the opener issue route', () => {
+  it('runs gh issue create without branch flags', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-opener-issue-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(join(repo, '.git'));
+    const argvFile = join(root, 'argv');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "https://github.com/acme/widget/issues/9"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, { kind: 'issue', title: 'a title', body: 'a body' });
+      const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+      assert.equal(code, 0);
+      assert.equal(readResult(dir, id)?.number, 9);
+      const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
+      assert.deepEqual(argv.slice(0, 2), ['issue', 'create']);
+      assert.equal(argv[argv.indexOf('--title') + 1], 'a title');
+      assert.ok(argv.includes('--body-file'));
+      assert.ok(!argv.includes('--base'));
+      assert.ok(!argv.includes('--head'));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('a claim that someone else holds', () => {
   it('does not act on the request, does not answer it, and does not remove the claim', async () => {
     const root = mkdtempSync(join(tmpdir(), 'opener-claim-'));

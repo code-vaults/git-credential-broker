@@ -397,7 +397,7 @@ gcb pr --as-user octocat --repo owner/repo --head feature --base main \
   --title "a title" --body-file pr.md
 ```
 
-The opener creates pull requests with the gh account named by the request. `--as-user <login>`
+The opener creates pull requests and issues with the gh account named by the request. `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
 directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. The directory must
 already exist, and inherited `GH_TOKEN`/`GITHUB_TOKEN`/`GH_ENTERPRISE_TOKEN`/`GITHUB_ENTERPRISE_TOKEN`/`GH_HOST` are ignored
@@ -412,9 +412,14 @@ picks up. The bound exists because the walk repeats every `--interval` seconds; 
 deeper layouts. To start it once and keep it,
 `examples/host-opener.service` is a systemd user unit; on a system without user services,
 `examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
-instance at a time, and its output in a log file. Without `--as-user`, or with bare `--as-user`, `pr`
-uses the broker route. With `--as-user <login>` and no opener running it fails; it does not fall back
-to the broker route.
+instance at a time, and its output in a log file. Without `--as-user`, `pr` and `issue create` use
+the broker route; bare `pr --as-user` selects the broker's authorized person. With `--as-user <login>`
+and no opener running they fail; they do not fall back to the broker route.
+
+```sh
+# in the container
+gcb issue create --as-user octocat --title "An issue title" --body-file issue.md
+```
 
 
 A pull request opened with the app's installation token is authored by the app, and automated

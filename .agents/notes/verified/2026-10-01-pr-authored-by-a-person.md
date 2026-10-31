@@ -10,7 +10,8 @@ entitled to skip those — CodeRabbit skipped #2 for exactly that reason, and on
 required the merge queue had nothing to wait for.
 
 Two answers exist in the tree. `pr --as-user <login>` asks a host-side opener to create it with the
-selected `gh` account directory; `userTokens` names a fine-grained token per owner. Both work. The first
+selected `gh` account directory; the same route creates issues, and `userTokens` names a fine-grained
+token per owner. Both work. The first
 costs a second process to keep running. The second costs one token per user or organization, because
 that is the granularity GitHub gives a fine-grained token, and rotating all of them is the kind of
 chore nobody keeps up.
