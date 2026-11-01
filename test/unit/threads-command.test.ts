@@ -50,11 +50,11 @@ async function runThreads(response: Record<string, unknown>): Promise<RunResult>
 }
 
 describe('gcb pr --threads', () => {
-  for (const [label, response] of [
-    ['missing', { ok: true }],
-    ['empty', { ok: true, prStatus: '' }],
+  for (const [label, article, response] of [
+    ['missing', 'a', { ok: true }],
+    ['empty', 'an', { ok: true, prStatus: '' }],
   ] as const) {
-    it(`refuses a ${label} report instead of printing nothing`, async () => {
+    it(`refuses ${article} ${label} report instead of printing nothing`, async () => {
       const result = await runThreads(response);
       assert.equal(result.status, 1);
       assert.match(result.stderr, /returned no review-thread report/u);
