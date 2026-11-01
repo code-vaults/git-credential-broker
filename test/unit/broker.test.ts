@@ -271,6 +271,14 @@ describe('broker request handling', () => {
     assert.equal('pr_number' in (events.at(-1) ?? {}), false);
   });
 
+  it('refuses a fork as the app', async () => {
+    const { handle } = makeHarness();
+    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'fork', identity: 'app' });
+    assert.equal(response.ok, false);
+    assert.equal(response.code, 'bad-request');
+    assert.match(response.reason ?? '', /a fork must be owned by a person/u);
+  });
+
   it('refuses an unusable branch, and a provider that cannot manage pull requests', async () => {
     const opened: Provider = {
   name: 'with-prs',
