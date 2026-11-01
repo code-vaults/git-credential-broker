@@ -287,6 +287,14 @@ describe('broker request handling', () => {
     assert.equal(events.at(-1)?.['decision'], 'deny');
   });
 
+  it('records an allowlist refusal for a pull request as a pull-request event', async () => {
+    const { handle, events } = makeHarness(['other/repo']);
+    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'threads', number: 1 });
+    assert.equal(response.ok, false);
+    assert.equal(response.code, 'repo-not-allowed');
+    assert.equal(events.at(-1)?.['event'], 'pull-request');
+  });
+
   it('refuses an unusable branch, and a provider that cannot manage pull requests', async () => {
     const opened: Provider = {
   name: 'with-prs',

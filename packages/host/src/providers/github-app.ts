@@ -970,6 +970,7 @@ function pullRequestNumber(value: unknown): number | undefined {
           if (typeof node.id !== 'string' || node.id === '') {
             throw new Error('GitHub did not answer with a review-thread id');
           }
+          // The id is the handle `--resolve` needs; the body is the finding. Both are required.
           report.push(
             `${node.isResolved === true ? 'resolved' : 'open    '} ${node.id}  ${String(node.path ?? '')}:${String(node.line ?? '')}`,
           );

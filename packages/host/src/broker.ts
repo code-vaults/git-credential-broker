@@ -166,7 +166,8 @@ export function createRequestHandler(
   }
 
   async function handleRequest(message: Record<string, unknown>, proxy: ProxyChoice): Promise<WireResponse> {
-    const auditEvent = message['op'] === 'action' ? 'action' : 'credential';
+    const auditEvent =
+      message['op'] === 'action' ? 'action' : message['op'] === 'pull-request' ? 'pull-request' : 'credential';
     const context: DecisionContext = {
       host: typeof message['host'] === 'string' ? message['host'] : null,
       repo: null,
@@ -176,7 +177,7 @@ export function createRequestHandler(
     };
 
     const denyPullRequest = (code: string, reason: string, message: string, hostDetail?: string): WireResponse =>
-      deny(context, code, reason, message, hostDetail, 'pull-request');
+      deny(context, code, reason, message, hostDetail, auditEvent);
     if (message['op'] === 'ping') {
       return { ok: true, version: BROKER_VERSION, hosts: [...providers.keys()] };
     }
