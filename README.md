@@ -143,7 +143,8 @@ pull-request token.
 
 `gcb repo fork [owner/name]` creates a fork under a person's account. An app cannot own a fork, so
 `--as-user` is required: bare uses the broker's authorized user, a login uses the host opener. Without
-a repository it forks the checkout's `origin`.
+a repository it forks the checkout's `origin`. `--host` selects the host; otherwise it comes from the
+origin remote, or `github.com` when the repository was named explicitly.
 
 Inside a checkout, `--repo` can be omitted only when `origin` names a usable GitHub repository whose
 host matches `--host`; otherwise pass `--repo`, or the matching `--host`.
