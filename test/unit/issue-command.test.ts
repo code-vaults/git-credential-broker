@@ -113,6 +113,31 @@ describe('gcb issue create --as-user', () => {
     }
   });
 
+  it('consumes a result that lands during the timeout grace', async () => {
+    const host = fixture();
+    try {
+      writeOpener(host.dir, { pid: process.pid, kinds: ['issue'] });
+      const pending = runClient(
+        ['issue', 'create', '--as-user', 'alice', '--title', 't'],
+        host.root,
+        { GCB_OPENER_TIMEOUT_MS: '100' },
+      );
+      let id: string | undefined;
+      for (let attempt = 0; attempt < 100 && id === undefined; attempt += 1) {
+        id = requests(host.dir)[0];
+        if (id === undefined) await sleep(10);
+      }
+      assert.ok(id !== undefined, 'the client wrote the request');
+      await sleep(200);
+      writeResult(host.dir, id, { number: 42, url: 'https://github.com/acme/widget/issues/42' });
+      const result = await pending;
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /opened issue #42 as alice/u);
+    } finally {
+      host.cleanup();
+    }
+  });
+
   it('reports a request the opener took and dropped', async () => {
     const host = fixture();
     try {
