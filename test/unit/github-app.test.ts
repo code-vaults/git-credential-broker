@@ -152,6 +152,7 @@ function createStubFetch(options: {
   logText?: string;
   jobMissing?: boolean;
   fork?: { full_name: string; html_url: string };
+  threadsResponse?: unknown;
 }): { calls: RecordedCall[]; fetchImpl: FetchLike } {
   const {
     installations,
@@ -212,6 +213,13 @@ function createStubFetch(options: {
     if (url.endsWith('/graphql')) {
       const body = init.body ?? '';
       if (body.includes('resolveReviewThread')) return Promise.resolve(jsonResponse({ data: { resolveReviewThread: { thread: { isResolved: true } } } }));
+      if (body.includes('reviewThreads')) {
+        return Promise.resolve(
+          jsonResponse(options.threadsResponse ?? {
+            data: { repository: { pullRequest: { reviewThreads: { totalCount: 0, nodes: [] } } } },
+          }),
+        );
+      }
       return Promise.resolve(
         jsonResponse({ data: { node: { pullRequest: { repository: { nameWithOwner: options.threadRepo ?? 'acme/widget' } } } } }),
       );
@@ -747,6 +755,40 @@ describe('createGithubAppProvider', () => {
   stub.calls.some((call) => call.url.includes('/actions/runs?head_sha=cafebabe')),
   'read through the repository route, pinned to the head commit',
     );
+  });
+
+  it('does not turn a missing reviewThreads shape into an empty list', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      threadsResponse: { data: { repository: { pullRequest: {} } } },
+    });
+    await assert.rejects(
+      providerFor(stub).pullRequest!({
+        action: 'threads',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        number: 42,
+      }),
+      /reviewThreads/u,
+    );
+  });
+
+  it('reports an explicit empty reviewThreads list as no threads', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      threadsResponse: { data: { repository: { pullRequest: { reviewThreads: { totalCount: 0, nodes: [] } } } } },
+    });
+    const listed = await providerFor(stub).pullRequest!({
+      action: 'threads',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 42,
+    });
+    assert.equal(listed.status, 'no review threads on this pull request');
   });
 
   it('skips the pre-flight when the operator turns it off', async () => {

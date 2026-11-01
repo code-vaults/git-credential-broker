@@ -936,20 +936,28 @@ function pullRequestNumber(value: unknown): number | undefined {
         } catch {
           listed = null;
         }
-        // Nothing from a response body reaches the container — the broker answers with a generic
-        // message for an ordinary Error — but the host log is where a reason belongs, and a refusal
-        // that reads as "no threads" is worse than one that reads as a refusal.
-        const refused = (listed ?? {}) as { errors?: unknown };
+        // A refusal that reads as "no threads" is worse than one that reads as a refusal: malformed
+        // JSON, a GraphQL error, and a missing reviewThreads shape are all failures, not an empty list.
+        if (listed === null || typeof listed !== 'object') {
+          throw new Error('GitHub did not answer with review-thread JSON');
+        }
+        const refused = listed as { errors?: unknown };
         if (Array.isArray(refused.errors) && refused.errors.length > 0) {
           throw new Error(`GitHub refused to list the review threads: ${JSON.stringify(refused.errors).slice(0, 300)}`);
         }
-        const data = (listed ?? {}) as {
-          data?: { repository?: { pullRequest?: { reviewThreads?: { nodes?: unknown } } } };
+        const data = listed as {
+          data?: { repository?: { pullRequest?: { reviewThreads?: { nodes?: unknown; totalCount?: unknown } } } };
         };
-        const nodes = data.data?.repository?.pullRequest?.reviewThreads?.nodes;
+        const threads = data.data?.repository?.pullRequest?.reviewThreads;
+        if (threads === undefined || threads === null) {
+          throw new Error('GitHub did not answer with reviewThreads');
+        }
+        if (!Array.isArray(threads.nodes)) {
+          throw new Error('GitHub did not answer with reviewThreads.nodes');
+        }
+        const nodes = threads.nodes;
         const report: string[] = [];
-        if (Array.isArray(nodes)) {
-          for (const node of nodes as Array<{
+        for (const node of nodes as Array<{
             id?: unknown;
             isResolved?: unknown;
             path?: unknown;
@@ -989,12 +997,10 @@ function pullRequestNumber(value: unknown): number | undefined {
               report.push(`    ${String(comment.databaseId ?? '')} @${String(comment.author?.login ?? '?')}:${more}`);
               for (const line of shown) report.push(`      ${line.slice(0, 300)}`);
             }
-          }
         }
         // A page is not the whole list. Saying which it is is the difference between a report and a guess.
-        const shown = Array.isArray(nodes) ? nodes.length : 0;
-        const counted = (data.data?.repository?.pullRequest?.reviewThreads as { totalCount?: unknown } | undefined)
-          ?.totalCount;
+        const shown = nodes.length;
+        const counted = threads.totalCount;
         const total = typeof counted === 'number' ? counted : shown;
         if (total > shown) {
           report.push(`... and ${total - shown} more: this asks for the first 50 threads, and the first 10 comments of each`);
