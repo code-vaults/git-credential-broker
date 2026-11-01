@@ -72,7 +72,7 @@ describe('gcb issue create --as-user', () => {
   it('submits to an opener that advertises issue support', async () => {
     const host = fixture();
     try {
-      writeOpener(host.dir, { pid: process.pid, kinds: ['pull-request', 'issue'] });
+      writeOpener(host.dir, { pid: process.pid, kinds: ['issue'] });
       const pending = runClient(
         [
           'issue',
