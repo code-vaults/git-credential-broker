@@ -775,6 +775,53 @@ describe('createGithubAppProvider', () => {
     );
   });
 
+  it('rejects a thread without a comments connection', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      threadsResponse: {
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                totalCount: 1,
+                nodes: [{ id: 'PRRT_x', isResolved: false, path: 'a.ts', line: 1 }],
+              },
+            },
+          },
+        },
+      },
+    });
+    await assert.rejects(
+      providerFor(stub).pullRequest!({
+        action: 'threads',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        number: 42,
+      }),
+      /review-thread comments/u,
+    );
+  });
+
+  it('rejects a thread list without totalCount', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      threadsResponse: { data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } },
+    });
+    await assert.rejects(
+      providerFor(stub).pullRequest!({
+        action: 'threads',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        number: 42,
+      }),
+      /totalCount/u,
+    );
+  });
+
   it('reports an explicit empty reviewThreads list as no threads', async () => {
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
