@@ -157,7 +157,7 @@ export function createRequestHandler(
     // reaches the audit record and the log line and nowhere else, because this function is what decides
     // what the caller is told — a property on an error cannot make that decision.
     hostDetail?: string,
-    event: 'credential' | 'action' = 'credential',
+    event: 'credential' | 'action' | 'pull-request' = 'credential',
   ): WireResponse {
     const detail = hostDetail === undefined || hostDetail === '' ? '' : ` | ${hostDetail}`;
     audit.record({ event, decision: 'deny', ...context, code, reason: reason + detail });
@@ -175,6 +175,8 @@ export function createRequestHandler(
         typeof message['pid'] === 'number' && Number.isInteger(message['pid']) ? message['pid'] : null,
     };
 
+    const denyPullRequest = (code: string, reason: string, message: string, hostDetail?: string): WireResponse =>
+      deny(context, code, reason, message, hostDetail, 'pull-request');
     if (message['op'] === 'ping') {
       return { ok: true, version: BROKER_VERSION, hosts: [...providers.keys()] };
     }
@@ -395,7 +397,7 @@ export function createRequestHandler(
         action !== 'resolve' &&
         action !== 'fork'
       ) {
-        return deny(context, CODES.BAD_REQUEST, `bad action ${JSON.stringify(action)}`, 'unknown pull request action');
+        return denyPullRequest(CODES.BAD_REQUEST, `bad action ${JSON.stringify(action)}`, 'unknown pull request action');
       }
       const number = message['number'];
       const commentId = message['commentId'];
@@ -404,10 +406,10 @@ export function createRequestHandler(
       const base = message['base'];
       const identity = message['identity'];
       if (identity !== undefined && identity !== 'app' && identity !== 'user') {
-        return deny(context, CODES.BAD_REQUEST, `bad identity ${JSON.stringify(identity)}`, 'the identity must be app or user');
+        return denyPullRequest(CODES.BAD_REQUEST, `bad identity ${JSON.stringify(identity)}`, 'the identity must be app or user');
       }
       if (action === 'fork' && identity !== 'user') {
-        return deny(context, CODES.BAD_REQUEST, 'fork without a user identity', 'a fork must be owned by a person');
+        return denyPullRequest(CODES.BAD_REQUEST, 'fork without a user identity', 'a fork must be owned by a person');
       }
       const title = message['title'];
       const body = message['body'];
@@ -419,25 +421,25 @@ export function createRequestHandler(
         typeof value === 'string' && branch.test(value) && !value.includes('..');
 
       if (action === 'open' && !usable(head)) {
-        return deny(context, CODES.BAD_REQUEST, `bad head ${JSON.stringify(head)}`, 'the head branch name is not usable');
+        return denyPullRequest(CODES.BAD_REQUEST, `bad head ${JSON.stringify(head)}`, 'the head branch name is not usable');
       }
       if (action === 'open' && base !== undefined && !usable(base)) {
-        return deny(context, CODES.BAD_REQUEST, `bad base ${JSON.stringify(base)}`, 'the base branch name is not usable');
+        return denyPullRequest(CODES.BAD_REQUEST, `bad base ${JSON.stringify(base)}`, 'the base branch name is not usable');
       }
       if (action === 'open' && (typeof title !== 'string' || title.trim() === '' || title.length > MAX_TITLE_CHARS)) {
-        return deny(context, CODES.BAD_REQUEST, 'bad title', `a pull request needs a title of at most ${MAX_TITLE_CHARS} characters`);
+        return denyPullRequest(CODES.BAD_REQUEST, 'bad title', `a pull request needs a title of at most ${MAX_TITLE_CHARS} characters`);
       }
       if (body !== undefined && (typeof body !== 'string' || body.length > MAX_BODY_CHARS)) {
-        return deny(context, CODES.BAD_REQUEST, 'bad body', `the body must be text of at most ${MAX_BODY_CHARS} characters`);
+        return denyPullRequest(CODES.BAD_REQUEST, 'bad body', `the body must be text of at most ${MAX_BODY_CHARS} characters`);
       }
 
       // An anchored comment: both halves or neither, only on a comment, and never outside the repository.
       const anchored = filePath !== undefined || line !== undefined;
       if (anchored && action !== 'comment') {
-        return deny(context, CODES.BAD_REQUEST, `anchor fields with ${action}`, 'only a comment can be anchored to a file and a line');
+        return denyPullRequest(CODES.BAD_REQUEST, `anchor fields with ${action}`, 'only a comment can be anchored to a file and a line');
       }
       if (anchored && (filePath === undefined || line === undefined)) {
-        return deny(context, CODES.BAD_REQUEST, 'half an anchor', 'an anchored comment needs a file and a line, or neither');
+        return denyPullRequest(CODES.BAD_REQUEST, 'half an anchor', 'an anchored comment needs a file and a line, or neither');
       }
       if (filePath !== undefined) {
         if (
@@ -447,28 +449,27 @@ export function createRequestHandler(
           filePath.length > 1024 ||
           filePath.split('/').includes('..')
         ) {
-          return deny(context, CODES.BAD_REQUEST, `bad file path ${JSON.stringify(filePath)}`, 'the file path is not usable');
+          return denyPullRequest(CODES.BAD_REQUEST, `bad file path ${JSON.stringify(filePath)}`, 'the file path is not usable');
         }
       }
       if (line !== undefined && (!Number.isInteger(line) || Number(line) <= 0)) {
-        return deny(context, CODES.BAD_REQUEST, `bad line ${JSON.stringify(line)}`, 'the line has to be a positive number');
+        return denyPullRequest(CODES.BAD_REQUEST, `bad line ${JSON.stringify(line)}`, 'the line has to be a positive number');
       }
       if (side !== 'left' && side !== 'right') {
-        return deny(context, CODES.BAD_REQUEST, `bad side ${JSON.stringify(side)}`, 'the side has to be left or right');
+        return denyPullRequest(CODES.BAD_REQUEST, `bad side ${JSON.stringify(side)}`, 'the side has to be left or right');
       }
       if ((action === 'comment' || action === 'reply' || action === 'edit') && (typeof body !== 'string' || body.trim() === '')) {
-        return deny(context, CODES.BAD_REQUEST, 'empty comment', 'a comment has to say something');
+        return denyPullRequest(CODES.BAD_REQUEST, 'empty comment', 'a comment has to say something');
       }
       if ((action === 'reply' || action === 'edit') && (typeof commentId !== 'number' || !Number.isInteger(commentId) || commentId <= 0)) {
-        return deny(
-          context,
+        return denyPullRequest(
           CODES.BAD_REQUEST,
           'bad commentId',
           action === 'reply' ? 'a reply needs the id of the comment it answers' : 'an edit needs the id of the review comment it changes',
         );
       }
       if (action === 'resolve' && (typeof threadId !== 'string' || threadId === '')) {
-        return deny(context, CODES.BAD_REQUEST, 'bad threadId', 'resolving needs the id of the thread, which --threads prints');
+        return denyPullRequest(CODES.BAD_REQUEST, 'bad threadId', 'resolving needs the id of the thread, which --threads prints');
       }
       if (
         action !== 'open' &&
@@ -477,11 +478,10 @@ export function createRequestHandler(
         action !== 'fork' &&
         (typeof number !== 'number' || !Number.isInteger(number) || number <= 0)
       ) {
-        return deny(context, CODES.BAD_REQUEST, `bad number ${JSON.stringify(number)}`, 'this action needs a pull request number');
+        return denyPullRequest(CODES.BAD_REQUEST, `bad number ${JSON.stringify(number)}`, 'this action needs a pull request number');
       }
       if (typeof provider.pullRequest !== 'function') {
-        return deny(
-          context,
+        return denyPullRequest(
           CODES.PROVIDER_ERROR,
           `provider ${provider.name} cannot manage pull requests`,
           "this host's provider cannot manage pull requests",
@@ -535,7 +535,7 @@ export function createRequestHandler(
           error instanceof ProviderConfigError
             ? reason
             : 'the broker could not manage that pull request; see the broker log';
-        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail);
+        return denyPullRequest(CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail);
       }
     }
 

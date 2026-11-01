@@ -279,6 +279,14 @@ describe('broker request handling', () => {
     assert.match(response.reason ?? '', /a fork must be owned by a person/u);
   });
 
+  it('records a refused pull request as a pull-request event', async () => {
+    const { handle, events } = makeHarness();
+    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'fork', identity: 'app' });
+    assert.equal(response.ok, false);
+    assert.equal(events.at(-1)?.['event'], 'pull-request');
+    assert.equal(events.at(-1)?.['decision'], 'deny');
+  });
+
   it('refuses an unusable branch, and a provider that cannot manage pull requests', async () => {
     const opened: Provider = {
   name: 'with-prs',

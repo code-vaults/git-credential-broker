@@ -967,8 +967,11 @@ function pullRequestNumber(value: unknown): number | undefined {
           line?: unknown;
           comments?: { nodes?: unknown };
         }>) {
+          if (typeof node.id !== 'string' || node.id === '') {
+            throw new Error('GitHub did not answer with a review-thread id');
+          }
           report.push(
-            `${node.isResolved === true ? 'resolved' : 'open    '} ${String(node.id ?? '')}  ${String(node.path ?? '')}:${String(node.line ?? '')}`,
+            `${node.isResolved === true ? 'resolved' : 'open    '} ${node.id}  ${String(node.path ?? '')}:${String(node.line ?? '')}`,
           );
           const comments = node.comments?.nodes;
           if (!Array.isArray(comments)) {
@@ -982,7 +985,10 @@ function pullRequestNumber(value: unknown): number | undefined {
             // The whole comment, not its first line and not 120 characters of it: a review bot puts the finding
             // in the lines below the header, and a report that drops them sends the reader to the web UI for the
             // one thing this command exists to show.
-            const body = String(comment.body ?? '');
+            if (typeof comment.body !== 'string') {
+              throw new Error('GitHub did not answer with a review-comment body');
+            }
+            const body = comment.body;
             // The prose, not the first twelve lines of the comment: a review bot prefixes its finding with the
             // commands it ran and a fence of their output, so counting raw lines reads the preamble and never
             // reaches the claim. Fences and the bot's own metadata lines are dropped, and the cap then applies to

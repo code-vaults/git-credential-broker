@@ -840,6 +840,72 @@ describe('createGithubAppProvider', () => {
     );
   });
 
+  it('rejects a thread without an id', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      threadsResponse: {
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                totalCount: 1,
+                nodes: [{ isResolved: false, path: 'a.ts', line: 1, comments: { nodes: [] } }],
+              },
+            },
+          },
+        },
+      },
+    });
+    await assert.rejects(
+      providerFor(stub).pullRequest!({
+        action: 'threads',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        number: 42,
+      }),
+      /review-thread id/u,
+    );
+  });
+
+  it('rejects a comment without a body', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      threadsResponse: {
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                totalCount: 1,
+                nodes: [
+                  {
+                    id: 'PRRT_x',
+                    isResolved: false,
+                    path: 'a.ts',
+                    line: 1,
+                    comments: { nodes: [{ databaseId: 1, author: { login: 'acme' } }] },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    });
+    await assert.rejects(
+      providerFor(stub).pullRequest!({
+        action: 'threads',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        number: 42,
+      }),
+      /review-comment body/u,
+    );
+  });
+
   it('reports an explicit empty reviewThreads list as no threads', async () => {
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
