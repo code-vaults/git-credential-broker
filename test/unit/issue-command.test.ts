@@ -120,7 +120,7 @@ describe('gcb issue create --as-user', () => {
       const pending = runClient(
         ['issue', 'create', '--as-user', 'alice', '--title', 't'],
         host.root,
-        { GCB_OPENER_TIMEOUT_MS: '100' },
+        { GCB_OPENER_TIMEOUT_MS: '50' },
       );
       let id: string | undefined;
       for (let attempt = 0; attempt < 100 && id === undefined; attempt += 1) {
@@ -128,7 +128,7 @@ describe('gcb issue create --as-user', () => {
         if (id === undefined) await sleep(10);
       }
       assert.ok(id !== undefined, 'the client wrote the request');
-      await sleep(200);
+      await sleep(150);
       writeResult(host.dir, id, { number: 42, url: 'https://github.com/acme/widget/issues/42' });
       const result = await pending;
       assert.equal(result.status, 0);
