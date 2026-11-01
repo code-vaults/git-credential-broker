@@ -162,6 +162,17 @@ describe('the host request channel', () => {
     removeRequest(dir, id);
   });
 
+  it('carries a fork request without branches or text', async () => {
+    const fork = { kind: 'fork' as const, repo: 'acme/widget', account: 'octocat' };
+    assert.deepEqual(requestProblems(fork), []);
+    assert.match(requestProblems({ ...fork, repo: 'not a repo' }).join(' '), /repository/);
+    const id = writeRequest(dir, fork);
+    const read = readRequest(dir, id);
+    assert.equal(read?.kind, 'fork');
+    assert.equal(read !== undefined && read.kind === 'fork' ? read.repo : undefined, 'acme/widget');
+    removeRequest(dir, id);
+  });
+
   it('names a request after the clock, with something to break a tie', () => {
     // The shape is the contract. Whether two calls in the same millisecond differ is luck, and a
     // test that depends on luck is a test that goes red for the wrong reason.

@@ -134,6 +134,10 @@ same actions when the catalog has one — `gcb pr view 12`, `gcb pr close 12`, `
 described below is still what runs the lifecycle `gh` cannot express (opening as a person, review
 threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr close`.
 
+`gcb repo fork [owner/name]` creates a fork under a person's account. An app cannot own a fork, so
+`--as-user` is required: bare uses the broker's authorized user, a login uses the host opener. Without
+a repository it forks the checkout's `origin`.
+
 For that flag-only form, creation uses the app's installation token by default; `--as-user` without
 a value uses the broker's authorized user token, and `--as-user <login>` uses the host opener.
 Resolving a review thread defaults to the user identity because the pull-request token this broker

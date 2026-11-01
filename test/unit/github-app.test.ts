@@ -151,6 +151,7 @@ function createStubFetch(options: {
   installationPermissions?: Record<string, string>;
   logText?: string;
   jobMissing?: boolean;
+  fork?: { full_name: string; html_url: string };
 }): { calls: RecordedCall[]; fetchImpl: FetchLike } {
   const {
     installations,
@@ -181,6 +182,9 @@ function createStubFetch(options: {
     }
     if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
     if (url.includes('/app/installations?')) return Promise.resolve(jsonResponse(installations));
+    if (url.endsWith('/forks')) {
+      return Promise.resolve(jsonResponse(options.fork ?? { full_name: 'me/widget', html_url: 'https://github.com/me/widget' }));
+    }
     if (url.endsWith('/merge')) {
       return Promise.resolve(jsonResponse({ merged: true, message: 'Pull Request successfully merged' }));
     }
@@ -819,6 +823,28 @@ describe('createGithubAppProvider', () => {
     });
   });
 
+
+  it('forks with the authorized user token', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fork-user-'));
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      fork: { full_name: 'me/widget', html_url: 'https://github.com/me/widget' },
+    });
+    const forked = await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
+      action: 'fork',
+      identity: 'user',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+    });
+    assert.equal(forked.url, 'https://github.com/me/widget');
+    const request = stub.calls.find((call) => call.url.endsWith('/forks'));
+    assert.equal(request?.authorization, 'Bearer person-token');
+    assert.equal(request?.method, 'POST');
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('forces the app identity when asked, even with a user token on disk', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'identity-app-'));

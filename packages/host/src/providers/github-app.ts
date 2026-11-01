@@ -687,6 +687,25 @@ function pullRequestNumber(value: unknown): number | undefined {
      * @returns the number and the URL GitHub answered with.
      */
     async pullRequest(request: PullRequestRequest): Promise<PullRequest> {
+      if (request.action === 'fork') {
+        const token = await personalToken();
+        if (token === undefined) {
+          throw new ProviderConfigError('no authorized user token for fork; run gcb authorize first');
+        }
+        const { text } = await callWithToken('POST', `${api}/repos/${request.owner}/${request.repo}/forks`, token);
+        let payload: unknown = null;
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          payload = null;
+        }
+        const forked = (payload ?? {}) as { full_name?: unknown; html_url?: unknown };
+        if (typeof forked.full_name !== 'string' || typeof forked.html_url !== 'string') {
+          throw new ProviderConfigError('GitHub did not answer with a fork');
+        }
+        return { number: 0, url: forked.html_url };
+      }
+
       // The two actions a person may perform are decided first: when somebody has authorized this
       // deployment, their token is the whole authority for them, and requiring an installation as well
       // would refuse a repository the app was never installed on — the fork-to-upstream case the allowlist

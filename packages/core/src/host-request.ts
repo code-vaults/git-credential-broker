@@ -52,6 +52,9 @@ export const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 // ends came to disagree about what a branch may look like.
 export const BRANCH = /^([A-Za-z0-9][A-Za-z0-9._-]{0,38}:)?[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
 
+/** `owner/name`, as a fork request names its source. */
+export const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+
 interface HostRequestFields {
   /** `owner/name` as the caller believed it. Recorded, and deliberately never used: the checkout a
    *  request was written in decides which repository it means. */
@@ -80,8 +83,18 @@ export interface HostIssueRequest extends HostRequestFields {
   readonly kind: 'issue';
 }
 
+/** One request to fork a repository. */
+export interface HostForkRequest {
+  readonly kind: 'fork';
+  readonly repo: string;
+  readonly proxy?: string | null;
+  readonly account?: string;
+  readonly session?: string;
+  readonly pid?: number;
+}
+
 /** Either request the opener can fulfil. */
-export type HostRequest = HostOpenRequest | HostIssueRequest;
+export type HostRequest = HostOpenRequest | HostIssueRequest | HostForkRequest;
 
 /** What the opener answered. */
 export interface HostOpenResult {
@@ -276,6 +289,13 @@ export function newId(now: Date = new Date()): string {
  */
 export function requestProblems(request: HostRequest): string[] {
   const problems: string[] = [];
+  if (request.kind === 'fork') {
+    if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
+    if (request.account !== undefined && !LOGIN.test(request.account)) {
+      problems.push('the account is not a usable GitHub login');
+    }
+    return problems;
+  }
   if (request.kind !== 'issue') {
     if (!BRANCH.test(request.head) || request.head.includes('..')) {
       problems.push('the head branch name is not usable');
@@ -323,9 +343,21 @@ export function writeRequest(dir: string, request: HostRequest): string {
  */
 export function readRequest(dir: string, id: string): HostRequest | undefined {
   const parsed = readJson(join(dir, `${id}.json`)) as
-    | (Partial<HostOpenRequest> & Partial<HostIssueRequest>)
+    | (Partial<HostOpenRequest> & Partial<HostIssueRequest> & Partial<HostForkRequest>)
     | undefined;
-  if (!parsed || typeof parsed.title !== 'string') return undefined;
+  if (!parsed) return undefined;
+  if (parsed.kind === 'fork') {
+    if (typeof parsed.repo !== 'string' || !REPOSITORY.test(parsed.repo)) return undefined;
+    return {
+      kind: 'fork',
+      repo: parsed.repo,
+      ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
+      ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
+      session: parsed.session,
+      pid: parsed.pid,
+    };
+  }
+  if (typeof parsed.title !== 'string') return undefined;
   const common = {
     repo: typeof parsed.repo === 'string' ? parsed.repo : undefined,
     title: parsed.title,
@@ -414,13 +446,15 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
   // this next, and a request missing a string field would make them index undefined and take it down.
   const shaped =
     request !== undefined &&
-    typeof request.title === 'string' &&
-    typeof request.body === 'string' &&
     // Untyped JSON: the file can spell account as an array or a number even though the type cannot.
     (request.account === undefined || typeof request.account === 'string') &&
-    (request.kind === 'issue'
-      ? true
-      : typeof request.head === 'string' && typeof request.base === 'string');
+    (request.kind === 'fork'
+      ? typeof request.repo === 'string' && REPOSITORY.test(request.repo)
+      : typeof request.title === 'string' &&
+        typeof request.body === 'string' &&
+        (request.kind === 'issue'
+          ? true
+          : typeof request.head === 'string' && typeof request.base === 'string'));
   if (!shaped) {
     rmSync(claimed, { force: true, recursive: true });
     return undefined;

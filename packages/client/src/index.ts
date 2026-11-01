@@ -36,6 +36,7 @@ Commands
              ${cataloguedSubcommands('pr')}
   run        Run a workflow run action: ${cataloguedSubcommands('run')}
   issue      Run an issue action: ${cataloguedSubcommands('issue')}
+  repo       Create a fork as a person: fork
   gh         Run a catalogued GitHub action through the broker
 
 As a git credential helper
@@ -77,6 +78,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
     case 'issue':
       return (await import('./commands/issue.ts')).runIssue(rest);
+    case 'repo':
+      return (await import('./commands/repo.ts')).runRepo(rest);
     case 'gh':
       return (await import('./commands/gh.ts')).runGh(rest);
     default:

@@ -137,7 +137,7 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
         pid: process.pid,
         command,
         startedAt: new Date().toISOString(),
-        kinds: ['pull-request', 'issue'],
+        kinds: ['pull-request', 'issue', 'fork'],
       });
     }
   };
@@ -221,9 +221,17 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
     writeResult(dir, id, result);
     removeRequest(dir, id);
     if (result.error !== undefined) {
-      warn(`failed to open ${request.kind === 'issue' ? 'issue' : request.head}: ${result.error}`);
+      warn(
+        `failed to open ${
+          request.kind === 'fork' ? 'fork' : request.kind === 'issue' ? 'issue' : request.head
+        }: ${result.error}`,
+      );
     } else {
-      say(`opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`);
+      say(
+        request.kind === 'fork'
+          ? `forked ${request.repo} as ${request.account ?? 'this user'}: ${result.url}`
+          : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
+      );
     }
     answered += 1;
   }
@@ -265,6 +273,26 @@ async function openOne(
   extra: readonly string[],
   request: HostRequest,
 ): Promise<HostOpenResult> {
+  if (request.kind === 'fork') {
+    try {
+      const { stdout, stderr } = await run(command, [...extra, 'repo', 'fork', request.repo], {
+        cwd: repo,
+        timeout: CREATE_TIMEOUT_MS,
+        maxBuffer: 1 << 20,
+        env: openerEnv(request.proxy, request.account),
+      });
+      const match = /https:\/\/[^\s]+\/[^\s/]+\/[^\s/]+/.exec(stdout);
+      if (match?.[0] === undefined) {
+        return { error: `no fork URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}` };
+      }
+      return { url: match[0] };
+    } catch (error) {
+      const failure = error as { stderr?: string; message?: string };
+      const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
+      return { error: reason.slice(0, 300) || 'the command failed' };
+    }
+  }
+
   // The body goes to a private temp file: the program is given a path, never a string to interpret.
   const scratch = mkdtempSync(join(tmpdir(), 'gcb-'));
   const bodyFile = join(scratch, 'body.md');

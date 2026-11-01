@@ -392,7 +392,8 @@ export function createRequestHandler(
         action !== 'threads' &&
         action !== 'reply' &&
         action !== 'edit' &&
-        action !== 'resolve'
+        action !== 'resolve' &&
+        action !== 'fork'
       ) {
         return deny(context, CODES.BAD_REQUEST, `bad action ${JSON.stringify(action)}`, 'unknown pull request action');
       }
@@ -404,6 +405,9 @@ export function createRequestHandler(
       const identity = message['identity'];
       if (identity !== undefined && identity !== 'app' && identity !== 'user') {
         return deny(context, CODES.BAD_REQUEST, `bad identity ${JSON.stringify(identity)}`, 'the identity must be app or user');
+      }
+      if (action === 'fork' && identity !== 'user') {
+        return deny(context, CODES.BAD_REQUEST, 'fork without a user identity', 'a fork must be owned by a person');
       }
       const title = message['title'];
       const body = message['body'];
