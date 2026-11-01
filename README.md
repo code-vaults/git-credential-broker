@@ -390,6 +390,7 @@ host, beside the same checkout, and ask for it with `--as-user <login>` from the
 ```sh
 # on the host, once — it serves every checkout below $HOME and does nothing else
 gcb host-opener          # --root <dir> to narrow it, repeatable
+# for repo fork, also pass --config <broker.config.yml> so its allowlist applies
 # or, at boot and for good: examples/host-opener-boot.sh (see below)
 ```
 
@@ -402,7 +403,8 @@ gcb pr --as-user octocat --repo owner/repo --head feature --base main \
   --title "a title" --body-file pr.md
 ```
 
-The opener creates pull requests and issues with the gh account named by the request. `--as-user <login>`
+The opener creates pull requests and issues with the gh account named by the request, and forks only
+a repository present in the broker config's allowlist for the request host (pass `--config`). `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
 directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. The directory must
 already exist, and inherited `GH_TOKEN`/`GITHUB_TOKEN`/`GH_ENTERPRISE_TOKEN`/`GITHUB_ENTERPRISE_TOKEN`/`GH_HOST` are ignored

@@ -31,9 +31,12 @@ import {
   HOST,
   type HostRequest,
   type HostOpenResult,
+  type BrokerConfig,
 } from 'gcb-core';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
 import { applyProxyChoice, parseProxy, type ProxyChoice } from '../http.ts';
+import { loadConfig, resolveConfigPath } from '../config.ts';
+import { hostConfig, repoAllowed } from '../policy.ts';
 
 const run = promisify(execFile);
 
@@ -51,6 +54,8 @@ the app's bot. It does nothing else: it cannot push, merge or close anything.
   --root <dir>          A tree to serve, repeatable (default: $HOME)
   --depth <n>           How far below a root to look for checkouts (default: 4)
   --repo <path>         Serve this one checkout instead of discovering any
+  --config <path>       Broker config whose allowlist fork requests are checked against
+                        (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   --command <path>      The program that creates a pull request, issue or fork
                         (default: $GIT_BROKER_PR_COMMAND, else gh)
   --arg <token>         An extra argument for that program, before the subcommand (repeatable)
@@ -112,6 +117,20 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
   const scanned = roots.length > 0 ? roots.map((root) => resolve(root)) : [homedir()];
   const depth = Number(args.value('depth') ?? '4');
   const command = args.value('command') ?? process.env['GIT_BROKER_PR_COMMAND'] ?? 'gh';
+  const configPath = args.value('config');
+  let config: BrokerConfig | undefined;
+  /** Whether the broker's allowlist permits this host/repository, loaded only for fork requests. */
+  const allowed = (host: string, repo: string): boolean => {
+    if (config === undefined) {
+      try {
+        config = loadConfig(resolveConfigPath(configPath));
+      } catch {
+        throw new Error('a fork needs the broker config allowlist; pass --config or set GIT_BROKER_CONFIG');
+      }
+    }
+    const block = hostConfig(config, host);
+    return block !== null && repoAllowed(block.allow, repo);
+  };
   const extra = listFlag(args, 'arg');
   const interval = Number(args.value('interval') ?? '5');
   if (!Number.isFinite(interval) || interval < 1) {
@@ -169,7 +188,7 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
       // must not stop the opener serving every other root, under Restart=always least of all.
       try {
         advertise(dir);
-        await sweep(dir, repo, command, extra);
+        await sweep(dir, repo, command, extra, allowed);
       } catch (error) {
         warn(`could not serve ${repo}: ${(error as Error).message}`);
       }
@@ -188,7 +207,13 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
  * @param extra - arguments to pass before the subcommand.
  * @returns how many requests were answered.
  */
-async function sweep(dir: string, repo: string, command: string, extra: readonly string[]): Promise<number> {
+async function sweep(
+  dir: string,
+  repo: string,
+  command: string,
+  extra: readonly string[],
+  allowed: (host: string, repo: string) => boolean,
+): Promise<number> {
   let answered = 0;
   for (const id of listRequests(dir)) {
     // Claimed, not read: two openers — a service and a hand-run --once — would otherwise both act on the
@@ -218,7 +243,7 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
       answered += 1;
       continue;
     }
-    const result = await openOne(repo, command, extra, { ...request, proxy });
+    const result = await openOne(repo, command, extra, { ...request, proxy }, allowed);
     writeResult(dir, id, result);
     removeRequest(dir, id);
     if (result.error !== undefined) {
@@ -286,10 +311,19 @@ async function openOne(
   command: string,
   extra: readonly string[],
   request: HostRequest,
+  allowed: (host: string, repo: string) => boolean,
 ): Promise<HostOpenResult> {
   if (request.kind === 'fork') {
     if (request.host !== undefined && !HOST.test(request.host)) {
       return { error: `not a host: ${JSON.stringify(request.host)}` };
+    }
+    const host = request.host ?? 'github.com';
+    try {
+      if (!allowed(host, request.repo)) {
+        return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
+      }
+    } catch (error) {
+      return { error: (error as Error).message };
     }
     try {
       const { stdout, stderr } = await run(command, [...extra, 'repo', 'fork', request.repo], {
