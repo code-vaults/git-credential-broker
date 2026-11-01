@@ -79,10 +79,9 @@ export async function submitToOpener(
   } catch (error) {
     fail((error as Error).message);
   }
-  const timeoutMs = ANSWER_TIMEOUT_MS;
-  const answer = await waitForResult(dir, id, timeoutMs);
+  const answer = await waitForResult(dir, id, ANSWER_TIMEOUT_MS);
   removeResult(dir, id);
-  if (answer === undefined) fail(noAnswerMessage(dir, id, noun, timeoutMs));
+  if (answer === undefined) fail(noAnswerMessage(dir, id, noun, ANSWER_TIMEOUT_MS));
   if (answer.error !== undefined) fail(`the host opener could not open it: ${answer.error}`);
   say(success(answer));
   return 0;

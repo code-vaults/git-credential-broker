@@ -33,10 +33,14 @@ describe('an opener request without an answer', () => {
     try {
       fs.mkdirSync(host.dir, { recursive: true });
       fs.writeFileSync(path.join(host.dir, 'abc.json'), '{}');
-      assert.match(noAnswerMessage(host.dir, 'abc', 'pull request', 180_000), /may still be working/u);
+      const inFlight = noAnswerMessage(host.dir, 'abc', 'pull request', 1_500);
+      assert.match(inFlight, /within 2s/u);
+      assert.match(inFlight, /may still be working/u);
       fs.rmSync(path.join(host.dir, 'abc.json'));
       fs.writeFileSync(path.join(host.dir, 'abc.json.working'), '{}');
-      assert.match(noAnswerMessage(host.dir, 'abc', 'pull request', 180_000), /may still be working/u);
+      const claimedMessage = noAnswerMessage(host.dir, 'abc', 'pull request', 1_500);
+      assert.match(claimedMessage, /within 2s/u);
+      assert.match(claimedMessage, /may still be working/u);
     } finally {
       host.cleanup();
     }
