@@ -53,7 +53,7 @@ export const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 export const BRANCH = /^([A-Za-z0-9][A-Za-z0-9._-]{0,38}:)?[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
 
 /** `owner/name`, as a fork request names its source. */
-export const REPOSITORY = /^(?!\.+$)[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
+export const REPOSITORY = /^(?!\.+(?:\/|$))[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
 
 interface HostRequestFields {
   /** `owner/name` as the caller believed it. Recorded, and deliberately never used: the checkout a

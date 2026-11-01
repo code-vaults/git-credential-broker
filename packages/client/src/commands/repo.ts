@@ -74,7 +74,9 @@ export async function runRepo(argv: readonly string[]): Promise<number> {
   if (source === undefined) fail('pass owner/name, or run this from a checkout with an origin remote');
   if (!REPOSITORY.test(source)) fail(`not a repository: ${JSON.stringify(source)}`);
   const hostValue = args.value('host');
-  if (args.has('host') && (hostValue === undefined || hostValue.trim() === '')) fail('--host needs a value');
+  if ((args.has('host') || args.values('host').length > 0) && (hostValue === undefined || hostValue.trim() === '')) {
+    fail('--host needs a value');
+  }
   const host = hostValue ?? origin?.host ?? 'github.com';
 
   if (account !== undefined) {
