@@ -127,19 +127,25 @@ describe('the opener fork route', () => {
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     const dir = channelDir(join(repo, '.git'));
     const argvFile = join(root, 'argv');
+    const envFile = join(root, 'env');
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "https://github.com/me/widget"\n',
+      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' +
+        argvFile +
+        '\nprintf %s "$GH_HOST" > ' +
+        envFile +
+        '\necho "https://github.com/me/widget"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
     try {
-      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' });
+      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget', host: 'github.com' });
       const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.url, 'https://github.com/me/widget');
       assert.deepEqual(readFileSync(argvFile, 'utf8').trim().split('\n'), ['repo', 'fork', 'acme/widget']);
+      assert.equal(readFileSync(envFile, 'utf8'), 'github.com');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

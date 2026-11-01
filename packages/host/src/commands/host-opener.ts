@@ -275,12 +275,18 @@ async function openOne(
   request: HostRequest,
 ): Promise<HostOpenResult> {
   if (request.kind === 'fork') {
+    if (request.host !== undefined && !HOST.test(request.host)) {
+      return { error: `not a host: ${JSON.stringify(request.host)}` };
+    }
     try {
       const { stdout, stderr } = await run(command, [...extra, 'repo', 'fork', request.repo], {
         cwd: repo,
         timeout: CREATE_TIMEOUT_MS,
         maxBuffer: 1 << 20,
-        env: openerEnv(request.proxy, request.account),
+        env: {
+          ...openerEnv(request.proxy, request.account),
+          ...(request.host === undefined ? {} : { GH_HOST: request.host }),
+        },
       });
       const match = /https:\/\/[^\s]+\/[^\s/]+\/[^\s/]+/.exec(stdout);
       if (match?.[0] !== undefined) return { url: match[0] };
