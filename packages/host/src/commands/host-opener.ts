@@ -124,8 +124,10 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
     if (config === undefined) {
       try {
         config = loadConfig(resolveConfigPath(configPath));
-      } catch {
-        throw new Error('a fork needs the broker config allowlist; pass --config or set GIT_BROKER_CONFIG');
+      } catch (error) {
+        throw new Error(
+          `a fork needs the broker config allowlist: ${(error as Error).message}; pass --config or set GIT_BROKER_CONFIG`,
+        );
       }
     }
     const block = hostConfig(config, host);

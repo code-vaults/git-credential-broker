@@ -153,11 +153,11 @@ describe('the opener fork route', () => {
     const previousToken = process.env['GH_TOKEN'];
     try {
       process.env['GH_TOKEN'] = 'inherited-token';
-      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget', host: 'github.com' });
+      const id = writeRequest(dir, { kind: 'fork', repo: 'Acme/Widget', host: 'github.com' });
       const code = await runHostOpener(['--repo', repo, '--command', command, '--config', config, '--once']);
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.url, 'https://github.com/me/widget');
-      assert.deepEqual(readFileSync(argvFile, 'utf8').trim().split('\n'), ['repo', 'fork', 'acme/widget']);
+      assert.deepEqual(readFileSync(argvFile, 'utf8').trim().split('\n'), ['repo', 'fork', 'Acme/Widget']);
       assert.equal(readFileSync(envFile, 'utf8'), 'github.com|');
     } finally {
       if (previousToken === undefined) delete process.env['GH_TOKEN'];
