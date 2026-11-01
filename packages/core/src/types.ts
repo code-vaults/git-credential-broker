@@ -111,7 +111,8 @@ export type PullRequestAction =
   | 'threads'
   | 'reply'
   | 'edit'
-  | 'resolve';
+  | 'resolve'
+  | 'fork';
 
 /** What a provider is asked to do to a pull request. */
 export interface PullRequestRequest {

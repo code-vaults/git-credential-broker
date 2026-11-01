@@ -96,10 +96,12 @@ export function parseAllowEntry(entry: unknown): AllowEntry | null {
  */
 export function repoAllowed(allowList: unknown, full: string): boolean {
   if (typeof full !== 'string' || !Array.isArray(allowList)) return false;
-  const slash = full.indexOf('/');
+  // Repository names are case-insensitive on GitHub; the caller may pass the spelling from a remote URL.
+  const normalized = full.toLowerCase();
+  const slash = normalized.indexOf('/');
   if (slash <= 0) return false;
-  const owner = full.slice(0, slash);
-  const repo = full.slice(slash + 1);
+  const owner = normalized.slice(0, slash);
+  const repo = normalized.slice(slash + 1);
 
   for (const raw of allowList) {
     const entry = parseAllowEntry(raw);

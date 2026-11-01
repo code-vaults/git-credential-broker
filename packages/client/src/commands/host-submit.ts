@@ -56,7 +56,7 @@ export async function submitToOpener(
   request: HostRequest,
   success: (answer: HostOpenResult) => string,
 ): Promise<number> {
-  const noun = request.kind === 'issue' ? 'issue' : 'pull request';
+  const noun = request.kind === 'fork' ? 'fork' : request.kind === 'issue' ? 'issue' : 'pull request';
   const gitDir = findGitDir(process.cwd());
   if (gitDir === undefined) fail('--as-user needs a git repository: run it from the checkout');
   const dir = channelDir(gitDir);
@@ -68,8 +68,9 @@ export async function submitToOpener(
         '  or drop --as-user to open it as the app instead',
     );
   }
-  if (request.kind === 'issue' && !(Array.isArray(opener.kinds) && opener.kinds.includes('issue'))) {
-    fail('the host opener does not advertise issue support; restart it from this gcb-host version');
+  const needed = request.kind === 'issue' ? 'issue' : request.kind === 'fork' ? 'fork' : undefined;
+  if (needed !== undefined && !(Array.isArray(opener.kinds) && opener.kinds.includes(needed))) {
+    fail(`the host opener does not advertise ${needed} support; restart it from this gcb-host version`);
   }
 
   // writeRequest refuses what the opener would refuse — a title past its limit, a body past its limit,

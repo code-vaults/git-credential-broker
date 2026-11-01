@@ -251,6 +251,34 @@ describe('broker request handling', () => {
     assert.equal(events.at(-1)?.['pr_number'], 7);
   });
 
+  it('forks without a pull request number', async () => {
+    const seen: unknown[] = [];
+    const forked: Provider = {
+      name: 'fork-test',
+      getCredential: () => Promise.reject(new Error('not used here')),
+      pullRequest: (request) => {
+        seen.push(request.action, request.identity);
+        return Promise.resolve({ number: 0, url: 'https://github.com/me/widget' });
+      },
+    };
+    const { handle, events } = makeHarness(['acme/widget'], forked);
+    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'fork', identity: 'user' });
+    assert.equal(response.ok, true);
+    assert.equal(response.prUrl, 'https://github.com/me/widget');
+    assert.equal(response.prNumber, undefined);
+    assert.deepEqual(seen, ['fork', 'user']);
+    assert.equal(events.at(-1)?.['fork_url'], 'https://github.com/me/widget');
+    assert.equal('pr_number' in (events.at(-1) ?? {}), false);
+  });
+
+  it('refuses a fork as the app', async () => {
+    const { handle } = makeHarness();
+    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'fork', identity: 'app' });
+    assert.equal(response.ok, false);
+    assert.equal(response.code, 'bad-request');
+    assert.match(response.reason ?? '', /a fork must be owned by a person/u);
+  });
+
   it('refuses an unusable branch, and a provider that cannot manage pull requests', async () => {
     const opened: Provider = {
   name: 'with-prs',

@@ -15,6 +15,7 @@ import { after, before, beforeEach, describe, it } from 'node:test';
 import { pullRequestUrl } from '../../packages/host/src/commands/host-opener.ts';
 import {
   channelDir,
+  claimRequest,
   clearOpener,
   discoverCheckouts,
   findGitDir,
@@ -159,6 +160,25 @@ describe('the host request channel', () => {
       session: undefined,
       pid: undefined,
     });
+    removeRequest(dir, id);
+  });
+
+  it('carries a fork request without branches or text', async () => {
+    const fork = { kind: 'fork' as const, repo: 'acme/widget', account: 'octocat' };
+    assert.deepEqual(requestProblems(fork), []);
+    assert.match(requestProblems({ ...fork, repo: 'not a repo' }).join(' '), /repository/);
+    assert.match(requestProblems({ ...fork, host: 'evil/path' }).join(' '), /host/);
+    const rawId = newId();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, rawId + '.json'),
+      JSON.stringify({ v: 1, id: rawId, kind: 'fork', repo: 'acme/widget', host: 'evil.example/x#' }),
+    );
+    assert.equal(claimRequest(dir, rawId), undefined, 'a hand-written invalid host is not claimed');
+    const id = writeRequest(dir, fork);
+    const read = readRequest(dir, id);
+    assert.equal(read?.kind, 'fork');
+    assert.equal(read !== undefined && read.kind === 'fork' ? read.repo : undefined, 'acme/widget');
     removeRequest(dir, id);
   });
 

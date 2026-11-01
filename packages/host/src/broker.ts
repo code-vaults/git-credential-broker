@@ -392,7 +392,8 @@ export function createRequestHandler(
         action !== 'threads' &&
         action !== 'reply' &&
         action !== 'edit' &&
-        action !== 'resolve'
+        action !== 'resolve' &&
+        action !== 'fork'
       ) {
         return deny(context, CODES.BAD_REQUEST, `bad action ${JSON.stringify(action)}`, 'unknown pull request action');
       }
@@ -404,6 +405,9 @@ export function createRequestHandler(
       const identity = message['identity'];
       if (identity !== undefined && identity !== 'app' && identity !== 'user') {
         return deny(context, CODES.BAD_REQUEST, `bad identity ${JSON.stringify(identity)}`, 'the identity must be app or user');
+      }
+      if (action === 'fork' && identity !== 'user') {
+        return deny(context, CODES.BAD_REQUEST, 'fork without a user identity', 'a fork must be owned by a person');
       }
       const title = message['title'];
       const body = message['body'];
@@ -466,7 +470,13 @@ export function createRequestHandler(
       if (action === 'resolve' && (typeof threadId !== 'string' || threadId === '')) {
         return deny(context, CODES.BAD_REQUEST, 'bad threadId', 'resolving needs the id of the thread, which --threads prints');
       }
-      if (action !== 'open' && action !== 'resolve' && action !== 'edit' && (typeof number !== 'number' || !Number.isInteger(number) || number <= 0)) {
+      if (
+        action !== 'open' &&
+        action !== 'resolve' &&
+        action !== 'edit' &&
+        action !== 'fork' &&
+        (typeof number !== 'number' || !Number.isInteger(number) || number <= 0)
+      ) {
         return deny(context, CODES.BAD_REQUEST, `bad number ${JSON.stringify(number)}`, 'this action needs a pull request number');
       }
       if (typeof provider.pullRequest !== 'function') {
@@ -509,12 +519,11 @@ export function createRequestHandler(
           ...(typeof commentId === 'number' ? { comment_id: commentId } : {}),
           ...(typeof head === 'string' ? { head } : {}),
           ...(typeof base === 'string' ? { base } : {}),
-          pr_number: result.number,
-          pr_url: result.url,
+          ...(action === 'fork' ? { fork_url: result.url } : { pr_number: result.number, pr_url: result.url }),
         });
         return {
           ok: true,
-          prNumber: result.number,
+          ...(action === 'fork' ? {} : { prNumber: result.number }),
           prUrl: result.url,
           prState: result.state,
           prStatus: result.status,

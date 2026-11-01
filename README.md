@@ -141,6 +141,11 @@ mints is narrowed to `pull_requests: write` and `contents: read`, while `resolve
 `contents: write` — a grant the broker gives only to the credential git pushes with, never to a
 pull-request token.
 
+`gcb repo fork [owner/name]` creates a fork under a person's account. An app cannot own a fork, so
+`--as-user` is required: bare uses the broker's authorized user, a login uses the host opener. Without
+a repository it forks the checkout's `origin`. `--host` selects the host; otherwise the origin remote's host is
+used when available, and `github.com` is the fallback.
+
 Inside a checkout, `--repo` can be omitted only when `origin` names a usable GitHub repository whose
 host matches `--host`; otherwise pass `--repo`, or the matching `--host`.
 
@@ -385,6 +390,7 @@ host, beside the same checkout, and ask for it with `--as-user <login>` from the
 ```sh
 # on the host, once — it serves every checkout below $HOME and does nothing else
 gcb host-opener          # --root <dir> to narrow it, repeatable
+# for repo fork, also pass --config <broker.config.yml> so its allowlist applies
 # or, at boot and for good: examples/host-opener-boot.sh (see below)
 ```
 
@@ -397,7 +403,8 @@ gcb pr --as-user octocat --repo owner/repo --head feature --base main \
   --title "a title" --body-file pr.md
 ```
 
-The opener creates pull requests and issues with the gh account named by the request. `--as-user <login>`
+The opener creates pull requests and issues with the gh account named by the request, and forks only
+a repository present in the broker config's allowlist for the request host (pass `--config`). `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
 directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. The directory must
 already exist, and inherited `GH_TOKEN`/`GITHUB_TOKEN`/`GH_ENTERPRISE_TOKEN`/`GITHUB_ENTERPRISE_TOKEN`/`GH_HOST` are ignored

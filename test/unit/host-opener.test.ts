@@ -119,6 +119,146 @@ describe('the opener issue route', () => {
   });
 });
 
+function forkConfig(root: string, allow: string, host = 'github.com'): string {
+  const path = join(root, 'broker.config.yml');
+  writeFileSync(
+    path,
+    `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  ${host}:\n    provider: static\n    username: x\n    password: y\n    allow:\n      - ${allow}\n`,
+    'utf8',
+  );
+  return path;
+}
+
+describe('the opener fork route', () => {
+  it('runs gh repo fork with the repository and returns its URL', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-opener-fork-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const argvFile = join(root, 'argv');
+    const envFile = join(root, 'env');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' +
+        argvFile +
+        '\nprintf \'%s|%s\' "$GH_HOST" "$GH_TOKEN" > ' +
+        envFile +
+        '\necho "https://github.com/me/widget"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    const previousToken = process.env['GH_TOKEN'];
+    try {
+      process.env['GH_TOKEN'] = 'inherited-token';
+      const id = writeRequest(dir, { kind: 'fork', repo: 'Acme/Widget', host: 'github.com' });
+      const code = await runHostOpener(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      assert.equal(readResult(dir, id)?.url, 'https://github.com/me/widget');
+      assert.deepEqual(readFileSync(argvFile, 'utf8').trim().split('\n'), ['repo', 'fork', 'Acme/Widget']);
+      assert.equal(readFileSync(envFile, 'utf8'), 'github.com|inherited-token');
+    } finally {
+      if (previousToken === undefined) delete process.env['GH_TOKEN'];
+      else process.env['GH_TOKEN'] = previousToken;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('an existing fork', () => {
+  it('turns gh\'s already-exists line into a URL', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-opener-fork-existing-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const envFile = join(root, 'env');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      `#!/bin/sh\nprintf '%s|%s' "$GH_HOST" "$GH_TOKEN" > ${envFile}\necho "me/widget already exists" >&2\nexit 0\n`,
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    const previousToken = process.env['GH_TOKEN'];
+    const previousHost = process.env['GH_HOST'];
+    try {
+      process.env['GH_TOKEN'] = 'inherited-token';
+      process.env['GH_HOST'] = 'enterprise.example';
+      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' });
+      const code = await runHostOpener(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      assert.equal(readResult(dir, id)?.url, 'https://github.com/me/widget', 'a request with no host still reports the default');
+      assert.equal(readFileSync(envFile, 'utf8'), 'github.com|inherited-token', 'and gh is forced to that host');
+    } finally {
+      if (previousToken === undefined) delete process.env['GH_TOKEN'];
+      else process.env['GH_TOKEN'] = previousToken;
+      if (previousHost === undefined) delete process.env['GH_HOST'];
+      else process.env['GH_HOST'] = previousHost;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('an enterprise fork host', () => {
+  it('keeps the token class gh uses for that host', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-opener-fork-ghes-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget', 'ghe.example');
+    const dir = channelDir(join(repo, '.git'));
+    const envFile = join(root, 'env');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      `#!/bin/sh\nprintf '%s|%s' "$GH_HOST" "$GH_ENTERPRISE_TOKEN" > ${envFile}\necho "me/widget already exists" >&2\nexit 0\n`,
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    const previous = process.env['GH_ENTERPRISE_TOKEN'];
+    try {
+      process.env['GH_ENTERPRISE_TOKEN'] = 'enterprise-token';
+      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget', host: 'ghe.example' });
+      const code = await runHostOpener(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      assert.equal(readResult(dir, id)?.url, 'https://ghe.example/me/widget');
+      assert.equal(readFileSync(envFile, 'utf8'), 'ghe.example|enterprise-token');
+    } finally {
+      if (previous === undefined) delete process.env['GH_ENTERPRISE_TOKEN'];
+      else process.env['GH_ENTERPRISE_TOKEN'] = previous;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('a fork outside the allowlist', () => {
+  it('is refused before gh runs', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-opener-fork-denied-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'other/repo');
+    const dir = channelDir(join(repo, '.git'));
+    const marker = join(root, 'ran');
+    const command = join(root, 'not-gh');
+    writeFileSync(command, `#!/bin/sh\ntouch ${marker}\n`, 'utf8');
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget', host: 'github.com' });
+      const code = await runHostOpener(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      assert.match(readResult(dir, id)?.error ?? '', /not in the allowlist/u);
+      assert.equal(existsSync(marker), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('a claim that someone else holds', () => {
   it('does not act on the request, does not answer it, and does not remove the claim', async () => {
     const root = mkdtempSync(join(tmpdir(), 'opener-claim-'));
