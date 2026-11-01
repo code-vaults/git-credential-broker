@@ -55,6 +55,9 @@ export const BRANCH = /^([A-Za-z0-9][A-Za-z0-9._-]{0,38}:)?[A-Za-z0-9][A-Za-z0-9
 /** `owner/name`, as a fork request names its source. */
 export const REPOSITORY = /^(?!\.+(?:\/|$))[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
 
+/** A host key, optionally with a port; never a URL, slash or newline. */
+export const HOST = /^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::\d{1,5})?$/;
+
 interface HostRequestFields {
   /** `owner/name` as the caller believed it. Recorded, and deliberately never used: the checkout a
    *  request was written in decides which repository it means. */
@@ -292,6 +295,7 @@ export function requestProblems(request: HostRequest): string[] {
   const problems: string[] = [];
   if (request.kind === 'fork') {
     if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
+    if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
     if (request.account !== undefined && !LOGIN.test(request.account)) {
       problems.push('the account is not a usable GitHub login');
     }
@@ -453,7 +457,7 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
     (request.kind === 'fork'
       ? typeof request.repo === 'string' &&
         REPOSITORY.test(request.repo) &&
-        (request.host === undefined || typeof request.host === 'string')
+        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
       : typeof request.title === 'string' &&
         typeof request.body === 'string' &&
         (request.kind === 'issue'

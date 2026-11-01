@@ -166,6 +166,7 @@ describe('the host request channel', () => {
     const fork = { kind: 'fork' as const, repo: 'acme/widget', account: 'octocat' };
     assert.deepEqual(requestProblems(fork), []);
     assert.match(requestProblems({ ...fork, repo: 'not a repo' }).join(' '), /repository/);
+    assert.match(requestProblems({ ...fork, host: 'evil/path' }).join(' '), /host/);
     const id = writeRequest(dir, fork);
     const read = readRequest(dir, id);
     assert.equal(read?.kind, 'fork');

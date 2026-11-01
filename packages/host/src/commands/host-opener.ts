@@ -28,6 +28,7 @@ import {
   requestProblems,
   writeOpener,
   writeResult,
+  HOST,
   type HostRequest,
   type HostOpenResult,
 } from 'gcb-core';
@@ -285,9 +286,11 @@ async function openOne(
       if (match?.[0] !== undefined) return { url: match[0] };
       // With no TTY, gh prints the URL only for a fresh fork; an existing fork older than a minute
       // is `owner/name already exists` on stderr with empty stdout and exit 0.
-      const existing = /(\S+\/\S+) already exists/.exec(stderr);
+      const existing = /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+) already exists$/m.exec(stderr);
       if (existing?.[1] !== undefined) {
-        return request.host === undefined ? {} : { url: `https://${request.host}/${existing[1]}` };
+        return request.host === undefined || !HOST.test(request.host)
+          ? {}
+          : { url: `https://${request.host}/${existing[1]}` };
       }
       return { error: `no fork URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}` };
     } catch (error) {
