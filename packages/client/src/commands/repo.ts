@@ -5,8 +5,7 @@
  * account, and an installation token has none. The command therefore requires `--as-user`; bare
  * selects the broker's authorized person, a login selects the host opener.
  */
-import { LOGIN, REPOSITORY } from 'gcb-core';
-import { fail, parseArgs, say } from 'gcb-core';
+import { LOGIN, REPOSITORY, fail, parseArgs, say } from 'gcb-core';
 
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { remoteRepo } from './remotes.ts';
@@ -23,7 +22,7 @@ required. Without an owner/name the source comes from the checkout's origin remo
 
   --as-user            Use the broker's authorized user token
   --as-user <login>    Use the host opener with ~/.config/gh-<login>
-  --host <host>        Host as configured (default: github.com or the origin remote's host)
+  --host <host>        Host as configured (default: the origin remote's host, else github.com)
   --socket <path>      Broker socket (default: GIT_BROKER_SOCKET)
   --proxy <url>        Use this proxy for this request
   --no-proxy           Reach GitHub directly for this request
