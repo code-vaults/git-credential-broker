@@ -340,9 +340,7 @@ async function openOne(
       // is `owner/name already exists` on stderr with empty stdout and exit 0.
       const existing = /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+) already exists$/m.exec(stderr);
       if (existing?.[1] !== undefined) {
-        return request.host === undefined || !HOST.test(request.host)
-          ? {}
-          : { url: `https://${request.host}/${existing[1]}` };
+        return { url: `https://${host}/${existing[1]}` };
       }
       return { error: `no fork URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}` };
     } catch (error) {
