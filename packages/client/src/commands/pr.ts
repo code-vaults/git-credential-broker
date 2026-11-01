@@ -370,7 +370,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   }
 
   if (action === 'threads') {
-    if (typeof response.prStatus !== 'string') {
+    if (typeof response.prStatus !== 'string' || response.prStatus.trim() === '') {
       process.stderr.write(`refused [${response.code ?? 'provider-error'}]: the broker returned no review-thread report\n`);
       return 1;
     }

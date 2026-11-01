@@ -955,6 +955,9 @@ function pullRequestNumber(value: unknown): number | undefined {
         if (!Array.isArray(threads.nodes)) {
           throw new Error('GitHub did not answer with reviewThreads.nodes');
         }
+        if (typeof threads.totalCount !== 'number' || !Number.isInteger(threads.totalCount) || threads.totalCount < 0) {
+          throw new Error('GitHub did not answer with reviewThreads.totalCount');
+        }
         const nodes = threads.nodes;
         const report: string[] = [];
         for (const node of nodes as Array<{
@@ -999,12 +1002,9 @@ function pullRequestNumber(value: unknown): number | undefined {
             report.push(`    ${String(comment.databaseId ?? '')} @${String(comment.author?.login ?? '?')}:${more}`);
             for (const line of shown) report.push(`      ${line.slice(0, 300)}`);
           }
-      }
+        }
         // A page is not the whole list. Saying which it is is the difference between a report and a guess.
         const shown = nodes.length;
-        if (typeof threads.totalCount !== 'number' || !Number.isInteger(threads.totalCount) || threads.totalCount < 0) {
-          throw new Error('GitHub did not answer with reviewThreads.totalCount');
-        }
         const total = threads.totalCount;
         if (total > shown) {
           report.push(`... and ${total - shown} more: this asks for the first 50 threads, and the first 10 comments of each`);
