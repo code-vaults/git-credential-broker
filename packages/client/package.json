@@ -1,6 +1,6 @@
 {
   "name": "gcb-client",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "Container-side gcb client: credential helper, setup, and socket-backed commands.",
   "license": "MIT",
   "author": "JounQin <admin@1stg.me>",
@@ -28,7 +28,7 @@
     }
   },
   "dependencies": {
-    "gcb-core": "0.0.3"
+    "gcb-core": "0.1.0"
   },
   "publishConfig": {
     "access": "public",
