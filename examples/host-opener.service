@@ -21,6 +21,7 @@ After=network-online.target
 # http_proxy / https_proxy / no_proxy in this file if this host needs a proxy to reach github.com.
 EnvironmentFile=-/etc/git-cred-broker/proxy.env
 Type=simple
+# For `repo fork`, add --config <broker.config.yml> so the opener checks its allowlist.
 ExecStart=/usr/bin/env gcb host-opener --root %h
 Restart=always
 RestartSec=10
