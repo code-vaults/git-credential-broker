@@ -175,19 +175,29 @@ describe('an existing fork', () => {
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     const config = forkConfig(root, 'acme/widget');
     const dir = channelDir(join(repo, '.git'));
+    const envFile = join(root, 'env');
     const command = join(root, 'not-gh');
-    writeFileSync(command, '#!/bin/sh\necho "me/widget already exists" >&2\nexit 0\n', 'utf8');
+    writeFileSync(
+      command,
+      `#!/bin/sh\nprintf '%s|%s' "$GH_HOST" "$GH_TOKEN" > ${envFile}\necho "me/widget already exists" >&2\nexit 0\n`,
+      'utf8',
+    );
     chmodSync(command, 0o755);
     const previousToken = process.env['GH_TOKEN'];
+    const previousHost = process.env['GH_HOST'];
     try {
       process.env['GH_TOKEN'] = 'inherited-token';
+      process.env['GH_HOST'] = 'enterprise.example';
       const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' });
       const code = await runHostOpener(['--repo', repo, '--command', command, '--config', config, '--once']);
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.url, 'https://github.com/me/widget', 'a request with no host still reports the default');
+      assert.equal(readFileSync(envFile, 'utf8'), 'github.com|', 'and gh is forced to that host without an inherited token');
     } finally {
       if (previousToken === undefined) delete process.env['GH_TOKEN'];
       else process.env['GH_TOKEN'] = previousToken;
+      if (previousHost === undefined) delete process.env['GH_HOST'];
+      else process.env['GH_HOST'] = previousHost;
       rmSync(root, { recursive: true, force: true });
     }
   });
