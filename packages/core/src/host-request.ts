@@ -53,7 +53,7 @@ export const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 export const BRANCH = /^([A-Za-z0-9][A-Za-z0-9._-]{0,38}:)?[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/;
 
 /** `owner/name`, as a fork request names its source. */
-export const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+export const REPOSITORY = /^(?!\.+$)[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
 
 interface HostRequestFields {
   /** `owner/name` as the caller believed it. Recorded, and deliberately never used: the checkout a
@@ -87,6 +87,7 @@ export interface HostIssueRequest extends HostRequestFields {
 export interface HostForkRequest {
   readonly kind: 'fork';
   readonly repo: string;
+  readonly host?: string;
   readonly proxy?: string | null;
   readonly account?: string;
   readonly session?: string;
@@ -351,6 +352,7 @@ export function readRequest(dir: string, id: string): HostRequest | undefined {
     return {
       kind: 'fork',
       repo: parsed.repo,
+      ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
       ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
       ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
       session: parsed.session,
@@ -449,7 +451,9 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
     // Untyped JSON: the file can spell account as an array or a number even though the type cannot.
     (request.account === undefined || typeof request.account === 'string') &&
     (request.kind === 'fork'
-      ? typeof request.repo === 'string' && REPOSITORY.test(request.repo)
+      ? typeof request.repo === 'string' &&
+        REPOSITORY.test(request.repo) &&
+        (request.host === undefined || typeof request.host === 'string')
       : typeof request.title === 'string' &&
         typeof request.body === 'string' &&
         (request.kind === 'issue'

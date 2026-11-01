@@ -846,6 +846,27 @@ describe('createGithubAppProvider', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('forks with a token per owner when there is no authorized user', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fork-owner-'));
+    const tokenPath = join(dir, 'acme.token');
+    writeFileSync(tokenPath, 'github_pat_fork\n', 'utf8');
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      fork: { full_name: 'me/widget', html_url: 'https://github.com/me/widget' },
+    });
+    await providerFor(stub, { userTokens: { acme: tokenPath } }).pullRequest!({
+      action: 'fork',
+      identity: 'user',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+    });
+    const request = stub.calls.find((call) => call.url.endsWith('/forks'));
+    assert.equal(request?.authorization, 'Bearer github_pat_fork');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('forces the app identity when asked, even with a user token on disk', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'identity-app-'));
     writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');

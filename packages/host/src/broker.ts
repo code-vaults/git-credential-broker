@@ -513,12 +513,11 @@ export function createRequestHandler(
           ...(typeof commentId === 'number' ? { comment_id: commentId } : {}),
           ...(typeof head === 'string' ? { head } : {}),
           ...(typeof base === 'string' ? { base } : {}),
-          pr_number: result.number,
-          pr_url: result.url,
+          ...(action === 'fork' ? { fork_url: result.url } : { pr_number: result.number, pr_url: result.url }),
         });
         return {
           ok: true,
-          prNumber: result.number,
+          ...(action === 'fork' ? {} : { prNumber: result.number }),
           prUrl: result.url,
           prState: result.state,
           prStatus: result.status,

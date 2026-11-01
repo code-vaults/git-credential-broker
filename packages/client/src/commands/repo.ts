@@ -46,11 +46,18 @@ export async function runRepo(argv: readonly string[]): Promise<number> {
   const asUser = args.has('as-user');
   if (accounts.length > 1) fail('--as-user may only be given once');
   if (asUser && accounts.length > 0) fail('--as-user cannot be both bare and given a login');
-  const account = accounts[0];
-  if (account !== undefined && !LOGIN.test(account)) {
-    fail(`--as-user must be a GitHub login or no value, got ${JSON.stringify(account)}`);
+  // `--as-user acme/widget` is an unambiguous source repository, not an account: a login cannot
+  // contain a slash. It saves making the positional depend on whether a bare flag was used.
+  let account = accounts[0];
+  let sourceFromAsUser: string | undefined;
+  if (account !== undefined && REPOSITORY.test(account)) {
+    sourceFromAsUser = account;
+    account = undefined;
   }
-  if (account === undefined && !asUser) {
+  if (account !== undefined && !LOGIN.test(account)) {
+    fail(`--as-user must be a GitHub login, a repository, or no value, got ${JSON.stringify(account)}`);
+  }
+  if (account === undefined && sourceFromAsUser === undefined && !asUser) {
     fail('--as-user is required for fork: the app identity cannot own a fork');
   }
 
@@ -62,14 +69,17 @@ export async function runRepo(argv: readonly string[]): Promise<number> {
   const proxy = args.has('no-proxy') ? null : args.value('proxy');
 
   const origin = remoteRepo('origin', process.cwd());
-  const source = args.positionals[1] ?? (origin === undefined ? undefined : `${origin.owner}/${origin.repo}`);
+  const source =
+    sourceFromAsUser ?? args.positionals[1] ?? (origin === undefined ? undefined : `${origin.owner}/${origin.repo}`);
   if (source === undefined) fail('pass owner/name, or run this from a checkout with an origin remote');
   if (!REPOSITORY.test(source)) fail(`not a repository: ${JSON.stringify(source)}`);
-  const host = args.value('host') ?? origin?.host ?? 'github.com';
+  const hostValue = args.value('host');
+  if (args.has('host') && (hostValue === undefined || hostValue.trim() === '')) fail('--host needs a value');
+  const host = hostValue ?? origin?.host ?? 'github.com';
 
   if (account !== undefined) {
     return submitToOpener(
-      { kind: 'fork', repo: source, account, proxy, session: 'repo', pid: process.pid },
+      { kind: 'fork', repo: source, host, account, proxy, session: 'repo', pid: process.pid },
       (answer) => `forked ${source} as ${account}: ${answer.url ?? '(no url)'}`,
     );
   }

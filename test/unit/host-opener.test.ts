@@ -146,6 +146,27 @@ describe('the opener fork route', () => {
   });
 });
 
+describe('an existing fork', () => {
+  it('turns gh\'s already-exists line into a URL', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-opener-fork-existing-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(join(repo, '.git'));
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\necho "me/widget already exists" >&2\nexit 0\n', 'utf8');
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget', host: 'github.com' });
+      const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+      assert.equal(code, 0);
+      assert.equal(readResult(dir, id)?.url, 'https://github.com/me/widget');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('a claim that someone else holds', () => {
   it('does not act on the request, does not answer it, and does not remove the claim', async () => {
     const root = mkdtempSync(join(tmpdir(), 'opener-claim-'));

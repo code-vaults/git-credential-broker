@@ -52,6 +52,31 @@ describe('gcb repo fork', () => {
     }
   });
 
+  it('reads --as-user owner/name as the source', async () => {
+    const repo = checkout();
+    const socketPath = path.join(repo.root, 'broker.sock');
+    let seen: Record<string, unknown> = {};
+    const server = net.createServer((socket) => {
+      socket.once('data', (chunk) => {
+        seen = JSON.parse(chunk.toString().split('\n')[0] ?? '{}') as Record<string, unknown>;
+        socket.end(JSON.stringify({ ok: true, prUrl: 'https://github.com/me/widget' }) + '\n');
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+    try {
+      const result = await runClient(
+        ['repo', 'fork', '--as-user', 'acme/widget', '--socket', socketPath],
+        repo.root,
+      );
+      assert.equal(result.status, 0);
+      assert.equal(seen['path'], 'acme/widget');
+      assert.equal(seen['identity'], 'user');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      repo.cleanup();
+    }
+  });
+
   it('sends a fork request with the user identity', async () => {
     const repo = checkout();
     const socketPath = path.join(repo.root, 'broker.sock');

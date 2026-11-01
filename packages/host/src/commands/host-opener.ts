@@ -43,14 +43,14 @@ const CREATE_TIMEOUT_MS = 120_000;
 export const HOST_OPENER_USAGE = `Usage: gcb host-opener [options]
 
 Run on the host, once, beside the trees the container also sees. It finds the checkouts under the
-roots it is given — ones created later included — and fulfils their requests to create a pull request
-or issue with the gh account each request names, so the result is authored by a person rather than by
+roots it is given — ones created later included — and fulfils their requests to create a pull request, issue
+or fork with the gh account each request names, so the result is authored by a person rather than by
 the app's bot. It does nothing else: it cannot push, merge or close anything.
 
   --root <dir>          A tree to serve, repeatable (default: $HOME)
   --depth <n>           How far below a root to look for checkouts (default: 4)
   --repo <path>         Serve this one checkout instead of discovering any
-  --command <path>      The program that creates a pull request or issue
+  --command <path>      The program that creates a pull request, issue or fork
                         (default: $GIT_BROKER_PR_COMMAND, else gh)
   --arg <token>         An extra argument for that program, before the subcommand (repeatable)
   --interval <seconds>  How often to look for requests (default: 5)
@@ -159,7 +159,7 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
 
   say(single === undefined ? `serving the checkouts under ${scanned.join(', ')}` : `serving ${single}`);
   say(
-    `creating pull requests and issues with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
+    `creating pull requests, issues and forks with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
   );
 
   for (;;) {
@@ -259,7 +259,7 @@ function openerEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
 }
 
 /**
- * Create one pull request or issue.
+ * Create one pull request, issue or fork.
  *
  * @param repo - the checkout to create it in.
  * @param command - the program to call.
@@ -282,10 +282,14 @@ async function openOne(
         env: openerEnv(request.proxy, request.account),
       });
       const match = /https:\/\/[^\s]+\/[^\s/]+\/[^\s/]+/.exec(stdout);
-      if (match?.[0] === undefined) {
-        return { error: `no fork URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}` };
+      if (match?.[0] !== undefined) return { url: match[0] };
+      // With no TTY, gh prints the URL only for a fresh fork; an existing fork older than a minute
+      // is `owner/name already exists` on stderr with empty stdout and exit 0.
+      const existing = /(\S+\/\S+) already exists/.exec(stderr);
+      if (existing?.[1] !== undefined) {
+        return request.host === undefined ? {} : { url: `https://${request.host}/${existing[1]}` };
       }
-      return { url: match[0] };
+      return { error: `no fork URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}` };
     } catch (error) {
       const failure = error as { stderr?: string; message?: string };
       const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();

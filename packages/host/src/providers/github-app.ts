@@ -688,9 +688,13 @@ function pullRequestNumber(value: unknown): number | undefined {
      */
     async pullRequest(request: PullRequestRequest): Promise<PullRequest> {
       if (request.action === 'fork') {
-        const token = await personalToken();
+        let token = await personalToken();
+        const userToken = cfg.userTokens?.[request.owner];
+        if (token === undefined && userToken !== undefined) {
+          token = readFileSync(userToken, 'utf8').trim();
+        }
         if (token === undefined) {
-          throw new ProviderConfigError('no authorized user token for fork; run gcb authorize first');
+          throw new ProviderConfigError('no user token for fork; run gcb authorize or configure userTokens');
         }
         const { text } = await callWithToken('POST', `${api}/repos/${request.owner}/${request.repo}/forks`, token);
         let payload: unknown = null;
