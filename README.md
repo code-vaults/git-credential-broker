@@ -249,9 +249,6 @@ export GIT_BROKER_REQUIRE=1        # fail closed instead of falling back to anot
 gcb setup
 ```
 
-`GCB_OPENER_TIMEOUT_MS` shortens only the client's wait for a host opener; the request stays in the
-channel and the opener may still answer. It exists for tests and debugging, not as a policy knob.
-
 `setup` records `credential.helper = !gcb` (PATH-resolved, so the same config works for a global
 install and a dev shim) and `credential.useHttpPath` (without the latter, git sends no repository
 path and the broker can only authorize host-wide). The helper is resolved by the git process later,
@@ -406,6 +403,8 @@ directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. Th
 already exist, and inherited `GH_TOKEN`/`GITHUB_TOKEN`/`GH_ENTERPRISE_TOKEN`/`GITHUB_ENTERPRISE_TOKEN`/`GH_HOST` are ignored
 for that request. Any existing account directory can be named, so this is a selector rather than a
 gate. A request with no `--as-user` uses the broker route and does not select the opener's login.
+`GCB_OPENER_TIMEOUT_MS` shortens only the client's wait for the opener; the request stays in the
+channel and the opener may still answer. It exists for tests and debugging, not as a policy knob.
 The opener never runs a shell, and
 the program it calls is configuration rather than a hard-coded `gh`: `--command /path/to/gh`, or
 `$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
