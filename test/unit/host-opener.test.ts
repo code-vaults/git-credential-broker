@@ -139,18 +139,18 @@ describe('the opener fork route', () => {
       'utf8',
     );
     chmodSync(command, 0o755);
+    const previousToken = process.env['GH_TOKEN'];
     try {
-      const previousToken = process.env['GH_TOKEN'];
       process.env['GH_TOKEN'] = 'inherited-token';
       const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget', host: 'github.com' });
       const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
-      if (previousToken === undefined) delete process.env['GH_TOKEN'];
-      else process.env['GH_TOKEN'] = previousToken;
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.url, 'https://github.com/me/widget');
       assert.deepEqual(readFileSync(argvFile, 'utf8').trim().split('\n'), ['repo', 'fork', 'acme/widget']);
       assert.equal(readFileSync(envFile, 'utf8'), 'github.com|');
     } finally {
+      if (previousToken === undefined) delete process.env['GH_TOKEN'];
+      else process.env['GH_TOKEN'] = previousToken;
       rmSync(root, { recursive: true, force: true });
     }
   });
@@ -166,16 +166,16 @@ describe('an existing fork', () => {
     const command = join(root, 'not-gh');
     writeFileSync(command, '#!/bin/sh\necho "me/widget already exists" >&2\nexit 0\n', 'utf8');
     chmodSync(command, 0o755);
+    const previousToken = process.env['GH_TOKEN'];
     try {
-      const previousToken = process.env['GH_TOKEN'];
       process.env['GH_TOKEN'] = 'inherited-token';
       const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget', host: 'github.com' });
       const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
-      if (previousToken === undefined) delete process.env['GH_TOKEN'];
-      else process.env['GH_TOKEN'] = previousToken;
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.url, 'https://github.com/me/widget');
     } finally {
+      if (previousToken === undefined) delete process.env['GH_TOKEN'];
+      else process.env['GH_TOKEN'] = previousToken;
       rmSync(root, { recursive: true, force: true });
     }
   });
