@@ -775,6 +775,24 @@ describe('createGithubAppProvider', () => {
     );
   });
 
+  it('rejects a review-thread body that is not JSON data', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      threadsResponse: 'not an object',
+    });
+    await assert.rejects(
+      providerFor(stub).pullRequest!({
+        action: 'threads',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        number: 42,
+      }),
+      /review-thread JSON/u,
+    );
+  });
+
   it('rejects a thread without a comments connection', async () => {
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],

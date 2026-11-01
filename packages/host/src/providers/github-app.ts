@@ -930,11 +930,11 @@ function pullRequestNumber(value: unknown): number | undefined {
             'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:50){totalCount nodes{id isResolved path line comments(first:10){nodes{databaseId author{login} body}}}}}}}',
           variables: { owner: request.owner, name: request.repo, number: request.number },
         });
-        let listed: unknown = null;
+        let listed: unknown;
         try {
           listed = JSON.parse(raw);
         } catch {
-          listed = null;
+          throw new Error('GitHub did not answer with review-thread JSON');
         }
         // A refusal that reads as "no threads" is worse than one that reads as a refusal: malformed
         // JSON, a GraphQL error, and a missing reviewThreads shape are all failures, not an empty list.
@@ -958,48 +958,48 @@ function pullRequestNumber(value: unknown): number | undefined {
         const nodes = threads.nodes;
         const report: string[] = [];
         for (const node of nodes as Array<{
-            id?: unknown;
-            isResolved?: unknown;
-            path?: unknown;
-            line?: unknown;
-            comments?: { nodes?: unknown };
+          id?: unknown;
+          isResolved?: unknown;
+          path?: unknown;
+          line?: unknown;
+          comments?: { nodes?: unknown };
+        }>) {
+          report.push(
+            `${node.isResolved === true ? 'resolved' : 'open    '} ${String(node.id ?? '')}  ${String(node.path ?? '')}:${String(node.line ?? '')}`,
+          );
+          const comments = node.comments?.nodes;
+          if (!Array.isArray(comments)) {
+            throw new Error('GitHub did not answer with review-thread comments');
+          }
+          for (const comment of comments as Array<{
+            databaseId?: unknown;
+            author?: { login?: unknown };
+            body?: unknown;
           }>) {
-            report.push(
-              `${node.isResolved === true ? 'resolved' : 'open    '} ${String(node.id ?? '')}  ${String(node.path ?? '')}:${String(node.line ?? '')}`,
-            );
-            const comments = node.comments?.nodes;
-            if (!Array.isArray(comments)) {
-              throw new Error('GitHub did not answer with review-thread comments');
+            // The whole comment, not its first line and not 120 characters of it: a review bot puts the finding
+            // in the lines below the header, and a report that drops them sends the reader to the web UI for the
+            // one thing this command exists to show.
+            const body = String(comment.body ?? '');
+            // The prose, not the first twelve lines of the comment: a review bot prefixes its finding with the
+            // commands it ran and a fence of their output, so counting raw lines reads the preamble and never
+            // reaches the claim. Fences and the bot's own metadata lines are dropped, and the cap then applies to
+            // what is left, which is what the reader wants and what the writer meant.
+            const bodyLines = body.split('\n');
+            const kept: string[] = [];
+            let inFence = false;
+            for (const raw of bodyLines) {
+              const line = raw.trim();
+              if (line.startsWith('```')) { inFence = !inFence; continue; }
+              if (inFence) continue;
+              if (/^(🏁|🔎|⚙️|🌐|💡|💬|🔗|Repository:|Length of output:|Proposed fix$|---$|_?\s*[🔒📐🎯🩺🟡🟠])/u.test(line)) continue;
+              kept.push(line.replace(/<\/?[a-z][^>]*>/gi, '').trim());
             }
-            for (const comment of comments as Array<{
-              databaseId?: unknown;
-              author?: { login?: unknown };
-              body?: unknown;
-            }>) {
-              // The whole comment, not its first line and not 120 characters of it: a review bot puts the finding
-              // in the lines below the header, and a report that drops them sends the reader to the web UI for the
-              // one thing this command exists to show.
-              const body = String(comment.body ?? '');
-              // The prose, not the first twelve lines of the comment: a review bot prefixes its finding with the
-              // commands it ran and a fence of their output, so counting raw lines reads the preamble and never
-              // reaches the claim. Fences and the bot's own metadata lines are dropped, and the cap then applies to
-              // what is left, which is what the reader wants and what the writer meant.
-              const bodyLines = body.split('\n');
-              const kept: string[] = [];
-              let inFence = false;
-              for (const raw of bodyLines) {
-                const line = raw.trim();
-                if (line.startsWith('```')) { inFence = !inFence; continue; }
-                if (inFence) continue;
-                if (/^(🏁|🔎|⚙️|🌐|💡|💬|🔗|Repository:|Length of output:|Proposed fix$|---$|_?\s*[🔒📐🎯🩺🟡🟠])/u.test(line)) continue;
-                kept.push(line.replace(/<\/?[a-z][^>]*>/gi, '').trim());
-              }
-              const shown = kept.filter((line) => line !== '').slice(0, 14);
-              const more = kept.length > shown.length ? ` (+${kept.length - shown.length} more lines)` : '';
-              report.push(`    ${String(comment.databaseId ?? '')} @${String(comment.author?.login ?? '?')}:${more}`);
-              for (const line of shown) report.push(`      ${line.slice(0, 300)}`);
-            }
-        }
+            const shown = kept.filter((line) => line !== '').slice(0, 14);
+            const more = kept.length > shown.length ? ` (+${kept.length - shown.length} more lines)` : '';
+            report.push(`    ${String(comment.databaseId ?? '')} @${String(comment.author?.login ?? '?')}:${more}`);
+            for (const line of shown) report.push(`      ${line.slice(0, 300)}`);
+          }
+      }
         // A page is not the whole list. Saying which it is is the difference between a report and a guess.
         const shown = nodes.length;
         if (typeof threads.totalCount !== 'number' || !Number.isInteger(threads.totalCount) || threads.totalCount < 0) {
