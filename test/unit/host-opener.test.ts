@@ -158,7 +158,7 @@ describe('the opener fork route', () => {
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.url, 'https://github.com/me/widget');
       assert.deepEqual(readFileSync(argvFile, 'utf8').trim().split('\n'), ['repo', 'fork', 'Acme/Widget']);
-      assert.equal(readFileSync(envFile, 'utf8'), 'github.com|');
+      assert.equal(readFileSync(envFile, 'utf8'), 'github.com|inherited-token');
     } finally {
       if (previousToken === undefined) delete process.env['GH_TOKEN'];
       else process.env['GH_TOKEN'] = previousToken;
@@ -192,7 +192,7 @@ describe('an existing fork', () => {
       const code = await runHostOpener(['--repo', repo, '--command', command, '--config', config, '--once']);
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.url, 'https://github.com/me/widget', 'a request with no host still reports the default');
-      assert.equal(readFileSync(envFile, 'utf8'), 'github.com|', 'and gh is forced to that host without an inherited token');
+      assert.equal(readFileSync(envFile, 'utf8'), 'github.com|inherited-token', 'and gh is forced to that host');
     } finally {
       if (previousToken === undefined) delete process.env['GH_TOKEN'];
       else process.env['GH_TOKEN'] = previousToken;
