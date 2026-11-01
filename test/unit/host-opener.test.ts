@@ -119,11 +119,11 @@ describe('the opener issue route', () => {
   });
 });
 
-function forkConfig(root: string, allow: string): string {
+function forkConfig(root: string, allow: string, host = 'github.com'): string {
   const path = join(root, 'broker.config.yml');
   writeFileSync(
     path,
-    `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  github.com:\n    provider: static\n    username: x\n    password: y\n    allow:\n      - ${allow}\n`,
+    `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  ${host}:\n    provider: static\n    username: x\n    password: y\n    allow:\n      - ${allow}\n`,
     'utf8',
   );
   return path;
@@ -198,6 +198,38 @@ describe('an existing fork', () => {
       else process.env['GH_TOKEN'] = previousToken;
       if (previousHost === undefined) delete process.env['GH_HOST'];
       else process.env['GH_HOST'] = previousHost;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('an enterprise fork host', () => {
+  it('keeps the token class gh uses for that host', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-opener-fork-ghes-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget', 'ghe.example');
+    const dir = channelDir(join(repo, '.git'));
+    const envFile = join(root, 'env');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      `#!/bin/sh\nprintf '%s|%s' "$GH_HOST" "$GH_ENTERPRISE_TOKEN" > ${envFile}\necho "me/widget already exists" >&2\nexit 0\n`,
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    const previous = process.env['GH_ENTERPRISE_TOKEN'];
+    try {
+      process.env['GH_ENTERPRISE_TOKEN'] = 'enterprise-token';
+      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget', host: 'ghe.example' });
+      const code = await runHostOpener(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      assert.equal(readResult(dir, id)?.url, 'https://ghe.example/me/widget');
+      assert.equal(readFileSync(envFile, 'utf8'), 'ghe.example|enterprise-token');
+    } finally {
+      if (previous === undefined) delete process.env['GH_ENTERPRISE_TOKEN'];
+      else process.env['GH_ENTERPRISE_TOKEN'] = previous;
       rmSync(root, { recursive: true, force: true });
     }
   });

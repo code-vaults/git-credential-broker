@@ -269,17 +269,8 @@ async function sweep(
 /** Environment for one gh call: the selected account or inherited config, plus the proxy choice. */
 function forkEnv(proxy: ProxyChoice, account: string | undefined, host: string): NodeJS.ProcessEnv {
   const env = openerEnv(proxy, account);
-  if (account === undefined) {
-    // The opener's own github.com token is the account this request selects. For any other host it
-    // is a credential for a different instance, so drop it; enterprise tokens never match GH_HOST.
-    if (host.toLowerCase() !== 'github.com') {
-      delete env['GH_TOKEN'];
-      delete env['GITHUB_TOKEN'];
-    }
-    delete env['GH_ENTERPRISE_TOKEN'];
-    delete env['GITHUB_ENTERPRISE_TOKEN'];
-  }
-  // The resolved host is the one the allowlist was checked against.
+  // gh chooses between GH_TOKEN and GH_ENTERPRISE_TOKEN by host; forcing GH_HOST is what keeps an
+  // inherited token from selecting another instance. Named accounts already had their tokens removed.
   env['GH_HOST'] = host;
   return env;
 }
