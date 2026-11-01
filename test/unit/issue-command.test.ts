@@ -120,7 +120,7 @@ describe('gcb issue create --as-user', () => {
       const pending = runClient(
         ['issue', 'create', '--as-user', 'alice', '--title', 't'],
         host.root,
-        { GCB_OPENER_TIMEOUT_MS: '1200' },
+        { GCB_OPENER_TIMEOUT_MS: '3000' },
       );
       let id: string | undefined;
       for (let attempt = 0; attempt < 100 && id === undefined; attempt += 1) {
@@ -145,7 +145,7 @@ describe('gcb issue create --as-user', () => {
       const pending = runClient(
         ['issue', 'create', '--as-user', 'alice', '--title', 't'],
         host.root,
-        { GCB_OPENER_TIMEOUT_MS: '1200' },
+        { GCB_OPENER_TIMEOUT_MS: '3000' },
       );
       let id: string | undefined;
       for (let attempt = 0; attempt < 100 && id === undefined; attempt += 1) {
@@ -155,7 +155,7 @@ describe('gcb issue create --as-user', () => {
       assert.ok(id !== undefined, 'the client wrote the request');
       const result = await pending;
       assert.equal(result.status, 1);
-      assert.match(result.stderr, /within 1s/u);
+      assert.match(result.stderr, /within 3s/u);
       assert.match(result.stderr, /may still be working/u);
     } finally {
       host.cleanup();

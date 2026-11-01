@@ -249,6 +249,9 @@ export GIT_BROKER_REQUIRE=1        # fail closed instead of falling back to anot
 gcb setup
 ```
 
+`GCB_OPENER_TIMEOUT_MS` shortens only the client's wait for a host opener; the request stays in the
+channel and the opener may still answer. It exists for tests and debugging, not as a policy knob.
+
 `setup` records `credential.helper = !gcb` (PATH-resolved, so the same config works for a global
 install and a dev shim) and `credential.useHttpPath` (without the latter, git sends no repository
 path and the broker can only authorize host-wide). The helper is resolved by the git process later,
