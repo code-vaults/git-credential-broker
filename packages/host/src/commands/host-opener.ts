@@ -240,6 +240,19 @@ async function sweep(dir: string, repo: string, command: string, extra: readonly
 }
 
 /** Environment for one gh call: the selected account or inherited config, plus the proxy choice. */
+function forkEnv(proxy: ProxyChoice, account: string | undefined, host: string | undefined): NodeJS.ProcessEnv {
+  const env = openerEnv(proxy, account);
+  if (host === undefined) return env;
+  // A host selected by the request must not be overridden by a token inherited from the opener's
+  // own environment; the account's gh config decides the credential for that host.
+  delete env['GH_TOKEN'];
+  delete env['GITHUB_TOKEN'];
+  delete env['GH_ENTERPRISE_TOKEN'];
+  delete env['GITHUB_ENTERPRISE_TOKEN'];
+  env['GH_HOST'] = host;
+  return env;
+}
+
 function openerEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
   const env = { ...process.env };
   if (account !== undefined) {
@@ -283,10 +296,7 @@ async function openOne(
         cwd: repo,
         timeout: CREATE_TIMEOUT_MS,
         maxBuffer: 1 << 20,
-        env: {
-          ...openerEnv(request.proxy, request.account),
-          ...(request.host === undefined ? {} : { GH_HOST: request.host }),
-        },
+        env: forkEnv(request.proxy, request.account, request.host),
       });
       const match = /https:\/\/[^\s]+\/[^\s/]+\/[^\s/]+/.exec(stdout);
       if (match?.[0] !== undefined) return { url: match[0] };
