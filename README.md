@@ -406,7 +406,10 @@ gate. A request with no `--as-user` uses the broker route and does not select th
 The opener never runs a shell, and
 the program it calls is configuration rather than a hard-coded `gh`: `--command /path/to/gh`, or
 `$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
-anything. `--root` may be repeated and defaults to `$HOME`; checkouts within `--depth` levels of a root
+anything. `GCB_OPENER_TIMEOUT_MS` changes only the client's wait for the opener; the request stays in the
+channel and the opener may still answer. It exists for tests and debugging, not as a policy knob.
+
+`--root` may be repeated and defaults to `$HOME`; checkouts within `--depth` levels of a root
 (4 by default) are served with no further setup, including ones created later, which the next sweep
 picks up. The bound exists because the walk repeats every `--interval` seconds; raise `--depth` for
 deeper layouts. To start it once and keep it,
