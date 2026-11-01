@@ -79,9 +79,13 @@ export async function submitToOpener(
   } catch (error) {
     fail((error as Error).message);
   }
-  const answer = await waitForResult(dir, id, ANSWER_TIMEOUT_MS);
+  // A short override makes the timeout path testable without a 180-second test; absent means the
+  // contract value.
+  const configured = Number(process.env['GCB_OPENER_TIMEOUT_MS']);
+  const timeoutMs = Number.isInteger(configured) && configured > 0 ? configured : ANSWER_TIMEOUT_MS;
+  const answer = await waitForResult(dir, id, timeoutMs);
   removeResult(dir, id);
-  if (answer === undefined) fail(noAnswerMessage(dir, id, noun, ANSWER_TIMEOUT_MS));
+  if (answer === undefined) fail(noAnswerMessage(dir, id, noun, timeoutMs));
   if (answer.error !== undefined) fail(`the host opener could not open it: ${answer.error}`);
   say(success(answer));
   return 0;

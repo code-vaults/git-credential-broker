@@ -20,10 +20,14 @@ import { sleep, tryRunAsync, type RunResult } from '../common/run.ts';
 
 const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));
 
-function runClient(args: readonly string[], cwd: string): Promise<RunResult> {
+function runClient(
+  args: readonly string[],
+  cwd: string,
+  extraEnv: NodeJS.ProcessEnv = {},
+): Promise<RunResult> {
   return tryRunAsync(process.execPath, ['--conditions=development', CLIENT_BIN, ...args], {
     cwd,
-    env: process.env,
+    env: { ...process.env, ...extraEnv },
     timeoutMs: 5_000,
   });
 }
@@ -104,6 +108,55 @@ describe('gcb issue create --as-user', () => {
       const result = await pending;
       assert.equal(result.status, 0);
       assert.match(result.stdout, /opened issue #42 as alice: https:\/\/github\.com\/acme\/widget\/issues\/42/u);
+    } finally {
+      host.cleanup();
+    }
+  });
+
+  it('reports a request the opener took and dropped', async () => {
+    const host = fixture();
+    try {
+      writeOpener(host.dir, { pid: process.pid, kinds: ['issue'] });
+      const pending = runClient(
+        ['issue', 'create', '--as-user', 'alice', '--title', 't'],
+        host.root,
+        { GCB_OPENER_TIMEOUT_MS: '1200' },
+      );
+      let id: string | undefined;
+      for (let attempt = 0; attempt < 100 && id === undefined; attempt += 1) {
+        id = requests(host.dir)[0];
+        if (id === undefined) await sleep(10);
+      }
+      assert.ok(id !== undefined, 'the client wrote the request');
+      fs.rmSync(path.join(host.dir, id + '.json'), { force: true });
+      const result = await pending;
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /took .* and dropped it without answering/u);
+      assert.match(result.stderr, /does not understand issue requests/u);
+    } finally {
+      host.cleanup();
+    }
+  });
+
+  it('keeps the in-flight wording when the request is still present', async () => {
+    const host = fixture();
+    try {
+      writeOpener(host.dir, { pid: process.pid, kinds: ['issue'] });
+      const pending = runClient(
+        ['issue', 'create', '--as-user', 'alice', '--title', 't'],
+        host.root,
+        { GCB_OPENER_TIMEOUT_MS: '1200' },
+      );
+      let id: string | undefined;
+      for (let attempt = 0; attempt < 100 && id === undefined; attempt += 1) {
+        id = requests(host.dir)[0];
+        if (id === undefined) await sleep(10);
+      }
+      assert.ok(id !== undefined, 'the client wrote the request');
+      const result = await pending;
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /within 1s/u);
+      assert.match(result.stderr, /may still be working/u);
     } finally {
       host.cleanup();
     }
