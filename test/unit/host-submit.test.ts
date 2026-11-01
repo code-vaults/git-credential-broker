@@ -40,6 +40,7 @@ describe('an opener request without an answer', () => {
       fs.writeFileSync(path.join(host.dir, 'abc.json.working'), '{}');
       const claimedMessage = noAnswerMessage(host.dir, 'abc', 'pull request', 1_500);
       assert.match(claimedMessage, /within 2s/u);
+      assert.match(noAnswerMessage(host.dir, 'abc', 'pull request', 100), /within 100ms/u);
       assert.match(claimedMessage, /may still be working/u);
     } finally {
       host.cleanup();
