@@ -83,9 +83,12 @@ export async function submitToOpener(
   // contract value.
   const configured = Number(process.env['GCB_OPENER_TIMEOUT_MS']);
   const timeoutMs = Number.isInteger(configured) && configured > 0 ? configured : ANSWER_TIMEOUT_MS;
-  const answer = await waitForResult(dir, id, timeoutMs);
-  removeResult(dir, id);
+  let answer = await waitForResult(dir, id, timeoutMs);
+  // A result can land between the deadline and the cleanup. Re-read before claiming the request
+  // disappeared; deleting it first would turn a successful, late answer into a false "dropped".
+  if (answer === undefined) answer = await waitForResult(dir, id, 300, 50);
   if (answer === undefined) fail(noAnswerMessage(dir, id, noun, timeoutMs));
+  removeResult(dir, id);
   if (answer.error !== undefined) fail(`the host opener could not open it: ${answer.error}`);
   say(success(answer));
   return 0;
