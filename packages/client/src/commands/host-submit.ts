@@ -83,7 +83,7 @@ export async function submitToOpener(
   // contract value.
   const configured = Number(process.env['GCB_OPENER_TIMEOUT_MS']);
   const timeoutMs = Number.isInteger(configured) && configured > 0 ? configured : ANSWER_TIMEOUT_MS;
-  let answer = await waitForResult(dir, id, timeoutMs);
+  let answer = await waitForResult(dir, id, timeoutMs, 50);
   // A result can land between the deadline and the cleanup. Re-read before claiming the request
   // disappeared; deleting it first would turn a successful, late answer into a false "dropped".
   if (answer === undefined) answer = await waitForResult(dir, id, 300, 50);
