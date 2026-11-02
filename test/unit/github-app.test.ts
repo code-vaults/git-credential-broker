@@ -926,6 +926,41 @@ describe('createGithubAppProvider', () => {
     );
   });
 
+  it('does not count an empty comment body as omitted lines', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      threadsResponse: {
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                totalCount: 1,
+                nodes: [
+                  {
+                    id: 'PRRT_x',
+                    isResolved: false,
+                    path: 'a.ts',
+                    line: 1,
+                    comments: { nodes: [{ databaseId: 1, author: { login: 'acme' }, body: '' }] },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    });
+    const listed = await providerFor(stub).pullRequest!({
+      action: 'threads',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 42,
+    });
+    assert.doesNotMatch(listed.status ?? '', /\(\+1 more lines\)/u);
+  });
+
   it('reports an explicit empty reviewThreads list as no threads', async () => {
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
