@@ -140,6 +140,31 @@ describe('config watcher', () => {
     }
   });
 
+  it('reports a new failure reason for the same digest', () => {
+    const file = path.join(scratch, 'reason.config.yml');
+    fs.writeFileSync(file, 'same\n');
+    const errors: string[] = [];
+    let message = 'first reason';
+    const watcher = new ConfigWatcher({
+      file,
+      intervalMs: 60_000,
+      reload: () => {
+        throw new Error(message);
+      },
+      onError: (error) => errors.push(error.message),
+    });
+    try {
+      watcher.check(true);
+      watcher.check(false);
+      assert.deepEqual(errors, ['first reason']);
+      message = 'second reason';
+      watcher.check(false);
+      assert.deepEqual(errors, ['first reason', 'second reason']);
+    } finally {
+      watcher.stop();
+    }
+  });
+
   it('reports a read error once per message', () => {
     const file = path.join(scratch, 'unreadable.config.yml');
     fs.writeFileSync(file, 'one\n');

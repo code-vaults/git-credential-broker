@@ -56,8 +56,8 @@ export class ConfigWatcher {
   #last: string | undefined;
   /** A SIGHUP arrived while the file was absent; honour it when the file returns. */
   #forcePending = false;
-  /** The broken content already reported, so a deterministic failure is not logged every tick. */
-  #failedDigest: string | undefined;
+  /** The (digest, reason) already reported, so a deterministic failure is not logged every tick. */
+  #failedReport: string | undefined;
   /** The read error already reported, so a permanently unreadable file is not logged every tick. */
   #readError: string | undefined;
   #timer: NodeJS.Timeout | undefined;
@@ -134,7 +134,7 @@ export class ConfigWatcher {
     if (!this.#forcePending && next.digest === this.#last) return;
     try {
       this.#last = this.#reload();
-      this.#failedDigest = undefined;
+      this.#failedReport = undefined;
       this.#forcePending = false;
     } catch (error) {
       // Keep the last good snapshot. Clearing the digest retries the same bytes on the next tick, for
@@ -142,8 +142,9 @@ export class ConfigWatcher {
       // audit log and the container log every five seconds.
       this.#last = undefined;
       this.#forcePending = false;
-      if (next.digest !== this.#failedDigest) {
-        this.#failedDigest = next.digest;
+      const report = `${next.digest}\0${(error as Error).message}`;
+      if (report !== this.#failedReport) {
+        this.#failedReport = report;
         this.#onError(error as Error);
       }
     }
