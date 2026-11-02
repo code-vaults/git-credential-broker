@@ -443,14 +443,16 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
  * @param path - path to the YAML config.
  * @returns the validated configuration.
  */
-export function loadConfig(path: string): BrokerConfig {
-  let text: string;
+export function readConfigText(path: string): string {
   try {
-    text = readFileSync(path, 'utf8');
+    return readFileSync(path, 'utf8');
   } catch (error) {
     throw new Error(`cannot read config ${path}: ${(error as Error).message}`);
   }
-  return loadConfigText(text, path);
+}
+
+export function loadConfig(path: string): BrokerConfig {
+  return loadConfigText(readConfigText(path), path);
 }
 
 /** Parse and validate configuration text already read from `path`. */

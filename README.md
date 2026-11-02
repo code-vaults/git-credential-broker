@@ -564,7 +564,7 @@ file.
 
 ## Configuration reference
 
-The daemon watches the configuration directory with `fs.watch`; when the native watcher is unavailable it falls back to polling every 5 seconds. A valid change is applied without restarting, and an invalid one keeps the last good snapshot. Send `SIGHUP` to force a reload after fixing a file. `socketPath`, `socketMode` and `auditPath` require a restart.
+The daemon watches the configuration directory with `fs.watch` for low latency and also runs a 5-second digest poll as a safety net; if the native watcher is unavailable, polling runs alone. A valid change is applied without restarting, and an invalid one keeps the last good snapshot. Send `SIGHUP` to force a reload after fixing a file. `socketPath`, `socketMode` and `auditPath` require a restart.
 
 The broker only reads this file. It is YAML. The loader discovers `broker.config.yml` by default;
 the old `broker.config.json` name is no longer discovered, so rename or convert an existing

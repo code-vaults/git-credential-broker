@@ -14,7 +14,7 @@ describe('config watcher', () => {
     const file = path.join(scratch, 'broker.config.yml');
     fs.writeFileSync(file, 'one\n');
     let loads = 0;
-    const watcher = new ConfigWatcher({ file, intervalMs: 60_000, reload: () => { loads += 1; } });
+    const watcher = new ConfigWatcher({ file, intervalMs: 60_000, reload: () => { loads += 1; return fingerprintConfig(file)?.digest ?? ''; } });
     try {
       watcher.check(false);
       assert.equal(loads, 0);
@@ -53,6 +53,32 @@ describe('config watcher', () => {
       assert.equal(loads, 1, 'the bad digest is not retried on every poll');
       watcher.check(true);
       assert.equal(loads, 2, 'SIGHUP forces a retry');
+    } finally {
+      watcher.stop();
+    }
+  });
+
+  it('reloads from a real file write through the watcher', async () => {
+    const file = path.join(scratch, 'watched.config.yml');
+    fs.writeFileSync(file, 'one\n');
+    let loads = 0;
+    const watcher = new ConfigWatcher({
+      file,
+      intervalMs: 60_000,
+      debounceMs: 20,
+      reload: () => {
+        loads += 1;
+        return 'digest';
+      },
+    });
+    watcher.start();
+    try {
+      fs.writeFileSync(file, 'two\n');
+      const deadline = Date.now() + 2_000;
+      while (loads === 0 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.equal(loads, 1);
     } finally {
       watcher.stop();
     }

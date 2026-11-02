@@ -154,7 +154,8 @@ services:
     command:
 ${command}
     volumes:${codeMount}
-      # The directory, not the file: an atomic replacement on the host must be visible for reload.
+      # The directory, not the file: an atomic replacement on the host must be visible for reload;
+      # this exposes the rest of that directory read-only too.
       - ${path.dirname(configPath)}:${path.dirname(SIDECAR.configPath)}:ro
       - ${input.dir}/app.pem:${SIDECAR.keyPath}:ro
 ${userRefreshMount}

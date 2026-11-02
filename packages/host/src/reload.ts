@@ -1,8 +1,9 @@
 /**
- * Watch the configuration file for a change, with a poll as the reliable path.
+ * Watch the configuration file for a change, with a poll as the safety net.
  *
- * inotify is not dependable on the shares this broker runs from (SMB/NFS/9p and single-file bind
- * mounts), so the timer is the normal trigger and `fs.watch` only makes it faster where it works.
+ * `fs.watch` is the low-latency trigger. Events can be missed (network filesystems and bind mounts
+ * have been observed dropping them), so a 5-second digest poll runs alongside it; a digest that has
+ * not changed costs one read and no reload.
  */
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -33,12 +34,12 @@ export function fingerprintConfig(file: string): ConfigFingerprint | undefined {
 /** Options for {@link ConfigWatcher}. */
 export interface ConfigWatcherOptions {
   readonly file: string;
-  /** Poll interval; also the fallback when no event arrives. */
+  /** Safety poll interval, used alongside the watch and as the fallback when it is unavailable. */
   readonly intervalMs?: number;
   /** How long to coalesce a burst of events. */
   readonly debounceMs?: number;
   /** Reload the file; throws when invalid. Returns the digest of the bytes it loaded. */
-  readonly reload: () => string | void;
+  readonly reload: () => string;
   /** Digest already loaded at start-up; avoids a race between load and watcher construction. */
   readonly initialDigest?: string;
   /** Report a failed reload; the last good snapshot stays active. */
@@ -50,7 +51,7 @@ export class ConfigWatcher {
   readonly #file: string;
   readonly #intervalMs: number;
   readonly #debounceMs: number;
-  readonly #reload: () => string | void;
+  readonly #reload: () => string;
   readonly #onError: (error: Error) => void;
   #last: string | undefined;
   #timer: NodeJS.Timeout | undefined;
@@ -73,6 +74,7 @@ export class ConfigWatcher {
    * @returns this watcher, for chaining.
    */
   start(): this {
+    this.#startPolling();
     try {
       this.#watch = fs.watch(path.dirname(this.#file), { persistent: false }, (_event, name) => {
         if (name !== null && name !== path.basename(this.#file)) return;
@@ -83,7 +85,6 @@ export class ConfigWatcher {
       this.#watch.on('error', () => {
         this.#watch?.close();
         this.#watch = undefined;
-        this.#startPolling();
       });
     } catch {
       this.#startPolling();
@@ -91,7 +92,7 @@ export class ConfigWatcher {
     return this;
   }
 
-  /** Polling is the fallback only: a working native watch is the primary trigger. */
+  /** Start the safety poll once; the watch is the primary, low-latency trigger. */
   #startPolling(): void {
     if (this.#stopped || this.#timer !== undefined) return;
     this.#timer = setInterval(() => this.check(false), this.#intervalMs);
@@ -114,8 +115,7 @@ export class ConfigWatcher {
     }
     if (next === undefined || (!force && next.digest === this.#last)) return;
     try {
-      const loaded = this.#reload();
-      this.#last = typeof loaded === 'string' ? loaded : next.digest;
+      this.#last = this.#reload();
     } catch (error) {
       // Keep the last good snapshot. Remember the bad digest so a broken file is not retried on
       // every tick; SIGHUP still forces an attempt after the operator fixes it.

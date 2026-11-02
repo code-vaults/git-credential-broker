@@ -128,8 +128,8 @@ The configuration is the source of truth and must be comfortable to edit by hand
 - [ ] Live reload (no restart):
       - [x] watch the configuration **directory**, not a single file, with `fs.watch`; debounce
         300ms; an unavailable watch falls back to polling;
-      - [x] fall back to polling every 5 seconds and compare a content hash when `fs.watch` is
-        unavailable; the native watcher is the primary trigger;
+      - [x] poll every 5 seconds and compare a content hash alongside `fs.watch`; events have been
+        observed to be missed, so the poll is the safety net rather than the primary trigger;
       - [x] read the whole file, parse, validate, then atomically swap a frozen snapshot. Any parse or
         validation failure keeps the last good snapshot, logs and audits `config reload failed`,
         and leaves the service running;

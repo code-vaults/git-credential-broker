@@ -8,12 +8,11 @@
  * before restarting the service.
  */
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import type { Writable } from 'node:stream';
 
 import { createAudit } from './audit.ts';
 import { startBroker } from './broker.ts';
-import { assertKeysReadable, assertUserTokensReadable, loadConfigText, resolveConfigPath } from './config.ts';
+import { assertKeysReadable, assertUserTokensReadable, loadConfigText, readConfigText, resolveConfigPath } from './config.ts';
 import { createProvider } from './providers/index.ts';
 import type { ProviderDeps } from './providers/index.ts';
 import { ConfigWatcher } from './reload.ts';
@@ -102,7 +101,7 @@ export async function runDaemon(
   const resolved = resolveConfigPath(configPath);
 
   const load = (): { config: BrokerConfig; providers: Map<string, Provider>; digest: string } => {
-    const text = readFileSync(resolved, 'utf8');
+    const text = readConfigText(resolved);
     const next = loadConfigText(text, resolved);
     assertKeysReadable(next);
     assertUserTokensReadable(next);

@@ -80,8 +80,10 @@ services:
       - -c
       - exec npx --yes --package 'gcb-host' gcb daemon --config /etc/git-cred-broker/broker.config.yml
     volumes:
-      # The configuration and the key: read-only, mounted here and nowhere else.
-      - ./broker.config.yml:/etc/git-cred-broker/broker.config.yml:ro
+      # The configuration directory, not one file: an atomic replacement on the host must stay
+      # visible to the container's watcher. This also exposes the key and user.refresh here, but
+      # both are mounted individually below.
+      - .:/etc/git-cred-broker:ro
       - ./app.pem:/etc/git-cred-broker/app.pem:ro
       # Writable, and the only secret that is: GitHub rotates the refresh token on every exchange,
       # so the broker has to write the new one back. It sits beside the key on the host and is
