@@ -166,8 +166,7 @@ export function createRequestHandler(
   }
 
   async function handleRequest(message: Record<string, unknown>, proxy: ProxyChoice): Promise<WireResponse> {
-    const auditEvent =
-      message['op'] === 'action' ? 'action' : message['op'] === 'pull-request' ? 'pull-request' : 'credential';
+    const auditEvent = auditEventFor(message['op']);
     const context: DecisionContext = {
       host: typeof message['host'] === 'string' ? message['host'] : null,
       repo: null,
@@ -585,10 +584,16 @@ export function createRequestHandler(
         CODES.BAD_REQUEST,
         'invalid proxy',
         'invalid proxy',
+        undefined,
+        auditEventFor(message['op']),
       );
     }
     return withProxy(proxy, () => handleRequest(message, proxy));
   };
+}
+
+function auditEventFor(op: unknown): 'action' | 'pull-request' | 'credential' {
+  return op === 'action' ? 'action' : op === 'pull-request' ? 'pull-request' : 'credential';
 }
 
 /** Options for {@link startBroker}. */

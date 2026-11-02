@@ -295,6 +295,14 @@ describe('broker request handling', () => {
     assert.equal(events.at(-1)?.['event'], 'pull-request');
   });
 
+  it('classifies an invalid-proxy refusal by the request op', async () => {
+    const { handle, events } = makeHarness();
+    const response = await handle({ ...REQUEST, op: 'pull-request', proxy: 'ftp://proxy.example' });
+    assert.equal(response.ok, false);
+    assert.equal(response.code, 'bad-request');
+    assert.equal(events.at(-1)?.['event'], 'pull-request');
+  });
+
   it('refuses an unusable branch, and a provider that cannot manage pull requests', async () => {
     const opened: Provider = {
   name: 'with-prs',

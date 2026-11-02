@@ -1007,8 +1007,9 @@ function pullRequestNumber(value: unknown): number | undefined {
               if (/^(🏁|🔎|⚙️|🌐|💡|💬|🔗|Repository:|Length of output:|Proposed fix$|---$|_?\s*[🔒📐🎯🩺🟡🟠])/u.test(line)) continue;
               kept.push(line.replace(/<\/?[a-z][^>]*>/gi, '').trim());
             }
-            const shown = kept.filter((line) => line !== '').slice(0, 14);
-            const more = kept.length > shown.length ? ` (+${kept.length - shown.length} more lines)` : '';
+            const visible = kept.filter((line) => line !== '');
+            const shown = visible.slice(0, 14);
+            const more = visible.length > shown.length ? ` (+${visible.length - shown.length} more lines)` : '';
             report.push(`    ${String(comment.databaseId ?? '')} @${String(comment.author?.login ?? '?')}:${more}`);
             for (const line of shown) report.push(`      ${line.slice(0, 300)}`);
           }
