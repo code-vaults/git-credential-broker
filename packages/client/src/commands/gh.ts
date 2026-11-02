@@ -207,7 +207,7 @@ export async function runGh(
         domain === 'issue' && command === 'create'
           ? 'use gcb issue create --as-user <login>'
           : domain === 'pr' && command === 'create'
-            ? 'use gcb pr --as-user <login>'
+            ? 'use gcb pr --as-user (bare for the broker user, or with a login for the host opener)'
             : '--as-user only creates a pull request or issue',
       );
     }

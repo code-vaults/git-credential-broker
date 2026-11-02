@@ -106,4 +106,39 @@ describe('gcb pr identity flags', () => {
       repo.cleanup();
     }
   });
+
+  it('accepts pr create --as-user as the lifecycle spelling', async () => {
+    const repo = checkout();
+    const socketPath = path.join(repo.root, 'broker.sock');
+    try {
+      let seen: unknown;
+      const server = await listen(socketPath, (request) => {
+        seen = request['identity'];
+      });
+      const result = await tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          'create',
+          '--as-user',
+          '--repo',
+          'acme/widget',
+          '--head',
+          'feat/x',
+          '--title',
+          't',
+          '--socket',
+          socketPath,
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      assert.equal(result.status, 0);
+      assert.equal(seen, 'user');
+    } finally {
+      repo.cleanup();
+    }
+  });
 });
