@@ -85,6 +85,37 @@ describe('config watcher', () => {
     }
   });
 
+  it('polls when fs.watch is unavailable', async () => {
+    const dir = fs.mkdtempSync(path.join(scratch, 'polled-'));
+    const file = path.join(dir, 'config.yml');
+    fs.writeFileSync(file, 'one\n');
+    const originalWatch = fs.watch;
+    let loads = 0;
+    fs.watch = (() => {
+      throw new Error('watch unavailable');
+    }) as typeof fs.watch;
+    const watcher = new ConfigWatcher({
+      file,
+      intervalMs: 50,
+      reload: () => {
+        loads += 1;
+        return fingerprintConfig(file)?.digest ?? '';
+      },
+    });
+    watcher.start();
+    try {
+      fs.writeFileSync(file, 'two\n');
+      const deadline = Date.now() + 2_000;
+      while (loads === 0 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      assert.equal(loads, 1);
+    } finally {
+      watcher.stop();
+      fs.watch = originalWatch;
+    }
+  });
+
   it('treats a missing file as no change', () => {
     assert.equal(fingerprintConfig(path.join(scratch, 'missing.yml')), undefined);
   });

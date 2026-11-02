@@ -443,6 +443,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
  * @param path - path to the YAML config.
  * @returns the validated configuration.
  */
+/** Read configuration text, with the deployment path named on failure. */
 export function readConfigText(path: string): string {
   try {
     return readFileSync(path, 'utf8');

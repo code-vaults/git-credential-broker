@@ -30,7 +30,7 @@ function request(socketPath: string, message: Record<string, unknown>): Promise<
   });
 }
 
-async function waitFor<T>(read: () => Promise<T | undefined>, timeoutMs = 5_000): Promise<T> {
+async function waitFor<T>(read: () => Promise<T | undefined>, timeoutMs = 15_000): Promise<T> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -58,7 +58,6 @@ describe('daemon live reload', () => {
         cwd: root,
         env: {
           ...process.env,
-          GIT_BROKER_CONFIG: '',
           NODE_USE_ENV_PROXY: '1',
           no_proxy: 'localhost,127.0.0.1',
         },

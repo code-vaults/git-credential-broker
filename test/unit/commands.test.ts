@@ -1233,6 +1233,16 @@ describe('compose', () => {
       name: 'git-cred-broker',
     });
     assert.match(custom, /--config '\/etc\/git-cred-broker\/broker live\.yml'/);
+    const dollar = renderCompose({
+      dir: '/volume1/docker/git-cred-broker',
+      configPath: '/srv/custom/br$ker "x".yml',
+      socketDir: '/srv/shared/git-broker',
+      user: '1026:100',
+      image: 'node:24-slim',
+      packageSpec: 'gcb-host@0.0.0',
+      name: 'git-cred-broker',
+    });
+    assert.match(dollar, /--config '\/etc\/git-cred-broker\/br\$\$ker "x"\.yml'/);
   });
 
   it('drops privileges and keeps the root filesystem read-only', () => {
