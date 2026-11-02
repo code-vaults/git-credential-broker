@@ -1312,6 +1312,20 @@ describe('compose', () => {
     assert.match(output, /--config '\/etc\/git-cred-broker\/prod\.yml'/);
   });
 
+  it('quotes volume scalars whose paths contain YAML indicators', () => {
+    const custom = renderCompose({
+      dir: '/srv/broker #1',
+      socketDir: '/srv/socket #2',
+      user: '1026:100',
+      image: 'node:24-slim',
+      packageSpec: 'gcb-host@0.0.0',
+      name: 'git-cred-broker',
+    });
+    assert.equal(custom.includes('- "/srv/broker #1:/etc/git-cred-broker:ro"'), true);
+    assert.equal(custom.includes('- "/srv/broker #1/app.pem:/etc/git-cred-broker/app.pem:ro"'), true);
+    assert.equal(custom.includes('- "/srv/socket #2:/run/git-broker"'), true);
+  });
+
   it('drops privileges and keeps the root filesystem read-only', () => {
     assert.match(rendered, /cap_drop:\n\s+- ALL/);
     assert.match(rendered, /no-new-privileges:true/);

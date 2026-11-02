@@ -44,6 +44,14 @@ export interface ComposeInput {
 /** Where a code-mounted sidecar expects the broker. */
 export const CODE_DIR = '/opt/gcb';
 
+/** A volume scalar as YAML, with compose's dollar escaping applied first. */
+function yamlVolume(host: string, container: string, mode?: string): string {
+  const raw = `${host}:${container}${mode === undefined ? '' : `:${mode}`}`;
+  const escaped = raw.replace(/\$/g, () => '$$');
+  // Plain YAML is fine until a path has a space, '#' or another indicator; JSON quoting is valid YAML.
+  return /^[A-Za-z0-9_./:@%+=,~-]+$/.test(raw) ? escaped : JSON.stringify(escaped);
+}
+
 /** Follow a selected config symlink; a missing file is the only fallback. */
 function selectedConfigFile(configPath: string): string {
   try {
@@ -107,7 +115,7 @@ export function renderCompose(input: ComposeInput): string {
   // directory instead of a token — for every action, not only the personal ones. Emit it once `authorize`
   // has written the file, and say what to run until then.
   const userRefreshMount = fs.existsSync(`${input.dir}/${USER_TOKEN_FILE}`)
-    ? `\n      # The authorized person's refresh token: the only secret mounted writable, because GitHub\n      # rotates it on every exchange.\n      - ${input.dir}/${USER_TOKEN_FILE}:${SIDECAR.userTokenPath}:rw`
+    ? `\n      # The authorized person's refresh token: the only secret mounted writable, because GitHub\n      # rotates it on every exchange.\n      - ${yamlVolume(`${input.dir}/${USER_TOKEN_FILE}`, SIDECAR.userTokenPath, 'rw')}`
     : '\n      # No user.refresh yet: run `gcb authorize` and render this again. A mount' +
       '\n      # for a path that does not exist would become a directory, and the broker would read that.';
   const start = fromCode
@@ -126,7 +134,7 @@ export function renderCompose(input: ComposeInput): string {
   const codeMount = fromCode
     ? `
       # The code, read-only, from the commit you reviewed and staged.
-      - ${input.code}:${CODE_DIR}:ro`
+      - ${yamlVolume(input.code, CODE_DIR, 'ro')}`
     : '';
 
   return `# Docker sidecar for gcb-host@${PACKAGE_VERSION}
@@ -170,11 +178,11 @@ ${command}
     volumes:${codeMount}
       # The directory, not the file: an atomic replacement on the host must be visible for reload;
       # this exposes the rest of that directory read-only too.
-      - ${path.dirname(configFile)}:${path.dirname(SIDECAR.configPath)}:ro
-      - ${input.dir}/app.pem:${SIDECAR.keyPath}:ro
+      - ${yamlVolume(path.dirname(configFile), path.dirname(SIDECAR.configPath), 'ro')}
+      - ${yamlVolume(`${input.dir}/app.pem`, SIDECAR.keyPath, 'ro')}
 ${userRefreshMount}
-      - ${input.dir}/log:${SIDECAR.auditDir}
-      - ${socketDir}:${SIDECAR.socketDir}
+      - ${yamlVolume(`${input.dir}/log`, SIDECAR.auditDir)}
+      - ${yamlVolume(socketDir, SIDECAR.socketDir)}
 # The socket appears at ${socketDir}${SIDECAR.socketPath.slice(SIDECAR.socketDir.length)} on the host. Point the pushing
 # environment at the same socket with:
 #   gcb setup --socket <that path as the pusher sees it>
