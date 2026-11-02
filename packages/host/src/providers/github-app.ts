@@ -958,6 +958,9 @@ function pullRequestNumber(value: unknown): number | undefined {
         if (typeof threads.totalCount !== 'number' || !Number.isInteger(threads.totalCount) || threads.totalCount < 0) {
           throw new Error('GitHub did not answer with reviewThreads.totalCount');
         }
+        if (threads.totalCount > 0 && threads.nodes.length === 0) {
+          throw new Error('GitHub answered with a thread count but no threads');
+        }
         const nodes = threads.nodes;
         const report: string[] = [];
         for (const node of nodes as Array<{

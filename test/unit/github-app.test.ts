@@ -906,6 +906,26 @@ describe('createGithubAppProvider', () => {
     );
   });
 
+  it('rejects a positive thread count with an empty page', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      threadsResponse: {
+        data: { repository: { pullRequest: { reviewThreads: { totalCount: 1, nodes: [] } } } },
+      },
+    });
+    await assert.rejects(
+      providerFor(stub).pullRequest!({
+        action: 'threads',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        number: 42,
+      }),
+      /thread count but no threads/u,
+    );
+  });
+
   it('reports an explicit empty reviewThreads list as no threads', async () => {
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
