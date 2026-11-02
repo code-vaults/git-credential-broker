@@ -53,7 +53,14 @@ export const CODE_DIR = '/opt/gcb';
 export function renderCompose(input: ComposeInput): string {
   const socketDir = input.socketDir.replace(/\/+$/, '');
   const configPath = input.configPath ?? `${input.dir}/broker.config.yml`;
-  const mountedConfigPath = path.posix.join(path.posix.dirname(SIDECAR.configPath), path.basename(configPath));
+  // Follow a selected symlink: the directory bind exposes the link, not a target outside it.
+  let configFile = configPath;
+  try {
+    configFile = fs.realpathSync(configPath);
+  } catch {
+    // A not-yet-created file is rendered for `init`; keep the requested path.
+  }
+  const mountedConfigPath = path.posix.join(path.posix.dirname(SIDECAR.configPath), path.basename(configFile));
   // One shell word; compose interpolates $ before sh runs, so a literal dollar is doubled.
   const mountedConfigArg = `'${mountedConfigPath.replace(/'/g, "'\\''")}'`.replace(/\$/g, () => '$$');
   const fromCode = input.code !== undefined;
@@ -158,7 +165,7 @@ ${command}
     volumes:${codeMount}
       # The directory, not the file: an atomic replacement on the host must be visible for reload;
       # this exposes the rest of that directory read-only too.
-      - ${path.dirname(configPath)}:${path.dirname(SIDECAR.configPath)}:ro
+      - ${path.dirname(configFile)}:${path.dirname(SIDECAR.configPath)}:ro
       - ${input.dir}/app.pem:${SIDECAR.keyPath}:ro
 ${userRefreshMount}
       - ${input.dir}/log:${SIDECAR.auditDir}

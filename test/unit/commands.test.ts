@@ -1245,6 +1245,31 @@ describe('compose', () => {
     assert.match(dollar, /--config '\/etc\/git-cred-broker\/br\$\$ker "x"\.yml'/);
   });
 
+  it('mounts the real target of a symlinked config', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-compose-link-'));
+    const targetDir = path.join(root, 'store');
+    fs.mkdirSync(targetDir);
+    const target = path.join(targetDir, 'prod.yml');
+    fs.writeFileSync(target, 'hosts: {}\n');
+    const link = path.join(root, 'selected.yml');
+    fs.symlinkSync(target, link);
+    try {
+      const custom = renderCompose({
+        dir: '/volume1/docker/git-cred-broker',
+        configPath: link,
+        socketDir: '/srv/shared/git-broker',
+        user: '1026:100',
+        image: 'node:24-slim',
+        packageSpec: 'gcb-host@0.0.0',
+        name: 'git-cred-broker',
+      });
+      assert.equal(custom.includes(targetDir + ':' + path.dirname(SIDECAR.configPath) + ':ro'), true);
+      assert.match(custom, /--config '\/etc\/git-cred-broker\/prod\.yml'/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('drops privileges and keeps the root filesystem read-only', () => {
     assert.match(rendered, /cap_drop:\n\s+- ALL/);
     assert.match(rendered, /no-new-privileges:true/);
