@@ -54,7 +54,16 @@ describe('daemon live reload', () => {
     const child = spawn(
       process.execPath,
       ['--conditions=development', HOST_BIN, 'daemon', '--config', file],
-      { cwd: root, env: { ...process.env, GIT_BROKER_CONFIG: '' }, stdio: ['ignore', 'ignore', 'pipe'] },
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          GIT_BROKER_CONFIG: '',
+          NODE_USE_ENV_PROXY: '1',
+          no_proxy: 'localhost,127.0.0.1',
+        },
+        stdio: ['ignore', 'ignore', 'pipe'],
+      },
     );
     let log = '';
     child.stderr.on('data', (chunk: Buffer) => { log += chunk.toString('utf8'); });

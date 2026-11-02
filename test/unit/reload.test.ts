@@ -58,17 +58,18 @@ describe('config watcher', () => {
     }
   });
 
-  it('reloads from a real file write through the watcher', async () => {
-    const file = path.join(scratch, 'watched.config.yml');
+  it('reloads from a real file write through a started watcher', async () => {
+    const dir = fs.mkdtempSync(path.join(scratch, 'watched-'));
+    const file = path.join(dir, 'config.yml');
     fs.writeFileSync(file, 'one\n');
     let loads = 0;
     const watcher = new ConfigWatcher({
       file,
-      intervalMs: 60_000,
+      intervalMs: 50,
       debounceMs: 20,
       reload: () => {
         loads += 1;
-        return 'digest';
+        return fingerprintConfig(file)?.digest ?? '';
       },
     });
     watcher.start();
