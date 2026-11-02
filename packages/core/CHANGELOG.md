@@ -1,5 +1,19 @@
 # gcb-core
 
+## 0.1.0
+
+### Minor Changes
+
+- [#50](https://github.com/code-vaults/git-credential-broker/pull/50) [`a7efb20`](https://github.com/code-vaults/git-credential-broker/commit/a7efb204e2fe75baf08f624e4f12951657961adf) Thanks [@JounQin](https://github.com/JounQin)! - Add `gcb pr --as-user <login>` to create a pull request through the host opener using that person's
+  `~/.config/gh-<login>` configuration; `gcb issue create --as-user <login>` uses the same route.
+  `--via-host` is gone: the login names the route and the account. The selected directory must exist before the request is made.
+
+- [#55](https://github.com/code-vaults/git-credential-broker/pull/55) [`c47a3a5`](https://github.com/code-vaults/git-credential-broker/commit/c47a3a5ea58593b8b1427571426db4e3316e1612) Thanks [@JounQin](https://github.com/JounQin)! - Make the pull-request identity explicit: app installation token by default, `--as-user` without a
+  login for the broker's authorized user token, and `--as-user <login>` for the host-opener route.
+
+- [#56](https://github.com/code-vaults/git-credential-broker/pull/56) [`f4c8d71`](https://github.com/code-vaults/git-credential-broker/commit/f4c8d71679e8ca754c6f1fc870d64c61af13ea91) Thanks [@JounQin](https://github.com/JounQin)! - Add `gcb repo fork [owner/name]`: create a fork under a person's account with `--as-user` (broker
+  authorized user or host opener). The app identity cannot own a fork, so it is refused.
+
 ## 0.0.3
 
 No changes in this release.
