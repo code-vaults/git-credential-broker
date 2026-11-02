@@ -369,7 +369,16 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     return 1;
   }
 
-  if (action === 'status' || action === 'threads' || action === 'resolve') {
+  if (action === 'threads') {
+    if (typeof response.prStatus !== 'string' || response.prStatus.trim() === '') {
+      process.stderr.write(`refused [${response.code ?? 'provider-error'}]: the broker returned no review-thread report\n`);
+      return 1;
+    }
+    say(response.prStatus);
+    return 0;
+  }
+
+  if (action === 'status' || action === 'resolve') {
     say(response.prStatus ?? 'no report');
     return 0;
   }
