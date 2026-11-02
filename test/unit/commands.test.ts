@@ -1131,7 +1131,7 @@ describe('compose', () => {
 
   it('mounts the key read-only and publishes no ports', () => {
     assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/);
-    assert.match(rendered, /broker\.config\.yml:\/etc\/git-cred-broker\/broker\.config\.yml:ro/);
+    assert.match(rendered, /volume1\/docker\/git-cred-broker:\/etc\/git-cred-broker:ro/);
     assert.equal(/^\s+ports:/m.test(rendered), false, 'the socket is the only interface');
   });
 
@@ -1166,7 +1166,7 @@ describe('compose', () => {
     } finally {
       process.stdout.write = original;
     }
-    assert.equal(output.includes(`${target}/broker.config.yml:${SIDECAR.configPath}:ro`), true);
+    assert.equal(output.includes(`${target}:${path.dirname(SIDECAR.configPath)}:ro`), true);
   });
 
   it('honors GIT_BROKER_CONFIG when no --config or --dir is given', () => {
@@ -1205,7 +1205,7 @@ describe('compose', () => {
       if (previous === undefined) delete process.env['GIT_BROKER_CONFIG'];
       else process.env['GIT_BROKER_CONFIG'] = previous;
     }
-    assert.equal(output.includes(`${configFile}:${SIDECAR.configPath}:ro`), true);
+    assert.equal(output.includes(`${target}:${path.dirname(SIDECAR.configPath)}:ro`), true);
   });
 
   it('mounts an explicitly selected config file', () => {
@@ -1218,7 +1218,7 @@ describe('compose', () => {
       packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
     });
-    assert.match(custom, /\/srv\/custom\/broker\.yml:\/etc\/git-cred-broker\/broker\.config\.yml:ro/);
+    assert.match(custom, /\/srv\/custom:\/etc\/git-cred-broker:ro/);
   });
 
   it('drops privileges and keeps the root filesystem read-only', () => {
@@ -1280,7 +1280,7 @@ describe('compose', () => {
     assert.equal(appHost(config).privateKeyPath, SIDECAR.keyPath);
     assert.equal(config.auditPath, SIDECAR.auditPath);
 
-    assert.equal(rendered.includes(`${deployDir}/broker.config.yml:${SIDECAR.configPath}:ro`), true);
+    assert.equal(rendered.includes(`${deployDir}:${path.dirname(SIDECAR.configPath)}:ro`), true);
     assert.equal(rendered.includes(`${deployDir}/app.pem:${SIDECAR.keyPath}:ro`), true);
     assert.equal(rendered.includes(`${deployDir}/log:${SIDECAR.auditDir}`), true);
     assert.equal(

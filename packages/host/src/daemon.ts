@@ -14,6 +14,7 @@ import { startBroker } from './broker.ts';
 import { assertKeysReadable, assertUserTokensReadable, loadConfig, resolveConfigPath } from './config.ts';
 import { createProvider } from './providers/index.ts';
 import type { ProviderDeps } from './providers/index.ts';
+import { ConfigWatcher, fingerprintConfig } from './reload.ts';
 import type { BrokerConfig, Provider } from 'gcb-core';
 
 /** Usage text. */
@@ -98,15 +99,20 @@ export async function runDaemon(
   // ./broker.config.yml. A wrong pick is loud, because it must load and validate to start at all.
   const resolved = resolveConfigPath(configPath);
 
+  const initialDigest = fingerprintConfig(resolved)?.digest;
+  const load = (): { config: BrokerConfig; providers: Map<string, Provider> } => {
+    const next = loadConfig(resolved);
+    assertKeysReadable(next);
+    assertUserTokensReadable(next);
+    return {
+      config: next,
+      providers: buildProviders(next, { log: (message) => stderr.write(`gcb daemon: ${message}\n`) }),
+    };
+  };
   let config: BrokerConfig;
   let providers: Map<string, Provider>;
   try {
-    config = loadConfig(resolved);
-    assertKeysReadable(config);
-    assertUserTokensReadable(config);
-    providers = buildProviders(config, {
-      log: (message) => stderr.write(`gcb daemon: ${message}\n`),
-    });
+    ({ config, providers } = load());
   } catch (error) {
     stderr.write(`gcb daemon: ${(error as Error).message}\n`);
     return 1;
@@ -136,16 +142,48 @@ export async function runDaemon(
     return 1;
   }
 
+  const active = { config, providers };
+  const watcher = new ConfigWatcher({
+    file: resolved,
+    ...(initialDigest === undefined ? {} : { initialDigest }),
+    reload: () => {
+      const next = load();
+      if (next.config.socketPath !== active.config.socketPath) {
+        throw new Error('socketPath cannot change without restarting the broker');
+      }
+      if (next.config.socketMode !== active.config.socketMode) {
+        throw new Error('socketMode cannot change without restarting the broker');
+      }
+      if (next.config.auditPath !== active.config.auditPath) {
+        throw new Error('auditPath cannot change without restarting the broker');
+      }
+      broker.reload(next.config, next.providers);
+      active.config = next.config;
+      active.providers = next.providers;
+      stderr.write(`gcb daemon: config reloaded\n`);
+      audit.record({ event: 'config', decision: 'reload' });
+    },
+    onError: (error) => {
+      stderr.write(`gcb daemon: config reload failed: ${error.message}\n`);
+      audit.record({ event: 'config', decision: 'reload-failed', reason: error.message });
+    },
+  });
+  watcher.start();
+
   await new Promise<void>((resolve) => {
     const shutdown = (signal: string): void => {
       stderr.write(`gcb daemon: ${signal} received, shutting down\n`);
+      watcher.stop();
+      process.off('SIGHUP', onHup);
       broker
         .close()
         .then(() => audit.close())
         .then(() => resolve());
     };
+    const onHup = (): void => watcher.check(true);
     process.once('SIGTERM', () => shutdown('SIGTERM'));
     process.once('SIGINT', () => shutdown('SIGINT'));
+    process.on('SIGHUP', onHup);
   });
   return 0;
 }

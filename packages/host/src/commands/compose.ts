@@ -153,7 +153,8 @@ services:
     command:
 ${command}
     volumes:${codeMount}
-      - ${configPath}:${SIDECAR.configPath}:ro
+      # The directory, not the file: an atomic replacement on the host must be visible for reload.
+      - ${path.dirname(configPath)}:${path.dirname(SIDECAR.configPath)}:ro
       - ${input.dir}/app.pem:${SIDECAR.keyPath}:ro
 ${userRefreshMount}
       - ${input.dir}/log:${SIDECAR.auditDir}

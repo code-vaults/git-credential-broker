@@ -5,7 +5,7 @@ the only long-lived secret. The GitHub App private key never enters the containe
 still works.
 
 > **Roadmap:** YAML configuration, the three-package split and the `gcb gh` broker/client path are
-> implemented; the host image with `gh` is available. Host-user delegation and live reload are planned.
+> implemented; the host image with `gh` is available. Live reload is implemented; host-user delegation is planned.
 > [`ROADMAP.md`](ROADMAP.md) is the target; this README documents the current tree.
 
 Two commands are installed:
@@ -563,6 +563,8 @@ the same thing for a boot-time task: absolute paths, one instance at a time, its
 file.
 
 ## Configuration reference
+
+The daemon watches the configuration directory and also polls the file every 5 seconds; a valid change is applied without restarting, and an invalid one keeps the last good snapshot. Send `SIGHUP` to force a reload after fixing a file. `socketPath`, `socketMode` and `auditPath` require a restart.
 
 The broker only reads this file. It is YAML. The loader discovers `broker.config.yml` by default;
 the old `broker.config.json` name is no longer discovered, so rename or convert an existing

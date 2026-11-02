@@ -4,7 +4,7 @@ This is the staged plan for the next version. `README.md` documents the tree as 
 this file documents where it is going. YAML configuration, the three-package split, the typed action
 catalog, the `gcb gh` broker/client path and a host image with `gh` are implemented. The executor
 exists, but several Phase 2 items remain incomplete; the old `pr`/`logs` commands remain, and
-host-user delegation/live reload are not implemented.
+host-user delegation is not implemented; live reload is implemented except `gcb doctor` reporting its digest/last result.
 
 ## Locked decisions
 
@@ -126,21 +126,20 @@ The configuration is the source of truth and must be comfortable to edit by hand
       - `gcb actions list|describe|check|discover` reports built-in and configured actions, validates
         them, and lists gh commands that are not yet covered without enabling them.
 - [ ] Live reload (no restart):
-      - watch the configuration **directory**, not a single file, with `fs.watch`; debounce
-        200–500ms and re-add the watcher after rename/delete;
-      - poll every 5 seconds (configurable) and compare mtime+size+content hash. SMB/NFS/9p and
-        single-file bind mounts do not reliably deliver inotify events, so polling is the normal
-        path on a NAS, not a crash fallback;
-      - read the whole file, parse, validate, then atomically swap a frozen snapshot. Any parse or
+      - [x] watch the configuration **directory**, not a single file, with `fs.watch`; debounce
+        300ms; an unavailable watch falls back to polling;
+      - [x] poll every 5 seconds and compare a content hash. SMB/NFS/9p and single-file bind mounts
+        do not reliably deliver inotify events, so polling is the normal path on a NAS;
+      - [x] read the whole file, parse, validate, then atomically swap a frozen snapshot. Any parse or
         validation failure keeps the last good snapshot, logs and audits `config reload failed`,
         and leaves the service running;
-      - `SIGHUP` forces a reload;
-      - reload applies allowlists, groups, actions, timeouts and accounts. Provider/key changes
-        rebuild the affected providers; in-flight requests keep the snapshot they started with;
-        already-issued git tokens are not revoked and expire normally;
-      - deployment mounts the config **directory** into a container, not the file, so a host-side
+      - [x] `SIGHUP` forces a reload;
+      - [x] reload applies the fields that exist today (allowlists, timeouts, token/account settings);
+        provider/key changes rebuild providers; in-flight requests keep their snapshot; already-issued
+        git tokens are not revoked. Groups/actions reload when those configuration features land;
+      - [x] deployment mounts the config **directory** into a container, not the file, so a host-side
         atomic replace is visible;
-      - `gcb doctor` reports the active config digest and the last reload result;
+      - [ ] `gcb doctor` reports the active config digest and the last reload result;
         `gcb config check` is the one-shot validation.
 - [x] One-time migration: convert an existing `broker.config.json` to YAML before upgrade. The
       old `broker.config.json` filename is no longer discovered; an explicitly passed JSON file is
