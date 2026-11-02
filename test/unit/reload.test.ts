@@ -114,6 +114,30 @@ describe('config watcher', () => {
     }
   });
 
+  it('keeps a forced reload pending while the file is absent', () => {
+    const file = path.join(scratch, 'pending.config.yml');
+    fs.writeFileSync(file, 'same\n');
+    let loads = 0;
+    const watcher = new ConfigWatcher({
+      file,
+      intervalMs: 60_000,
+      reload: () => {
+        loads += 1;
+        return fingerprintConfig(file)?.digest ?? '';
+      },
+    });
+    try {
+      fs.rmSync(file);
+      watcher.check(true);
+      assert.equal(loads, 0, 'nothing to load while absent');
+      fs.writeFileSync(file, 'same\n');
+      watcher.check(false);
+      assert.equal(loads, 1, 'the pending SIGHUP is honoured even for identical bytes');
+    } finally {
+      watcher.stop();
+    }
+  });
+
   it('treats a missing file as no change', () => {
     assert.equal(fingerprintConfig(path.join(scratch, 'missing.yml')), undefined);
   });

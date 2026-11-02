@@ -54,6 +54,8 @@ export class ConfigWatcher {
   readonly #reload: () => string;
   readonly #onError: (error: Error) => void;
   #last: string | undefined;
+  /** A SIGHUP arrived while the file was absent; honour it when the file returns. */
+  #forcePending = false;
   #timer: NodeJS.Timeout | undefined;
   #watch: fs.FSWatcher | undefined;
   #debounce: NodeJS.Timeout | undefined;
@@ -106,6 +108,7 @@ export class ConfigWatcher {
    */
   check(force: boolean): void {
     if (this.#stopped) return;
+    if (force) this.#forcePending = true;
     let next: ConfigFingerprint | undefined;
     try {
       next = fingerprintConfig(this.#file);
@@ -113,13 +116,16 @@ export class ConfigWatcher {
       this.#onError(error as Error);
       return;
     }
-    if (next === undefined || (!force && next.digest === this.#last)) return;
+    if (next === undefined) return;
+    if (!this.#forcePending && next.digest === this.#last) return;
     try {
       this.#last = this.#reload();
+      this.#forcePending = false;
     } catch (error) {
       // Keep the last good snapshot. Clear the digest so a transient failure (a half-written file,
       // a permission blip) is retried on the next tick, even when the bytes have not changed.
       this.#last = undefined;
+      this.#forcePending = false;
       this.#onError(error as Error);
     }
   }
