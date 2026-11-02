@@ -83,7 +83,11 @@ describe('daemon live reload', () => {
       });
 
       fs.writeFileSync(file, 'hosts: [\n');
-      await waitFor(async () => (log.includes('config reload failed') ? true : undefined));
+      const auditHasFailed = async (): Promise<true | undefined> =>
+        fs.existsSync(auditPath) && fs.readFileSync(auditPath, 'utf8').includes('"decision":"reload-failed"')
+          ? true
+          : undefined;
+      await waitFor(auditHasFailed);
       assert.match(fs.readFileSync(auditPath, 'utf8'), /"event":"config".*"decision":"reload-failed"/u);
       const kept = await request(socketPath, {
         op: 'credential', host: 'github.com', path: 'acme/two', protocol: 'https',

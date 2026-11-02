@@ -437,12 +437,6 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
   };
 }
 
-/**
- * Read and validate a configuration file.
- *
- * @param path - path to the YAML config.
- * @returns the validated configuration.
- */
 /** Read configuration text, with the deployment path named on failure. */
 export function readConfigText(path: string): string {
   try {
@@ -452,6 +446,12 @@ export function readConfigText(path: string): string {
   }
 }
 
+/**
+ * Read and validate a configuration file.
+ *
+ * @param path - path to the YAML config.
+ * @returns the validated configuration.
+ */
 export function loadConfig(path: string): BrokerConfig {
   return loadConfigText(readConfigText(path), path);
 }

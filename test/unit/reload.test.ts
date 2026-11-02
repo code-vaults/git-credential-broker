@@ -85,15 +85,13 @@ describe('config watcher', () => {
     }
   });
 
-  it('polls when fs.watch is unavailable', async () => {
+  it('polls when the watch never fires', async () => {
     const dir = fs.mkdtempSync(path.join(scratch, 'polled-'));
     const file = path.join(dir, 'config.yml');
     fs.writeFileSync(file, 'one\n');
     const originalWatch = fs.watch;
     let loads = 0;
-    fs.watch = (() => {
-      throw new Error('watch unavailable');
-    }) as typeof fs.watch;
+    fs.watch = (() => ({ on() { return this; }, close() {} })) as unknown as typeof fs.watch;
     const watcher = new ConfigWatcher({
       file,
       intervalMs: 50,
