@@ -77,11 +77,9 @@ export interface HandlerState {
 
 /** Options for {@link createRequestHandler}. */
 export interface RequestHandlerOptions {
-  readonly config: BrokerConfig;
   readonly audit: AuditSink;
-  readonly providers: ReadonlyMap<string, Provider>;
   /** The live snapshot; startBroker uses this so reload can swap it atomically. */
-  readonly state?: HandlerState;
+  readonly state: HandlerState;
   /** Host-side diagnostics sink; never seen by the caller. */
   readonly log?: (message: string) => void;
 }
@@ -146,7 +144,7 @@ export function createRequestHandler(
   options: RequestHandlerOptions,
 ): (message: Record<string, unknown>) => Promise<WireResponse> {
   const { audit, log = () => {} } = options;
-  const state: HandlerState = options.state ?? { config: options.config, providers: options.providers };
+  const state = options.state;
 
   /**
    * Record a refusal and produce the caller-visible response.
@@ -633,7 +631,7 @@ export async function startBroker(options: StartBrokerOptions): Promise<RunningB
   const { config, audit, providers, log = () => {} } = options;
   prepareSocketPath(config.socketPath);
   const state: HandlerState = { config, providers };
-  const handle = createRequestHandler({ config, audit, providers, log, state });
+  const handle = createRequestHandler({ audit, log, state });
   const reload = (nextConfig: BrokerConfig, nextProviders: ReadonlyMap<string, Provider>): void => {
     state.config = nextConfig;
     state.providers = nextProviders;

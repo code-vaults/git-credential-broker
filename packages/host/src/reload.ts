@@ -87,7 +87,7 @@ export class ConfigWatcher {
         this.#watch = undefined;
       });
     } catch {
-      this.#startPolling();
+      // The safety poll is already running; an unavailable watch must not stop the daemon.
     }
     return this;
   }
