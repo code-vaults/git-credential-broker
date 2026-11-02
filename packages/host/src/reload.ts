@@ -58,6 +58,8 @@ export class ConfigWatcher {
   #forcePending = false;
   /** The broken content already reported, so a deterministic failure is not logged every tick. */
   #failedDigest: string | undefined;
+  /** The read error already reported, so a permanently unreadable file is not logged every tick. */
+  #readError: string | undefined;
   #timer: NodeJS.Timeout | undefined;
   #watch: fs.FSWatcher | undefined;
   #debounce: NodeJS.Timeout | undefined;
@@ -69,7 +71,12 @@ export class ConfigWatcher {
     this.#debounceMs = options.debounceMs ?? 300;
     this.#reload = options.reload;
     this.#onError = options.onError ?? (() => {});
-    this.#last = options.initialDigest ?? fingerprintConfig(this.#file)?.digest;
+    try {
+      this.#last = options.initialDigest ?? fingerprintConfig(this.#file)?.digest;
+    } catch {
+      // An unreadable file at start-up is reported by the first check, not thrown from the constructor.
+      this.#last = options.initialDigest;
+    }
   }
 
   /**
@@ -115,9 +122,14 @@ export class ConfigWatcher {
     try {
       next = fingerprintConfig(this.#file);
     } catch (error) {
-      this.#onError(error as Error);
+      const message = (error as Error).message;
+      if (message !== this.#readError) {
+        this.#readError = message;
+        this.#onError(error as Error);
+      }
       return;
     }
+    this.#readError = undefined;
     if (next === undefined) return;
     if (!this.#forcePending && next.digest === this.#last) return;
     try {

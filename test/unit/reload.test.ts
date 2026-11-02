@@ -140,6 +140,33 @@ describe('config watcher', () => {
     }
   });
 
+  it('reports a read error once per message', () => {
+    const file = path.join(scratch, 'unreadable.config.yml');
+    fs.writeFileSync(file, 'one\n');
+    const errors: string[] = [];
+    const originalRead = fs.readFileSync;
+    fs.readFileSync = ((input: unknown) => {
+      if (input === file) {
+        throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
+      }
+      return originalRead(input as string, 'utf8');
+    }) as unknown as typeof fs.readFileSync;
+    const watcher = new ConfigWatcher({
+      file,
+      intervalMs: 60_000,
+      reload: () => '',
+      onError: (error) => errors.push(error.message),
+    });
+    try {
+      watcher.check(false);
+      watcher.check(false);
+      assert.deepEqual(errors, ['permission denied']);
+    } finally {
+      watcher.stop();
+      fs.readFileSync = originalRead;
+    }
+  });
+
   it('treats a missing file as no change', () => {
     assert.equal(fingerprintConfig(path.join(scratch, 'missing.yml')), undefined);
   });
