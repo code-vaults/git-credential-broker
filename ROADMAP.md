@@ -128,8 +128,8 @@ The configuration is the source of truth and must be comfortable to edit by hand
 - [ ] Live reload (no restart):
       - [x] watch the configuration **directory**, not a single file, with `fs.watch`; debounce
         300ms; an unavailable watch falls back to polling;
-      - [x] poll every 5 seconds and compare a content hash. SMB/NFS/9p and single-file bind mounts
-        do not reliably deliver inotify events, so polling is the normal path on a NAS;
+      - [x] fall back to polling every 5 seconds and compare a content hash when `fs.watch` is
+        unavailable; the native watcher is the primary trigger;
       - [x] read the whole file, parse, validate, then atomically swap a frozen snapshot. Any parse or
         validation failure keeps the last good snapshot, logs and audits `config reload failed`,
         and leaves the service running;

@@ -73,8 +73,6 @@ export class ConfigWatcher {
    * @returns this watcher, for chaining.
    */
   start(): this {
-    this.#timer = setInterval(() => this.check(false), this.#intervalMs);
-    this.#timer.unref();
     try {
       this.#watch = fs.watch(path.dirname(this.#file), { persistent: false }, (_event, name) => {
         if (name !== null && name !== path.basename(this.#file)) return;
@@ -85,11 +83,19 @@ export class ConfigWatcher {
       this.#watch.on('error', () => {
         this.#watch?.close();
         this.#watch = undefined;
+        this.#startPolling();
       });
     } catch {
-      // Polling is enough; an unavailable watch must not stop the daemon.
+      this.#startPolling();
     }
     return this;
+  }
+
+  /** Polling is the fallback only: a working native watch is the primary trigger. */
+  #startPolling(): void {
+    if (this.#stopped || this.#timer !== undefined) return;
+    this.#timer = setInterval(() => this.check(false), this.#intervalMs);
+    this.#timer.unref();
   }
 
   /**
