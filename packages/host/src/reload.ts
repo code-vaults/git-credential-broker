@@ -117,9 +117,9 @@ export class ConfigWatcher {
     try {
       this.#last = this.#reload();
     } catch (error) {
-      // Keep the last good snapshot. Remember the bad digest so a broken file is not retried on
-      // every tick; SIGHUP still forces an attempt after the operator fixes it.
-      this.#last = next.digest;
+      // Keep the last good snapshot. Clear the digest so a transient failure (a half-written file,
+      // a permission blip) is retried on the next tick, even when the bytes have not changed.
+      this.#last = undefined;
       this.#onError(error as Error);
     }
   }

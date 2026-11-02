@@ -50,9 +50,9 @@ describe('config watcher', () => {
       assert.equal(loads, 1);
       assert.deepEqual(errors, ['bad config']);
       watcher.check(false);
-      assert.equal(loads, 1, 'the bad digest is not retried on every poll');
+      assert.equal(loads, 2, 'a failed reload is retried on the next poll');
       watcher.check(true);
-      assert.equal(loads, 2, 'SIGHUP forces a retry');
+      assert.equal(loads, 3, 'SIGHUP forces another retry');
     } finally {
       watcher.stop();
     }
