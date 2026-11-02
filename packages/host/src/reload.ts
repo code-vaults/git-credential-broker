@@ -37,8 +37,8 @@ export interface ConfigWatcherOptions {
   readonly intervalMs?: number;
   /** How long to coalesce a burst of events. */
   readonly debounceMs?: number;
-  /** Reload the file; throws when the new configuration is invalid. */
-  readonly reload: () => void;
+  /** Reload the file; throws when invalid. Returns the digest of the bytes it loaded. */
+  readonly reload: () => string | void;
   /** Digest already loaded at start-up; avoids a race between load and watcher construction. */
   readonly initialDigest?: string;
   /** Report a failed reload; the last good snapshot stays active. */
@@ -50,7 +50,7 @@ export class ConfigWatcher {
   readonly #file: string;
   readonly #intervalMs: number;
   readonly #debounceMs: number;
-  readonly #reload: () => void;
+  readonly #reload: () => string | void;
   readonly #onError: (error: Error) => void;
   #last: string | undefined;
   #timer: NodeJS.Timeout | undefined;
@@ -114,8 +114,8 @@ export class ConfigWatcher {
     }
     if (next === undefined || (!force && next.digest === this.#last)) return;
     try {
-      this.#reload();
-      this.#last = next.digest;
+      const loaded = this.#reload();
+      this.#last = typeof loaded === 'string' ? loaded : next.digest;
     } catch (error) {
       // Keep the last good snapshot. Remember the bad digest so a broken file is not retried on
       // every tick; SIGHUP still forces an attempt after the operator fixes it.

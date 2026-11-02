@@ -1219,6 +1219,7 @@ describe('compose', () => {
       name: 'git-cred-broker',
     });
     assert.match(custom, /\/srv\/custom:\/etc\/git-cred-broker:ro/);
+    assert.match(custom, /--config \/etc\/git-cred-broker\/broker\.yml/);
   });
 
   it('drops privileges and keeps the root filesystem read-only', () => {

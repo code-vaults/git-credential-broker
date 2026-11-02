@@ -450,6 +450,11 @@ export function loadConfig(path: string): BrokerConfig {
   } catch (error) {
     throw new Error(`cannot read config ${path}: ${(error as Error).message}`);
   }
+  return loadConfigText(text, path);
+}
+
+/** Parse and validate configuration text already read from `path`. */
+export function loadConfigText(text: string, path: string): BrokerConfig {
   const document = parseDocument(text, {
     schema: 'core',
     uniqueKeys: true,

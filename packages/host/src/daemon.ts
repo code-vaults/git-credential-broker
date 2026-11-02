@@ -7,14 +7,16 @@
  * construction without binding the socket, which is what a deployment script should run
  * before restarting the service.
  */
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type { Writable } from 'node:stream';
 
 import { createAudit } from './audit.ts';
 import { startBroker } from './broker.ts';
-import { assertKeysReadable, assertUserTokensReadable, loadConfig, resolveConfigPath } from './config.ts';
+import { assertKeysReadable, assertUserTokensReadable, loadConfigText, resolveConfigPath } from './config.ts';
 import { createProvider } from './providers/index.ts';
 import type { ProviderDeps } from './providers/index.ts';
-import { ConfigWatcher, fingerprintConfig } from './reload.ts';
+import { ConfigWatcher } from './reload.ts';
 import type { BrokerConfig, Provider } from 'gcb-core';
 
 /** Usage text. */
@@ -99,20 +101,22 @@ export async function runDaemon(
   // ./broker.config.yml. A wrong pick is loud, because it must load and validate to start at all.
   const resolved = resolveConfigPath(configPath);
 
-  const initialDigest = fingerprintConfig(resolved)?.digest;
-  const load = (): { config: BrokerConfig; providers: Map<string, Provider> } => {
-    const next = loadConfig(resolved);
+  const load = (): { config: BrokerConfig; providers: Map<string, Provider>; digest: string } => {
+    const text = readFileSync(resolved, 'utf8');
+    const next = loadConfigText(text, resolved);
     assertKeysReadable(next);
     assertUserTokensReadable(next);
     return {
       config: next,
       providers: buildProviders(next, { log: (message) => stderr.write(`gcb daemon: ${message}\n`) }),
+      digest: createHash('sha256').update(text).digest('hex'),
     };
   };
   let config: BrokerConfig;
   let providers: Map<string, Provider>;
+  let initialDigest: string;
   try {
-    ({ config, providers } = load());
+    ({ config, providers, digest: initialDigest } = load());
   } catch (error) {
     stderr.write(`gcb daemon: ${(error as Error).message}\n`);
     return 1;
@@ -145,7 +149,7 @@ export async function runDaemon(
   const active = { config, providers };
   const watcher = new ConfigWatcher({
     file: resolved,
-    ...(initialDigest === undefined ? {} : { initialDigest }),
+    initialDigest,
     reload: () => {
       const next = load();
       if (next.config.socketPath !== active.config.socketPath) {
@@ -162,6 +166,7 @@ export async function runDaemon(
       active.providers = next.providers;
       stderr.write(`gcb daemon: config reloaded\n`);
       audit.record({ event: 'config', decision: 'reload' });
+      return next.digest;
     },
     onError: (error) => {
       stderr.write(`gcb daemon: config reload failed: ${error.message}\n`);

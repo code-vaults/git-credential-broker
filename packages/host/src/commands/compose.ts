@@ -53,6 +53,7 @@ export const CODE_DIR = '/opt/gcb';
 export function renderCompose(input: ComposeInput): string {
   const socketDir = input.socketDir.replace(/\/+$/, '');
   const configPath = input.configPath ?? `${input.dir}/broker.config.yml`;
+  const mountedConfigPath = path.posix.join(path.posix.dirname(SIDECAR.configPath), path.basename(configPath));
   const fromCode = input.code !== undefined;
 
   const origin = fromCode
@@ -66,7 +67,7 @@ export function renderCompose(input: ComposeInput): string {
 # To avoid depending on the registry at boot, either render this file with --code <directory> to
 # run staged code from a mount, or point --image at an image of your own that already has the
 # package installed, and change \`command\` to the binary in it:
-#   ["gcb", "daemon", "--config", "${SIDECAR.configPath}"]`;
+#   ["gcb", "daemon", "--config", "${mountedConfigPath}"]`;
 
   // The egress lines belong to both renders: a --code deployment is a sidecar too, and without them it
   // would carry no proxy variables at all, so the daemon would go direct and hang rather than refuse.
@@ -96,8 +97,8 @@ export function renderCompose(input: ComposeInput): string {
     : '\n      # No user.refresh yet: run `gcb authorize` and render this again. A mount' +
       '\n      # for a path that does not exist would become a directory, and the broker would read that.';
   const start = fromCode
-    ? `exec node --conditions=development ${CODE_DIR}/packages/host/bin/gcb.js daemon --config ${SIDECAR.configPath}`
-    : `exec npx --yes --package '${input.packageSpec}' gcb daemon --config ${SIDECAR.configPath}`;
+    ? `exec node --conditions=development ${CODE_DIR}/packages/host/bin/gcb.js daemon --config ${mountedConfigPath}`
+    : `exec npx --yes --package '${input.packageSpec}' gcb daemon --config ${mountedConfigPath}`;
   const command = `      - sh
       - -c
       - |
