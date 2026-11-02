@@ -44,6 +44,16 @@ export interface ComposeInput {
 /** Where a code-mounted sidecar expects the broker. */
 export const CODE_DIR = '/opt/gcb';
 
+/** Follow a selected config symlink; a missing file is the only fallback. */
+function selectedConfigFile(configPath: string): string {
+  try {
+    return fs.realpathSync(configPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return configPath;
+    throw error;
+  }
+}
+
 /**
  * Render the compose file.
  *
@@ -54,12 +64,7 @@ export function renderCompose(input: ComposeInput): string {
   const socketDir = input.socketDir.replace(/\/+$/, '');
   const configPath = input.configPath ?? `${input.dir}/broker.config.yml`;
   // Follow a selected symlink: the directory bind exposes the link, not a target outside it.
-  let configFile = configPath;
-  try {
-    configFile = fs.realpathSync(configPath);
-  } catch {
-    // A not-yet-created file is rendered for `init`; keep the requested path.
-  }
+  const configFile = selectedConfigFile(configPath);
   const mountedConfigPath = path.posix.join(path.posix.dirname(SIDECAR.configPath), path.basename(configFile));
   // One shell word; compose interpolates $ before sh runs, so a literal dollar is doubled.
   const mountedConfigArg = `'${mountedConfigPath.replace(/'/g, "'\\''")}'`.replace(/\$/g, () => '$$');
@@ -216,7 +221,8 @@ export function runCompose(argv: readonly string[]): number {
         ? path.join(dirArg, 'broker.config.yml')
         : resolveConfigPath(),
   );
-  const dir = path.resolve(dirArg ?? deploymentDir(configPath));
+  const configFile = selectedConfigFile(configPath);
+  const dir = path.resolve(dirArg ?? deploymentDir(configFile));
   const socketDir = args.value('socket-dir');
   if (!socketDir) {
     fail('--socket-dir is required (a host directory the pushing container already mounts)');
@@ -224,16 +230,16 @@ export function runCompose(argv: readonly string[]): number {
 
   // Check before emitting. A config written for the other deployment produces a sidecar that
   // starts and then cannot find its own private key, which is a confusing way to find out.
-  if (fs.existsSync(configPath)) {
-    const mode = inferMode(loadConfig(configPath));
+  if (fs.existsSync(configFile)) {
+    const mode = inferMode(loadConfig(configFile));
     if (mode !== 'sidecar') {
       fail(
-        `${configPath} was written with --mode host; re-run ` +
+        `${configFile} was written with --mode host; re-run ` +
           '`gcb init --mode sidecar ...` before using compose',
       );
     }
   } else {
-    warn(`no configuration at ${configPath} yet; create it with \`init --mode sidecar\` first`);
+    warn(`no configuration at ${configFile} yet; create it with \`init --mode sidecar\` first`);
   }
 
   // POSIX only, and guaranteed to exist by the refusal above: the file this prints binds host paths
@@ -249,7 +255,7 @@ export function runCompose(argv: readonly string[]): number {
   say(
     renderCompose({
       dir,
-      configPath,
+      configPath: configFile,
       socketDir,
       user,
       image: args.value('image') ?? 'node:24-slim',

@@ -1270,6 +1270,48 @@ describe('compose', () => {
     }
   });
 
+  it('derives the default deployment directory from a symlink target', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-compose-link-dir-'));
+    const targetDir = path.join(root, 'store');
+    fs.mkdirSync(targetDir);
+    const target = path.join(targetDir, 'prod.yml');
+    fs.writeFileSync(
+      target,
+      stringifyYaml({
+        socketPath: SIDECAR.socketPath,
+        auditPath: SIDECAR.auditPath,
+        hosts: {
+          'github.com': {
+            provider: 'github-app',
+            allow: ['a/one'],
+            clientId: 'Iv1.example',
+            appId: 1,
+            privateKeyPath: SIDECAR.keyPath,
+            permissions: { contents: 'write' },
+          },
+        },
+      }),
+    );
+    const link = path.join(root, 'selected.yml');
+    fs.symlinkSync(target, link);
+    const original = process.stdout.write;
+    let output = '';
+    process.stdout.write = ((chunk: unknown) => {
+      output += String(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      assert.equal(runCompose(['--config', link, '--socket-dir', '/srv/sock']), 0);
+    } finally {
+      process.stdout.write = original;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+    assert.equal(output.includes(targetDir + ':' + path.dirname(SIDECAR.configPath) + ':ro'), true);
+    assert.equal(output.includes(targetDir + '/app.pem:' + SIDECAR.keyPath + ':ro'), true);
+    assert.equal(output.includes(targetDir + '/log:' + SIDECAR.auditDir), true);
+    assert.match(output, /--config '\/etc\/git-cred-broker\/prod\.yml'/);
+  });
+
   it('drops privileges and keeps the root filesystem read-only', () => {
     assert.match(rendered, /cap_drop:\n\s+- ALL/);
     assert.match(rendered, /no-new-privileges:true/);
