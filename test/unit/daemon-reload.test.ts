@@ -90,8 +90,11 @@ describe('daemon live reload', () => {
       });
       assert.equal(stillOld['ok'], true, 'the old socket path keeps serving');
     } finally {
-      child.kill('SIGTERM');
-      await new Promise((resolve) => child.once('exit', resolve));
+      if (child.exitCode === null && child.signalCode === null) {
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.kill('SIGTERM');
+        await exited;
+      }
       fs.rmSync(root, { recursive: true, force: true });
     }
   });

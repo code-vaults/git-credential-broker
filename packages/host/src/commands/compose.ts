@@ -54,6 +54,8 @@ export function renderCompose(input: ComposeInput): string {
   const socketDir = input.socketDir.replace(/\/+$/, '');
   const configPath = input.configPath ?? `${input.dir}/broker.config.yml`;
   const mountedConfigPath = path.posix.join(path.posix.dirname(SIDECAR.configPath), path.basename(configPath));
+  // One shell word; compose interpolates $ before sh runs, so a literal dollar is doubled.
+  const mountedConfigArg = `'${mountedConfigPath.replace(/'/g, "'\\''")}'`.replace(/\$/g, () => '$$');
   const fromCode = input.code !== undefined;
 
   const origin = fromCode
@@ -97,8 +99,8 @@ export function renderCompose(input: ComposeInput): string {
     : '\n      # No user.refresh yet: run `gcb authorize` and render this again. A mount' +
       '\n      # for a path that does not exist would become a directory, and the broker would read that.';
   const start = fromCode
-    ? `exec node --conditions=development ${CODE_DIR}/packages/host/bin/gcb.js daemon --config ${mountedConfigPath}`
-    : `exec npx --yes --package '${input.packageSpec}' gcb daemon --config ${mountedConfigPath}`;
+    ? `exec node --conditions=development ${CODE_DIR}/packages/host/bin/gcb.js daemon --config ${mountedConfigArg}`
+    : `exec npx --yes --package '${input.packageSpec}' gcb daemon --config ${mountedConfigArg}`;
   const command = `      - sh
       - -c
       - |

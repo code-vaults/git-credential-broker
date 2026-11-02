@@ -1219,7 +1219,20 @@ describe('compose', () => {
       name: 'git-cred-broker',
     });
     assert.match(custom, /\/srv\/custom:\/etc\/git-cred-broker:ro/);
-    assert.match(custom, /--config \/etc\/git-cred-broker\/broker\.yml/);
+    assert.match(custom, /--config '\/etc\/git-cred-broker\/broker\.yml'/);
+  });
+
+  it('quotes a config basename that needs one shell word', () => {
+    const custom = renderCompose({
+      dir: '/volume1/docker/git-cred-broker',
+      configPath: '/srv/custom/broker live.yml',
+      socketDir: '/srv/shared/git-broker',
+      user: '1026:100',
+      image: 'node:24-slim',
+      packageSpec: 'gcb-host@0.0.0',
+      name: 'git-cred-broker',
+    });
+    assert.match(custom, /--config '\/etc\/git-cred-broker\/broker live\.yml'/);
   });
 
   it('drops privileges and keeps the root filesystem read-only', () => {
@@ -1231,7 +1244,7 @@ describe('compose', () => {
 
   it('runs the daemon from the published package, not from a copied checkout', () => {
     assert.match(rendered, /npx --yes --package 'gcb-host@0\.0\.0' gcb daemon/);
-    assert.match(rendered, new RegExp(`--config ${SIDECAR.configPath}`));
+    assert.match(rendered, new RegExp(`--config '${SIDECAR.configPath}'`));
   });
 
   it('can run staged code from a mount instead, fetching and building nothing at boot', () => {
