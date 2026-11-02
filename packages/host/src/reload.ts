@@ -56,6 +56,8 @@ export class ConfigWatcher {
   #last: string | undefined;
   /** A SIGHUP arrived while the file was absent; honour it when the file returns. */
   #forcePending = false;
+  /** The broken content already reported, so a deterministic failure is not logged every tick. */
+  #failedDigest: string | undefined;
   #timer: NodeJS.Timeout | undefined;
   #watch: fs.FSWatcher | undefined;
   #debounce: NodeJS.Timeout | undefined;
@@ -120,13 +122,18 @@ export class ConfigWatcher {
     if (!this.#forcePending && next.digest === this.#last) return;
     try {
       this.#last = this.#reload();
+      this.#failedDigest = undefined;
       this.#forcePending = false;
     } catch (error) {
-      // Keep the last good snapshot. Clear the digest so a transient failure (a half-written file,
-      // a permission blip) is retried on the next tick, even when the bytes have not changed.
+      // Keep the last good snapshot. Clearing the digest retries the same bytes on the next tick, for
+      // a transient cause; report only once per distinct bad content so a typo does not flood the
+      // audit log and the container log every five seconds.
       this.#last = undefined;
       this.#forcePending = false;
-      this.#onError(error as Error);
+      if (next.digest !== this.#failedDigest) {
+        this.#failedDigest = next.digest;
+        this.#onError(error as Error);
+      }
     }
   }
 
