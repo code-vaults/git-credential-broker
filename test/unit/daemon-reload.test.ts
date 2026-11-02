@@ -18,14 +18,23 @@ function request(socketPath: string, message: Record<string, unknown>): Promise<
   return new Promise((resolve, reject) => {
     const socket = net.connect(socketPath);
     let text = '';
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error('broker did not answer'));
+    }, 1_000);
+    timer.unref();
     socket.on('data', (chunk: Buffer) => {
       text += chunk.toString('utf8');
       const newline = text.indexOf('\n');
       if (newline < 0) return;
+      clearTimeout(timer);
       socket.destroy();
       resolve(JSON.parse(text.slice(0, newline)) as Record<string, unknown>);
     });
-    socket.on('error', reject);
+    socket.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
     socket.write(JSON.stringify(message) + '\n');
   });
 }
