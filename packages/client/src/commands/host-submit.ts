@@ -40,7 +40,7 @@ export function noAnswerMessage(dir: string, id: string, noun: string, timeoutMs
   const elapsed = timeoutMs >= 1_000 ? `${Math.round(timeoutMs / 1_000)}s` : `${timeoutMs}ms`;
   return (
     `the host broker did not answer ${id} within ${elapsed}\n` +
-    '  it may still be working: the request is not cancelled, and the opener removes it only once\n' +
+    '  it may still be working: the request is not cancelled, and the host broker removes it only once\n' +
     `  it has created the ${noun} or failed. Check the ${noun} list before asking again.`
   );
 }
