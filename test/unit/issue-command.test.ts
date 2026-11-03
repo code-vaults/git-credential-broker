@@ -348,6 +348,24 @@ describe('gcb issue create --as-user', () => {
     }
   });
 
+  it('refuses an explicit host that does not match origin', async () => {
+    const host = fixture();
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: host.root });
+      execFileSync('git', ['remote', 'add', 'origin', 'git@ghe.example:acme/widget.git'], { cwd: host.root });
+      writeOpener(host.dir, { pid: process.pid, kinds: ['issue-edit'] });
+      const result = await runClient(
+        ['issue', 'edit', '7', '--title', 'fixed', '--as-user', 'alice', '--host', 'github.com'],
+        host.root,
+      );
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /remote is on ghe\.example, but --host is github\.com/u);
+      assert.deepEqual(requests(host.dir), [], 'no request is written');
+    } finally {
+      host.cleanup();
+    }
+  });
+
   it('sends issue edit and comment through the host broker', async () => {
     const host = fixture();
     try {

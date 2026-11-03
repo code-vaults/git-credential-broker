@@ -326,6 +326,35 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
  * @param request - what to create.
  * @returns the number and URL, or the reason it did not work.
  */
+/**
+ * Run one person operation: check the allowlist, then call the program and turn its failure into a result.
+ *
+ * The five typed routes (review, reply, pull request edit, issue edit and issue comment) differ only in the
+ * argv they build, so the check and the catch live here once instead of being copied per route.
+ */
+async function personRun(
+  host: string,
+  repository: string,
+  allowed: (host: string, repo: string) => boolean,
+  work: (host: string) => Promise<HostOpenResult>,
+): Promise<HostOpenResult> {
+  if (!HOST.test(host)) return { error: `not a host: ${JSON.stringify(host)}` };
+  try {
+    if (!allowed(host, repository)) {
+      return { error: `repository ${repository} is not in the allowlist for ${host}` };
+    }
+  } catch (error) {
+    return { error: (error as Error).message };
+  }
+  try {
+    return await work(host);
+  } catch (error) {
+    const failure = error as { stderr?: string; message?: string };
+    const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
+    return { error: reason.slice(0, 300) || 'the command failed' };
+  }
+}
+
 async function openOne(
   repo: string,
   command: string,
@@ -370,15 +399,7 @@ async function openOne(
 
   if (request.kind === 'reply') {
     const host = request.host ?? 'github.com';
-    if (!HOST.test(host)) return { error: `not a host: ${JSON.stringify(host)}` };
-    try {
-      if (!allowed(host, request.repo)) {
-        return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
-      }
-    } catch (error) {
-      return { error: (error as Error).message };
-    }
-    try {
+    return personRun(host, request.repo, allowed, async (host) => {
       const { stdout, stderr } = await run(
         command,
         [
@@ -408,25 +429,13 @@ async function openOne(
         return { error: `no reply URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}` };
       }
       return { number: request.number, url: reply.html_url };
-    } catch (error) {
-      const failure = error as { stderr?: string; message?: string };
-      const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
-      return { error: reason.slice(0, 300) || 'the command failed' };
-    }
+    });
   }
 
   if (request.kind === 'issue-edit' || request.kind === 'issue-comment') {
     const host = request.host ?? 'github.com';
-    if (!HOST.test(host)) return { error: `not a host: ${JSON.stringify(host)}` };
-    try {
-      if (!allowed(host, request.repo)) {
-        return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
-      }
-    } catch (error) {
-      return { error: (error as Error).message };
-    }
     const edit = request.kind === 'issue-edit';
-    try {
+    return personRun(host, request.repo, allowed, async (host) => {
       const { stdout } = await run(
         command,
         [
@@ -450,27 +459,13 @@ async function openOne(
           env: forkEnv(request.proxy, request.account, host),
         },
       );
-      const found = issueUrl(stdout);
-      if (found !== undefined) return found;
-      return { number: request.number };
-    } catch (error) {
-      const failure = error as { stderr?: string; message?: string };
-      const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
-      return { error: reason.slice(0, 300) || 'the command failed' };
-    }
+      return issueUrl(stdout) ?? { number: request.number };
+    });
   }
 
   if (request.kind === 'edit') {
     const host = request.host ?? 'github.com';
-    if (!HOST.test(host)) return { error: `not a host: ${JSON.stringify(host)}` };
-    try {
-      if (!allowed(host, request.repo)) {
-        return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
-      }
-    } catch (error) {
-      return { error: (error as Error).message };
-    }
-    try {
+    return personRun(host, request.repo, allowed, async (host) => {
       const { stdout } = await run(
         command,
         [
@@ -491,66 +486,50 @@ async function openOne(
           env: forkEnv(request.proxy, request.account, host),
         },
       );
-      const found = pullRequestUrl(stdout);
-      if (found !== undefined) return found;
-      return { number: request.number };
-    } catch (error) {
-      const failure = error as { stderr?: string; message?: string };
-      const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
-      return { error: reason.slice(0, 300) || 'the command failed' };
-    }
+      return pullRequestUrl(stdout) ?? { number: request.number };
+    });
   }
 
   if (request.kind === 'review') {
     const host = request.host ?? 'github.com';
-    if (!HOST.test(host)) return { error: `not a host: ${JSON.stringify(host)}` };
-    try {
-      if (!allowed(host, request.repo)) {
-        return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
-      }
-    } catch (error) {
-      return { error: (error as Error).message };
-    }
     const flag =
       request.event === 'approve'
         ? '--approve'
         : request.event === 'request-changes'
           ? '--request-changes'
           : '--comment';
-    let scratch: string | undefined;
-    try {
-      scratch = mkdtempSync(join(tmpdir(), 'gcb-review-'));
-      const bodyFile = join(scratch, 'body.md');
-      writeFileSync(bodyFile, request.body, 'utf8');
-      const { stdout } = await run(
-        command,
-        [
-          ...extra,
-          'pr',
-          'review',
-          String(request.number),
-          '--repo',
-          request.repo,
-          flag,
-          ...(request.body.trim() === '' ? [] : ['--body-file', bodyFile]),
-        ],
-        {
-          cwd: repo,
-          timeout: CREATE_TIMEOUT_MS,
-          maxBuffer: 1 << 20,
-          env: forkEnv(request.proxy, request.account, host),
-        },
-      );
-      const match = /https:\/\/[^\s]+\/pull\/\d+(?:#pullrequestreview-\d+)?/.exec(stdout);
-      if (match?.[0] !== undefined) return { number: request.number, url: match[0] };
-      return { number: request.number };
-    } catch (error) {
-      const failure = error as { stderr?: string; message?: string };
-      const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
-      return { error: reason.slice(0, 300) || 'the command failed' };
-    } finally {
-      if (scratch !== undefined) rmSync(scratch, { recursive: true, force: true });
-    }
+    return personRun(host, request.repo, allowed, async (host) => {
+      let scratch: string | undefined;
+      try {
+        scratch = mkdtempSync(join(tmpdir(), 'gcb-review-'));
+        const bodyFile = join(scratch, 'body.md');
+        writeFileSync(bodyFile, request.body, 'utf8');
+        const { stdout } = await run(
+          command,
+          [
+            ...extra,
+            'pr',
+            'review',
+            String(request.number),
+            '--repo',
+            request.repo,
+            flag,
+            ...(request.body.trim() === '' ? [] : ['--body-file', bodyFile]),
+          ],
+          {
+            cwd: repo,
+            timeout: CREATE_TIMEOUT_MS,
+            maxBuffer: 1 << 20,
+            env: forkEnv(request.proxy, request.account, host),
+          },
+        );
+        const match = /https:\/\/[^\s]+\/pull\/\d+(?:#pullrequestreview-\d+)?/.exec(stdout);
+        if (match?.[0] !== undefined) return { number: request.number, url: match[0] };
+        return { number: request.number };
+      } finally {
+        if (scratch !== undefined) rmSync(scratch, { recursive: true, force: true });
+      }
+    });
   }
 
   // An explicit repository is the allowlist's decision, not the checkout's: the request may name a
