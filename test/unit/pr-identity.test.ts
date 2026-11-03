@@ -113,7 +113,7 @@ describe('gcb pr identity flags', () => {
           { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
         );
         await new Promise<void>((resolve) => server.close(() => resolve()));
-        assert.equal(result.status, 0, extra.join(' '));
+        assert.equal(result.status, 0, extra.join(' ') + '\n' + result.stderr);
         assert.equal(seen, expected, extra.join(' '));
       }
     } finally {
@@ -230,12 +230,13 @@ describe('gcb pr identity flags', () => {
       const cases: readonly string[][] = [
         ['--edit', '123', '--body', 'fixed'],
         ['--number', '7', '--comment', '--file', 'a.ts', '--line', '1', '--body', 'note'],
+        ['--number', '7', '--approve'],
       ];
       for (const extra of cases) {
         let seen: Record<string, unknown> = {};
         const server = await listen(socketPath, (request) => {
           seen = request;
-        });
+        }, { exitCode: 0 });
         const result = await tryRunAsync(
           process.execPath,
           [

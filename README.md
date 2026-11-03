@@ -414,7 +414,8 @@ gcb pr --as-user octocat --repo owner/repo --head feature --base main \
 # reply as that host account
 gcb pr --as-user octocat --number 94 --reply-to 123456 --body "good point"
 
-# submit a review as that host account
+# submit a review as the broker's authorized person, or a host account
+gcb pr --as-user --number 94 --approve
 gcb pr --as-user octocat --number 94 --approve
 gcb pr --as-user octocat --number 94 --request-changes --body "please fix"
 gcb pr --as-user octocat --number 94 --review-comment --body "a note"

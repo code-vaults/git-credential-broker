@@ -50,20 +50,20 @@ Opening (the default)
   --body-file <path>   The body, read from a file — a pull request body is usually long
   --draft              Open it as a draft
   --as-user            Act as the authorized person through the broker for open,
-                       reply, resolve, edit or comment; fails if no user token is
-                       configured. Without it, open/reply/edit/comment use the app;
-                       resolve always needs the person
-  --as-user <login>    Create or reply through the host broker, using ~/.config/gh-<login>
-                       (run 'gcb host' on the host)
+                       review, reply, resolve, edit or comment; fails if no user token
+                       is configured. Without it, open/review/reply/edit/comment use
+                       the app; resolve always needs the person
+  --as-user <login>    Create, review or reply through the host broker, using
+                       ~/.config/gh-<login> (run 'gcb host' on the host)
 
 Acting on one
   --number <n>         The pull request number                       [required]
   --proxy <url>        Use this proxy for this request
   --no-proxy           Reach GitHub directly for this request
   --status             Report its state, mergeability and the runs for its commit
-  --approve            Submit an approving review as the host account (needs --as-user <login>)
-  --request-changes    Request changes; needs --as-user <login> and --body/--body-file
-  --review-comment     Leave a review comment; needs --as-user <login> and --body/--body-file
+  --approve            Submit an approving review as the person (bare or login --as-user)
+  --request-changes    Request changes; needs the person and --body/--body-file
+  --review-comment     Leave a review comment; needs the person and --body/--body-file
   --comment            Post an anchored review comment (also needs --file and --line);
                        for a plain comment use: gcb gh pr comment <number> --body ...
   --file <path>        Anchor that comment to a line of this file, repository-relative
@@ -202,7 +202,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         JSON.stringify(action),
     );
   }
-  if (asUser && !['open', 'resolve', 'reply', 'edit', 'comment'].includes(action)) {
+  if (asUser && !['open', 'resolve', 'reply', 'edit', 'comment', 'host-review'].includes(action)) {
     fail(
       '--as-user without a login only opens, replies, resolves, edits or comments on a pull request, so it does not go with ' +
         JSON.stringify(action),
@@ -336,8 +336,6 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     ) {
       fail('--approve/--request-changes/--review-comment cannot be combined with another action');
     }
-    if (account === undefined) fail('--approve, --request-changes and --review-comment need --as-user <login>');
-    if (number === undefined) fail('submitting a review needs --number');
     const events = [
       args.has('approve') ? 'approve' : undefined,
       args.has('request-changes') ? 'request-changes' : undefined,
@@ -348,22 +346,33 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     if (event !== 'approve' && (body === undefined || body.trim() === '')) {
       fail(`--${event === 'comment' ? 'review-comment' : 'request-changes'} needs --body or --body-file`);
     }
-    return submitToOpener(
-      {
-        kind: 'review',
-        repo,
-        host,
-        number: Number(number),
-        event,
-        body: body ?? '',
-        account,
-        proxy,
-        session: 'pr',
-        pid: process.pid,
-      },
-      (answer) =>
-        `submitted ${event} review on #${answer.number ?? '?'} as ${account}${answer.url === undefined ? '' : `: ${answer.url}`}`,
-    );
+    if (account !== undefined) {
+      return submitToOpener(
+        {
+          kind: 'review',
+          repo,
+          host,
+          number: Number(number),
+          event,
+          body: body ?? '',
+          account,
+          proxy,
+          session: 'pr',
+          pid: process.pid,
+        },
+        (answer) =>
+          `submitted ${event} review on #${answer.number ?? '?'} as ${account}${answer.url === undefined ? '' : `: ${answer.url}`}`,
+      );
+    }
+    const ghArgs = ['pr', 'review', String(number), '--repo', repo, '--host', host];
+    if (event === 'approve') ghArgs.push('--approve');
+    else ghArgs.push(event === 'request-changes' ? '--request-changes' : '--comment');
+    if (body !== undefined) ghArgs.push('--body', body);
+    const socketArg = args.value('socket');
+    if (socketArg !== undefined) ghArgs.push('--socket', socketArg);
+    if (args.has('no-proxy')) ghArgs.push('--no-proxy');
+    else if (args.value('proxy') !== undefined) ghArgs.push('--proxy', args.value('proxy') as string);
+    return runGh(ghArgs, { unreachableExitCode: 3, identity: asUser ? 'user' : 'app' });
   }
 
   if (account !== undefined && action === 'reply') {
