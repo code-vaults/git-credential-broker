@@ -398,8 +398,8 @@ host, beside the same checkout, and ask for it with `--as-user <login>` from the
 ```sh
 # on the host, once — it serves every checkout below $HOME
 gcb host          # --root <dir> to narrow it, repeatable
-# for repo fork, reviews, review replies or an explicit --repo, also pass --config
-# <broker.config.yml> so its allowlist applies; reviews always carry a repo, even from origin
+# for repo fork, reviews, review replies, issue edit/comment or an explicit --repo, also pass
+# --config <broker.config.yml> so its allowlist applies; reviews always carry a repo, even from origin
 # or, at boot and for good: examples/gcb-host-boot.sh (see below)
 ```
 
@@ -421,12 +421,17 @@ gcb pr --as-user --number 94 --title "new title"
 gcb pr --as-user octocat --number 94 --body-file pr.md
 gcb pr --as-user octocat --number 94 --request-changes --body "please fix"
 gcb pr --as-user octocat --number 94 --review-comment --body "a note"
+
+# edit or comment on an issue as a person
+gcb issue edit 94 --as-user --title "new title"
+gcb issue comment 94 --as-user --body "a note"
 ```
 
 The host broker creates pull requests and issues, submits reviews, replies to review comments, edits
-pull requests, and forks with the gh account named by the request; it does not edit, close or merge. For `repo fork`, review replies and
-any request that names `--repo` explicitly — and every review, because the client always sends its
-repository — it checks the repository against the broker config's allowlist (pass `--config`). An explicit `--repo` needs no checkout of that repository; without it,
+pull requests and issues, and forks with the gh account named by the request; it does not close or
+merge. For `repo fork`, review replies, reviews, issue edit/comment and any request that names
+`--repo` explicitly — every review always carries its repository, even when derived from origin —
+it checks the repository against the broker config's allowlist (pass `--config`). An explicit `--repo` needs no checkout of that repository; without it,
 the checkout decides.
 `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that

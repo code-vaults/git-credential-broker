@@ -63,6 +63,8 @@ export async function submitToHostBroker(
     fork: { noun: 'fork', needed: 'fork' },
     reply: { noun: 'reply', needed: 'reply' },
     edit: { noun: 'edit', needed: 'edit' },
+    'issue-edit': { noun: 'issue edit', needed: 'issue-edit' },
+    'issue-comment': { noun: 'issue comment', needed: 'issue-comment' },
     review: { noun: 'review', needed: 'review' },
   };
   const { noun, needed } = KINDS[request.kind ?? 'pull-request'] ?? { noun: 'request' };

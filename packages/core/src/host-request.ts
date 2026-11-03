@@ -726,12 +726,14 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
         REPOSITORY.test(request.repo) &&
         Number.isInteger(request.number) &&
         (request.title === undefined || typeof request.title === 'string') &&
-        (request.body === undefined || typeof request.body === 'string')
+        (request.body === undefined || typeof request.body === 'string') &&
+        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
       : request.kind === 'issue-comment'
         ? typeof request.repo === 'string' &&
           REPOSITORY.test(request.repo) &&
           Number.isInteger(request.number) &&
-          typeof request.body === 'string'
+          typeof request.body === 'string' &&
+          (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
         : request.kind === 'edit'
       ? typeof request.repo === 'string' &&
         REPOSITORY.test(request.repo) &&
