@@ -7,6 +7,7 @@
  */
 import { createHash } from 'node:crypto';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
+import { parseDocument } from 'yaml';
 
 import { loadConfigText, readConfigText, resolveConfigPath } from '../config.ts';
 import { fail, parseArgs, say } from 'gcb-core';
@@ -50,17 +51,18 @@ function lastConfigEvent(path: string | null): LastConfig {
       return { error: new Error(`audit log is not a regular file: ${path}`) };
     }
     let position = stat.size;
-    let carry = '';
+    let carry = Buffer.alloc(0);
     while (position > 0) {
       const length = Math.min(CHUNK_BYTES, position);
       position -= length;
       const buffer = Buffer.alloc(length);
       readSync(fd, buffer, 0, length, position);
-      const lines = (buffer.toString('utf8') + carry).split('\n');
-      // The first element is the tail of a record that starts in the previous (earlier) chunk.
-      carry = position > 0 ? (lines.shift() ?? '') : '';
-      for (let index = lines.length - 1; index >= 0; index -= 1) {
-        const line = lines[index]?.trim();
+      // Split on the newline byte before decoding: 0x0a cannot occur inside a UTF-8 sequence.
+      const pieces = Buffer.concat([buffer, carry]).toString('latin1').split('\n');
+      // The first piece is the tail of a record that starts in the previous (earlier) chunk.
+      carry = position > 0 ? Buffer.from(pieces.shift() ?? '', 'latin1') : Buffer.alloc(0);
+      for (let index = pieces.length - 1; index >= 0; index -= 1) {
+        const line = Buffer.from(pieces[index] ?? '', 'latin1').toString('utf8').trim();
         if (!line) continue;
         try {
           const event = JSON.parse(line) as ConfigEvent & { event?: unknown };
@@ -100,7 +102,17 @@ function socketLine(path: string, expectedMode: number): string {
 
 /** Pull auditPath out of raw YAML even when the rest of the file is invalid. */
 function rawAuditPath(text: string): string | null {
-  const match = /^auditPath:\s*(?:"([^"]*)"|'([^']*)'|([^\n]*?)(?:[ \t]+#.*)?)$/m.exec(text);
+  try {
+    const parsed = parseDocument(text).toJS() as { auditPath?: unknown } | null;
+    if (parsed !== null && Object.hasOwn(parsed, 'auditPath')) {
+      const value = parsed.auditPath;
+      if (typeof value === 'string') return value.trim() === '' ? null : value;
+      if (value === null || value === undefined) return null;
+    }
+  } catch {
+    // An unparseable file still gets the line-based fallback below.
+  }
+  const match = /^auditPath:[ \t]*(?:"([^"]*)"|'([^']*)'|([^\n]*?)(?:[ \t]+#.*)?)$/m.exec(text);
   const value = (match?.[1] ?? match?.[2] ?? match?.[3])?.trim();
   return value === undefined || value === '' || value === 'null' || value === '~' ? null : value;
 }

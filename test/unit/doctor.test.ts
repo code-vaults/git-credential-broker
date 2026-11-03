@@ -216,6 +216,18 @@ describe('gcb doctor', () => {
     }
   });
 
+  it('reads a quoted auditPath key when the config is invalid', () => {
+    const host = fixture();
+    try {
+      fs.writeFileSync(host.config, `'auditPath': ${host.audit}\nhosts: [unterminated\n`);
+      fs.writeFileSync(host.audit, JSON.stringify({ ts: '2026-01-01T00:06:00.000Z', event: 'config', decision: 'reload' }) + '\n');
+      const text = output(['--config', host.config], 1);
+      assert.match(text, /last reload: reload at 2026-01-01T00:06:00.000Z/);
+    } finally {
+      host.cleanup();
+    }
+  });
+
   it('reports no reload record when the audit log is absent', () => {
     const host = fixture();
     try {
