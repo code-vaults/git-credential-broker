@@ -14,7 +14,7 @@ Usage: gcb <command> [options]
 
 Commands
   app          Run the app broker (alias for daemon)
-  host         Run the host broker (typed host operations; host-opener is a deprecated alias)
+  host         Run the host broker (typed host operations)
   daemon       Run the broker (normally started by the service manager)
   init         Create or update the broker config, and install the key
   stage        Export a reviewed commit to where the broker will run
@@ -23,7 +23,6 @@ Commands
   diagnose     Ask GitHub what the App can actually see
   doctor       Report config digest, last reload and socket state
   authorize    Authorize this app once for person-authored pull requests
-  host-opener  Deprecated alias for host
 
 Client commands such as setup/probe/logs/pr are in gcb-client.`;
 
@@ -51,7 +50,6 @@ async function run(argv: readonly string[]): Promise<number> {
     case 'authorize':
       return (await import('./commands/authorize.ts')).runAuthorize(rest);
     case 'host':
-    case 'host-opener':
       return (await import('./commands/host.ts')).runHostBroker(rest);
     default:
       process.stderr.write(`gcb: unknown host command \`${command ?? ''}\`.\n`);

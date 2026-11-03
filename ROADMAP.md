@@ -277,7 +277,7 @@ host_broker:
       Never output contents, never a token.
 - [ ] Error boundary: provider response bodies stay in the host log; only broker-composed errors
       cross the socket. A failed `gh` returns a bounded, sanitized reason.
-- [x] Rename `host-opener` to `gcb host`; keep `host-opener` as a deprecated alias.
+- [x] Rename the legacy opener command to `gcb host`.
 
 **Done when:** `gcb gh pr view`, `pr create`, `pr comment`, `pr review`, and `run view --log` work
 end to end with a fake `gh`, the token is revoked in every path, and injection/unknown-flag tests

@@ -569,7 +569,6 @@ On a host with user services, `examples/gcb-host.service` is a unit for it:
 npm i -g gcb-host                     # the unit calls the installed CLI
 cp examples/gcb-host.service ~/.config/systemd/user/
 systemctl --user daemon-reload
-systemctl --user disable --now host-opener   # the unit documented before the rename, if present
 systemctl --user enable --now gcb-host
 loginctl enable-linger "$USER"                          # so it survives logout and starts at boot
 journalctl --user -u gcb-host -f                     # its output
@@ -577,9 +576,7 @@ journalctl --user -u gcb-host -f                     # its output
 
 `loginctl enable-linger` is the part that is easy to miss: without it a user service stops when
 your last session ends and does not come back at boot. `Restart=always` is already in the unit, so
-a crash is a ten-second gap rather than a silent stop. On a host without user services, disable the
-old `host-opener` boot task before installing the `gcb-host` one; two brokers race over the same
-checkouts.
+a crash is a ten-second gap rather than a silent stop.
 
 On a host without user services — a Synology NAS, for instance — `examples/gcb-host-boot.sh` is
 the same thing for a boot-time task: absolute paths, one instance at a time, its output in a log

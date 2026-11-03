@@ -23,8 +23,7 @@ commands are not removed yet. The Phase 2 design note is in
 describes the current tree, which is the last green baseline. Do not
 implement a later phase to unblock an earlier one without updating the roadmap first. The target
 brand is `gcb`: the CLI, container and service share the name, the main broker is `gcb app`, and
-`gcb host` is the host broker (typed host operations, not a shell; service name `gcb-host`);
-`host-opener` remains a deprecated alias.
+`gcb host` is the host broker (typed host operations, not a shell; service name `gcb-host`).
 
 Keep the roadmap and the skills current as part of the work, not after it:
 

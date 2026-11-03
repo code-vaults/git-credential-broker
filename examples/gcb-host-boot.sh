@@ -62,7 +62,7 @@ if [ -f "$PIDFILE" ]; then
   # opener silently never starts, and it fails with EPERM for another user's process, so the guard
   # does not fire and a second opener starts — the race the comment above is about.
   if [ -n "$old" ] && [ -r "/proc/$old/cmdline" ] &&
-    tr '\0' '\n' <"/proc/$old/cmdline" | grep -Eq '^(host|host-opener)$'; then
+    tr '\0' '\n' <"/proc/$old/cmdline" | grep -qx host; then
     echo "$(date) already running as pid $old" >>"$LOG"
     exit 0
   fi
