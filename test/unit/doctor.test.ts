@@ -287,6 +287,8 @@ describe('gcb doctor', () => {
   it('keeps quoted paths and drops unquoted null/~ in the raw fallback', () => {
     const broken = '\nfoo: *missing\n';
     assert.equal(rawString('socketPath: "/tmp/a#1.sock"' + broken, 'socketPath'), '/tmp/a#1.sock');
+    assert.equal(rawString('"socketPath": "/tmp/quoted.sock"' + broken, 'socketPath'), '/tmp/quoted.sock');
+    assert.equal(rawString("'auditPath': '/tmp/quoted.jsonl'" + broken, 'auditPath'), '/tmp/quoted.jsonl');
     assert.equal(rawString('socketPath: "null"' + broken, 'socketPath'), 'null');
     assert.equal(rawString('socketPath: null' + broken, 'socketPath'), null);
     assert.equal(rawString('socketPath: ~' + broken, 'socketPath'), null);
