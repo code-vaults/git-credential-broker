@@ -293,6 +293,10 @@ describe('gcb pr identity flags', () => {
       assert.ok(request, 'the request reached the host broker');
       assert.equal(request?.kind, 'reply');
       assert.equal(request?.account, 'alice');
+      assert.equal(request?.repo, 'acme/widget');
+      assert.equal(request?.number, 7);
+      assert.equal(request?.commentId, 123);
+      assert.equal(request?.body, 'a reply');
       const [id] = listRequests(dir);
       writeResult(dir, id as string, {
         number: 7,

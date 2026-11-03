@@ -29,8 +29,8 @@ fi
 #                                    where the CLI is, when it is not on the PATH below
 #   GIT_BROKER_GH=/usr/local/bin/gh  where gh is, when it is not on that PATH
 #   GIT_BROKER_CONFIG=/volume1/homes/<you>/.broker-host/broker.config.yml
-#                                    broker config; required for reply and explicit --repo requests
-#                                    (the allowlist lives there), optional otherwise
+#                                    broker config; required for fork, reply and explicit --repo
+#                                    requests (the allowlist lives there), optional otherwise
 set -u
 
 # Where a global install and its node usually live on such a host. Prepended, not replaced: a task
