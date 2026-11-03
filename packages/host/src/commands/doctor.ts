@@ -113,7 +113,11 @@ function rawAuditPath(text: string): string | null {
     // An unparseable file still gets the line-based fallback below.
   }
   const match = /^auditPath:[ \t]*(?:"([^"]*)"|'([^']*)'|([^\n]*?)(?:[ \t]+#.*)?)$/m.exec(text);
-  const value = (match?.[1] ?? match?.[2] ?? match?.[3])?.trim();
+  if (match?.[1] !== undefined || match?.[2] !== undefined) {
+    const quoted = (match[1] ?? match[2] ?? '').trim();
+    return quoted === '' ? null : quoted;
+  }
+  const value = match?.[3]?.trim();
   return value === undefined || value === '' || value === 'null' || value === '~' ? null : value;
 }
 
@@ -174,6 +178,9 @@ export function runDoctor(argv: readonly string[]): number {
       `last reload: ${String(last.decision ?? 'unknown')} at ${String(last.ts ?? 'unknown')} (${matched})` +
         (typeof last.reason === 'string' ? ` — ${last.reason}` : ''),
     );
+  }
+  if (auditPath !== null) {
+    say(`audit: ${auditPath} (configured; the running daemon may still use its startup path)`);
   }
   if (config !== undefined) say(`socket: ${socketLine(config.socketPath, config.socketMode)}`);
   return loadError === undefined ? 0 : 1;
