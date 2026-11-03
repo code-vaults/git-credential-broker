@@ -697,12 +697,6 @@ export function writeResult(dir: string, id: string, result: HostOpenResult): vo
 }
 
 /**
- * Remove a request, once it has been answered.
- *
- * @param dir - the channel directory.
- * @param id - the identifier.
- */
-/**
  * Take a request, so that nobody else can act on it.
  *
  * Acting first and removing it afterwards is not enough: opening a pull request is not idempotent, and the
@@ -778,6 +772,12 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
   return request;
 }
 
+/**
+ * Remove a request, once it has been answered.
+ *
+ * @param dir - the channel directory.
+ * @param id - the identifier.
+ */
 export function removeRequest(dir: string, id: string): void {
   // Recursive: a directory here is not a request, and it must not be able to make this throw. The claimed
   // copy goes too: only the opener holding it reaches a removal, and only after answering or refusing, so

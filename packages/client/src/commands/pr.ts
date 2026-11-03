@@ -125,11 +125,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, {
     booleans: ['help', 'draft', 'status', 'comment', 'threads', 'no-proxy', 'approve', 'request-changes', 'review-comment'],
   });
-  if (args.has('help') || args.has('h')) {
-    say(PR_USAGE);
-    return 0;
-  }
-  if (hasSeparatedValue(argv, ['--title', '--body-file'])) {
+  if (args.has('help') || args.has('h') || hasSeparatedValue(argv, ['--title', '--body-file'])) {
     say(PR_USAGE);
     return 0;
   }

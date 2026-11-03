@@ -1,10 +1,9 @@
 /**
- * `issue` — catalogued issue actions, plus `create --as-user` through the host broker.
+ * `issue` — catalogued create/edit/comment actions, with person routes through the host broker.
  *
- * Without `--as-user` this is a thin wrapper: the catalogued `issue:create` action runs through the app
- * broker like every other gh action. With `--as-user` the request goes to the host broker, because the
- * app may not be installed on the repository and a person's account is the only route that can create
- * an issue there.
+ * Without `--as-user` these run app identity. Bare `--as-user` keeps the catalog action with the user
+ * identity. `--as-user <login>` writes a typed request for the host broker, which is also the route for
+ * a repository the app is not installed on.
  */
 import { readFileSync } from 'node:fs';
 
@@ -39,7 +38,7 @@ broker. issue edit <number> and issue comment <number> take the issue number as 
   -h, --help           Show this help
 
 The broker route (no --as-user or bare) takes --body/--body-file and catalogued flags such as
---label/--assignee; the host route takes --body/--body-file only.
+--label/--assignee; the host route takes --body/--body-file, plus --title for edit.
 `;
 
 /** Drop one value-taking flag and its value, in either spelling. */
@@ -190,10 +189,6 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     say(ISSUE_USAGE);
     return 0;
   }
-  if (args.values('as-user').length > 1) fail('--as-user may only be given once');
-  if (args.has('as-user') && args.values('as-user').length > 0) {
-    fail('--as-user cannot be both bare and given a login');
-  }
   if (args.has('as-user')) {
     // Bare --as-user is the broker's authorized person; the action decides which token to use.
     let rest = argv.filter((argument) => argument !== '--as-user' && argument !== '-as-user');
@@ -213,11 +208,6 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     if (!KNOWN_FLAGS.has(name)) fail('unknown option --' + name + ' for gcb issue create --as-user');
   }
   if (args.positionals.length > 1) fail('unexpected argument ' + JSON.stringify(args.positionals[1]));
-  const proxyValues = args.values('proxy');
-  if (args.has('proxy') && proxyValues.length === 0) fail('--proxy needs a value');
-  if (args.has('no-proxy') && (args.has('proxy') || proxyValues.length > 0)) {
-    fail('--proxy and --no-proxy are mutually exclusive');
-  }
   const repo = args.value('repo');
   if ((args.has('repo') || args.values('repo').length > 0) && (repo === undefined || repo.trim() === '')) {
     fail('--repo needs a value (e.g. owner/name)');

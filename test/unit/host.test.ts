@@ -65,7 +65,7 @@ describe('the opener, once', () => {
     assert.ok(argv.includes('--draft'), 'the draft flag reaches the program');
     assert.equal(argv[argv.indexOf('--head') + 1], 'feat/thing');
     assert.equal(argv[argv.indexOf('--base') + 1], 'main');
-    assert.equal(argv[argv.indexOf('--title') + 1], 'a title', 'one argument, spaces and all: no shell');
+    assert.ok(argv.includes('--title=a title'), 'one argument, spaces and all: no shell');
     assert.ok(argv.includes('--body-file'));
     assert.ok(
       !argv.includes('--repo'),
@@ -150,7 +150,7 @@ describe('the opener issue route', () => {
       assert.equal(readResult(dir, id)?.number, 9);
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
       assert.deepEqual(argv.slice(0, 2), ['issue', 'create']);
-      assert.equal(argv[argv.indexOf('--title') + 1], 'a title');
+      assert.ok(argv.includes('--title=a title'));
       assert.ok(argv.includes('--body-file'));
       assert.ok(!argv.includes('--base'));
       assert.ok(!argv.includes('--head'));
@@ -445,8 +445,8 @@ describe('edit routes outside the allowlist', () => {
 
 describe('the host issue edit and comment routes', () => {
   for (const entry of [
-    { kind: 'issue-edit' as const, argv: ['issue', 'edit'], flags: ['--title', 'fixed', '--body', 'updated'] },
-    { kind: 'issue-comment' as const, argv: ['issue', 'comment'], flags: ['--body', 'a note'] },
+    { kind: 'issue-edit' as const, argv: ['issue', 'edit'], flags: ['--title=fixed', '--body=updated'] },
+    { kind: 'issue-comment' as const, argv: ['issue', 'comment'], flags: ['--body=--help'] },
   ]) {
     it(`runs gh ${entry.argv.join(' ')}`, async () => {
       const root = mkdtempSync(join(tmpdir(), `host-broker-${entry.kind}-`));
@@ -468,7 +468,7 @@ describe('the host issue edit and comment routes', () => {
           dir,
           entry.kind === 'issue-edit'
             ? { kind: entry.kind, repo: 'acme/widget', number: 7, title: 'fixed', body: 'updated' }
-            : { kind: entry.kind, repo: 'acme/widget', number: 7, body: 'a note' },
+            : { kind: entry.kind, repo: 'acme/widget', number: 7, body: '--help' },
         );
         const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
         assert.equal(code, 0);
@@ -506,7 +506,7 @@ describe('the host edit route', () => {
         repo: 'acme/widget',
         number: 7,
         title: 'fixed',
-        body: 'updated body',
+        body: '--help',
       });
       const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
       assert.equal(code, 0);
@@ -514,8 +514,8 @@ describe('the host edit route', () => {
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
       assert.deepEqual(argv.slice(0, 2), ['pr', 'edit']);
       assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
-      assert.equal(argv[argv.indexOf('--title') + 1], 'fixed');
-      assert.equal(argv[argv.indexOf('--body') + 1], 'updated body');
+      assert.ok(argv.includes('--title=fixed'));
+      assert.ok(argv.includes('--body=--help'));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

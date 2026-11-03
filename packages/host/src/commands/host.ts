@@ -447,10 +447,10 @@ async function openOne(
           request.repo,
           ...(edit
             ? [
-                ...(request.title === undefined ? [] : ['--title', request.title]),
-                ...(request.body === undefined ? [] : ['--body', request.body]),
+                ...(request.title === undefined ? [] : [`--title=${request.title}`]),
+                ...(request.body === undefined ? [] : [`--body=${request.body}`]),
               ]
-            : ['--body', request.body]),
+            : [`--body=${request.body}`]),
         ],
         {
           cwd: repo,
@@ -475,9 +475,9 @@ async function openOne(
           String(request.number),
           '--repo',
           request.repo,
-          ...(request.title === undefined ? [] : ['--title', request.title]),
-          ...(request.body === undefined ? [] : ['--body', request.body]),
-          ...(request.base === undefined ? [] : ['--base', request.base]),
+          ...(request.title === undefined ? [] : [`--title=${request.title}`]),
+          ...(request.body === undefined ? [] : [`--body=${request.body}`]),
+          ...(request.base === undefined ? [] : [`--base=${request.base}`]),
         ],
         {
           cwd: repo,
@@ -546,11 +546,12 @@ async function openOne(
     }
   }
   // The body goes to a private temp file: the program is given a path, never a string to interpret.
-  const scratch = mkdtempSync(join(tmpdir(), 'gcb-'));
-  const bodyFile = join(scratch, 'body.md');
-  writeFileSync(bodyFile, request.body, 'utf8');
   const issue = request.kind === 'issue';
+  let scratch: string | undefined;
   try {
+    scratch = mkdtempSync(join(tmpdir(), 'gcb-'));
+    const bodyFile = join(scratch, 'body.md');
+    writeFileSync(bodyFile, request.body, 'utf8');
     const { stdout, stderr } = await run(
       command,
       [
@@ -562,8 +563,7 @@ async function openOne(
         ...(!issue && request.draft === true ? ['--draft'] : []),
         ...(target === undefined ? [] : ['--repo', target]),
         ...(issue ? [] : ['--base', request.base, '--head', request.head]),
-        '--title',
-        request.title,
+        `--title=${request.title}`,
         '--body-file',
         bodyFile,
       ],
@@ -589,6 +589,6 @@ async function openOne(
     const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
     return { error: reason.slice(0, 300) || 'the command failed' };
   } finally {
-    rmSync(scratch, { recursive: true, force: true });
+    if (scratch !== undefined) rmSync(scratch, { recursive: true, force: true });
   }
 }
