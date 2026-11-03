@@ -176,8 +176,9 @@ services:
     command:
 ${command}
     volumes:${codeMount}
-      # The directory, not the file: an atomic replacement on the host must be visible for reload;
-      # this exposes the rest of that directory read-only too.
+      # The directory, not the file: an atomic replacement on the host must be visible for reload.
+      # Keep broker.config.yml in its own subdirectory to keep this mount narrow; init's default
+      # layout puts it beside app.pem/user.refresh, which this mount also exposes read-only.
       - ${yamlVolume(path.dirname(configFile), path.dirname(SIDECAR.configPath), 'ro')}
       - ${yamlVolume(`${input.dir}/app.pem`, SIDECAR.keyPath, 'ro')}
 ${userRefreshMount}
