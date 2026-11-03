@@ -136,8 +136,12 @@ function rawSocketPath(text: string): string | null {
     // Fall through to the line-based fallback.
   }
   const match = /^socketPath:[ \t]*(?:"([^"]*)"|'([^']*)'|([^\n]*?)(?:[ \t]+#.*)?)$/m.exec(text);
-  const value = (match?.[1] ?? match?.[2] ?? match?.[3])?.trim();
-  return value === undefined || value === '' ? null : value;
+  if (match?.[1] !== undefined || match?.[2] !== undefined) {
+    const quoted = (match[1] ?? match[2] ?? '').trim();
+    return quoted === '' ? null : quoted;
+  }
+  const value = match?.[3]?.trim();
+  return value === undefined || value === '' || value === 'null' || value === '~' ? null : value;
 }
 
 /** Ask the running daemon which audit path it actually uses: undefined means no answer. */

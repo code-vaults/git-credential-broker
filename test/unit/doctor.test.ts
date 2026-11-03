@@ -278,7 +278,7 @@ describe('gcb doctor', () => {
       fs.writeFileSync(host.config, fs.readFileSync(host.config, 'utf8').replace(/socketPath: .*\n/, `socketPath: ${socketPath}\n`));
       const text = await output(['--config', host.config]);
       assert.match(text, /audit: .* \(configured; the running daemon may still use its startup path\)/);
-          } finally {
+    } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       host.cleanup();
     }
