@@ -101,19 +101,19 @@ function socketLine(path: string, expectedMode: number): string {
   return `present (mode ${mode}${mode === expected ? '' : `, expected ${expected}`}): ${path}`;
 }
 
-/** Pull auditPath out of raw YAML even when the rest of the file is invalid. */
-function rawAuditPath(text: string): string | null {
+/** Read one string key from raw YAML when the rest of the file is invalid. */
+function rawString(text: string, key: 'auditPath' | 'socketPath'): string | null {
   try {
-    const parsed = parseDocument(text).toJS() as { auditPath?: unknown } | null;
-    if (parsed !== null && Object.hasOwn(parsed, 'auditPath')) {
-      const value = parsed.auditPath;
+    const parsed = parseDocument(text).toJS() as Record<string, unknown> | null;
+    if (parsed !== null && Object.hasOwn(parsed, key)) {
+      const value = parsed[key];
       if (typeof value === 'string') return value.trim() === '' ? null : value;
       if (value === null || value === undefined) return null;
     }
   } catch {
     // An unparseable file still gets the line-based fallback below.
   }
-  const match = /^auditPath:[ \t]*(?:"([^"]*)"|'([^']*)'|([^\n]*?)(?:[ \t]+#.*)?)$/m.exec(text);
+  const match = new RegExp(`^${key}:[ \\t]*(?:"([^"]*)"|'([^']*)'|([^\\n]*?)(?:[ \\t]+#.*)?)$`, 'm').exec(text);
   if (match?.[1] !== undefined || match?.[2] !== undefined) {
     const quoted = (match[1] ?? match[2] ?? '').trim();
     return quoted === '' ? null : quoted;
@@ -124,25 +124,6 @@ function rawAuditPath(text: string): string | null {
 
 /** How long doctor waits for the daemon's ping answer. */
 const PING_TIMEOUT_MS = 500;
-
-/** Pull socketPath out of raw YAML even when the rest of the file is invalid. */
-function rawSocketPath(text: string): string | null {
-  try {
-    const parsed = parseDocument(text).toJS() as { socketPath?: unknown } | null;
-    if (parsed !== null && typeof parsed.socketPath === 'string' && parsed.socketPath.trim() !== '') {
-      return parsed.socketPath;
-    }
-  } catch {
-    // Fall through to the line-based fallback.
-  }
-  const match = /^socketPath:[ \t]*(?:"([^"]*)"|'([^']*)'|([^\n]*?)(?:[ \t]+#.*)?)$/m.exec(text);
-  if (match?.[1] !== undefined || match?.[2] !== undefined) {
-    const quoted = (match[1] ?? match[2] ?? '').trim();
-    return quoted === '' ? null : quoted;
-  }
-  const value = match?.[3]?.trim();
-  return value === undefined || value === '' || value === 'null' || value === '~' ? null : value;
-}
 
 /** Ask the running daemon which audit path it actually uses: undefined means no answer. */
 function activeAuditPath(socketPath: string): Promise<string | null | undefined> {
@@ -219,8 +200,8 @@ export async function runDoctor(
     loadError = error as Error;
   }
   const digest = createHash('sha256').update(text).digest('hex');
-  const configured = config !== undefined ? config.auditPath : rawAuditPath(text);
-  const socketPath = config !== undefined ? config.socketPath : rawSocketPath(text);
+  const configured = config !== undefined ? config.auditPath : rawString(text, 'auditPath');
+  const socketPath = config !== undefined ? config.socketPath : rawString(text, 'socketPath');
   const activePath = socketPath === null ? undefined : await activeAuditPath(socketPath);
   const auditPath = activePath === undefined ? configured : (activePath ?? configured);
   const lastResult = lastConfigEvent(auditPath);
