@@ -616,7 +616,7 @@ describe('broker actions', () => {
     assert.match(String(response.reason), /no usable identity/);
   });
 
-  it('refuses the user identity for an action that does not declare hostUser', async () => {
+  it('refuses the user identity for an action that does not declare appUser', async () => {
     let called = false;
     const provider: Provider = {
       name: 'static',
@@ -632,6 +632,30 @@ describe('broker actions', () => {
       host: HOST,
       path: 'acme/widget',
       ghAction: 'pr:view',
+      values: { number: 7 },
+      identity: 'user',
+    });
+    assert.equal(response.ok, false);
+    assert.match(String(response.reason), /cannot run as a person/);
+    assert.equal(called, false);
+  });
+
+  it('refuses the user identity for a hostUser action the app broker does not allow', async () => {
+    let called = false;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async () => {
+        called = true;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(undefined, provider);
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'pr:close',
       values: { number: 7 },
       identity: 'user',
     });

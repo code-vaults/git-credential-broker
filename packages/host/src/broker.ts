@@ -296,7 +296,7 @@ export function createRequestHandler(
         }
         throw error;
       }
-      if (identity === 'user' && !spec.hostUser) {
+      if (identity === 'user' && spec.appUser !== true) {
         return denyAction(CODES.BAD_REQUEST, 'action does not support the user identity', 'that action cannot run as a person');
       }
       if (typeof provider.runAction !== 'function') {

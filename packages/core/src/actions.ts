@@ -62,6 +62,8 @@ export interface GhAction {
   readonly timeoutSeconds: number;
   /** Whether the host broker may run this as a person with `--as-user`. */
   readonly hostUser: boolean;
+  /** Whether the app broker may run this with `identity: 'user'`; narrower than `hostUser`. */
+  readonly appUser?: boolean;
   /** When set, the executor runs `gh api` for this fixed request instead of the command above. */
   readonly api?: ApiSpec;
 }
@@ -236,6 +238,7 @@ const ISSUE_CREATE: GhAction = {
   permissions: { issues: 'write' },
   timeoutSeconds: 120,
   hostUser: true,
+  appUser: true,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/actions/runs/{run_id}
