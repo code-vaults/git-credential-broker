@@ -130,7 +130,7 @@ describe('the host reply route', () => {
 
 describe('the opener issue route', () => {
   it('runs gh issue create without branch flags', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-opener-issue-'));
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-issue-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -162,7 +162,7 @@ describe('the opener issue route', () => {
 
 describe('the opener explicit-repository route', () => {
   it('passes the named repository to gh instead of using the checkout', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-opener-issue-repo-'));
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-issue-repo-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -189,7 +189,7 @@ describe('the opener explicit-repository route', () => {
   });
 
   it('passes an explicit repository to gh for a pull request too', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-opener-pr-repo-'));
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-pr-repo-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -222,7 +222,7 @@ describe('the opener explicit-repository route', () => {
   });
 
   it('refuses an explicit repository without the allowlist config', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-opener-issue-no-config-'));
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-issue-no-config-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -253,7 +253,7 @@ function forkConfig(root: string, allow: string, host = 'github.com'): string {
 
 describe('the opener fork route', () => {
   it('runs gh repo fork with the repository and returns its URL', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-opener-fork-'));
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-fork-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -291,7 +291,7 @@ describe('the opener fork route', () => {
 
 describe('an existing fork', () => {
   it('turns gh\'s already-exists line into a URL', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-opener-fork-existing-'));
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-fork-existing-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -327,7 +327,7 @@ describe('an existing fork', () => {
 
 describe('an enterprise fork host', () => {
   it('keeps the token class gh uses for that host', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-opener-fork-ghes-'));
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-fork-ghes-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -359,7 +359,7 @@ describe('an enterprise fork host', () => {
 
 describe('a fork outside the allowlist', () => {
   it('is refused before gh runs', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-opener-fork-denied-'));
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-fork-denied-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -411,7 +411,6 @@ describe('a claim that someone else holds', () => {
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     const dir = channelDir(join(repo, '.git'));
     const argvFile = join(root, 'argv');
     const command = join(root, 'not-gh');
@@ -434,7 +433,7 @@ describe('a claim that someone else holds', () => {
 
 describe('the opener account selection', () => {
   it('uses ~/.config/gh-<login> and clears inherited tokens', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-opener-account-'));
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-account-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -481,7 +480,7 @@ describe('the opener account selection', () => {
   });
 
   it('refuses a request whose account is not a string', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-opener-account-shape-'));
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-account-shape-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -507,7 +506,7 @@ describe('the opener account selection', () => {
   });
 
   it('refuses an account with no gh config directory', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-opener-account-missing-'));
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-account-missing-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -543,7 +542,7 @@ describe('the opener account selection', () => {
 
 describe('the opener proxy choice', () => {
   it('applies, keeps or clears the proxy environment per request', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-opener-proxy-'));
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-proxy-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
