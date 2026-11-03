@@ -15,7 +15,7 @@ import { createLineReader, fail, parseArgs, say } from 'gcb-core';
 
 export const DOCTOR_USAGE = `Usage: gcb doctor [options]
 
-Report the configuration digest, the audit path and last reload, and the socket file.
+Report the configuration digest, the audit path, the last reload result and the socket file.
 
   --config <path>  Config file (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   -h, --help       Show this help
