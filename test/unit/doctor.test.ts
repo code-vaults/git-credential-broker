@@ -29,7 +29,7 @@ function fixture(): { root: string; config: string; audit: string; cleanup: () =
   return { root, config, audit, cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
 }
 
-function output(args: readonly string[]): string {
+function output(args: readonly string[], expected = 0): string {
   let text = '';
   const original = process.stdout.write;
   process.stdout.write = ((chunk: unknown) => {
@@ -37,7 +37,7 @@ function output(args: readonly string[]): string {
     return true;
   }) as typeof process.stdout.write;
   try {
-    assert.equal(runDoctor(args), 0);
+    assert.equal(runDoctor(args), expected);
   } finally {
     process.stdout.write = original;
   }
@@ -103,6 +103,22 @@ describe('gcb doctor', () => {
       fs.writeFileSync(path.join(host.root, 'broker.sock'), 'not a socket');
       const text = output(['--config', host.config]);
       assert.match(text, /socket: regular file \(broker refuses\):/);
+    } finally {
+      host.cleanup();
+    }
+  });
+
+  it('still reports the audit record when the config is invalid', () => {
+    const host = fixture();
+    try {
+      fs.writeFileSync(host.config, `auditPath: ${host.audit}\nhosts: [unterminated\n`);
+      fs.writeFileSync(
+        host.audit,
+        JSON.stringify({ ts: '2026-01-01T00:03:00.000Z', event: 'config', decision: 'reload-failed', reason: 'bad' }) + '\n',
+      );
+      const text = output(['--config', host.config], 1);
+      assert.match(text, /config: .* invalid:/);
+      assert.match(text, /last reload: reload-failed at 2026-01-01T00:03:00.000Z \(digest unknown\) — bad/);
     } finally {
       host.cleanup();
     }

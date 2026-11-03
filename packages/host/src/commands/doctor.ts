@@ -86,6 +86,13 @@ function socketLine(path: string, expectedMode: number): string {
   return `present (mode ${mode}${mode === expected ? '' : `, expected ${expected}`}): ${path}`;
 }
 
+/** Pull auditPath out of raw YAML even when the rest of the file is invalid. */
+function rawAuditPath(text: string): string | null {
+  const match = /^auditPath:\s*(?:"([^"]*)"|'([^']*)'|([^#\n]+))/m.exec(text);
+  const value = match?.[1] ?? match?.[2] ?? match?.[3]?.trim();
+  return value === undefined || value === '' ? null : value;
+}
+
 /**
  * Run the `doctor` command.
  *
@@ -108,22 +115,24 @@ export function runDoctor(argv: readonly string[]): number {
   if (configArg === '') fail('--config needs a value');
 
   const path = resolveConfigPath(configArg);
-  let config;
+  let config: ReturnType<typeof loadConfigText> | undefined;
   let text: string;
+  let loadError: Error | undefined;
+  text = readConfigText(path);
   try {
     // One read: the digest must describe the bytes that were validated, even if the host replaces
     // the file between the load and the report.
-    text = readConfigText(path);
     config = loadConfigText(text, path);
   } catch (error) {
-    fail((error as Error).message);
+    loadError = error as Error;
   }
   const digest = createHash('sha256').update(text).digest('hex');
-  const last = lastConfigEvent(config.auditPath);
+  const auditPath = config?.auditPath ?? rawAuditPath(text);
+  const last = lastConfigEvent(auditPath);
 
-  say(`config: ${path} ok`);
+  say(loadError === undefined ? `config: ${path} ok` : `config: ${path} invalid: ${loadError.message}`);
   say(`digest: ${digest}`);
-  if (config.auditPath === null) {
+  if (auditPath === null) {
     say('last reload: (no auditPath configured)');
   } else if (last === undefined) {
     say('last reload: (no config record in the audit log)');
@@ -135,6 +144,6 @@ export function runDoctor(argv: readonly string[]): number {
         (typeof last.reason === 'string' ? ` — ${last.reason}` : ''),
     );
   }
-  say(`socket: ${socketLine(config.socketPath, config.socketMode)}`);
-  return 0;
+  if (config !== undefined) say(`socket: ${socketLine(config.socketPath, config.socketMode)}`);
+  return loadError === undefined ? 0 : 1;
 }
