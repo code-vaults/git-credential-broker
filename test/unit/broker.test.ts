@@ -601,6 +601,69 @@ describe('broker actions', () => {
     assert.equal(record?.['token_fingerprint'], 'action-fingerprint');
   });
 
+  it('refuses an unusable action identity', async () => {
+    const harness = makeHarness();
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'pr:view',
+      values: { number: 7 },
+      identity: 'robot',
+    });
+    assert.equal(response.ok, false);
+    assert.equal(response.code, CODES.BAD_REQUEST);
+    assert.match(String(response.reason), /no usable identity/);
+  });
+
+  it('refuses the user identity for an action that does not declare hostUser', async () => {
+    let called = false;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async () => {
+        called = true;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(undefined, provider);
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'pr:view',
+      values: { number: 7 },
+      identity: 'user',
+    });
+    assert.equal(response.ok, false);
+    assert.match(String(response.reason), /cannot run as a person/);
+    assert.equal(called, false);
+  });
+
+  it('passes and audits the user identity for issue creation', async () => {
+    const calls: unknown[] = [];
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async (request) => {
+        calls.push(request);
+        return { stdout: 'created', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(undefined, provider);
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'issue:create',
+      values: { title: 't', body: 'b' },
+      identity: 'user',
+    });
+    assert.equal(response.ok, true);
+    assert.equal((calls[0] as { identity?: string }).identity, 'user');
+    assert.equal(harness.events.at(-1)?.['identity'], 'user');
+  });
+
   it('passes a warning with a failed start', async () => {
     const provider: Provider = {
       name: 'static',

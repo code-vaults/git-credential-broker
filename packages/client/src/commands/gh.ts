@@ -205,7 +205,7 @@ export async function runGh(
     if (match?.[1] === 'as-user') {
       fail(
         domain === 'issue' && command === 'create'
-          ? 'use gcb issue create --as-user <login>'
+          ? 'use gcb issue create --as-user (bare for the broker user, or with a login for the host opener)'
           : domain === 'pr' && command === 'create'
             ? 'use gcb pr --as-user (bare for the broker user, or with a login for the host opener)'
             : '--as-user only creates a pull request or issue',

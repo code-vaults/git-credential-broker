@@ -28,16 +28,32 @@ broker's authorized person; --as-user <login> writes a request for the host open
   --title <text>       The title                                     [required]
   --body <text>        The body, inline
   --body-file <path>   The body, read from a file
-  --repo <owner/name>  Recorded for the request; the checkout decides the repository
+  --repo <owner/name>  The repository; the opener records it, the checkout decides
   --as-user            Use the broker's authorized person
   --as-user <login>    Use ~/.config/gh-<login> on the host
   --proxy <url>        Use this proxy for the opener's gh call
   --no-proxy           Reach GitHub directly for the opener's gh call
   -h, --help           Show this help
 
-The broker route (no --as-user) takes --body and catalogued flags such as --label/--assignee;
-this host route takes --body/--body-file only.
+The broker route (no --as-user or bare) takes --body/--body-file and catalogued flags such as
+--label/--assignee; the host route takes --body/--body-file only.
 `;
+
+/** Drop one value-taking flag and its value, in either spelling. */
+function dropFlag(argv: readonly string[], name: string): string[] {
+  const out: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === `--${name}` || argument === `-${name}`) {
+      const next = argv[index + 1];
+      if (next !== undefined && !next.startsWith('--')) index += 1;
+      continue;
+    }
+    if (argument?.startsWith(`--${name}=`) || argument?.startsWith(`-${name}=`)) continue;
+    if (argument !== undefined) out.push(argument);
+  }
+  return out;
+}
 
 /**
  * Run one `issue` command.
@@ -62,7 +78,18 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   }
   if (args.has('as-user')) {
     // Bare --as-user is the broker's authorized person; the action decides which token to use.
-    const rest = argv.filter((argument) => argument !== '--as-user' && argument !== '-as-user');
+    let rest = argv.filter((argument) => argument !== '--as-user' && argument !== '-as-user');
+    const bodyFile = args.value('body-file');
+    if (bodyFile !== undefined) {
+      let body: string;
+      try {
+        body = readFileSync(bodyFile, 'utf8');
+      } catch (error) {
+        fail(`cannot read ${bodyFile}: ${(error as Error).message}`);
+      }
+      rest = dropFlag(dropFlag(rest, 'body-file'), 'body');
+      rest.push(`--body=${body}`);
+    }
     return runGh(['issue', ...rest], { identity: 'user' });
   }
   if (account === undefined) return runGh(['issue', ...argv]);

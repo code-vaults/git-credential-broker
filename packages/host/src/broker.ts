@@ -329,6 +329,7 @@ export function createRequestHandler(
           action: ghAction,
           command: spec.command.join(' '),
           permissions: spec.permissions,
+          identity: identity ?? 'app',
           duration_ms: Date.now() - startedAt,
           token_fingerprint: result.tokenFingerprint,
           exit_code: result.code,

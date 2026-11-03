@@ -135,7 +135,8 @@ described below is still what runs the lifecycle `gh` cannot express (opening as
 threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr close`.
 
 For that flag-only form, creation uses the app's installation token by default; `--as-user` without
-a value uses the broker's authorized user token for open, reply and resolve, and `--as-user <login>`
+a value uses the broker's authorized user token for open, reply, resolve, edit and comment, and
+`--as-user <login>`
 uses the host opener for creation. Resolving a review thread defaults to the user identity because the pull-request token this broker
 mints is narrowed to `pull_requests: write` and `contents: read`, while `resolveReviewThread` needs
 `contents: write` — a grant the broker gives only to the credential git pushes with, never to a
@@ -371,9 +372,10 @@ Both the app and the installation need `pull_requests: write`; without it the er
 permission instead of failing at GitHub. `--draft` opens it as a draft. `--threads` prints the ids of
 a pull request's review threads and their comments; `--reply-to` adds a reply inside one (add bare
 `--as-user` to attribute it to the broker's authorized person), and `--edit` replaces the body of one
-of those review comments. The comment id names the comment — and its
-pull request — so `--edit` takes no `--number`. GitHub lets only an author change a comment, and the
-comments this command posts are the app's, so `--edit` changes those rather than a person's.
+of those review comments; bare `--as-user` works for `--reply-to`, `--edit` and `--comment` too. The
+comment id names the comment — and its pull request — so `--edit` takes no `--number`. GitHub lets
+only an author change a comment, so without `--as-user` the app can change only the comments it
+authored; with bare `--as-user` it changes the authorized person's.
 
 ### Opening a pull request or issue as yourself
 
@@ -456,8 +458,8 @@ belongs to one user or organization and cannot span two, so two owners need two 
 with **Pull requests: Read and write**, **Contents: Read** and **Metadata: Read**, and give it access
 to **only the repositories the allowlist already names**. With Contents: Read, GitHub itself refuses
 to let that token push or merge, so "it may only open pull requests" is enforced by GitHub rather
-than promised here. `userTokens` is consulted for opening or replying when `--as-user` is passed, and for an issue
-creation or resolve when no `user.refresh` exists. Resolving a review thread needs **Contents: Read and write**
+than promised here. `userTokens` is consulted for opening, replying, editing or commenting when `--as-user` is passed,
+and for an issue creation or resolve when no `user.refresh` exists. Resolving a review thread needs **Contents: Read and write**
 (`resolveReviewThread` is refused without it), which would also let that token push and merge; if
 that trade is not acceptable, resolve through `authorize`, whose token is the person's own.
 `user.refresh` wins over `userTokens` when it exists. A plain `gcb pr` stays on the app's

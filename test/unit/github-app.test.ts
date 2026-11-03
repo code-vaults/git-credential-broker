@@ -1117,6 +1117,41 @@ describe('createGithubAppProvider', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('edits a comment and posts a review with the authorized user token', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'user-comment-'));
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+    });
+    const provider = providerFor(stub, { privateKeyPath: join(dir, 'app.pem') });
+    await provider.pullRequest!({
+      action: 'edit',
+      identity: 'user',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      commentId: 99,
+      body: 'fixed',
+    });
+    await provider.pullRequest!({
+      action: 'comment',
+      identity: 'user',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 4,
+      body: 'note',
+    });
+    const edited = stub.calls.find((call) => call.url.endsWith('/pulls/comments/99'));
+    const commented = stub.calls.find((call) => call.url.endsWith('/pulls/4/reviews'));
+    assert.equal(edited?.authorization, 'Bearer person-token');
+    assert.equal(edited?.method, 'PATCH');
+    assert.equal(commented?.authorization, 'Bearer person-token');
+    assert.equal(commented?.method, 'POST');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('forks with the authorized user token', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'fork-user-'));
     writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');

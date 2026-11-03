@@ -207,6 +207,8 @@ describe('gcb issue create --as-user', () => {
     const socketPath = path.join(host.root, 'broker.sock');
     try {
       let seen: Record<string, unknown> = {};
+      const bodyFile = path.join(host.root, 'body.md');
+      fs.writeFileSync(bodyFile, 'from a file\n');
       const server = await broker(socketPath, (request) => {
         seen = request;
       });
@@ -219,8 +221,8 @@ describe('gcb issue create --as-user', () => {
           'acme/widget',
           '--title',
           't',
-          '--body',
-          'b',
+          '--body-file',
+          bodyFile,
           '--socket',
           socketPath,
         ],
@@ -230,6 +232,7 @@ describe('gcb issue create --as-user', () => {
       assert.equal(result.status, 0);
       assert.equal(seen['identity'], 'user');
       assert.equal(seen['ghAction'], 'issue:create');
+      assert.equal((seen['values'] as Record<string, unknown>)['body'], 'from a file\n');
     } finally {
       host.cleanup();
     }

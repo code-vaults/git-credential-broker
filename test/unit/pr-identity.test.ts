@@ -188,6 +188,78 @@ describe('gcb pr identity flags', () => {
     }
   });
 
+  it('sends the user identity for as-user edit and comment', async () => {
+    const repo = checkout();
+    const socketPath = path.join(repo.root, 'broker.sock');
+    try {
+      const cases: readonly string[][] = [
+        ['--edit', '123', '--body', 'fixed'],
+        ['--number', '7', '--comment', '--file', 'a.ts', '--line', '1', '--body', 'note'],
+      ];
+      for (const extra of cases) {
+        let seen: Record<string, unknown> = {};
+        const server = await listen(socketPath, (request) => {
+          seen = request;
+        });
+        const result = await tryRunAsync(
+          process.execPath,
+          [
+            '--conditions=development',
+            CLIENT_BIN,
+            'pr',
+            '--as-user',
+            '--repo',
+            'acme/widget',
+            '--socket',
+            socketPath,
+            ...extra,
+          ],
+          { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+        );
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        assert.equal(result.status, 0, extra.join(' '));
+        assert.equal(seen['identity'], 'user', extra.join(' '));
+      }
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it('keeps a plain reply on the app identity', async () => {
+    const repo = checkout();
+    const socketPath = path.join(repo.root, 'broker.sock');
+    try {
+      let seen: Record<string, unknown> = {};
+      const server = await listen(socketPath, (request) => {
+        seen = request;
+      });
+      const result = await tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          '--number',
+          '7',
+          '--reply-to',
+          '123',
+          '--body',
+          'a reply',
+          '--repo',
+          'acme/widget',
+          '--socket',
+          socketPath,
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      assert.equal(result.status, 0);
+      assert.equal(seen['identity'], 'app');
+    } finally {
+      repo.cleanup();
+    }
+  });
+
   it('sends the user identity for an as-user reply', async () => {
     const repo = checkout();
     const socketPath = path.join(repo.root, 'broker.sock');

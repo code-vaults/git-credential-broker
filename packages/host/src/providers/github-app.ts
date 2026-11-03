@@ -539,6 +539,16 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     }
   }
 
+  /** The authorized person's token, falling back to the per-owner token for this owner. */
+  async function personTokenFor(owner: string): Promise<string | undefined> {
+    const personal = await personalToken();
+    if (personal !== undefined) return personal;
+    const file = cfg.userTokens?.[owner];
+    if (file === undefined) return undefined;
+    const token = readFileSync(file, 'utf8').trim();
+    return token === '' ? undefined : token;
+  }
+
   async function renewPersonToken(): Promise<string | undefined> {
     if (cfg.clientId === undefined || cfg.privateKeyPath === undefined) return undefined;
     const path = userTokenPath(cfg.privateKeyPath);
@@ -626,14 +636,13 @@ function pullRequestNumber(value: unknown): number | undefined {
       let token: string;
       let minted = false;
       if (identity === 'user') {
-        const personal = await personalToken();
-        const file = cfg.userTokens?.[request.owner];
-        token = personal ?? (file === undefined ? '' : readFileSync(file, 'utf8').trim());
-        if (token === '') {
+        const person = await personTokenFor(request.owner);
+        if (person === undefined) {
           throw new ProviderConfigError(
             'no authorized user token for this action; run gcb authorize or configure userTokens',
           );
         }
+        token = person;
       } else {
         const wanted: Record<string, string> = { ...spec.permissions };
         await ensurePermissions(request.owner, wanted);
@@ -780,11 +789,7 @@ function pullRequestNumber(value: unknown): number | undefined {
      */
     async pullRequest(request: PullRequestRequest): Promise<PullRequest> {
       if (request.action === 'fork') {
-        let token = await personalToken();
-        const userToken = cfg.userTokens?.[request.owner];
-        if (token === undefined && userToken !== undefined) {
-          token = readFileSync(userToken, 'utf8').trim();
-        }
+        const token = await personTokenFor(request.owner);
         if (token === undefined) {
           throw new ProviderConfigError('no user token for fork; run gcb authorize or configure userTokens');
         }
@@ -809,8 +814,13 @@ function pullRequestNumber(value: unknown): number | undefined {
       const wantsApp = request.identity === 'app';
       const wantsUser = request.identity === 'user';
       const personalForThis =
-        !wantsApp && (request.action === 'open' || request.action === 'resolve' || request.action === 'reply');
-      const personToken = personalForThis ? await personalToken() : undefined;
+        !wantsApp &&
+        (request.action === 'open' ||
+          request.action === 'resolve' ||
+          request.action === 'reply' ||
+          request.action === 'edit' ||
+          request.action === 'comment');
+      const actingToken = personalForThis ? await personTokenFor(request.owner) : undefined;
 
       // `--status` also reads /actions/runs, which is checked against actions: read. Pre-flighting
       // pull_requests alone passed a grant that could not make that call, which is the opposite of what a
@@ -820,12 +830,6 @@ function pullRequestNumber(value: unknown): number | undefined {
 
       // One variable, so every branch below holds a token without having to ask which kind it is.
       let token: string | undefined;
-      // A token per owner is the other way a person acts. It counts exactly as the authorized token does:
-      // whoever is acting, requiring an installation as well would refuse a repository the app was never
-      // installed on — the fork-to-upstream case the allowlist exists to permit.
-      const fileToken = personalForThis ? cfg.userTokens?.[request.owner] : undefined;
-      const actingToken =
-        personToken ?? (fileToken === undefined ? undefined : readFileSync(fileToken, 'utf8').trim());
 
       if (wantsUser && actingToken === undefined) {
         throw new ProviderConfigError(
@@ -856,7 +860,7 @@ function pullRequestNumber(value: unknown): number | undefined {
         // The thread id is a global node id, and the person token is not narrowed to a repository the way
         // an installation token is. Ask whose thread it is before changing it: the allowlist decided which
         // repositories this broker may touch, and a mutation is the wrong place to discover it did not.
-        const { text: scoped } = await callWithToken('POST', `${api}/graphql`, personToken ?? token, {
+        const { text: scoped } = await callWithToken('POST', `${api}/graphql`, token, {
           query:
             'query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{pullRequest{repository{nameWithOwner}}}}}',
           variables: { threadId: request.threadId },
@@ -881,7 +885,7 @@ function pullRequestNumber(value: unknown): number | undefined {
           );
         }
 
-        const { text: raw } = await callWithToken('POST', `${api}/graphql`, personToken ?? token, {
+        const { text: raw } = await callWithToken('POST', `${api}/graphql`, token, {
           query:
             'mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}',
           variables: { threadId: request.threadId ?? '' },
