@@ -161,7 +161,7 @@ describe('the opener issue route', () => {
   });
 });
 
-describe('the opener explicit-repository issue route', () => {
+describe('the opener explicit-repository route', () => {
   it('passes the named repository to gh instead of using the checkout', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-opener-issue-repo-'));
     const repo = join(root, 'checkout');
@@ -182,6 +182,39 @@ describe('the opener explicit-repository issue route', () => {
       const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.number, 9);
+      const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
+      assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('passes an explicit repository to gh for a pull request too', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-opener-pr-repo-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const argvFile = join(root, 'argv');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "https://github.com/acme/widget/pull/7"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, {
+        repo: 'acme/widget',
+        head: 'feat/x',
+        base: 'main',
+        title: 'a title',
+        body: 'a body',
+      });
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      assert.equal(readResult(dir, id)?.number, 7);
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
       assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
     } finally {
