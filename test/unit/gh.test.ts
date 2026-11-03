@@ -39,7 +39,7 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.doesNotMatch(result.stdout, /host-token/);
   });
 
-  it('keeps issue edit and comment bodies out of the process arguments', async () => {
+  it('keeps bodies out of the process arguments', async () => {
     const gh = shim(
       'printf "ARGS=%s\n" "$*"; while [ "$#" -gt 0 ]; do if [ "$1" = "--body-file" ]; then printf "BODY="; cat "$2"; fi; shift; done',
     );
