@@ -187,11 +187,13 @@ export function createRequestHandler(
     const denyPullRequest = (code: string, reason: string, message: string, hostDetail?: string): WireResponse =>
       deny(context, code, reason, message, hostDetail, auditEvent);
     if (message['op'] === 'ping') {
+      const configuredAudit = current.config.auditPath;
       return {
         ok: true,
         version: BROKER_VERSION,
         hosts: [...current.providers.keys()],
-        auditPath: current.config.auditPath,
+        auditPath:
+          configuredAudit === null || configuredAudit === '' ? configuredAudit : path.resolve(configuredAudit),
       };
     }
     if (

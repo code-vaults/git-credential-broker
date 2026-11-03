@@ -122,6 +122,13 @@ describe('broker request handling', () => {
     assert.equal(response.auditPath, auditPath);
   });
 
+  it('reports a relative audit path as absolute from ping', async () => {
+    const { handle } = makeHarness(['acme/widget'], undefined, undefined, 'relative-audit.jsonl');
+    const response = await handle({ op: 'ping' });
+    assert.equal(response.ok, true);
+    assert.equal(response.auditPath, path.resolve('relative-audit.jsonl'));
+  });
+
   it('refuses an unknown operation', async () => {
     const { handle } = makeHarness();
     const response = await handle({ op: 'exfiltrate' });
