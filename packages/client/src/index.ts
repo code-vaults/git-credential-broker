@@ -71,7 +71,13 @@ async function run(argv: readonly string[]): Promise<number> {
       }
       if (
         sub === 'create' &&
-        rest.some((argument) => argument === '--as-user' || argument.startsWith('--as-user='))
+        rest.some(
+          (argument) =>
+            argument === '--as-user' ||
+            argument.startsWith('--as-user=') ||
+            argument === '-as-user' ||
+            argument.startsWith('-as-user='),
+        )
       ) {
         // `pr create` is the catalogued action, but `--as-user` is the flag-only lifecycle's flag.
         // Accept the obvious spelling instead of making the caller discover that `create` must go.

@@ -238,6 +238,29 @@ describe('gcb issue create --as-user', () => {
     }
   });
 
+  it('translates body-file without as-user', async () => {
+    const host = fixture();
+    const socketPath = path.join(host.root, 'broker.sock');
+    try {
+      const bodyFile = path.join(host.root, 'body.md');
+      fs.writeFileSync(bodyFile, 'app body\n');
+      let seen: Record<string, unknown> = {};
+      const server = await broker(socketPath, (request) => {
+        seen = request;
+      });
+      const result = await runClient(
+        ['issue', 'create', '--repo', 'acme/widget', '--title', 't', '--body-file', bodyFile, '--socket', socketPath],
+        host.root,
+      );
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      assert.equal(result.status, 0);
+      assert.equal((seen['values'] as Record<string, unknown>)['body'], 'app body\n');
+      assert.equal(seen['identity'], undefined);
+    } finally {
+      host.cleanup();
+    }
+  });
+
   it('keeps the catalogue help and refuses --as-user outside create', async () => {
     const host = fixture();
     try {

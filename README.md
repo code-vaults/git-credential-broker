@@ -484,8 +484,9 @@ It prints a code and asks you to open <https://github.com/login/device>, then wa
 whatever device has a browser. The refresh token is stored beside the private key, which is where the
 broker looks for it, and the broker renews it from then on — nothing else needs running.
 
-The user token is used for exactly the two things an installation token cannot do: authoring a pull
-request as that person, and resolving a review thread, which GraphQL refuses for an app outright.
+The user token is used where the person identity is required or preferred: authoring a pull request,
+resolving a review thread (GraphQL refuses that for an app), replying to or editing a review comment,
+and creating an issue through the broker action path.
 
 The file needs to be **writable by the broker**, unlike the key: GitHub rotates the refresh token on
 every exchange, so mount it read-write (`./user.refresh:/etc/git-cred-broker/user.refresh:rw` in the

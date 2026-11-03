@@ -119,28 +119,30 @@ describe('gcb pr identity flags', () => {
     }
   });
 
-  it('routes pr create --as-user=login to the opener', async () => {
+  it('routes pr create as-user=login spellings to the opener', async () => {
     const repo = checkout();
     try {
-      const result = await tryRunAsync(
-        process.execPath,
-        [
-          '--conditions=development',
-          CLIENT_BIN,
-          'pr',
-          'create',
-          '--as-user=alice',
-          '--repo',
-          'acme/widget',
-          '--head',
-          'feat/x',
-          '--title',
-          't',
-        ],
-        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
-      );
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /no host opener is watching/);
+      for (const spelling of ['--as-user=alice', '-as-user=alice']) {
+        const result = await tryRunAsync(
+          process.execPath,
+          [
+            '--conditions=development',
+            CLIENT_BIN,
+            'pr',
+            'create',
+            spelling,
+            '--repo',
+            'acme/widget',
+            '--head',
+            'feat/x',
+            '--title',
+            't',
+          ],
+          { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+        );
+        assert.equal(result.status, 1, spelling);
+        assert.match(result.stderr, /no host opener is watching/, spelling);
+      }
     } finally {
       repo.cleanup();
     }
@@ -183,6 +185,7 @@ describe('gcb pr identity flags', () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       assert.equal(result.status, 0);
       assert.equal(seen['ghAction'], 'pr:create');
+      assert.ok(seen['identity'] === undefined || seen['identity'] === 'app');
     } finally {
       repo.cleanup();
     }

@@ -1117,6 +1117,37 @@ describe('createGithubAppProvider', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('keeps an omitted identity on the app for comment and edit', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'comment-app-'));
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+    });
+    const provider = providerFor(stub, { privateKeyPath: join(dir, 'app.pem') });
+    await provider.pullRequest!({
+      action: 'edit',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      commentId: 99,
+      body: 'fixed',
+    });
+    await provider.pullRequest!({
+      action: 'comment',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 4,
+      body: 'note',
+    });
+    const edited = stub.calls.find((call) => call.url.endsWith('/pulls/comments/99'));
+    const commented = stub.calls.find((call) => call.url.endsWith('/pulls/4/reviews'));
+    assert.equal(edited?.authorization, 'Bearer ghs_stub_token_value');
+    assert.equal(commented?.authorization, 'Bearer ghs_stub_token_value');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('edits a comment and posts a review with the authorized user token', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'user-comment-'));
     writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');

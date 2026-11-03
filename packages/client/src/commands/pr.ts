@@ -50,8 +50,8 @@ Opening (the default)
   --draft              Open it as a draft
   --as-user            Act as the authorized person through the broker for open,
                        reply, resolve, edit or comment; fails if no user token is
-                       configured. Without this flag the action uses the app's
-                       installation token
+                       configured. Without it, open/reply/edit/comment use the app;
+                       resolve always needs the person
   --as-user <login>    Create it through the host opener, using ~/.config/gh-<login>
                        (run 'gcb host-opener' on the host)
 

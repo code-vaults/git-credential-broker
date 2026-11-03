@@ -26,7 +26,8 @@ Create an issue. Without --as-user it runs through the app broker; bare --as-use
 broker's authorized person; --as-user <login> writes a request for the host opener.
 
   --title <text>       The title                                     [required]
-  --body <text>        The body, inline
+  --body <text>        The body, inline, or use --body-file (one is required by the
+                       broker route; the opener also takes either)
   --body-file <path>   The body, read from a file
   --repo <owner/name>  The repository; the opener records it, the checkout decides
   --as-user            Use the broker's authorized person
@@ -55,6 +56,19 @@ function dropFlag(argv: readonly string[], name: string): string[] {
   return out;
 }
 
+/** Translate --body-file into the catalogued --body value. */
+function forwardBodyFile(argv: readonly string[], bodyFile: string): string[] {
+  let body: string;
+  try {
+    body = readFileSync(bodyFile, 'utf8');
+  } catch (error) {
+    fail(`cannot read ${bodyFile}: ${(error as Error).message}`);
+  }
+  const rest = dropFlag(dropFlag(argv, 'body-file'), 'body');
+  rest.push(`--body=${body}`);
+  return rest;
+}
+
 /**
  * Run one `issue` command.
  *
@@ -80,19 +94,13 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     // Bare --as-user is the broker's authorized person; the action decides which token to use.
     let rest = argv.filter((argument) => argument !== '--as-user' && argument !== '-as-user');
     const bodyFile = args.value('body-file');
-    if (bodyFile !== undefined) {
-      let body: string;
-      try {
-        body = readFileSync(bodyFile, 'utf8');
-      } catch (error) {
-        fail(`cannot read ${bodyFile}: ${(error as Error).message}`);
-      }
-      rest = dropFlag(dropFlag(rest, 'body-file'), 'body');
-      rest.push(`--body=${body}`);
-    }
+    if (bodyFile !== undefined) rest = forwardBodyFile(rest, bodyFile);
     return runGh(['issue', ...rest], { identity: 'user' });
   }
-  if (account === undefined) return runGh(['issue', ...argv]);
+  if (account === undefined) {
+    const bodyFile = args.value('body-file');
+    return runGh(['issue', ...(bodyFile === undefined ? argv : forwardBodyFile(argv, bodyFile))]);
+  }
   if (!LOGIN.test(account)) fail(`--as-user must be a GitHub login, got ${JSON.stringify(account)}`);
   for (const name of args.names) {
     if (!KNOWN_FLAGS.has(name)) fail('unknown option --' + name + ' for gcb issue create --as-user');

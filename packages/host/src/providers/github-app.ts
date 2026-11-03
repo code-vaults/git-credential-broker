@@ -814,12 +814,8 @@ function pullRequestNumber(value: unknown): number | undefined {
       const wantsApp = request.identity === 'app';
       const wantsUser = request.identity === 'user';
       const personalForThis =
-        !wantsApp &&
-        (request.action === 'open' ||
-          request.action === 'resolve' ||
-          request.action === 'reply' ||
-          request.action === 'edit' ||
-          request.action === 'comment');
+        request.identity === 'user' ||
+        (!wantsApp && (request.action === 'open' || request.action === 'resolve'));
       const actingToken = personalForThis ? await personTokenFor(request.owner) : undefined;
 
       // `--status` also reads /actions/runs, which is checked against actions: read. Pre-flighting
