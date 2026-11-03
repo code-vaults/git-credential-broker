@@ -73,7 +73,7 @@ export function userTokenPath(privateKeyPath: string): string {
 }
 
 export const SIDECAR = {
-  configPath: '/etc/git-cred-broker/broker.config.yml',
+  configPath: '/etc/git-cred-broker/config/broker.config.yml',
   keyPath: '/etc/git-cred-broker/app.pem',
   // Beside the key, because that is how the provider derives it without being told.
   // Derived from the key rather than written again: the mount target and the reader's path at once.

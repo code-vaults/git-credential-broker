@@ -322,7 +322,7 @@ a sidecar it is inside the container:
 DEPLOY=/srv/git-cred-broker
 cd "$DEPLOY" && docker compose exec gcb \
   npx --yes --package gcb-host gcb \
-  diagnose --config /etc/git-cred-broker/broker.config.yml
+  diagnose --config /etc/git-cred-broker/config/broker.config.yml
 ```
 
 ### Reading a CI log

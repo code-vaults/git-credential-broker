@@ -1131,7 +1131,9 @@ describe('compose', () => {
 
   it('mounts the key read-only and publishes no ports', () => {
     assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/);
-    assert.match(rendered, /volume1\/docker\/git-cred-broker:\/etc\/git-cred-broker:ro/);
+    assert.match(rendered, /volume1\/docker\/git-cred-broker:\/etc\/git-cred-broker\/config:ro/);
+    assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/);
+    assert.doesNotMatch(rendered, /user\.refresh:\/etc\/git-cred-broker\/config\/user\.refresh/);
     assert.equal(/^\s+ports:/m.test(rendered), false, 'the socket is the only interface');
   });
 
@@ -1218,8 +1220,8 @@ describe('compose', () => {
       packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
     });
-    assert.match(custom, /\/srv\/custom:\/etc\/git-cred-broker:ro/);
-    assert.match(custom, /--config '\/etc\/git-cred-broker\/broker\.yml'/);
+    assert.match(custom, /\/srv\/custom:\/etc\/git-cred-broker\/config:ro/);
+    assert.match(custom, /--config '\/etc\/git-cred-broker\/config\/broker\.yml'/);
   });
 
   it('quotes a config basename that needs one shell word', () => {
@@ -1232,7 +1234,7 @@ describe('compose', () => {
       packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
     });
-    assert.match(custom, /--config '\/etc\/git-cred-broker\/broker live\.yml'/);
+    assert.match(custom, /--config '\/etc\/git-cred-broker\/config\/broker live\.yml'/);
     const dollar = renderCompose({
       dir: '/volume1/docker/git-cred-broker',
       configPath: '/srv/custom/br$ker "x".yml',
@@ -1242,7 +1244,7 @@ describe('compose', () => {
       packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
     });
-    assert.match(dollar, /--config '\/etc\/git-cred-broker\/br\$\$ker "x"\.yml'/);
+    assert.match(dollar, /--config '\/etc\/git-cred-broker\/config\/br\$\$ker "x"\.yml'/);
   });
 
   it('mounts the real target of a symlinked config', () => {
@@ -1264,7 +1266,7 @@ describe('compose', () => {
         name: 'git-cred-broker',
       });
       assert.equal(custom.includes(targetDir + ':' + path.dirname(SIDECAR.configPath) + ':ro'), true);
-      assert.match(custom, /--config '\/etc\/git-cred-broker\/prod\.yml'/);
+      assert.match(custom, /--config '\/etc\/git-cred-broker\/config\/prod\.yml'/);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -1309,7 +1311,7 @@ describe('compose', () => {
     assert.equal(output.includes(targetDir + ':' + path.dirname(SIDECAR.configPath) + ':ro'), true);
     assert.equal(output.includes(targetDir + '/app.pem:' + SIDECAR.keyPath + ':ro'), true);
     assert.equal(output.includes(targetDir + '/log:' + SIDECAR.auditDir), true);
-    assert.match(output, /--config '\/etc\/git-cred-broker\/prod\.yml'/);
+    assert.match(output, /--config '\/etc\/git-cred-broker\/config\/prod\.yml'/);
   });
 
   it('quotes volume scalars whose paths contain YAML indicators', () => {
@@ -1321,7 +1323,7 @@ describe('compose', () => {
       packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
     });
-    assert.equal(custom.includes('- "/srv/broker #1:/etc/git-cred-broker:ro"'), true);
+    assert.equal(custom.includes('- "/srv/broker #1:/etc/git-cred-broker/config:ro"'), true);
     assert.equal(custom.includes('- "/srv/broker #1/app.pem:/etc/git-cred-broker/app.pem:ro"'), true);
     assert.equal(custom.includes('- "/srv/socket #2:/run/git-broker"'), true);
   });
