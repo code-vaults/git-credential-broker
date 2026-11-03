@@ -110,7 +110,7 @@ export interface HostForkRequest {
   readonly pid?: number;
 }
 
-/** Either request the opener can fulfil. */
+/** A request the host broker can fulfil. */
 export type HostRequest = HostOpenRequest | HostIssueRequest | HostReplyRequest | HostForkRequest;
 
 /** What the opener answered. */

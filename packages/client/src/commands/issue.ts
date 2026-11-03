@@ -27,14 +27,14 @@ broker's authorized person; --as-user <login> writes a request for the host brok
 
   --title <text>       The title                                     [required]
   --body <text>        The body, inline, or use --body-file (one is required by the
-                       broker route; the opener also takes either)
+                       broker route; the host broker also takes either)
   --body-file <path>   The body, read from a file
   --repo <owner/name>  The repository; with --as-user <login> it must be in the
                        broker allowlist and needs no checkout of its own
   --as-user            Use the broker's authorized person
   --as-user <login>    Use ~/.config/gh-<login> on the host
-  --proxy <url>        Use this proxy for the opener's gh call
-  --no-proxy           Reach GitHub directly for the opener's gh call
+  --proxy <url>        Use this proxy for the host broker's gh call
+  --no-proxy           Reach GitHub directly for the host broker's gh call
   -h, --help           Show this help
 
 The broker route (no --as-user or bare) takes --body/--body-file and catalogued flags such as

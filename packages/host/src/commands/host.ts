@@ -3,9 +3,9 @@
  * each request names.
  *
  * This runs on the host, beside the checkout the container also sees, and it does exactly one thing:
- * it turns a request file into a pull request or issue, using the gh account the request names. That
- * is the whole point — content authored by a person is what automated reviewers will actually review,
- * and the app cannot be that person.
+ * it turns a request file into a pull request, issue, reply or fork, using the gh account the request
+ * names. That is the whole point — content authored by a person is what automated reviewers will
+ * actually review, and the app cannot be that person.
  *
  * It has no other power. It cannot push, merge, close or read anything, and it never runs a shell: the
  * program it calls is configuration, and it is called with an argument list built here.
