@@ -4,6 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,6 +44,20 @@ function fixture(): { root: string; dir: string; cleanup: () => void } {
 
 function requests(dir: string): string[] {
   return listRequests(dir);
+}
+
+/** Serve one broker request and answer it as the app would. */
+function broker(
+  socketPath: string,
+  onRequest: (request: Record<string, unknown>) => void,
+): Promise<net.Server> {
+  const server = net.createServer((socket) => {
+    socket.once('data', (chunk) => {
+      onRequest(JSON.parse(chunk.toString().split('\n')[0] ?? '{}') as Record<string, unknown>);
+      socket.end(JSON.stringify({ ok: true, exitCode: 0 }) + '\n');
+    });
+  });
+  return new Promise((resolve) => server.listen(socketPath, () => resolve(server)));
 }
 
 describe('gcb issue create --as-user', () => {
@@ -187,6 +202,39 @@ describe('gcb issue create --as-user', () => {
     }
   });
 
+  it('sends bare --as-user as a user issue action', async () => {
+    const host = fixture();
+    const socketPath = path.join(host.root, 'broker.sock');
+    try {
+      let seen: Record<string, unknown> = {};
+      const server = await broker(socketPath, (request) => {
+        seen = request;
+      });
+      const result = await runClient(
+        [
+          'issue',
+          'create',
+          '--as-user',
+          '--repo',
+          'acme/widget',
+          '--title',
+          't',
+          '--body',
+          'b',
+          '--socket',
+          socketPath,
+        ],
+        host.root,
+      );
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      assert.equal(result.status, 0);
+      assert.equal(seen['identity'], 'user');
+      assert.equal(seen['ghAction'], 'issue:create');
+    } finally {
+      host.cleanup();
+    }
+  });
+
   it('keeps the catalogue help and refuses --as-user outside create', async () => {
     const host = fixture();
     try {
@@ -200,7 +248,7 @@ describe('gcb issue create --as-user', () => {
 
       const create = await runClient(['issue', 'create', '--help'], host.root);
       assert.equal(create.status, 0);
-      assert.match(create.stdout, /Usage: gcb issue create --as-user/u);
+      assert.match(create.stdout, /Usage: gcb issue create/u);
 
       const top = await runClient(['issue', '--as-user'], host.root);
       assert.equal(top.status, 1);

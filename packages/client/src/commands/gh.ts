@@ -71,7 +71,7 @@ ${ACTION_LINES}`;
  */
 export async function runGh(
   argv: readonly string[],
-  options: { readonly unreachableExitCode?: number } = {},
+  options: { readonly unreachableExitCode?: number; readonly identity?: 'app' | 'user' } = {},
 ): Promise<number> {
   if (argv.length === 0) {
     say(GH_USAGE);
@@ -246,7 +246,17 @@ export async function runGh(
   try {
     response = await requestOverSocket(
       socketPath,
-      { op: 'action', host, path: repo, ghAction: actionName, values: values as ActionValues, proxy, session: 'gh', pid: process.pid },
+      {
+        op: 'action',
+        host,
+        path: repo,
+        ghAction: actionName,
+        values: values as ActionValues,
+        ...(options.identity === undefined ? {} : { identity: options.identity }),
+        proxy,
+        session: 'gh',
+        pid: process.pid,
+      },
       action.timeoutSeconds * 1000 + 30_000,
     );
   } catch (error) {

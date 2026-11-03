@@ -25,6 +25,8 @@ export interface ActionRequest {
   readonly full: string;
   readonly action: string;
   readonly values: ActionValues;
+  /** Who acts for an action that supports a person: `user` uses the authorized token. */
+  readonly identity?: 'app' | 'user';
   /** Per-command proxy override: absent = host env, null = direct, string = proxy URL. */
   readonly proxy?: string | null;
 }

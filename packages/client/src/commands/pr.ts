@@ -48,9 +48,9 @@ Opening (the default)
   --body <text>        The body, inline
   --body-file <path>   The body, read from a file — a pull request body is usually long
   --draft              Open it as a draft
-  --as-user            Act as the authorized person through the broker; fails if no
-                       user token is configured. Without this flag the creation uses
-                       the app's installation token
+  --as-user            Act as the authorized person through the broker for open,
+                       resolve or reply; fails if no user token is configured.
+                       Without this flag the action uses the app's installation token
   --as-user <login>    Create it through the host opener, using ~/.config/gh-<login>
                        (run 'gcb host-opener' on the host)
 
@@ -186,13 +186,16 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (account !== undefined && action !== 'open') {
     fail('--as-user only creates a pull request through the opener, so it does not go with ' + JSON.stringify(action));
   }
-  if (asUser && action !== 'open' && action !== 'resolve') {
-    fail('--as-user without a login only opens or resolves a pull request, so it does not go with ' + JSON.stringify(action));
+  if (asUser && action !== 'open' && action !== 'resolve' && action !== 'reply') {
+    fail(
+      '--as-user without a login only opens, resolves or replies to a pull request, so it does not go with ' +
+        JSON.stringify(action),
+    );
   }
   if (account !== undefined && !LOGIN.test(account)) {
     fail(`--as-user must be a GitHub login or no value, got ${JSON.stringify(account)}`);
   }
-  const identity = asUser || action === 'resolve' ? 'user' : 'app';
+  const identity = asUser || action === 'resolve' || action === 'reply' ? 'user' : 'app';
 
   const number = args.value('number');
   // `--head origin:feat/x` and `--base upstream:main` name a configured remote instead of a repository

@@ -20,15 +20,16 @@ const KNOWN_FLAGS = new Set([
 ]);
 
 /** Usage text for the host-opener create path. */
-export const ISSUE_USAGE = `Usage: gcb issue create --as-user <login> [options]
+export const ISSUE_USAGE = `Usage: gcb issue create [--as-user [login]] [options]
 
-Create an issue as a person through the host opener. Without --as-user, issue actions run
-through the app broker as usual.
+Create an issue. Without --as-user it runs through the app broker; bare --as-user uses the
+broker's authorized person; --as-user <login> writes a request for the host opener.
 
   --title <text>       The title                                     [required]
   --body <text>        The body, inline
   --body-file <path>   The body, read from a file
   --repo <owner/name>  Recorded for the request; the checkout decides the repository
+  --as-user            Use the broker's authorized person
   --as-user <login>    Use ~/.config/gh-<login> on the host
   --proxy <url>        Use this proxy for the opener's gh call
   --no-proxy           Reach GitHub directly for the opener's gh call
@@ -55,8 +56,15 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     say(ISSUE_USAGE);
     return 0;
   }
-  if (args.has('as-user')) fail('--as-user needs a GitHub login');
   if (args.values('as-user').length > 1) fail('--as-user may only be given once');
+  if (args.has('as-user') && args.values('as-user').length > 0) {
+    fail('--as-user cannot be both bare and given a login');
+  }
+  if (args.has('as-user')) {
+    // Bare --as-user is the broker's authorized person; the action decides which token to use.
+    const rest = argv.filter((argument) => argument !== '--as-user' && argument !== '-as-user');
+    return runGh(['issue', ...rest], { identity: 'user' });
+  }
   if (account === undefined) return runGh(['issue', ...argv]);
   if (!LOGIN.test(account)) fail(`--as-user must be a GitHub login, got ${JSON.stringify(account)}`);
   for (const name of args.names) {

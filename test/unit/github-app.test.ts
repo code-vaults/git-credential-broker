@@ -224,6 +224,9 @@ function createStubFetch(options: {
         jsonResponse({ data: { node: { pullRequest: { repository: { nameWithOwner: options.threadRepo ?? 'acme/widget' } } } } }),
       );
     }
+    if (/\/pulls\/\d+\/comments\/\d+\/replies$/.test(url)) {
+      return Promise.resolve(jsonResponse({ id: 55 }, 201));
+    }
     if (url.endsWith('/reviews')) return Promise.resolve(jsonResponse({}));
     if (/\/pulls\/comments\/\d+$/.test(url)) {
       return Promise.resolve(
@@ -393,6 +396,42 @@ describe('createGithubAppProvider', () => {
     assert.ok(result?.error);
     assert.match(result?.warning ?? '', /expires on its own/);
     assert.ok(logs.some((line) => line.includes('could not revoke the action token')));
+  });
+
+  it('runs an action with the authorized user token', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-action-user-'));
+    const gh = join(dir, 'gh');
+    writeFileSync(gh, '#!/bin/sh\nprintf "TOKEN=%s\\n" "$GH_TOKEN"\n');
+    chmodSync(gh, 0o755);
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+    });
+    try {
+      const result = await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }, gh).runAction?.({
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        full: 'acme/widget',
+        action: 'issue:create',
+        values: { title: 't', body: 'b' },
+        identity: 'user',
+      });
+      assert.match(result?.stdout ?? '', /TOKEN=person-token/);
+      assert.equal(
+        stub.calls.some((call) => call.url.includes('/access_tokens')),
+        false,
+        'no installation token is minted for a person',
+      );
+      assert.equal(
+        stub.calls.some((call) => call.url.endsWith('/installation/token')),
+        false,
+        'the personal token is not revoked',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('runs an action with an action token and revokes it', async () => {
@@ -1051,6 +1090,32 @@ describe('createGithubAppProvider', () => {
     });
   });
 
+
+  it('replies with the authorized user token', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'reply-user-'));
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      appPermissions: { pull_requests: 'write', contents: 'read' },
+      installationPermissions: { pull_requests: 'write', contents: 'read' },
+    });
+    await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
+      action: 'reply',
+      identity: 'user',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 4,
+      commentId: 123,
+      body: 'a reply',
+    });
+    const request = stub.calls.find((call) => call.url.endsWith('/comments/123/replies'));
+    assert.equal(request?.authorization, 'Bearer person-token');
+    assert.equal(request?.method, 'POST');
+    assert.match(String(request?.raw), /a reply/);
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('forks with the authorized user token', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'fork-user-'));

@@ -188,6 +188,42 @@ describe('gcb pr identity flags', () => {
     }
   });
 
+  it('sends the user identity for an as-user reply', async () => {
+    const repo = checkout();
+    const socketPath = path.join(repo.root, 'broker.sock');
+    try {
+      let seen: Record<string, unknown> = {};
+      const server = await listen(socketPath, (request) => {
+        seen = request;
+      });
+      const result = await tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          '--number',
+          '7',
+          '--reply-to',
+          '123',
+          '--body',
+          'a reply',
+          '--as-user',
+          '--repo',
+          'acme/widget',
+          '--socket',
+          socketPath,
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      assert.equal(result.status, 0);
+      assert.equal(seen['identity'], 'user');
+    } finally {
+      repo.cleanup();
+    }
+  });
+
   it('accepts pr create --as-user as the lifecycle spelling', async () => {
     const repo = checkout();
     const socketPath = path.join(repo.root, 'broker.sock');

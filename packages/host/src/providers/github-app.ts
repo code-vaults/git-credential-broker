@@ -501,15 +501,89 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     };
   }
 
-      let cachedPersonToken: { token: string; until: number; source: string } | undefined;
-      // One renewal at a time. GitHub documents neither what happens to a refresh token used twice nor a
-      // grace period for it, so the honest reason is the failure that is certain rather than the one that is
-      // documented: two exchanges racing means one of them renews from a token the other has already
-      // replaced, and whichever write-back runs last decides what is on disk for the next renewal.
-      // The refresh token on disk is one shared value; two renewals racing can invalidate it. Serialize
-      // the exchange even when the commands selected different proxy routes, then let the waiter re-read
-      // the cache the winner wrote. Each exchange still uses its own command's fetch.
-      let renewingPersonToken: Promise<string | undefined> | undefined;
+  let cachedPersonToken: { token: string; until: number; source: string } | undefined;
+  // One renewal at a time. GitHub documents neither what happens to a refresh token used twice nor a
+  // grace period for it, so the honest reason is the failure that is certain rather than the one that is
+  // documented: two exchanges racing means one of them renews from a token the other has already
+  // replaced, and whichever write-back runs last decides what is on disk for the next renewal.
+  // The refresh token on disk is one shared value; two renewals racing can invalidate it. Serialize
+  // the exchange even when the commands selected different proxy routes, then let the waiter re-read
+  // the cache the winner wrote. Each exchange still uses its own command's fetch.
+  let renewingPersonToken: Promise<string | undefined> | undefined;
+
+  /**
+   * The token of the person this deployment authorized, when there is one.
+   *
+   * Only person-relevant actions may use it; GitHub will not author a pull request as a person for
+   * an app, refuses to resolve a review thread for one, and a reply must be attributable to the
+   * person answering.
+   * The refresh token lives beside the private key, and GitHub rotates it on every use, so the new
+   * one is written back — keeping the old would work once and then stop.
+   *
+   * @returns the user token, or `undefined` when nobody has authorized one.
+   */
+  async function personalToken(): Promise<string | undefined> {
+    while (renewingPersonToken !== undefined) {
+      try {
+        await renewingPersonToken;
+      } catch {
+        // The winner failed; this command retries after the lock is released.
+      }
+    }
+    const pending = renewPersonToken();
+    renewingPersonToken = pending;
+    try {
+      return await pending;
+    } finally {
+      if (renewingPersonToken === pending) renewingPersonToken = undefined;
+    }
+  }
+
+  async function renewPersonToken(): Promise<string | undefined> {
+    if (cfg.clientId === undefined || cfg.privateKeyPath === undefined) return undefined;
+    const path = userTokenPath(cfg.privateKeyPath);
+    if (!existsSync(path)) return undefined;
+    const now = Date.now();
+    // The file is the only thing that says who the broker may act as, so it is read before the cache is
+    // trusted: running `authorize` again — the documented way to change that person, and the only one —
+    // has to take effect now rather than when the cached token happens to expire.
+    const held = readFileSync(path, 'utf8').trim();
+    if (
+      cachedPersonToken !== undefined &&
+      cachedPersonToken.until > now + 60_000 &&
+      cachedPersonToken.source === held
+    ) {
+      return cachedPersonToken.token;
+    }
+    let next;
+    try {
+      next = await refreshUserToken(cfg.clientId, held, (url, init) => fetchImpl(url, init));
+    } catch (error) {
+      // This is the one place a renewal failure is explained: the caller is an action that failed,
+      // and "fetch failed" on its own names neither the host nor the reason.
+      throw new Error(
+        `could not renew the authorized token from ${path}: ${(error as Error).message}${describeCause(error)}`,
+      );
+    }
+    if (next.refreshToken !== undefined) {
+      try {
+        writeFileSync(path, `${next.refreshToken}\n`, { mode: 0o600 });
+      } catch (error) {
+        // GitHub invalidated the token on disk the moment it answered, so this is not transient and not
+        // recoverable: the next renewal reads a dead token. Nothing else in the log would say so.
+        throw new Error(
+          `could not store the new refresh token in ${path}: ${(error as Error).message}; the previous ` +
+            'one is no longer valid, so run authorize again',
+        );
+      }
+    }
+    cachedPersonToken = {
+      token: next.token,
+      until: now + (next.expiresInSeconds ?? 28_800) * 1_000,
+      source: next.refreshToken ?? held,
+    };
+    return cachedPersonToken.token;
+  }
 
 /**
  * One more sentence about a failure, when there is one worth having.
@@ -548,16 +622,32 @@ function pullRequestNumber(value: unknown): number | undefined {
 
     async runAction(request) {
       const spec = getGhAction(request.action);
-      const wanted: Record<string, string> = { ...spec.permissions };
-      await ensurePermissions(request.owner, wanted);
-      const installationId = await resolveInstallationId(request.owner);
-      const { json } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
-        repositories: [request.repo],
-        permissions: wanted,
-      });
-      const token = (json as { token?: unknown } | null)?.token;
-      if (typeof token !== 'string' || !token) {
-        throw new ProviderConfigError('GitHub returned no installation token for the action');
+      const identity = request.identity ?? 'app';
+      let token: string;
+      let minted = false;
+      if (identity === 'user') {
+        const personal = await personalToken();
+        const file = cfg.userTokens?.[request.owner];
+        token = personal ?? (file === undefined ? '' : readFileSync(file, 'utf8').trim());
+        if (token === '') {
+          throw new ProviderConfigError(
+            'no authorized user token for this action; run gcb authorize or configure userTokens',
+          );
+        }
+      } else {
+        const wanted: Record<string, string> = { ...spec.permissions };
+        await ensurePermissions(request.owner, wanted);
+        const installationId = await resolveInstallationId(request.owner);
+        const { json } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
+          repositories: [request.repo],
+          permissions: wanted,
+        });
+        const mintedToken = (json as { token?: unknown } | null)?.token;
+        if (typeof mintedToken !== 'string' || !mintedToken) {
+          throw new ProviderConfigError('GitHub returned no installation token for the action');
+        }
+        token = mintedToken;
+        minted = true;
       }
       let result: ActionRunResult;
       let warning: string | undefined;
@@ -575,29 +665,31 @@ function pullRequestNumber(value: unknown): number | undefined {
       } catch (error) {
         result = { ...NO_RUN, error: error instanceof Error ? error.message : String(error) };
       } finally {
-        try {
-          const response = await fetchImpl(`${api}/installation/token`, {
-            method: 'DELETE',
-            headers: {
-              accept: 'application/vnd.github+json',
-              authorization: `Bearer ${token}`,
-              'x-github-api-version': apiVersion,
-              'user-agent': 'gcb',
-            },
-          });
-          if (!response.ok) {
-            let detail = '';
-            try {
-              detail = (await response.text()).replace(/\s+/g, ' ').trim().slice(0, 200);
-            } catch {
-              // The status is enough; a body that cannot be read is still not a successful revoke.
+        if (minted) {
+          try {
+            const response = await fetchImpl(`${api}/installation/token`, {
+              method: 'DELETE',
+              headers: {
+                accept: 'application/vnd.github+json',
+                authorization: `Bearer ${token}`,
+                'x-github-api-version': apiVersion,
+                'user-agent': 'gcb',
+              },
+            });
+            if (!response.ok) {
+              let detail = '';
+              try {
+                detail = (await response.text()).replace(/\s+/g, ' ').trim().slice(0, 200);
+              } catch {
+                // The status is enough; a body that cannot be read is still not a successful revoke.
+              }
+              log(`could not revoke the action token: GitHub answered ${response.status}${detail ? ` ${detail}` : ''}`);
+              warning = REVOKE_WARNING;
             }
-            log(`could not revoke the action token: GitHub answered ${response.status}${detail ? ` ${detail}` : ''}`);
+          } catch (error) {
+            log(`could not revoke the action token: ${String((error as Error).message ?? error)}`);
             warning = REVOKE_WARNING;
           }
-        } catch (error) {
-          log(`could not revoke the action token: ${String((error as Error).message ?? error)}`);
-          warning = REVOKE_WARNING;
         }
       }
       return { ...result, tokenFingerprint: tokenFingerprint(token), ...(warning === undefined ? {} : { warning }) };
@@ -716,7 +808,8 @@ function pullRequestNumber(value: unknown): number | undefined {
       // exists to permit. Everything else still acts as the app, and only ever could.
       const wantsApp = request.identity === 'app';
       const wantsUser = request.identity === 'user';
-      const personalForThis = !wantsApp && (request.action === 'open' || request.action === 'resolve');
+      const personalForThis =
+        !wantsApp && (request.action === 'open' || request.action === 'resolve' || request.action === 'reply');
       const personToken = personalForThis ? await personalToken() : undefined;
 
       // `--status` also reads /actions/runs, which is checked against actions: read. Pre-flighting
@@ -757,79 +850,6 @@ function pullRequestNumber(value: unknown): number | undefined {
 
       const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
 
-
-      /**
-       * The token of the person this deployment authorized, when there is one.
-
-       * Only two actions may use it, and both because an installation token cannot: GitHub will not
-       * author a pull request as a person for an app, and refuses to resolve a review thread for one.
-       * The refresh token lives beside the private key, and GitHub rotates it on every use, so the new
-       * one is written back — keeping the old would work once and then stop.
-       *
-       * @returns the user token, or `undefined` when nobody has authorized one.
-       */
-      async function personalToken(): Promise<string | undefined> {
-        while (renewingPersonToken !== undefined) {
-          try {
-            await renewingPersonToken;
-          } catch {
-            // The winner failed; this command retries after the lock is released.
-          }
-        }
-        const pending = renewPersonToken();
-        renewingPersonToken = pending;
-        try {
-          return await pending;
-        } finally {
-          if (renewingPersonToken === pending) renewingPersonToken = undefined;
-        }
-      }
-
-      async function renewPersonToken(): Promise<string | undefined> {
-        if (cfg.clientId === undefined || cfg.privateKeyPath === undefined) return undefined;
-        const path = userTokenPath(cfg.privateKeyPath);
-        if (!existsSync(path)) return undefined;
-        const now = Date.now();
-        // The file is the only thing that says who the broker may act as, so it is read before the cache is
-        // trusted: running `authorize` again — the documented way to change that person, and the only one —
-        // has to take effect now rather than when the cached token happens to expire.
-        const held = readFileSync(path, 'utf8').trim();
-        if (
-          cachedPersonToken !== undefined &&
-          cachedPersonToken.until > now + 60_000 &&
-          cachedPersonToken.source === held
-        ) {
-          return cachedPersonToken.token;
-        }
-        let next;
-        try {
-          next = await refreshUserToken(cfg.clientId, held, (url, init) => fetchImpl(url, init));
-        } catch (error) {
-          // This is the one place a renewal failure is explained: the caller is an action that failed,
-          // and "fetch failed" on its own names neither the host nor the reason.
-          throw new Error(
-            `could not renew the authorized token from ${path}: ${(error as Error).message}${describeCause(error)}`,
-          );
-        }
-        if (next.refreshToken !== undefined) {
-          try {
-            writeFileSync(path, `${next.refreshToken}\n`, { mode: 0o600 });
-          } catch (error) {
-            // GitHub invalidated the token on disk the moment it answered, so this is not transient and not
-            // recoverable: the next renewal reads a dead token. Nothing else in the log would say so.
-            throw new Error(
-              `could not store the new refresh token in ${path}: ${(error as Error).message}; the previous ` +
-                'one is no longer valid, so run authorize again',
-            );
-          }
-        }
-        cachedPersonToken = {
-          token: next.token,
-          until: now + (next.expiresInSeconds ?? 28_800) * 1_000,
-          source: next.refreshToken ?? held,
-        };
-        return cachedPersonToken.token;
-      }
 
       if (request.action === 'resolve') {
         // Resolving has no REST endpoint either. The thread id is the one `--threads` prints.
