@@ -511,16 +511,17 @@ async function openOne(
     } catch (error) {
       return { error: (error as Error).message };
     }
-    const scratch = mkdtempSync(join(tmpdir(), 'gcb-review-'));
-    const bodyFile = join(scratch, 'body.md');
-    writeFileSync(bodyFile, request.body, 'utf8');
     const flag =
       request.event === 'approve'
         ? '--approve'
         : request.event === 'request-changes'
           ? '--request-changes'
           : '--comment';
+    let scratch: string | undefined;
     try {
+      scratch = mkdtempSync(join(tmpdir(), 'gcb-review-'));
+      const bodyFile = join(scratch, 'body.md');
+      writeFileSync(bodyFile, request.body, 'utf8');
       const { stdout } = await run(
         command,
         [
@@ -548,7 +549,7 @@ async function openOne(
       const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
       return { error: reason.slice(0, 300) || 'the command failed' };
     } finally {
-      rmSync(scratch, { recursive: true, force: true });
+      if (scratch !== undefined) rmSync(scratch, { recursive: true, force: true });
     }
   }
 
