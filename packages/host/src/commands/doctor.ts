@@ -11,7 +11,7 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from '
 import { parseDocument } from 'yaml';
 
 import { loadConfigText, readConfigText, resolveConfigPath } from '../config.ts';
-import { fail, parseArgs, say } from 'gcb-core';
+import { createLineReader, fail, parseArgs, say } from 'gcb-core';
 
 export const DOCTOR_USAGE = `Usage: gcb doctor [options]
 
@@ -122,37 +122,40 @@ function rawAuditPath(text: string): string | null {
   return value === undefined || value === '' || value === 'null' || value === '~' ? null : value;
 }
 
-/** Ask the running daemon which audit path it actually uses. */
-function activeAuditPath(socketPath: string): Promise<{ found: boolean; path?: string | null }> {
+/** How long doctor waits for the daemon's ping answer. */
+const PING_TIMEOUT_MS = 500;
+
+/** Ask the running daemon which audit path it actually uses: undefined means no answer. */
+function activeAuditPath(socketPath: string): Promise<string | null | undefined> {
   return new Promise((resolve) => {
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
     const socket = net.connect(socketPath);
-    const finish = (answer: { found: boolean; path?: string | null }): void => {
+    const finish = (answer: string | null | undefined): void => {
       if (settled) return;
       settled = true;
       if (timer !== undefined) clearTimeout(timer);
       socket.destroy();
       resolve(answer);
     };
-    timer = setTimeout(() => finish({ found: false }), 500);
-    socket.once('connect', () => socket.write(JSON.stringify({ op: 'ping' }) + '\n'));
-    socket.once('data', (chunk: Buffer) => {
-      try {
-        const answer = JSON.parse(chunk.toString('utf8').split('\n')[0] ?? '{}') as {
-          ok?: unknown;
-          auditPath?: unknown;
-        };
-        if (answer.ok === true && (answer.auditPath === null || typeof answer.auditPath === 'string')) {
-          finish({ found: true, path: answer.auditPath });
-          return;
+    timer = setTimeout(() => finish(undefined), PING_TIMEOUT_MS);
+    const reader = createLineReader({
+      onLine: (line) => {
+        try {
+          const answer = JSON.parse(line) as { ok?: unknown; auditPath?: unknown };
+          if (answer.ok === true && (answer.auditPath === null || typeof answer.auditPath === 'string')) {
+            finish(answer.auditPath);
+            return;
+          }
+        } catch {
+          // Not a ping answer; fall back to the configured path.
         }
-      } catch {
-        // A non-ping answer is not an active path; fall back to the configured one.
-      }
-      finish({ found: false });
+        finish(undefined);
+      },
     });
-    socket.once('error', () => finish({ found: false }));
+    socket.on('data', reader);
+    socket.once('connect', () => socket.write(JSON.stringify({ op: 'ping' }) + '\n'));
+    socket.once('error', () => finish(undefined));
   });
 }
 
@@ -197,8 +200,9 @@ export async function runDoctor(
     loadError = error as Error;
   }
   const digest = createHash('sha256').update(text).digest('hex');
-  const active = config === undefined ? { found: false } : await activeAuditPath(config.socketPath);
-  const auditPath = active.found ? (active.path ?? null) : config !== undefined ? config.auditPath : rawAuditPath(text);
+  const configured = config !== undefined ? config.auditPath : rawAuditPath(text);
+  const activePath = config === undefined ? undefined : await activeAuditPath(config.socketPath);
+  const auditPath = activePath === undefined ? configured : (activePath ?? configured);
   const lastResult = lastConfigEvent(auditPath);
   const last = lastResult.event;
 
@@ -220,9 +224,11 @@ export async function runDoctor(
   }
   if (auditPath) {
     write(
-      active.found
-        ? `audit: ${auditPath} (active daemon path)`
-        : `audit: ${auditPath} (configured; the running daemon may still use its startup path)`,
+      activePath === undefined
+        ? `audit: ${auditPath} (configured; the running daemon may still use its startup path)`
+        : activePath === null
+          ? `audit: ${auditPath} (configured; the running daemon writes no audit log)`
+          : `audit: ${auditPath} (active daemon path)`,
     );
   }
   if (config !== undefined) write(`socket: ${socketLine(config.socketPath, config.socketMode)}`);

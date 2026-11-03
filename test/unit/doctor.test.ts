@@ -59,6 +59,7 @@ describe('gcb doctor', () => {
       assert.match(text, new RegExp(`digest: ${digest}`));
       assert.match(text, /last reload: reload at 2026-01-01T00:01:00.000Z \(digest matches\)/);
       assert.match(text, new RegExp(`socket: missing: ${path.join(host.root, 'broker.sock')}`));
+      assert.match(text, /audit: .* \(configured; the running daemon may still use its startup path\)/);
     } finally {
       host.cleanup();
     }
@@ -187,7 +188,12 @@ describe('gcb doctor', () => {
     const active = path.join(host.root, 'active.jsonl');
     fs.writeFileSync(active, JSON.stringify({ ts: '2026-01-01T00:08:00.000Z', event: 'config', decision: 'reload' }) + '\n');
     const server = net.createServer((socket) => {
-      socket.once('data', () => socket.end(JSON.stringify({ ok: true, auditPath: active }) + '\n'));
+      socket.once('data', () => {
+        const answer = JSON.stringify({ ok: true, auditPath: active }) + '\n';
+        // Split the frame across data events; the line reader must reassemble it.
+        socket.write(answer.slice(0, 12));
+        socket.end(answer.slice(12));
+      });
     });
     try {
       await new Promise<void>((resolve) => server.listen(socketPath, resolve));
@@ -195,6 +201,44 @@ describe('gcb doctor', () => {
       const text = await output(['--config', host.config]);
       assert.match(text, /last reload: reload at 2026-01-01T00:08:00.000Z/);
       assert.match(text, new RegExp(`audit: ${active} \\(active daemon path\\)`));
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      host.cleanup();
+    }
+  });
+
+  it('labels a daemon that reports no active audit log', async () => {
+    const host = fixture();
+    const socketPath = path.join(host.root, 'daemon.sock');
+    fs.writeFileSync(host.audit, JSON.stringify({ ts: '2026-01-01T00:09:00.000Z', event: 'config', decision: 'reload' }) + '\n');
+    const server = net.createServer((socket) => {
+      socket.once('data', () => socket.end('{"ok":true,"auditPath":null}\n'));
+    });
+    try {
+      await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+      fs.writeFileSync(host.config, fs.readFileSync(host.config, 'utf8').replace(/socketPath: .*\n/, `socketPath: ${socketPath}\n`));
+      const text = await output(['--config', host.config]);
+      assert.match(text, /last reload: reload at 2026-01-01T00:09:00.000Z/);
+      assert.match(text, new RegExp(`audit: ${host.audit} \\(configured; the running daemon writes no audit log\\)`));
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      host.cleanup();
+    }
+  });
+
+  it('falls back within the ping bound when the daemon never answers', async () => {
+    const host = fixture();
+    const socketPath = path.join(host.root, 'silent.sock');
+    const server = net.createServer((socket) => {
+      socket.once('data', () => {
+        // Deliberately no response: doctor must time out and use the configured path.
+      });
+    });
+    try {
+      await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+      fs.writeFileSync(host.config, fs.readFileSync(host.config, 'utf8').replace(/socketPath: .*\n/, `socketPath: ${socketPath}\n`));
+      const text = await output(['--config', host.config]);
+      assert.match(text, /audit: .* \(configured; the running daemon may still use its startup path\)/);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       host.cleanup();

@@ -41,6 +41,7 @@ function makeHarness(
   allow: readonly string[] = ['acme/widget'],
   providerOverride?: Provider,
   allowInsecureHttp?: boolean,
+  auditPath: string | null = null,
 ): Harness {
   const block: StaticHostConfig = {
     provider: 'static',
@@ -52,7 +53,7 @@ function makeHarness(
   const config: BrokerConfig = {
     socketPath: path.join(os.tmpdir(), 'gcb-unit', 'broker.sock'),
     socketMode: 0o660,
-    auditPath: null,
+    auditPath,
     tokenCacheSkewSeconds: 300,
     hosts: { [HOST]: block },
   };
@@ -111,6 +112,14 @@ describe('broker request handling', () => {
     assert.equal(response.version, PACKAGE_VERSION);
     assert.deepEqual(response.hosts, [HOST]);
     assert.equal(response.auditPath, null);
+  });
+
+  it('returns a configured audit path from ping', async () => {
+    const auditPath = path.join(os.tmpdir(), 'gcb-unit', 'audit.jsonl');
+    const { handle } = makeHarness(['acme/widget'], undefined, undefined, auditPath);
+    const response = await handle({ op: 'ping' });
+    assert.equal(response.ok, true);
+    assert.equal(response.auditPath, auditPath);
   });
 
   it('refuses an unknown operation', async () => {
