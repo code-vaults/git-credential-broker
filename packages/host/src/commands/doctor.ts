@@ -6,7 +6,7 @@
  * good snapshot.
  */
 import { createHash } from 'node:crypto';
-import { closeSync, existsSync, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
+import { closeSync, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
 
 import { loadConfigText, readConfigText, resolveConfigPath } from '../config.ts';
 import { fail, parseArgs, say } from 'gcb-core';
@@ -31,7 +31,7 @@ const CHUNK_BYTES = 64 * 1024;
 
 /** Read the last config reload record, scanning backward a chunk at a time. */
 function lastConfigEvent(path: string | null): ConfigEvent | undefined {
-  if (path === null || !existsSync(path)) return undefined;
+  if (path === null) return undefined;
   let fd: number;
   try {
     fd = openSync(path, 'r');
@@ -60,6 +60,8 @@ function lastConfigEvent(path: string | null): ConfigEvent | undefined {
         }
       }
     }
+    return undefined;
+  } catch {
     return undefined;
   } finally {
     closeSync(fd);
@@ -90,7 +92,7 @@ function socketLine(path: string, expectedMode: number): string {
 function rawAuditPath(text: string): string | null {
   const match = /^auditPath:\s*(?:"([^"]*)"|'([^']*)'|([^\n]*?)(?:[ \t]+#.*)?)$/m.exec(text);
   const value = (match?.[1] ?? match?.[2] ?? match?.[3])?.trim();
-  return value === undefined || value === '' ? null : value;
+  return value === undefined || value === '' || value === 'null' || value === '~' ? null : value;
 }
 
 /**
