@@ -221,6 +221,7 @@ describe('the opener explicit-repository route', () => {
       assert.equal(readResult(dir, id)?.number, 7);
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
       assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
+      assert.equal(readFileSync(bodyCaptureFile, 'utf8'), 'a body');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
