@@ -456,6 +456,13 @@ describe('gcb issue create --as-user', () => {
       assert.equal(extra.status, 1);
       assert.match(extra.stderr, /unexpected argument "8"/u);
 
+      const bareRepo = await runClient(
+        ['issue', 'edit', '7', '--title', 'fixed', '--repo', '--as-user', 'alice'],
+        host.root,
+      );
+      assert.equal(bareRepo.status, 1);
+      assert.match(bareRepo.stderr, /--repo needs a value/u);
+
       const empty = await runClient(
         ['issue', 'edit', '7', '--as-user', '--repo', 'acme/widget'],
         host.root,
@@ -519,6 +526,14 @@ describe('gcb issue create --as-user', () => {
       assert.equal(help.status, 0);
       assert.match(help.stdout, /Usage: gcb gh/u);
       assert.equal(requests(host.dir).length, before, 'help writes no request');
+
+      const helpAsValue = await runClient(
+        ['issue', 'edit', '7', '--title', '-h', '--as-user', 'alice', '--repo', 'acme/widget'],
+        host.root,
+      );
+      assert.equal(helpAsValue.status, 0);
+      assert.match(helpAsValue.stdout, /Usage: gcb gh/u);
+      assert.equal(requests(host.dir).length, before, '-h as a value still means help');
     } finally {
       host.cleanup();
     }

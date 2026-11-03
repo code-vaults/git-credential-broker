@@ -91,8 +91,9 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   const account = args.values('as-user')[0];
   const command = args.positionals[0];
   if (command !== 'create') {
-    if (command !== undefined && (args.has('help') || args.has('h'))) {
-      return runGh(['issue', ...argv]);
+    const helpAsValue = ['title', 'body', 'body-file'].some((name) => args.value(name) === '-h');
+    if (command !== undefined && (args.has('help') || args.has('h') || helpAsValue)) {
+      return runGh(['issue', command, '--help']);
     }
     if (account !== undefined) {
       if (command !== 'edit' && command !== 'comment') {
@@ -112,7 +113,9 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
       let repo = args.value('repo');
       const host = args.value('host');
       let requestHost = host;
-      if (repo !== undefined && repo.trim() === '') fail('--repo needs a value');
+      if ((args.has('repo') || args.values('repo').length > 0) && (repo === undefined || repo.trim() === '')) {
+        fail('--repo needs a value');
+      }
       if (repo === undefined) {
         const found = remoteRepo('origin', process.cwd());
         if (found === undefined) fail('--as-user <login> needs --repo for issue edit or comment');
