@@ -1,5 +1,23 @@
 # gcb-host
 
+## 0.3.0
+
+### Minor Changes
+
+- [#72](https://github.com/code-vaults/git-credential-broker/pull/72) [`f542788`](https://github.com/code-vaults/git-credential-broker/commit/f5427886c2b684a1f94576be59d938929f94bdfb) Thanks [@JounQin](https://github.com/JounQin)! - Add `gcb doctor`: validate the configuration, print its SHA-256 digest, the active audit path when
+  the daemon answers `ping`, the last `config` audit record, and the socket state.
+
+- [#73](https://github.com/code-vaults/git-credential-broker/pull/73) [`afcbf78`](https://github.com/code-vaults/git-credential-broker/commit/afcbf7893b004dc4e92457ad11084b28534fbe0a) Thanks [@JounQin](https://github.com/JounQin)! - Add `gcb host` as the typed host broker: besides creating pull requests/issues and forking, it now
+  fulfils review replies. `--as-user <login> --reply-to` writes a typed reply request; the host broker validates the
+  repository/number/comment id, runs `gh api` with the selected account, and returns the reply URL.
+  An explicit `--repo` on a create/reply request is checked against the broker allowlist and needs no
+  checkout of that repository.
+
+### Patch Changes
+
+- Updated dependencies [[`afcbf78`](https://github.com/code-vaults/git-credential-broker/commit/afcbf7893b004dc4e92457ad11084b28534fbe0a)]:
+  - gcb-core@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes
