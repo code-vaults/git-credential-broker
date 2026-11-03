@@ -135,8 +135,9 @@ described below is still what runs the lifecycle `gh` cannot express (opening as
 threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr close`.
 
 For that flag-only form, creation uses the app's installation token by default; `--as-user` without
-a value uses the broker's authorized user token, and `--as-user <login>` uses the host opener.
-Resolving a review thread defaults to the user identity because the pull-request token this broker
+a value uses the broker's authorized user token for open, reply, resolve, edit and comment, and
+`--as-user <login>`
+uses the host opener for creation. Resolving a review thread defaults to the user identity because the pull-request token this broker
 mints is narrowed to `pull_requests: write` and `contents: read`, while `resolveReviewThread` needs
 `contents: write` — a grant the broker gives only to the credential git pushes with, never to a
 pull-request token.
@@ -369,10 +370,12 @@ gcb pr --host github.com --repo owner/repo \
 
 Both the app and the installation need `pull_requests: write`; without it the error names the
 permission instead of failing at GitHub. `--draft` opens it as a draft. `--threads` prints the ids of
-a pull request's review threads and their comments; `--reply-to` adds a reply inside one, and
-`--edit` replaces the body of one of those review comments. The comment id names the comment — and its
-pull request — so `--edit` takes no `--number`. GitHub lets only an author change a comment, and the
-comments this command posts are the app's, so `--edit` changes those rather than a person's.
+a pull request's review threads and their comments; `--reply-to` adds a reply inside one (add bare
+`--as-user` to attribute it to the broker's authorized person), and `--edit` replaces the body of one
+of those review comments; bare `--as-user` works for `--reply-to`, `--edit` and `--comment` too. The
+comment id names the comment — and its pull request — so `--edit` takes no `--number`. GitHub lets
+only an author change a comment, so without `--as-user` the app can change only the comments it
+authored; with bare `--as-user` it changes the authorized person's.
 
 ### Opening a pull request or issue as yourself
 
@@ -423,11 +426,14 @@ deeper layouts. To start it once and keep it,
 `examples/host-opener.service` is a systemd user unit; on a system without user services,
 `examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
 instance at a time, and its output in a log file. Without `--as-user`, `pr` and `issue create` use
-the broker route; bare `pr --as-user` selects the broker's authorized person. With `--as-user <login>`
-and no opener running they fail; they do not fall back to the broker route.
+the broker route as the app; bare `--as-user` selects the broker's authorized person for a pull
+request or issue; `--as-user <login>` writes a request for this opener. With a login and no opener
+running they fail; they do not fall back to the broker route.
 
 ```sh
-# in the container
+# in the container: the broker's authorized person
+gcb issue create --as-user --repo owner/repo --title "An issue title" --body-file issue.md
+# or the host opener, using its gh-<login> account
 gcb issue create --as-user octocat --title "An issue title" --body-file issue.md
 ```
 
@@ -452,8 +458,8 @@ belongs to one user or organization and cannot span two, so two owners need two 
 with **Pull requests: Read and write**, **Contents: Read** and **Metadata: Read**, and give it access
 to **only the repositories the allowlist already names**. With Contents: Read, GitHub itself refuses
 to let that token push or merge, so "it may only open pull requests" is enforced by GitHub rather
-than promised here. `userTokens` is consulted for opening when `--as-user` is passed, and for a
-resolve when no `user.refresh` exists. Resolving a review thread needs **Contents: Read and write**
+than promised here. `userTokens` is consulted for opening, replying, editing or commenting when `--as-user` is passed,
+and for an issue creation or resolve when no `user.refresh` exists. Resolving a review thread needs **Contents: Read and write**
 (`resolveReviewThread` is refused without it), which would also let that token push and merge; if
 that trade is not acceptable, resolve through `authorize`, whose token is the person's own.
 `user.refresh` wins over `userTokens` when it exists. A plain `gcb pr` stays on the app's
@@ -478,8 +484,9 @@ It prints a code and asks you to open <https://github.com/login/device>, then wa
 whatever device has a browser. The refresh token is stored beside the private key, which is where the
 broker looks for it, and the broker renews it from then on — nothing else needs running.
 
-The user token is used for exactly the two things an installation token cannot do: authoring a pull
-request as that person, and resolving a review thread, which GraphQL refuses for an app outright.
+The user token is used where the person identity is required or preferred: authoring a pull request,
+resolving a review thread (GraphQL refuses that for an app), replying to or editing a review comment,
+and creating an issue through the broker action path.
 
 The file needs to be **writable by the broker**, unlike the key: GitHub rotates the refresh token on
 every exchange, so mount it read-write (`./user.refresh:/etc/git-cred-broker/user.refresh:rw` in the

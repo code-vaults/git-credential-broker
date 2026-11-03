@@ -71,7 +71,7 @@ ${ACTION_LINES}`;
  */
 export async function runGh(
   argv: readonly string[],
-  options: { readonly unreachableExitCode?: number } = {},
+  options: { readonly unreachableExitCode?: number; readonly identity?: 'app' | 'user' } = {},
 ): Promise<number> {
   if (argv.length === 0) {
     say(GH_USAGE);
@@ -205,10 +205,10 @@ export async function runGh(
     if (match?.[1] === 'as-user') {
       fail(
         domain === 'issue' && command === 'create'
-          ? 'use gcb issue create --as-user <login>'
+          ? 'use gcb issue create --as-user (bare for the broker user, or with a login for the host opener)'
           : domain === 'pr' && command === 'create'
-            ? 'use gcb pr --as-user <login>'
-            : '--as-user only creates a pull request or issue',
+            ? 'use gcb pr --as-user (bare for the broker user, or with a login for the host opener)'
+            : 'use gcb pr --as-user with --reply-to, --edit or --comment, or gcb issue create --as-user',
       );
     }
     if (match?.[1] !== undefined && !allowed.has(match[1])) {
@@ -246,7 +246,17 @@ export async function runGh(
   try {
     response = await requestOverSocket(
       socketPath,
-      { op: 'action', host, path: repo, ghAction: actionName, values: values as ActionValues, proxy, session: 'gh', pid: process.pid },
+      {
+        op: 'action',
+        host,
+        path: repo,
+        ghAction: actionName,
+        values: values as ActionValues,
+        ...(options.identity === undefined ? {} : { identity: options.identity }),
+        proxy,
+        session: 'gh',
+        pid: process.pid,
+      },
       action.timeoutSeconds * 1000 + 30_000,
     );
   } catch (error) {

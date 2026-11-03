@@ -14,7 +14,7 @@
 /** What a fetch has to look like for these exchanges. */
 export type Fetcher = (
   url: string,
-  init: { method: string; headers: Record<string, string>; body: string },
+  init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal },
 ) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 
 /** How long to wait between polls. */
@@ -182,6 +182,7 @@ export async function refreshUserToken(
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
     }).toString(),
+    signal: AbortSignal.timeout(30_000),
   });
   const text = await response.text();
   const parsed = parseJson(text) as {

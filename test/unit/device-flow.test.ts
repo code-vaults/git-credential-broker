@@ -23,6 +23,7 @@ import {
 interface Call {
   readonly url: string;
   readonly body: string;
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -35,7 +36,7 @@ function stubFetch(answers: readonly { status?: number; body: string }[]): { fet
   const calls: Call[] = [];
   let index = 0;
   const fetcher: Fetcher = (url, init) => {
-    calls.push({ url, body: init.body });
+    calls.push({ url, body: init.body, signal: init.signal });
     const answer = answers[index] ?? { body: '{}' };
     index += 1;
     return Promise.resolve({
@@ -182,6 +183,19 @@ describe('refreshing the token', () => {
     assert.deepEqual(token, { token: 't2', refreshToken: 'r2', expiresInSeconds: 28800 });
     assert.match(calls[0]?.body ?? '', /grant_type=refresh_token/);
     assert.match(calls[0]?.body ?? '', /refresh_token=r1/);
+    assert.ok(calls[0]?.signal instanceof AbortSignal);
+  });
+
+  it('gives the refresh a 30-second deadline', async (t) => {
+    const timeout = t.mock.method(AbortSignal, 'timeout');
+    const { fetcher } = stubFetch([{ body: '{"access_token":"t2"}' }]);
+
+    await refreshUserToken('id', 'r1', fetcher);
+
+    assert.deepEqual(
+      timeout.mock.calls.map((call) => call.arguments),
+      [[30_000]],
+    );
   });
 
   it('keeps the old refresh token when GitHub does not send a new one', async () => {

@@ -276,6 +276,10 @@ export function createRequestHandler(
     if (message['op'] === 'action') {
       const ghAction = message['ghAction'];
       const values = message['values'];
+      const identity = message['identity'];
+      if (identity !== undefined && identity !== 'app' && identity !== 'user') {
+        return deny(context, CODES.BAD_REQUEST, 'bad action identity', 'the request names no usable identity', undefined, 'action');
+      }
       const denyAction = (code: string, reason: string, message: string, hostDetail?: string): WireResponse =>
         deny(context, code, reason, message, hostDetail, 'action');
       if (typeof ghAction !== 'string' || values === null || typeof values !== 'object' || Array.isArray(values)) {
@@ -291,6 +295,9 @@ export function createRequestHandler(
           return denyAction(CODES.BAD_REQUEST, error.message, error.message);
         }
         throw error;
+      }
+      if (identity === 'user' && spec.appUser !== true) {
+        return denyAction(CODES.BAD_REQUEST, 'action does not support the user identity', 'that action cannot run as a person');
       }
       if (typeof provider.runAction !== 'function') {
         return denyAction(
@@ -308,6 +315,7 @@ export function createRequestHandler(
           full: repo.full,
           action: ghAction,
           values: actionValues,
+          ...(identity === undefined ? {} : { identity: identity as 'app' | 'user' }),
           proxy,
         });
         if (result.error !== undefined) {
@@ -321,6 +329,7 @@ export function createRequestHandler(
           action: ghAction,
           command: spec.command.join(' '),
           permissions: spec.permissions,
+          identity: identity ?? 'app',
           duration_ms: Date.now() - startedAt,
           token_fingerprint: result.tokenFingerprint,
           exit_code: result.code,

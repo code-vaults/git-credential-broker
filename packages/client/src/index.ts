@@ -69,6 +69,20 @@ async function run(argv: readonly string[]): Promise<number> {
       if (sub === 'review' && rest.some((argument) => argument === '--id' || argument.startsWith('--id='))) {
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));
       }
+      if (
+        sub === 'create' &&
+        rest.some(
+          (argument) =>
+            argument === '--as-user' ||
+            argument.startsWith('--as-user=') ||
+            argument === '-as-user' ||
+            argument.startsWith('-as-user='),
+        )
+      ) {
+        // `pr create` is the catalogued action, but `--as-user` is the flag-only lifecycle's flag.
+        // Accept the obvious spelling instead of making the caller discover that `create` must go.
+        return (await import('./commands/pr.ts')).runPr(rest.slice(1));
+      }
       if (sub !== undefined && Object.hasOwn(GH_ACTIONS, `pr:${sub}`)) {
         return (await import('./commands/gh.ts')).runGh(['pr', ...rest], { unreachableExitCode: 3 });
       }
