@@ -1,5 +1,24 @@
 # gcb-client
 
+## 0.2.0
+
+### Minor Changes
+
+- [#67](https://github.com/code-vaults/git-credential-broker/pull/67) [`2cf1043`](https://github.com/code-vaults/git-credential-broker/commit/2cf1043528463094e2c04753329d6b7a77737313) Thanks [@JounQin](https://github.com/JounQin)! - Allow bare `--as-user` for `issue create`, using the broker's authorized person or an owner
+  `userTokens` entry through the action token path. `--body-file` is translated to the catalogued `--body`, so it
+  works on the plain app route as well. `--as-user <login>` still creates through the host opener.
+
+- [#67](https://github.com/code-vaults/git-credential-broker/pull/67) [`2cf1043`](https://github.com/code-vaults/git-credential-broker/commit/2cf1043528463094e2c04753329d6b7a77737313) Thanks [@JounQin](https://github.com/JounQin)! - Allow bare `--as-user` with `--reply-to`, `--edit` and `--comment`, so review replies and comment
+  changes are attributed to the broker's authorized person (or an owner `userTokens` entry) instead of
+  the app. `--as-user <login>` still only creates, because the host opener is create-only.
+
+### Patch Changes
+
+- [#67](https://github.com/code-vaults/git-credential-broker/pull/67) [`2cf1043`](https://github.com/code-vaults/git-credential-broker/commit/2cf1043528463094e2c04753329d6b7a77737313) Thanks [@JounQin](https://github.com/JounQin)! - Accept `gcb pr create --as-user`, forwarding it to the flag-only pull-request lifecycle instead of
+  rejecting the obvious spelling; `gcb pr create` without `--as-user` remains the catalogued action.
+- Updated dependencies []:
+  - gcb-core@0.2.0
+
 ## 0.1.0
 
 ### Minor Changes
