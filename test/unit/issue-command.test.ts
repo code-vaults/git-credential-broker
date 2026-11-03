@@ -456,6 +456,13 @@ describe('gcb issue create --as-user', () => {
       assert.equal(extra.status, 1);
       assert.match(extra.stderr, /unexpected argument "8"/u);
 
+      const noBodyValue = await runClient(
+        ['issue', 'edit', '7', '--title', 'fixed', '--body', '--as-user', 'alice', '--repo', 'acme/widget'],
+        host.root,
+      );
+      assert.equal(noBodyValue.status, 1);
+      assert.match(noBodyValue.stderr, /--body needs a value/u);
+
       const bareRepo = await runClient(
         ['issue', 'edit', '7', '--title', 'fixed', '--repo', '--as-user', 'alice'],
         host.root,

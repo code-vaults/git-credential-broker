@@ -346,6 +346,21 @@ async function personRun(
   }
 }
 
+/** Run work with a body in a private temp file, and remove it afterwards. */
+async function withBodyFile(
+  body: string,
+  work: (bodyFile: string) => Promise<HostOpenResult>,
+): Promise<HostOpenResult> {
+  const scratch = mkdtempSync(join(tmpdir(), 'gcb-body-'));
+  try {
+    const bodyFile = join(scratch, 'body.md');
+    writeFileSync(bodyFile, body, 'utf8');
+    return await work(bodyFile);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 /**
  * Create one pull request, issue, review, reply, edit or comment.
  *
@@ -436,57 +451,55 @@ async function openOne(
     const host = request.host ?? 'github.com';
     const edit = request.kind === 'issue-edit';
     return personRun(host, request.repo, allowed, async (host) => {
-      const { stdout } = await run(
-        command,
-        [
-          ...extra,
-          'issue',
-          edit ? 'edit' : 'comment',
-          String(request.number),
-          '--repo',
-          request.repo,
-          ...(edit
-            ? [
-                ...(request.title === undefined ? [] : [`--title=${request.title}`]),
-                ...(request.body === undefined ? [] : [`--body=${request.body}`]),
-              ]
-            : [`--body=${request.body}`]),
-        ],
-        {
-          cwd: repo,
-          timeout: CREATE_TIMEOUT_MS,
-          maxBuffer: 1 << 20,
-          env: forkEnv(request.proxy, request.account, host),
-        },
-      );
-      return issueUrl(stdout) ?? { number: request.number };
+      const invoke = (bodyFile?: string) =>
+        run(
+          command,
+          [
+            ...extra,
+            'issue',
+            edit ? 'edit' : 'comment',
+            String(request.number),
+            '--repo',
+            request.repo,
+            ...(edit && request.title !== undefined ? [`--title=${request.title}`] : []),
+            ...(bodyFile === undefined ? [] : ['--body-file', bodyFile]),
+          ],
+          {
+            cwd: repo,
+            timeout: CREATE_TIMEOUT_MS,
+            maxBuffer: 1 << 20,
+            env: forkEnv(request.proxy, request.account, host),
+          },
+        ).then(({ stdout }) => issueUrl(stdout) ?? { number: request.number });
+      return request.body === undefined ? invoke() : withBodyFile(request.body, invoke);
     });
   }
 
   if (request.kind === 'edit') {
     const host = request.host ?? 'github.com';
     return personRun(host, request.repo, allowed, async (host) => {
-      const { stdout } = await run(
-        command,
-        [
-          ...extra,
-          'pr',
-          'edit',
-          String(request.number),
-          '--repo',
-          request.repo,
-          ...(request.title === undefined ? [] : [`--title=${request.title}`]),
-          ...(request.body === undefined ? [] : [`--body=${request.body}`]),
-          ...(request.base === undefined ? [] : [`--base=${request.base}`]),
-        ],
-        {
-          cwd: repo,
-          timeout: CREATE_TIMEOUT_MS,
-          maxBuffer: 1 << 20,
-          env: forkEnv(request.proxy, request.account, host),
-        },
-      );
-      return pullRequestUrl(stdout) ?? { number: request.number };
+      const invoke = (bodyFile?: string) =>
+        run(
+          command,
+          [
+            ...extra,
+            'pr',
+            'edit',
+            String(request.number),
+            '--repo',
+            request.repo,
+            ...(request.title === undefined ? [] : [`--title=${request.title}`]),
+            ...(bodyFile === undefined ? [] : ['--body-file', bodyFile]),
+            ...(request.base === undefined ? [] : [`--base=${request.base}`]),
+          ],
+          {
+            cwd: repo,
+            timeout: CREATE_TIMEOUT_MS,
+            maxBuffer: 1 << 20,
+            env: forkEnv(request.proxy, request.account, host),
+          },
+        ).then(({ stdout }) => pullRequestUrl(stdout) ?? { number: request.number });
+      return request.body === undefined ? invoke() : withBodyFile(request.body, invoke);
     });
   }
 
@@ -499,12 +512,8 @@ async function openOne(
           ? '--request-changes'
           : '--comment';
     return personRun(host, request.repo, allowed, async (host) => {
-      let scratch: string | undefined;
-      try {
-        scratch = mkdtempSync(join(tmpdir(), 'gcb-review-'));
-        const bodyFile = join(scratch, 'body.md');
-        writeFileSync(bodyFile, request.body, 'utf8');
-        const { stdout } = await run(
+      const invoke = (bodyFile?: string) =>
+        run(
           command,
           [
             ...extra,
@@ -514,7 +523,7 @@ async function openOne(
             '--repo',
             request.repo,
             flag,
-            ...(request.body.trim() === '' ? [] : ['--body-file', bodyFile]),
+            ...(bodyFile === undefined ? [] : ['--body-file', bodyFile]),
           ],
           {
             cwd: repo,
@@ -522,13 +531,11 @@ async function openOne(
             maxBuffer: 1 << 20,
             env: forkEnv(request.proxy, request.account, host),
           },
-        );
-        const match = /https:\/\/[^\s]+\/pull\/\d+(?:#pullrequestreview-\d+)?/.exec(stdout);
-        if (match?.[0] !== undefined) return { number: request.number, url: match[0] };
-        return { number: request.number };
-      } finally {
-        if (scratch !== undefined) rmSync(scratch, { recursive: true, force: true });
-      }
+        ).then(({ stdout }) => {
+          const match = /https:\/\/[^\s]+\/pull\/\d+(?:#pullrequestreview-\d+)?/.exec(stdout);
+          return match?.[0] === undefined ? { number: request.number } : { number: request.number, url: match[0] };
+        });
+      return request.body.trim() === '' ? invoke() : withBodyFile(request.body, invoke);
     });
   }
 

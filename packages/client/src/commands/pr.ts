@@ -129,6 +129,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     say(PR_USAGE);
     return 0;
   }
+  for (const name of ['title', 'body', 'body-file']) {
+    if (args.has(name) && args.value(name) === undefined) fail(`--${name} needs a value`);
+  }
   if (args.has('via-host') || args.value('via-host') !== undefined) {
     fail('--via-host was replaced by --as-user <login>');
   }

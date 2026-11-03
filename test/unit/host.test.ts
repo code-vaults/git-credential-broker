@@ -445,8 +445,8 @@ describe('edit routes outside the allowlist', () => {
 
 describe('the host issue edit and comment routes', () => {
   for (const entry of [
-    { kind: 'issue-edit' as const, argv: ['issue', 'edit'], flags: ['--title=fixed', '--body=updated'] },
-    { kind: 'issue-comment' as const, argv: ['issue', 'comment'], flags: ['--body=--help'] },
+    { kind: 'issue-edit' as const, argv: ['issue', 'edit'], flags: ['--title=fixed', '--body-file'] },
+    { kind: 'issue-comment' as const, argv: ['issue', 'comment'], flags: ['--body-file'] },
   ]) {
     it(`runs gh ${entry.argv.join(' ')}`, async () => {
       const root = mkdtempSync(join(tmpdir(), `host-broker-${entry.kind}-`));
@@ -515,7 +515,7 @@ describe('the host edit route', () => {
       assert.deepEqual(argv.slice(0, 2), ['pr', 'edit']);
       assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
       assert.ok(argv.includes('--title=fixed'));
-      assert.ok(argv.includes('--body=--help'));
+      assert.ok(argv.includes('--body-file'));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

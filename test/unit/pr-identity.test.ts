@@ -522,6 +522,32 @@ describe('gcb pr identity flags', () => {
     }
   });
 
+  it('refuses a review body with no value', async () => {
+    const repo = checkout();
+    try {
+      const result = await tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          '--as-user',
+          '--number',
+          '7',
+          '--approve',
+          '--body',
+          '--repo',
+          'acme/widget',
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /--body needs a value/u);
+    } finally {
+      repo.cleanup();
+    }
+  });
+
   it('refuses a review comment without a body', async () => {
     const repo = checkout();
     try {

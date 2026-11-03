@@ -87,6 +87,11 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   if (args.has('no-proxy') && (args.has('proxy') || args.values('proxy').length > 0)) {
     fail('--proxy and --no-proxy are mutually exclusive');
   }
+  if (!args.has('help') && !args.has('h')) {
+    for (const name of ['title', 'body', 'body-file']) {
+      if (args.has(name) && args.value(name) === undefined) fail('--' + name + ' needs a value');
+    }
+  }
   const account = args.values('as-user')[0];
   const command = args.positionals[0];
   if (command !== 'create') {
