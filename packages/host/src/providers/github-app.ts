@@ -812,11 +812,18 @@ function pullRequestNumber(value: unknown): number | undefined {
       // app was never installed on — the fork-to-upstream case the allowlist exists to permit. Reply,
       // edit and comment stay on the app unless identity is explicitly 'user'.
       const wantsApp = request.identity === 'app';
-      const wantsUser = request.identity === 'user';
       const personalForThis =
         request.identity === 'user' ||
         (!wantsApp && (request.action === 'open' || request.action === 'resolve'));
       const actingToken = personalForThis ? await personTokenFor(request.owner) : undefined;
+      // Resolving has no app route: the thread mutation is refused for an installation token, so a
+      // missing person token is a configuration error, not a reason to mint the wrong credential.
+      const personRequired = request.identity === 'user' || request.action === 'resolve';
+      if (personRequired && actingToken === undefined) {
+        throw new ProviderConfigError(
+          `no authorized user token for ${request.action === 'resolve' ? 'resolving this thread' : 'this request'}; run gcb authorize or configure userTokens`,
+        );
+      }
 
       // `--status` also reads /actions/runs, which is checked against actions: read. Pre-flighting
       // pull_requests alone passed a grant that could not make that call, which is the opposite of what a
@@ -826,12 +833,6 @@ function pullRequestNumber(value: unknown): number | undefined {
 
       // One variable, so every branch below holds a token without having to ask which kind it is.
       let token: string | undefined;
-
-      if (wantsUser && actingToken === undefined) {
-        throw new ProviderConfigError(
-          'no authorized user token for this request; run gcb authorize or configure userTokens',
-        );
-      }
       if (actingToken === undefined) {
         await ensurePermissions(request.owner, wanted);
         const installationId = await resolveInstallationId(request.owner);

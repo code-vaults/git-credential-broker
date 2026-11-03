@@ -1380,6 +1380,26 @@ describe('createGithubAppProvider', () => {
   });
 
 
+  it('refuses a resolve with no person token instead of minting an installation token', async () => {
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    await assert.rejects(
+      providerFor(stub).pullRequest!({
+        action: 'resolve',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        number: 4,
+        threadId: 'PRRT_x',
+      }),
+      /no authorized user token for resolving this thread/,
+    );
+    assert.equal(
+      stub.calls.some((call) => call.url.includes('/access_tokens')),
+      false,
+      'no installation token is minted for a resolve',
+    );
+  });
+
   it("resolves a thread with a token per owner, which is a person acting too", async () => {
     const dir = mkdtempSync(join(tmpdir(), 'resolve-owner-'));
     const tokenPath = join(dir, 'upstream.token');
