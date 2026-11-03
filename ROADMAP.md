@@ -4,7 +4,7 @@ This is the staged plan for the next version. `README.md` documents the tree as 
 this file documents where it is going. YAML configuration, the three-package split, the typed action
 catalog, the `gcb gh` broker/client path and a host image with `gh` are implemented. The executor
 exists, but several Phase 2 items remain incomplete; the old `pr`/`logs` commands remain, and
-host-user delegation is not implemented; live reload is implemented except `gcb doctor` reporting its digest/last result.
+host-user delegation is implemented for creation and review comments; live reload and `gcb doctor`'s config digest/last reload report are implemented.
 
 ## Locked decisions
 
@@ -139,7 +139,7 @@ The configuration is the source of truth and must be comfortable to edit by hand
         git tokens are not revoked. Groups/actions reload when those configuration features land;
       - [x] deployment mounts the config **directory** into a container, not the file, so a host-side
         atomic replace is visible;
-      - [ ] `gcb doctor` reports the active config digest and the last reload result;
+      - [x] `gcb doctor` reports the active config digest and the last reload result;
         `gcb config check` is the one-shot validation.
 - [x] One-time migration: convert an existing `broker.config.json` to YAML before upgrade. The
       old `broker.config.json` filename is no longer discovered; an explicitly passed JSON file is

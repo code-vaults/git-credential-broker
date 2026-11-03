@@ -21,6 +21,7 @@ Commands
   compose      Print a Docker sidecar definition for the broker
   config       Validate or edit the broker configuration
   diagnose     Ask GitHub what the App can actually see
+  doctor       Report config digest, last reload and socket state
   authorize    Authorize this app once for person-authored pull requests
   host-opener  Watch for the container's pull-request requests and create them
 
@@ -45,6 +46,8 @@ async function run(argv: readonly string[]): Promise<number> {
       return (await import('./commands/config.ts')).runConfig(rest);
     case 'diagnose':
       return (await import('./commands/diagnose.ts')).runDiagnose(rest);
+    case 'doctor':
+      return (await import('./commands/doctor.ts')).runDoctor(rest);
     case 'authorize':
       return (await import('./commands/authorize.ts')).runAuthorize(rest);
     case 'host':

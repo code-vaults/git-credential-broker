@@ -32,6 +32,7 @@ export const HOST_COMMANDS = [
   'compose',
   'config',
   'diagnose',
+  'doctor',
   'authorize',
   'host-opener',
 ] as const;
