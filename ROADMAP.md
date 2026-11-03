@@ -139,7 +139,8 @@ The configuration is the source of truth and must be comfortable to edit by hand
         git tokens are not revoked. Groups/actions reload when those configuration features land;
       - [x] deployment mounts the config **directory** into a container, not the file, so a host-side
         atomic replace is visible;
-      - [x] `gcb doctor` reports the active config digest and the last reload result;
+      - [x] `gcb doctor` reports the config file digest and the last reload result, including whether
+        that digest matches the last accepted reload;
         `gcb config check` is the one-shot validation.
 - [x] One-time migration: convert an existing `broker.config.json` to YAML before upgrade. The
       old `broker.config.json` filename is no longer discovered; an explicitly passed JSON file is

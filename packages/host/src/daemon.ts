@@ -164,7 +164,7 @@ export async function runDaemon(
       active.config = next.config;
       active.providers = next.providers;
       stderr.write(`gcb daemon: config reloaded\n`);
-      audit.record({ event: 'config', decision: 'reload' });
+      audit.record({ event: 'config', decision: 'reload', digest: next.digest });
       return next.digest;
     },
     onError: (error) => {

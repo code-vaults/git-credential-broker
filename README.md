@@ -316,8 +316,10 @@ existing file in `$VISUAL`/`$EDITOR` (it does not create a missing one; run `ini
 validates it after the editor exits.
 
 `doctor` is host-side and read-only: it validates the config, prints its SHA-256 digest, the last
-`config` audit record and whether the socket file is present. `diagnose` asks GitHub what the app can actually see — the only reliable way to tell "repository does
-not exist" from "not selected for this installation", which GitHub reports identically. It reads the
+`config` audit record and whether the socket file is present.
+
+`diagnose` asks GitHub what the app can actually see — the only reliable way to tell "repository
+does not exist" from "not selected for this installation", which GitHub reports identically. It reads the
 app's **private key**, so run it where the key is. On a host-process deployment that is the host; for
 a sidecar it is inside the container:
 

@@ -48,18 +48,61 @@ describe('gcb doctor', () => {
   it('reports the config digest and the last reload record', () => {
     const host = fixture();
     try {
+      const digest = createHash('sha256').update(fs.readFileSync(host.config)).digest('hex');
       fs.writeFileSync(
         host.audit,
         JSON.stringify({ ts: '2026-01-01T00:00:00.000Z', event: 'config', decision: 'reload-failed', reason: 'bad' }) +
           '\n' +
-          JSON.stringify({ ts: '2026-01-01T00:01:00.000Z', event: 'config', decision: 'reload' }) +
+          JSON.stringify({ ts: '2026-01-01T00:01:00.000Z', event: 'config', decision: 'reload', digest }) +
           '\n',
       );
-      const digest = createHash('sha256').update(fs.readFileSync(host.config)).digest('hex');
       const text = output(['--config', host.config]);
       assert.match(text, new RegExp(`digest: ${digest}`));
-      assert.match(text, /last reload: reload at 2026-01-01T00:01:00.000Z/);
-      assert.match(text, new RegExp(`socket: ${path.join(host.root, 'broker.sock')} missing`));
+      assert.match(text, /last reload: reload at 2026-01-01T00:01:00.000Z \(digest matches\)/);
+      assert.match(text, new RegExp(`socket: missing: ${path.join(host.root, 'broker.sock')}`));
+    } finally {
+      host.cleanup();
+    }
+  });
+
+  it('reports a failed reload reason before a partial trailing line', () => {
+    const host = fixture();
+    try {
+      fs.writeFileSync(
+        host.audit,
+        JSON.stringify({ ts: '2026-01-01T00:00:00.000Z', event: 'config', decision: 'reload-failed', reason: 'bad' }) +
+          '\n{"ts":"2026-01-01T00:02:00.000Z","event":"con',
+      );
+      const text = output(['--config', host.config]);
+      assert.match(text, /last reload: reload-failed at 2026-01-01T00:00:00.000Z \(digest unknown\) — bad/);
+    } finally {
+      host.cleanup();
+    }
+  });
+
+  it('skips an unrelated record after the config record', () => {
+    const host = fixture();
+    try {
+      fs.writeFileSync(
+        host.audit,
+        JSON.stringify({ ts: '2026-01-01T00:01:00.000Z', event: 'config', decision: 'reload', digest: 'abc' }) +
+          '\n' +
+          JSON.stringify({ ts: '2026-01-01T00:02:00.000Z', event: 'credential', decision: 'allow' }) +
+          '\n',
+      );
+      const text = output(['--config', host.config]);
+      assert.match(text, /last reload: reload at 2026-01-01T00:01:00.000Z \(digest differs\)/);
+    } finally {
+      host.cleanup();
+    }
+  });
+
+  it('reports a regular file where the broker expects a socket', () => {
+    const host = fixture();
+    try {
+      fs.writeFileSync(path.join(host.root, 'broker.sock'), 'not a socket');
+      const text = output(['--config', host.config]);
+      assert.match(text, /socket: regular file \(broker refuses\):/);
     } finally {
       host.cleanup();
     }
