@@ -110,6 +110,7 @@ describe('broker request handling', () => {
     assert.equal(response.ok, true);
     assert.equal(response.version, PACKAGE_VERSION);
     assert.deepEqual(response.hosts, [HOST]);
+    assert.equal(response.auditPath, null);
   });
 
   it('refuses an unknown operation', async () => {

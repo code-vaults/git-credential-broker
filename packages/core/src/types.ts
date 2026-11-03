@@ -273,6 +273,8 @@ export interface WireResponse {
   readonly expires_at?: string;
   readonly version?: string;
   readonly hosts?: readonly string[];
+  /** The active audit path, reported by `ping`. */
+  readonly auditPath?: string | null;
   /** The job log, for `op: "logs"`. */
   readonly log?: string;
   readonly truncated?: boolean;

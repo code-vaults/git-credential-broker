@@ -6,6 +6,7 @@
  * good snapshot.
  */
 import { createHash } from 'node:crypto';
+import net from 'node:net';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
 import { parseDocument } from 'yaml';
 
@@ -121,16 +122,53 @@ function rawAuditPath(text: string): string | null {
   return value === undefined || value === '' || value === 'null' || value === '~' ? null : value;
 }
 
+/** Ask the running daemon which audit path it actually uses. */
+function activeAuditPath(socketPath: string): Promise<{ found: boolean; path?: string | null }> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    const socket = net.connect(socketPath);
+    const finish = (answer: { found: boolean; path?: string | null }): void => {
+      if (settled) return;
+      settled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      socket.destroy();
+      resolve(answer);
+    };
+    timer = setTimeout(() => finish({ found: false }), 500);
+    socket.once('connect', () => socket.write(JSON.stringify({ op: 'ping' }) + '\n'));
+    socket.once('data', (chunk: Buffer) => {
+      try {
+        const answer = JSON.parse(chunk.toString('utf8').split('\n')[0] ?? '{}') as {
+          ok?: unknown;
+          auditPath?: unknown;
+        };
+        if (answer.ok === true && (answer.auditPath === null || typeof answer.auditPath === 'string')) {
+          finish({ found: true, path: answer.auditPath });
+          return;
+        }
+      } catch {
+        // A non-ping answer is not an active path; fall back to the configured one.
+      }
+      finish({ found: false });
+    });
+    socket.once('error', () => finish({ found: false }));
+  });
+}
+
 /**
  * Run the `doctor` command.
  *
  * @param argv - arguments after the command name.
  * @returns the process exit code.
  */
-export function runDoctor(argv: readonly string[]): number {
+export async function runDoctor(
+  argv: readonly string[],
+  write: (line: string) => void = say,
+): Promise<number> {
   const args = parseArgs(argv, { booleans: ['help'] });
   if (args.has('help') || args.has('h')) {
-    say(DOCTOR_USAGE);
+    write(DOCTOR_USAGE);
     return 0;
   }
   if (args.positionals.length > 0) fail(`unexpected argument ${JSON.stringify(args.positionals[0])}`);
@@ -159,29 +197,34 @@ export function runDoctor(argv: readonly string[]): number {
     loadError = error as Error;
   }
   const digest = createHash('sha256').update(text).digest('hex');
-  const auditPath = config !== undefined ? config.auditPath : rawAuditPath(text);
+  const active = config === undefined ? { found: false } : await activeAuditPath(config.socketPath);
+  const auditPath = active.found ? (active.path ?? null) : config !== undefined ? config.auditPath : rawAuditPath(text);
   const lastResult = lastConfigEvent(auditPath);
   const last = lastResult.event;
 
-  say(loadError === undefined ? `config: ${path} ok` : `config: ${path} invalid: ${loadError.message}`);
-  say(`digest: ${digest}`);
+  write(loadError === undefined ? `config: ${path} ok` : `config: ${path} invalid: ${loadError.message}`);
+  write(`digest: ${digest}`);
   if (!auditPath) {
-    say('last reload: (no auditPath configured)');
+    write('last reload: (no auditPath configured)');
   } else if (lastResult.error !== undefined) {
-    say(`last reload: (cannot read the audit log: ${lastResult.error.message})`);
+    write(`last reload: (cannot read the audit log: ${lastResult.error.message})`);
   } else if (last === undefined) {
-    say('last reload: (no config record in the audit log)');
+    write('last reload: (no config record in the audit log)');
   } else {
     const matched =
       typeof last.digest === 'string' ? (last.digest === digest ? 'digest matches' : 'digest differs') : 'digest unknown';
-    say(
+    write(
       `last reload: ${String(last.decision ?? 'unknown')} at ${String(last.ts ?? 'unknown')} (${matched})` +
         (typeof last.reason === 'string' ? ` — ${last.reason}` : ''),
     );
   }
   if (auditPath) {
-    say(`audit: ${auditPath} (configured; the running daemon may still use its startup path)`);
+    write(
+      active.found
+        ? `audit: ${auditPath} (active daemon path)`
+        : `audit: ${auditPath} (configured; the running daemon may still use its startup path)`,
+    );
   }
-  if (config !== undefined) say(`socket: ${socketLine(config.socketPath, config.socketMode)}`);
+  if (config !== undefined) write(`socket: ${socketLine(config.socketPath, config.socketMode)}`);
   return loadError === undefined ? 0 : 1;
 }
