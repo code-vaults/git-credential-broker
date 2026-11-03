@@ -72,6 +72,12 @@ export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {
       continue;
     }
     const next = argv[index + 1];
+    // A body is data even when it spells a help flag; gh.ts documents the same exception.
+    if (name === 'body' && next === '--help') {
+      collected.set(name, [...(collected.get(name) ?? []), next]);
+      index += 1;
+      continue;
+    }
     if (next !== undefined && !next.startsWith('--')) {
       collected.set(name, [...(collected.get(name) ?? []), next]);
       index += 1;
@@ -87,6 +93,30 @@ export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {
     names: [...new Set([...collected.keys(), ...flags])],
     positionals,
   };
+}
+
+/**
+ * Whether a flag appears with a separated value somewhere in the raw argv.
+ *
+ * Used for the one place where a value of `-h` means help: `--title -h` and `--body-file -h`.
+ * The inline spelling `--title=-h` is data, and scanning stops at `--`, so this matches what a
+ * person typed rather than how parseArgs happened to collect it.
+ *
+ * @param argv - the raw arguments.
+ * @param names - the long flag names to look for, with dashes.
+ * @param value - the value that means help.
+ * @returns true when one of the flags is followed by that value.
+ */
+export function hasSeparatedValue(
+  argv: readonly string[],
+  names: readonly string[],
+  value = '-h',
+): boolean {
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] === '--') return false;
+    if (names.includes(argv[index] as string) && argv[index + 1] === value) return true;
+  }
+  return false;
 }
 
 /**

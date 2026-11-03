@@ -18,7 +18,7 @@ import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { baseBranchFor, qualifiedBranch, remoteRepo } from './remotes.ts';
 import { runGh } from './gh.ts';
 import { submitToHostBroker } from './host-submit.ts';
-import { fail, parseArgs, say } from 'gcb-core';
+import { fail, hasSeparatedValue, parseArgs, say } from 'gcb-core';
 
 /** Every flag the flag-only lifecycle understands. */
 const KNOWN_FLAGS = new Set([
@@ -129,9 +129,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     say(PR_USAGE);
     return 0;
   }
-  // gh.ts deliberately treats a body of exactly -h/--help as data, so only title and body-file
-  // are help here; body stays content on every command.
-  if (args.value('title') === '-h' || args.value('body-file') === '-h') {
+  if (hasSeparatedValue(argv, ['--title', '--body-file'])) {
     say(PR_USAGE);
     return 0;
   }

@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs';
 
 import { LOGIN } from 'gcb-core';
-import { fail, parseArgs, say } from 'gcb-core';
+import { fail, hasSeparatedValue, parseArgs, say } from 'gcb-core';
 
 import { runGh } from './gh.ts';
 import { remoteRepo } from './remotes.ts';
@@ -91,7 +91,7 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   const account = args.values('as-user')[0];
   const command = args.positionals[0];
   if (command !== 'create') {
-    const helpAsValue = ['title', 'body-file'].some((name) => args.value(name) === '-h');
+    const helpAsValue = hasSeparatedValue(argv, ['--title', '--body-file']);
     if (command !== undefined && (args.has('help') || args.has('h') || helpAsValue)) {
       return runGh(['issue', command, '--help']);
     }
@@ -186,7 +186,7 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     if (bodyFile !== undefined) rest = forwardBodyFile(rest, bodyFile);
     return runGh(['issue', ...rest], args.has('as-user') ? { identity: 'user' } : {});
   }
-  if (args.has('help') || args.has('h') || args.value('title') === '-h' || args.value('body-file') === '-h') {
+  if (args.has('help') || args.has('h') || hasSeparatedValue(argv, ['--title', '--body-file'])) {
     say(ISSUE_USAGE);
     return 0;
   }
