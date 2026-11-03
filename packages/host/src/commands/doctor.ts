@@ -215,7 +215,8 @@ export async function runDoctor(
   const auditPath = activePath === undefined ? configured : (activePath ?? configured);
   const lastResult = lastConfigEvent(auditPath);
   const last = lastResult.event;
-  const reloadLabel = activePath === null ? 'last reload (historical, from configured audit log)' : 'last reload';
+  const reloadLabel =
+    activePath === null && auditPath ? 'last reload (historical, from configured audit log)' : 'last reload';
 
   write(loadError === undefined ? `config: ${path} ok` : `config: ${path} invalid: ${loadError.message}`);
   write(`digest: ${digest}`);

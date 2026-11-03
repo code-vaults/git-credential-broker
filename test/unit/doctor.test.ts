@@ -317,6 +317,27 @@ describe('gcb doctor', () => {
     }
   });
 
+  it('does not call a missing configured audit log historical', async () => {
+    const host = fixture();
+    const socketPath = path.join(host.root, 'no-config-log.sock');
+    const server = net.createServer((socket) => {
+      socket.once('data', () => socket.end('{"ok":true,"auditPath":null}\n'));
+    });
+    try {
+      await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+      fs.writeFileSync(
+        host.config,
+        fs.readFileSync(host.config, 'utf8').replace(/socketPath: .*\n/, `socketPath: ${socketPath}\n`).replace(/auditPath: .*\n/, ''),
+      );
+      const text = await output(['--config', host.config]);
+      assert.match(text, /^last reload: \(no auditPath configured\)$/m);
+      assert.doesNotMatch(text, /historical/);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      host.cleanup();
+    }
+  });
+
   it('treats an empty auditPath as no log', async () => {
     const host = fixture();
     try {
