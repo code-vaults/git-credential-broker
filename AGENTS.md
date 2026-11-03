@@ -210,11 +210,11 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   person) by default, or `pr create --as-user <login>` for a specific host account; the latter writes
   a request under `<git dir>/gcb/pr-requests` (shared with the host, untracked) for `gcb host`.
   A plain `gcb pr create` (app identity) is the exception, only when the operator explicitly asks for
-  an App-authored PR; automated reviewers may skip those. The flag-only `gcb pr --as-user` form is
-  for review, reply, PR edit, review-comment edit/comment and resolve, not for opening. Bare `issue
-  create/edit/comment --as-user` uses the broker's person action token; the login form uses the host
-  broker. It runs no
-  shell, its program is configuration, and it cannot push, merge, close or read.
+  an App-authored PR; automated reviewers may skip those. The flag-only `gcb pr --as-user` form also
+  opens with `--head/--title`, and covers review, reply, PR edit, review-comment edit/comment and
+  resolve. Bare `issue create/edit/comment --as-user` uses the broker's person action token; the login
+  form uses the host broker. It runs no shell, its program is configuration, and it cannot push,
+  merge, close or read.
 
   The host broker is started once per machine, not once per repository: it discovers the checkouts under
   its `--root`s (default `$HOME`) within `--depth` levels of each (4 by default), so anything added
