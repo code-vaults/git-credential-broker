@@ -59,8 +59,7 @@ export const REPOSITORY = /^(?!\.+(?:\/|$))[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.
 export const HOST = /^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::\d{1,5})?$/;
 
 interface HostRequestFields {
-  /** `owner/name` as the caller believed it. Recorded, and deliberately never used: the checkout a
-   *  request was written in decides which repository it means. */
+  /** `owner/name` for an explicit-repository request; absent means the checkout decides. */
   readonly repo?: string;
   readonly title: string;
   readonly body: string;
@@ -86,6 +85,20 @@ export interface HostIssueRequest extends HostRequestFields {
   readonly kind: 'issue';
 }
 
+/** One request to reply inside a pull request review thread. */
+export interface HostReplyRequest {
+  readonly kind: 'reply';
+  readonly repo: string;
+  readonly host?: string;
+  readonly number: number;
+  readonly commentId: number;
+  readonly body: string;
+  readonly proxy?: string | null;
+  readonly account?: string;
+  readonly session?: string;
+  readonly pid?: number;
+}
+
 /** One request to fork a repository. */
 export interface HostForkRequest {
   readonly kind: 'fork';
@@ -97,8 +110,8 @@ export interface HostForkRequest {
   readonly pid?: number;
 }
 
-/** Either request the opener can fulfil. */
-export type HostRequest = HostOpenRequest | HostIssueRequest | HostForkRequest;
+/** A request the host broker can fulfil. */
+export type HostRequest = HostOpenRequest | HostIssueRequest | HostReplyRequest | HostForkRequest;
 
 /** What the opener answered. */
 export interface HostOpenResult {
@@ -293,6 +306,20 @@ export function newId(now: Date = new Date()): string {
  */
 export function requestProblems(request: HostRequest): string[] {
   const problems: string[] = [];
+  if (request.kind === 'reply') {
+    if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
+    if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
+    if (!Number.isInteger(request.number) || request.number <= 0) problems.push('the pull request number is not positive');
+    if (!Number.isInteger(request.commentId) || request.commentId <= 0) {
+      problems.push('the comment id is not positive');
+    }
+    if (request.body.trim() === '') problems.push('a reply needs a body');
+    if (request.body.length > MAX_BODY_CHARS) problems.push(`the body must be at most ${MAX_BODY_CHARS} characters`);
+    if (request.account !== undefined && !LOGIN.test(request.account)) {
+      problems.push('the account is not a usable GitHub login');
+    }
+    return problems;
+  }
   if (request.kind === 'fork') {
     if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
     if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
@@ -300,6 +327,9 @@ export function requestProblems(request: HostRequest): string[] {
       problems.push('the account is not a usable GitHub login');
     }
     return problems;
+  }
+  if (request.repo !== undefined && !REPOSITORY.test(request.repo)) {
+    problems.push('the repository is not owner/name');
   }
   if (request.kind !== 'issue') {
     if (!BRANCH.test(request.head) || request.head.includes('..')) {
@@ -348,9 +378,32 @@ export function writeRequest(dir: string, request: HostRequest): string {
  */
 export function readRequest(dir: string, id: string): HostRequest | undefined {
   const parsed = readJson(join(dir, `${id}.json`)) as
-    | (Partial<HostOpenRequest> & Partial<HostIssueRequest> & Partial<HostForkRequest>)
+    | (Partial<HostOpenRequest> & Partial<HostIssueRequest> & Partial<HostReplyRequest> & Partial<HostForkRequest>)
     | undefined;
   if (!parsed) return undefined;
+  if (parsed.kind === 'reply') {
+    if (
+      typeof parsed.repo !== 'string' ||
+      !REPOSITORY.test(parsed.repo) ||
+      typeof parsed.body !== 'string' ||
+      typeof parsed.number !== 'number' ||
+      typeof parsed.commentId !== 'number'
+    ) {
+      return undefined;
+    }
+    return {
+      kind: 'reply',
+      repo: parsed.repo,
+      number: parsed.number,
+      commentId: parsed.commentId,
+      body: parsed.body,
+      ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
+      ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
+      ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
+      session: parsed.session,
+      pid: parsed.pid,
+    };
+  }
   if (parsed.kind === 'fork') {
     if (typeof parsed.repo !== 'string' || !REPOSITORY.test(parsed.repo)) return undefined;
     return {
@@ -454,7 +507,14 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
     request !== undefined &&
     // Untyped JSON: the file can spell account as an array or a number even though the type cannot.
     (request.account === undefined || typeof request.account === 'string') &&
-    (request.kind === 'fork'
+    (request.kind === 'reply'
+      ? typeof request.repo === 'string' &&
+        REPOSITORY.test(request.repo) &&
+        typeof request.body === 'string' &&
+        Number.isInteger(request.number) &&
+        Number.isInteger(request.commentId) &&
+        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
+      : request.kind === 'fork'
       ? typeof request.repo === 'string' &&
         REPOSITORY.test(request.repo) &&
         (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))

@@ -34,7 +34,6 @@ export const HOST_COMMANDS = [
   'diagnose',
   'doctor',
   'authorize',
-  'host-opener',
 ] as const;
 
 /** The commands a top-level package implements. */

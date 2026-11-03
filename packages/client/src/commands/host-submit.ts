@@ -1,5 +1,5 @@
 /**
- * Submit one request to the host opener and wait for its answer.
+ * Submit one request to the host broker and wait for its answer.
  *
  * Both person-authored create routes (`pr --as-user` and `issue create --as-user`) use this, so the
  * channel checks, capability check, timeout diagnosis and cleanup cannot drift apart.
@@ -33,14 +33,14 @@ export function noAnswerMessage(dir: string, id: string, noun: string, timeoutMs
   const claimed = existsSync(join(dir, `${id}.json.working`));
   if (!pending && !claimed) {
     return (
-      `the host opener took ${id} and dropped it without answering\n` +
+      `the host broker took ${id} and dropped it without answering\n` +
       `  it probably does not understand ${noun} requests; restart it from this gcb-host version`
     );
   }
   const elapsed = timeoutMs >= 1_000 ? `${Math.round(timeoutMs / 1_000)}s` : `${timeoutMs}ms`;
   return (
-    `the host opener did not answer ${id} within ${elapsed}\n` +
-    '  it may still be working: the request is not cancelled, and the opener removes it only once\n' +
+    `the host broker did not answer ${id} within ${elapsed}\n` +
+    '  it may still be working: the request is not cancelled, and the host broker removes it only once\n' +
     `  it has created the ${noun} or failed. Check the ${noun} list before asking again.`
   );
 }
@@ -56,21 +56,29 @@ export async function submitToOpener(
   request: HostRequest,
   success: (answer: HostOpenResult) => string,
 ): Promise<number> {
-  const noun = request.kind === 'fork' ? 'fork' : request.kind === 'issue' ? 'issue' : 'pull request';
+  const noun =
+    request.kind === 'fork'
+      ? 'fork'
+      : request.kind === 'issue'
+        ? 'issue'
+        : request.kind === 'reply'
+          ? 'reply'
+          : 'pull request';
   const gitDir = findGitDir(process.cwd());
   if (gitDir === undefined) fail('--as-user needs a git repository: run it from the checkout');
   const dir = channelDir(gitDir);
   const opener = readOpener(dir);
   if (opener === undefined) {
     fail(
-      `no host opener is watching ${dir}\n` +
-        '  start one on the host: gcb host-opener --repo <that checkout>\n' +
+      `no host broker is watching ${dir}\n` +
+        '  start one on the host: gcb host --repo <that checkout>\n' +
         '  or drop --as-user to open it as the app instead',
     );
   }
-  const needed = request.kind === 'issue' ? 'issue' : request.kind === 'fork' ? 'fork' : undefined;
+  const needed =
+    request.kind === 'issue' ? 'issue' : request.kind === 'fork' ? 'fork' : request.kind === 'reply' ? 'reply' : undefined;
   if (needed !== undefined && !(Array.isArray(opener.kinds) && opener.kinds.includes(needed))) {
-    fail(`the host opener does not advertise ${needed} support; restart it from this gcb-host version`);
+    fail(`the host broker does not advertise ${needed} support; restart it from this gcb-host version`);
   }
 
   // writeRequest refuses what the opener would refuse — a title past its limit, a body past its limit,
@@ -91,7 +99,7 @@ export async function submitToOpener(
   if (answer === undefined) answer = await waitForResult(dir, id, 300, 50);
   if (answer === undefined) fail(noAnswerMessage(dir, id, noun, timeoutMs));
   removeResult(dir, id);
-  if (answer.error !== undefined) fail(`the host opener could not open it: ${answer.error}`);
+  if (answer.error !== undefined) fail(`the host broker could not open it: ${answer.error}`);
   say(success(answer));
   return 0;
 }

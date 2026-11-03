@@ -23,8 +23,7 @@ commands are not removed yet. The Phase 2 design note is in
 describes the current tree, which is the last green baseline. Do not
 implement a later phase to unblock an earlier one without updating the roadmap first. The target
 brand is `gcb`: the CLI, container and service share the name, the main broker is `gcb app`, and
-the current `host-opener` becomes `gcb host` (typed host operations, not a shell; service name
-`gcb-host`). Names in this file are the current ones until that phase lands.
+`gcb host` is the host broker (typed host operations, not a shell; service name `gcb-host`).
 
 Keep the roadmap and the skills current as part of the work, not after it:
 
@@ -206,29 +205,31 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   `pull_request`, so the branch gets the three jobs before anyone merges.
 
 - **A pull request authored by the app is one automated reviewers may skip, so a person can be the
-  author instead — through the broker's authorized user token, or create one through the host opener.**
+  author instead — through the broker's authorized user token, or through the host broker.**
   Opening a pull request is a person action: use `gcb pr create --as-user` (broker's authorized
   person) by default, or `pr create --as-user <login>` for a specific host account; the latter writes
-  a request under `<git dir>/gcb/pr-requests` (shared with the host, untracked) for `gcb host-opener`.
+  a request under `<git dir>/gcb/pr-requests` (shared with the host, untracked) for `gcb host`.
   A plain `gcb pr create` (app identity) is the exception, only when the operator explicitly asks for
   an App-authored PR; automated reviewers may skip those. The flag-only `gcb pr --as-user` form is
   for reply, edit, comment and resolve, not for opening. Bare `issue create --as-user` uses the
-  broker's person action token; `issue create --as-user <login>` uses the opener. The opener runs no
+  broker's person action token; `issue create --as-user <login>` uses the host broker. It runs no
   shell, its program is configuration, and it cannot push, merge, close or read.
 
-  The opener is started once per machine, not once per repository: it discovers the checkouts under
+  The host broker is started once per machine, not once per repository: it discovers the checkouts under
   its `--root`s (default `$HOME`) within `--depth` levels of each (4 by default), so anything added
   later is picked up by the next sweep. The bound is deliberate — the walk repeats every `--interval`
   seconds — and `--depth` raises it for a deeper layout. The paths on the two sides never have to
   match — each side reads and writes its own view
-  of the same `.git` directory — so only the roots it scans are host-side paths. A request is served in the
-  checkout it was written in. That is a mechanism, not a boundary: the container can edit any checkout it can
-  write, its remote included, so what a deployment controls is which roots are served and which program runs.
+  of the same `.git` directory — so only the roots it scans are host-side paths. A request without an
+  explicit `repo` is served in the checkout it was written in; one that names `repo` uses that repository
+  and is checked against the allowlist, so no checkout of the target is required. The checkout is a
+  mechanism, not a boundary: the container can edit any checkout it can write, its remote included, so
+  what a deployment controls is which roots are served, the allowlist and which program runs.
   A request also selects an account directory: any `~/.config/gh-<login>` that exists can be named, and
-  a request that names none runs as the opener's own login. That is a selector, not a gate; a
+  a request that names none runs as the host broker's own login. That is a selector, not a gate; a
   deployment controls which account directories exist, and the container chooses among them.
 
-  **More than one way to be the author exists, and none of them replaces another.** The opener (no
+  **More than one way to be the author exists, and none of them replaces another.** The host broker (no
   long-lived secret, one process), `userTokens` (one process, a token per owner), and authorization on
   the existing app (one process, no manual rotation, a token that can do anything that person can)
   answer the same question with different trades. Adding one is not a reason to remove another: a
@@ -244,7 +245,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   refresh token is rotated on every exchange and written back; not writing it back would work once.
 
 - **The allowlist says what may be used, not what is installed.** An entry for a repository the app was
-  never installed on is meaningful: `authorize` and the host opener act as a person, and a person needs no
+  never installed on is meaningful: `authorize` and the host broker act as a person, and a person needs no
   permission on an upstream to open a pull request from their fork into it. For those two routes the
   allowlist matters more than it does for the app, not less — a person's token reaches everything that
   person reaches. The installation is a separate question, and the code asks it only when there is nobody
@@ -256,14 +257,15 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   listing the installations and the repositories each one reaches; asking for a credential for a
   repository the app *is* installed on is the control that needs no such command.
 
-  **Which actions are left is the operational half.** The host opener is create-only (it runs
-  `gh pr create` or `gh issue create`), while bare `--as-user` through the broker can also reply,
-  resolve, edit or comment on a review. Every other action still goes through the installation token.
+  **Which actions are left is the operational half.** The host broker creates pull requests/issues
+  and replies to review comments (with `--as-user <login>`), while bare `--as-user` through the
+  broker also handles reply, resolve, edit and comment. Every other action still goes through the
+  installation token.
   On a repository the app is not installed on, a pull request can be opened and its review comments
   replied to, edited or resolved with bare `--as-user`, but the pull request itself cannot be edited,
-  closed or merged, and neither the container nor the host opener has a route to its metadata. That is not a gap to close with a flag: acting as a
-  person, from a checkout on the host that holds the person's own credentials,
-  is the design.
+  closed or merged, and neither the container nor the host broker has a route to its metadata. That is not a gap to close with a flag: acting as a
+  person, from a checkout on the host that holds the person's own credentials or an allowlisted explicit
+  repository, is the design.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
   Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.yml`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by
@@ -326,7 +328,7 @@ Full detail and the measurements behind them:
 | `packages/host/src/gh.ts` | the isolated gh action executor |
 | `packages/host/src/providers/github-app.ts` | RS256 JWT, installation lookup, permission pre-flight, token cache |
 | `packages/host/src/device-flow.ts` | the device flow: the three exchanges that turn an authorization into a token |
-| `packages/host/src/commands/` | init, stage, compose, config, diagnose, doctor, authorize and host-opener |
+| `packages/host/src/commands/` | init, stage, compose, config, diagnose, doctor, authorize and host |
 | `Dockerfile` | client and host image stages, with gh in the host stage |
 | `packages/client/bin/gcb.js`, `packages/host/bin/gcb.js` | the two installed `gcb` bins |
 | `test/e2e/packages.test.ts` | npm pack and install into separate client/host prefixes |

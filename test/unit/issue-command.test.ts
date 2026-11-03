@@ -66,7 +66,7 @@ describe('gcb issue create --as-user', () => {
     try {
       const result = await runClient(['issue', 'create', '--as-user', 'alice', '--title', 't'], host.root);
       assert.equal(result.status, 1);
-      assert.match(result.stderr, /no host opener is watching/);
+      assert.match(result.stderr, /no host broker is watching/);
     } finally {
       host.cleanup();
     }
@@ -102,6 +102,8 @@ describe('gcb issue create --as-user', () => {
           'a title',
           '--body',
           'a body',
+          '--repo',
+          'acme/widget',
           '--proxy',
           'http://p:1',
         ],
@@ -117,6 +119,7 @@ describe('gcb issue create --as-user', () => {
       assert.equal(request?.kind, 'issue');
       assert.equal(request?.title, 'a title');
       assert.equal(request?.body, 'a body');
+      assert.equal(request?.repo, 'acme/widget');
       assert.equal(request?.account, 'alice');
       assert.equal(request?.proxy, 'http://p:1');
       writeResult(host.dir, id, { number: 42, url: 'https://github.com/acme/widget/issues/42' });

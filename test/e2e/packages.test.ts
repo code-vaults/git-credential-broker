@@ -105,6 +105,6 @@ describe('packed npm packages', () => {
     assert.equal(hasPackage(hostPrefix, 'yaml'), true, 'gcb-host must install yaml');
     assert.match(runFailure(bin(hostPrefix), ['setup']), /client command; install gcb-client/);
     assert.match(run(bin(hostPrefix), ['app', '--help']), /broker/);
-    assert.match(run(bin(hostPrefix), ['host', '--help']), /host-opener|Watch/i);
+    assert.match(run(bin(hostPrefix), ['host', '--help']), /Usage: gcb host/);
   });
 });

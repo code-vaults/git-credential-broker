@@ -137,13 +137,13 @@ threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr clos
 For that flag-only form, creation uses the app's installation token by default; `--as-user` without
 a value uses the broker's authorized user token for open, reply, resolve, edit and comment, and
 `--as-user <login>`
-uses the host opener for creation. Resolving a review thread defaults to the user identity because the pull-request token this broker
+uses the host broker for creation. Resolving a review thread defaults to the user identity because the pull-request token this broker
 mints is narrowed to `pull_requests: write` and `contents: read`, while `resolveReviewThread` needs
 `contents: write` — a grant the broker gives only to the credential git pushes with, never to a
 pull-request token.
 
 `gcb repo fork [owner/name]` creates a fork under a person's account. An app cannot own a fork, so
-`--as-user` is required: bare uses the broker's authorized user, a login uses the host opener. Without
+`--as-user` is required: bare uses the broker's authorized user, a login uses the host broker. Without
 a repository it forks the checkout's `origin`. `--host` selects the host; otherwise the origin remote's host is
 used when available, and `github.com` is the fallback.
 
@@ -385,21 +385,22 @@ authored; with bare `--as-user` it changes the authorized person's.
 ### Opening a pull request or issue as yourself
 
 There are three ways to have a pull request or issue authored by a person, and they stay alternatives: the **host
-opener** below needs no long-lived secret anywhere and costs a process you keep running; **`userTokens`**
+host broker** below needs no long-lived secret anywhere and costs a process you keep running; **`userTokens`**
 needs no second process and costs a token per owner; and **authorizing the app** needs neither, at the cost
 of a token as wide as your own access to GitHub. A deployment picks the trade it prefers, and none of them
 replaces another.
 
 A pull request opened through the broker by default is authored by the app, and automated reviewers
 are entitled to skip those. To have one authored by you, either use the
-broker's authorized user token with `--as-user` (after `gcb authorize`), or run the opener on the
+broker's authorized user token with `--as-user` (after `gcb authorize`), or run the host broker on the
 host, beside the same checkout, and ask for it with `--as-user <login>` from the container:
 
 ```sh
-# on the host, once — it serves every checkout below $HOME and does nothing else
-gcb host-opener          # --root <dir> to narrow it, repeatable
-# for repo fork, also pass --config <broker.config.yml> so its allowlist applies
-# or, at boot and for good: examples/host-opener-boot.sh (see below)
+# on the host, once — it serves every checkout below $HOME
+gcb host          # --root <dir> to narrow it, repeatable
+# for repo fork, review replies or an explicit --repo, also pass --config <broker.config.yml>
+# so its allowlist applies
+# or, at boot and for good: examples/gcb-host-boot.sh (see below)
 ```
 
 **Copy that file outside the mounts before a task runs it.** It runs as you, so leaving it in the
@@ -409,37 +410,44 @@ checkout would let anything that can write the checkout decide what your credent
 # in the container
 gcb pr --as-user octocat --repo owner/repo --head feature --base main \
   --title "a title" --body-file pr.md
+
+# reply as that host account
+gcb pr --as-user octocat --number 94 --reply-to 123456 --body "good point"
 ```
 
-The opener creates pull requests and issues with the gh account named by the request, and forks only
-a repository present in the broker config's allowlist for the request host (pass `--config`). `--as-user <login>`
+The host broker creates pull requests and issues, replies to review comments, and forks with the gh
+account named by the request; it does not edit, close or merge. For `repo fork`, review replies and
+any request that names `--repo` explicitly, it checks the repository against the broker config's
+allowlist (pass `--config`). An explicit `--repo` needs no checkout of that repository; without it,
+the checkout decides.
+`--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
 directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. The directory must
 already exist, and inherited `GH_TOKEN`/`GITHUB_TOKEN`/`GH_ENTERPRISE_TOKEN`/`GITHUB_ENTERPRISE_TOKEN`/`GH_HOST` are ignored
 for that request. Any existing account directory can be named, so this is a selector rather than a
-gate. A request with no `--as-user` uses the broker route and does not select the opener's login.
-The opener never runs a shell, and
+gate. A request with no `--as-user` uses the broker route and does not select the host broker's login.
+The host broker never runs a shell, and
 the program it calls is configuration rather than a hard-coded `gh`: `--command /path/to/gh`, or
 `$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
-anything. `GCB_OPENER_TIMEOUT_MS` changes only the client's wait for the opener; the request stays in the
-channel and the opener may still answer. It exists for tests and debugging, not as a policy knob.
+anything. `GCB_OPENER_TIMEOUT_MS` changes only the client's wait for the host broker; the request stays in the
+channel and the host broker may still answer. It exists for tests and debugging, not as a policy knob.
 
 `--root` may be repeated and defaults to `$HOME`; checkouts within `--depth` levels of a root
 (4 by default) are served with no further setup, including ones created later, which the next sweep
 picks up. The bound exists because the walk repeats every `--interval` seconds; raise `--depth` for
 deeper layouts. To start it once and keep it,
-`examples/host-opener.service` is a systemd user unit; on a system without user services,
-`examples/host-opener-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
+`examples/gcb-host.service` is a systemd user unit; on a system without user services,
+`examples/gcb-host-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
 instance at a time, and its output in a log file. Without `--as-user`, `pr` and `issue create` use
 the broker route as the app; bare `--as-user` selects the broker's authorized person for a pull
-request or issue; `--as-user <login>` writes a request for this opener. With a login and no opener
+request or issue; `--as-user <login>` writes a request for this host broker. With a login and no host broker
 running they fail; they do not fall back to the broker route.
 
 ```sh
 # in the container: the broker's authorized person
 gcb issue create --as-user --repo owner/repo --title "An issue title" --body-file issue.md
-# or the host opener, using its gh-<login> account
-gcb issue create --as-user octocat --title "An issue title" --body-file issue.md
+# or the host broker, using its gh-<login> account
+gcb issue create --as-user octocat --repo owner/repo --title "An issue title" --body-file issue.md
 ```
 
 A pull request opened with the app's installation token is authored by the app, and automated
@@ -498,7 +506,7 @@ every exchange, so mount it read-write (`./user.refresh:/etc/git-cred-broker/use
 sidecar). A read-only mount works until the first renewal, which is the worst moment to find out.
 
 The allowlist says what this channel **may be used for**, not what the app is installed on: an entry for a
-repository the app was never installed on is meaningful, because `authorize` and the host opener act as a
+repository the app was never installed on is meaningful, because `authorize` and the host broker act as a
 person, who needs no permission there at all — that is how a pull request from your fork to an upstream
 works. It matters more for those two routes than for the app, not less: a person's token reaches
 everything that person reaches.
@@ -537,17 +545,17 @@ broker mints the token; Git's own HTTP transport still uses `http.proxy` / `HTTP
 
 `gh` receives the choice through its process environment; the broker builds a separate
 `node-fetch-native` instance for each proxy value and caches it, so commands sharing a choice reuse the
-same connection pool. `--as-user` carries the same choice to the host opener, which applies it to its
+same connection pool. `--as-user` carries the same choice to the host broker, which applies it to its
 own `gh pr create`.
 
 The choice comes from the pushing container, so it can override a host proxy policy. A deployment that
 must force all egress through one route should not give `gcb-client` to a container it does not trust;
 the allowlist and the broker key still bound what that container can reach, not which network path it
-uses. The `--as-user` opener honours the same choice while acting as the person, and the person's
+uses. The `--as-user` host broker honours the same choice while acting as the person, and the person's
 token is not bounded by the app key, so only serve checkouts from a container you trust.
 
 The broker, `authorize` and `diagnose` **refuse to start** when a proxy variable is set and `NODE_USE_ENV_PROXY` is
-not `1`, instead of reaching GitHub directly by a route nobody chose. `gh`, which the host opener runs,
+not `1`, instead of reaching GitHub directly by a route nobody chose. `gh`, which the host broker runs,
 reads those variables itself (it is Go), so it only needs them to arrive.
 
 
@@ -555,22 +563,22 @@ reads those variables itself (it is Go), so it only needs them to arrive.
 
 #### Keeping it running
 
-On a host with user services, `examples/host-opener.service` is a unit for it:
+On a host with user services, `examples/gcb-host.service` is a unit for it:
 
 ```sh
 npm i -g gcb-host                     # the unit calls the installed CLI
-cp examples/host-opener.service ~/.config/systemd/user/
+cp examples/gcb-host.service ~/.config/systemd/user/
 systemctl --user daemon-reload
-systemctl --user enable --now host-opener
+systemctl --user enable --now gcb-host
 loginctl enable-linger "$USER"                          # so it survives logout and starts at boot
-journalctl --user -u host-opener -f                     # its output
+journalctl --user -u gcb-host -f                     # its output
 ```
 
 `loginctl enable-linger` is the part that is easy to miss: without it a user service stops when
 your last session ends and does not come back at boot. `Restart=always` is already in the unit, so
 a crash is a ten-second gap rather than a silent stop.
 
-On a host without user services — a Synology NAS, for instance — `examples/host-opener-boot.sh` is
+On a host without user services — a Synology NAS, for instance — `examples/gcb-host-boot.sh` is
 the same thing for a boot-time task: absolute paths, one instance at a time, its output in a log
 file.
 
