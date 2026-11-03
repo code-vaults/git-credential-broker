@@ -101,7 +101,13 @@ function socketLine(path: string, expectedMode: number): string {
   return `present (mode ${mode}${mode === expected ? '' : `, expected ${expected}`}): ${path}`;
 }
 
-/** Read one string key from raw YAML when the rest of the file is invalid. */
+/**
+ * Read one string key from raw YAML when the rest of the file is invalid.
+ *
+ * @param text - the raw configuration text.
+ * @param key - the top-level key to read.
+ * @returns the value, or null when absent/empty or an unquoted null/~.
+ */
 export function rawString(text: string, key: 'auditPath' | 'socketPath'): string | null {
   try {
     const parsed = parseDocument(text).toJS() as Record<string, unknown> | null;
