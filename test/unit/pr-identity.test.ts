@@ -7,7 +7,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
-import { tryRunAsync } from '../common/run.ts';
+import { sleep, tryRunAsync } from '../common/run.ts';
+import { channelDir, listRequests, readRequest, writeOpener, writeResult } from '../../packages/core/src/host-request.ts';
 
 const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));
 
@@ -141,7 +142,7 @@ describe('gcb pr identity flags', () => {
           { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
         );
         assert.equal(result.status, 1, spelling);
-        assert.match(result.stderr, /no host opener is watching/, spelling);
+        assert.match(result.stderr, /no host broker is watching/, spelling);
       }
     } finally {
       repo.cleanup();
@@ -223,6 +224,52 @@ describe('gcb pr identity flags', () => {
         assert.equal(result.status, 0, extra.join(' '));
         assert.equal(seen['identity'], 'user', extra.join(' '));
       }
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it('sends a login reply through the host broker', async () => {
+    const repo = checkout();
+    const dir = channelDir(path.join(repo.root, '.git'));
+    try {
+      writeOpener(dir, { pid: process.pid, kinds: ['reply'] });
+      const pending = tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          '--as-user',
+          'alice',
+          '--number',
+          '7',
+          '--reply-to',
+          '123',
+          '--body',
+          'a reply',
+          '--repo',
+          'acme/widget',
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      let request;
+      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+        const [id] = listRequests(dir);
+        request = id === undefined ? undefined : readRequest(dir, id);
+        if (request === undefined) await sleep(10);
+      }
+      assert.ok(request, 'the request reached the host broker');
+      assert.equal(request?.kind, 'reply');
+      assert.equal(request?.account, 'alice');
+      const [id] = listRequests(dir);
+      writeResult(dir, id as string, {
+        number: 7,
+        url: 'https://github.com/acme/widget/pull/7#discussion_r1',
+      });
+      const result = await pending;
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /replied on #7 as alice/);
     } finally {
       repo.cleanup();
     }

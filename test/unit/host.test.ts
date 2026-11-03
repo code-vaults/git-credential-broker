@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { runHostOpener } from '../../packages/host/src/commands/host-opener.ts';
+import { runHostBroker } from '../../packages/host/src/commands/host.ts';
 import { channelDir, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 
 describe('the opener, once', () => {
@@ -54,7 +54,7 @@ describe('the opener, once', () => {
       draft: true,
     });
 
-    const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+    const code = await runHostBroker(['--repo', repo, '--command', command, '--once']);
     assert.equal(code, 0);
 
     const answer = readResult(dir, id);
@@ -80,10 +80,53 @@ describe('the opener, once', () => {
     // A request that reaches the channel without going through the writer's checks.
     writeFileSync(join(dir, `${id}.json`), JSON.stringify({ head: '../escape', base: 'main', title: 'x', body: '' }));
 
-    const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+    const code = await runHostBroker(['--repo', repo, '--command', command, '--once']);
     assert.equal(code, 0);
     assert.match(readResult(dir, id)?.error ?? '', /head branch/);
     assert.deepEqual(listRequests(dir), [], 'and it is dropped rather than retried forever');
+  });
+});
+
+describe('the host reply route', () => {
+  it('runs gh api for a review reply and returns the comment URL', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-reply-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(join(repo, '.git'));
+    const config = forkConfig(root, 'acme/widget');
+    const argvFile = join(root, 'argv');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\nprintf \'%s\\n\' \'{"html_url":"https://github.com/acme/widget/pull/7#discussion_r1"}\'\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, {
+        kind: 'reply',
+        repo: 'acme/widget',
+        number: 7,
+        commentId: 123,
+        body: 'a reply',
+      });
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      const answer = readResult(dir, id);
+      assert.equal(answer?.number, 7);
+      assert.equal(answer?.url, 'https://github.com/acme/widget/pull/7#discussion_r1');
+      const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
+      assert.deepEqual(argv.slice(0, 4), [
+        'api',
+        '--method',
+        'POST',
+        '/repos/acme/widget/pulls/7/comments/123/replies',
+      ]);
+      assert.equal(argv[argv.indexOf('--raw-field') + 1], 'body=a reply');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -104,7 +147,7 @@ describe('the opener issue route', () => {
     chmodSync(command, 0o755);
     try {
       const id = writeRequest(dir, { kind: 'issue', title: 'a title', body: 'a body' });
-      const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--once']);
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.number, 9);
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
@@ -154,7 +197,7 @@ describe('the opener fork route', () => {
     try {
       process.env['GH_TOKEN'] = 'inherited-token';
       const id = writeRequest(dir, { kind: 'fork', repo: 'Acme/Widget', host: 'github.com' });
-      const code = await runHostOpener(['--repo', repo, '--command', command, '--config', config, '--once']);
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.url, 'https://github.com/me/widget');
       assert.deepEqual(readFileSync(argvFile, 'utf8').trim().split('\n'), ['repo', 'fork', 'Acme/Widget']);
@@ -189,7 +232,7 @@ describe('an existing fork', () => {
       process.env['GH_TOKEN'] = 'inherited-token';
       process.env['GH_HOST'] = 'enterprise.example';
       const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' });
-      const code = await runHostOpener(['--repo', repo, '--command', command, '--config', config, '--once']);
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.url, 'https://github.com/me/widget', 'a request with no host still reports the default');
       assert.equal(readFileSync(envFile, 'utf8'), 'github.com|inherited-token', 'and gh is forced to that host');
@@ -223,7 +266,7 @@ describe('an enterprise fork host', () => {
     try {
       process.env['GH_ENTERPRISE_TOKEN'] = 'enterprise-token';
       const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget', host: 'ghe.example' });
-      const code = await runHostOpener(['--repo', repo, '--command', command, '--config', config, '--once']);
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.url, 'https://ghe.example/me/widget');
       assert.equal(readFileSync(envFile, 'utf8'), 'ghe.example|enterprise-token');
@@ -249,7 +292,7 @@ describe('a fork outside the allowlist', () => {
     chmodSync(command, 0o755);
     try {
       const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget', host: 'github.com' });
-      const code = await runHostOpener(['--repo', repo, '--command', command, '--config', config, '--once']);
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
       assert.equal(code, 0);
       assert.match(readResult(dir, id)?.error ?? '', /not in the allowlist/u);
       assert.equal(existsSync(marker), false);
@@ -277,7 +320,7 @@ describe('a claim that someone else holds', () => {
     const claim = join(dir, `${id}.json.working`);
     mkdirSync(claim, { recursive: true });
 
-    const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+    const code = await runHostBroker(['--repo', repo, '--command', command, '--once']);
     assert.equal(code, 0);
     assert.equal(existsSync(argvFile), false, 'the program must not run: that request is not ours to fulfil');
     assert.equal(readResult(dir, id), undefined, 'and no answer is written for it');
@@ -321,7 +364,7 @@ describe('the opener account selection', () => {
     process.env['GH_HOST'] = 'enterprise.example';
     try {
       const id = writeRequest(dir, { head: 'feat/ok', base: 'main', title: 'x', body: '', account: 'alice' });
-      const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--once']);
       assert.equal(code, 0);
       assert.equal(readResult(dir, id)?.error, undefined);
       assert.equal(readFileSync(envFile, 'utf8').trim(), configDir + '|||||');
@@ -353,7 +396,7 @@ describe('the opener account selection', () => {
       join(dir, id + '.json'),
       JSON.stringify({ head: 'feat/ok', base: 'main', title: 'x', body: '', account: ['alice'] }),
     );
-    const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+    const code = await runHostBroker(['--repo', repo, '--command', command, '--once']);
     assert.equal(code, 0);
     assert.equal(readResult(dir, id), undefined);
     assert.equal(existsSync(envFile), false, 'the program must not run');
@@ -382,7 +425,7 @@ describe('the opener account selection', () => {
     try {
       const ghost = writeRequest(dir, { head: 'feat/ok', base: 'main', title: 'x', body: '', account: 'ghost' });
       const file = writeRequest(dir, { head: 'feat/ok', base: 'main', title: 'x', body: '', account: 'file' });
-      const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--once']);
       assert.equal(code, 0);
       assert.match(readResult(dir, ghost)?.error ?? '', /no gh config for account "ghost"/);
       assert.match(readResult(dir, file)?.error ?? '', /no gh config for account "file"/);
@@ -423,7 +466,7 @@ describe('the opener proxy choice', () => {
     try {
       for (const proxy of [undefined, 'http://proxy.example:7890', null] as const) {
         const id = writeRequest(dir, { head: 'feat/ok', base: 'main', title: 'x', body: '', proxy });
-        const code = await runHostOpener(['--repo', repo, '--command', command, '--once']);
+        const code = await runHostBroker(['--repo', repo, '--command', command, '--once']);
         assert.equal(code, 0);
         assert.equal(readResult(dir, id)?.error, undefined);
         const seen = readFileSync(envFile, 'utf8').trim();

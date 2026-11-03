@@ -20,7 +20,7 @@ host-user delegation is implemented for creation and review comments; live reloa
   enters the container.**
 - **Merge is not an agent action.** `pr:merge` is denied by default; a human merges. Action tokens
   therefore never carry `contents: write`.
-- **The host broker stays.** (Working name for the current `host-opener` process.) App-authored PRs are skipped by some automated reviewers (CodeRabbit),
+- **The host broker stays.** App-authored PRs are skipped by some automated reviewers (CodeRabbit),
   so person-authored creation remains a first-class route.
 - **Never create an object the acting identity cannot manage.** Before an issue or pull request is
   created, the broker verifies that the App is installed on the repository and that the action's
@@ -48,7 +48,7 @@ The brand is **gcb**. One command, one service name:
 
 - CLI: `gcb` (also the git credential helper);
 - main app broker: `gcb app`, container/service `gcb`;
-- host-side operation broker: `gcb host`, service `gcb-host` (currently `host-opener`);
+- host-side operation broker: `gcb host`, service `gcb-host`;
 - client commands: `gcb gh …`, and later `gcb glab …`.
 
 The host broker is deliberately broader than "opener": it can grow to gh, glab, signing, and other
@@ -277,7 +277,7 @@ host_broker:
       Never output contents, never a token.
 - [ ] Error boundary: provider response bodies stay in the host log; only broker-composed errors
       cross the socket. A failed `gh` returns a bounded, sanitized reason.
-- [ ] Rename `host-opener` to `gcb host` and keep the person-authored route; wire it to the new flag in Phase 3.
+- [x] Rename `host-opener` to `gcb host`; keep `host-opener` as a deprecated alias.
 
 **Done when:** `gcb gh pr view`, `pr create`, `pr comment`, `pr review`, and `run view --log` work
 end to end with a fake `gh`, the token is revoked in every path, and injection/unknown-flag tests
@@ -286,9 +286,9 @@ fail closed.
 ## Phase 3 — host-user delegation and multiple host accounts
 
 Naming: `--via-host` described where it runs, not who acts. It is replaced by
-**`--as-user <login>`** for the host opener and **`--as-user`** (no value) for the broker's authorized
+**`--as-user <login>`** for the host broker and **`--as-user`** (no value) for the broker's authorized
 person; the app identity is the default and has no flag. Alternatives considered: `--host-user`,
-`--author`, `--delegate`, `--as-human`. Pull-request and issue creation are wired to the host opener
+`--author`, `--delegate`, `--as-human`. Pull-request and issue creation, plus review replies, are wired to the host broker
 today; review still needs the host broker path.
 
 Deployment: keep the host broker on the **host**, as a host process, not in a container.
@@ -297,7 +297,7 @@ Deployment: keep the host broker on the **host**, as a host process, not in a co
   need both copied or mounted, which duplicates the person's credentials into another place and
   makes the exposure larger, not smaller.
 - Manage it with a systemd user unit (`Restart=always`) where user services exist, or a DSM boot-up
-  task where they do not. `examples/host-opener.service` and `examples/host-opener-boot.sh` (to be renamed) already
+  task where they do not. `examples/gcb-host.service` and `examples/gcb-host-boot.sh` already
   cover the two shapes; the boot task is what makes it survive a NAS restart.
 - The broker container's `restart` policy does not cover the host broker; its own unit/task is
   its restart policy. That is deliberate: the two processes have different credentials and

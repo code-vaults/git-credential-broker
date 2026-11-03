@@ -66,7 +66,7 @@ describe('gcb issue create --as-user', () => {
     try {
       const result = await runClient(['issue', 'create', '--as-user', 'alice', '--title', 't'], host.root);
       assert.equal(result.status, 1);
-      assert.match(result.stderr, /no host opener is watching/);
+      assert.match(result.stderr, /no host broker is watching/);
     } finally {
       host.cleanup();
     }

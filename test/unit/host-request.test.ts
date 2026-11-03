@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, beforeEach, describe, it } from 'node:test';
 
-import { pullRequestUrl } from '../../packages/host/src/commands/host-opener.ts';
+import { pullRequestUrl } from '../../packages/host/src/commands/host.ts';
 import {
   channelDir,
   claimRequest,
@@ -157,6 +157,27 @@ describe('the host request channel', () => {
       body: 'a body',
       account: 'octocat',
       repo: undefined,
+      session: undefined,
+      pid: undefined,
+    });
+    removeRequest(dir, id);
+  });
+
+  it('carries a typed review reply', async () => {
+    const reply = {
+      kind: 'reply' as const,
+      repo: 'acme/widget',
+      number: 7,
+      commentId: 123,
+      body: 'a reply',
+      account: 'octocat',
+    };
+    assert.deepEqual(requestProblems(reply), []);
+    assert.match(requestProblems({ ...reply, commentId: 0 }).join(' '), /comment id/);
+    assert.match(requestProblems({ ...reply, body: '   ' }).join(' '), /reply needs a body/);
+    const id = writeRequest(dir, reply);
+    assert.deepEqual(readRequest(dir, id), {
+      ...reply,
       session: undefined,
       pid: undefined,
     });

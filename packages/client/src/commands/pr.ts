@@ -52,8 +52,8 @@ Opening (the default)
                        reply, resolve, edit or comment; fails if no user token is
                        configured. Without it, open/reply/edit/comment use the app;
                        resolve always needs the person
-  --as-user <login>    Create it through the host opener, using ~/.config/gh-<login>
-                       (run 'gcb host-opener' on the host)
+  --as-user <login>    Create or reply through the host broker, using ~/.config/gh-<login>
+                       (run 'gcb host' on the host)
 
 Acting on one
   --number <n>         The pull request number                       [required]
@@ -184,8 +184,11 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (accounts.length > 1) fail('--as-user may only be given once');
   if (asUser && accounts.length > 0) fail('--as-user cannot be both bare and given a login');
   const account = accounts[0];
-  if (account !== undefined && action !== 'open') {
-    fail('--as-user only creates a pull request through the opener, so it does not go with ' + JSON.stringify(action));
+  if (account !== undefined && action !== 'open' && action !== 'reply') {
+    fail(
+      '--as-user <login> only opens or replies through the host broker; use bare --as-user for ' +
+        JSON.stringify(action),
+    );
   }
   if (asUser && !['open', 'resolve', 'reply', 'edit', 'comment'].includes(action)) {
     fail(
@@ -313,6 +316,25 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     return runGh(ghArgs, { unreachableExitCode: 3 });
   }
 
+  if (account !== undefined && action === 'reply') {
+    if (number === undefined || replyTo === undefined) fail('--as-user <login> needs --number and --reply-to');
+    return submitToOpener(
+      {
+        kind: 'reply',
+        repo,
+        host,
+        number: Number(number),
+        commentId: Number(replyTo),
+        body: body ?? '',
+        account,
+        proxy,
+        session: 'pr',
+        pid: process.pid,
+      },
+      (answer) => `replied on #${answer.number ?? '?'} as ${account}: ${answer.url ?? '(no url)'}`,
+    );
+  }
+
   if (account !== undefined) {
     if (head === undefined || title === undefined) fail('--as-user needs --head and --title');
     return submitToOpener(
@@ -329,7 +351,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
         pid: process.pid,
       },
       (answer) =>
-        `opened #${answer.number ?? '?'} (as ${account}, through the host opener): ${answer.url ?? '(no url)'}`,
+        `opened #${answer.number ?? '?'} (as ${account}, through the host broker): ${answer.url ?? '(no url)'}`,
     );
   }
   if (socketPath === undefined) {

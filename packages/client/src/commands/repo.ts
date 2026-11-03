@@ -3,7 +3,7 @@
  *
  * `repo fork` is the one operation an app cannot perform for itself: a fork must be owned by a user
  * account, and an installation token has none. The command therefore requires `--as-user`; bare
- * selects the broker's authorized person, a login selects the host opener.
+ * selects the broker's authorized person, a login selects the host broker.
  */
 import { LOGIN, REPOSITORY, fail, parseArgs, say } from 'gcb-core';
 
@@ -21,7 +21,7 @@ Create a fork under a person's account. The app identity cannot own a fork, so -
 required. Without an owner/name the source comes from the checkout's origin remote.
 
   --as-user            Use the broker's authorized user token
-  --as-user <login>    Use the host opener with ~/.config/gh-<login>
+  --as-user <login>    Use the host broker with ~/.config/gh-<login>
   --host <host>        Host as configured (default: the origin remote's host, else github.com)
   --socket <path>      Broker socket (default: GIT_BROKER_SOCKET)
   --proxy <url>        Use this proxy for this request

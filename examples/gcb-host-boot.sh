@@ -6,7 +6,7 @@ if [ -f /etc/git-cred-broker/proxy.env ]; then
   . /etc/git-cred-broker/proxy.env
   set +a
 fi
-# Start the host-side opener at boot, on a host without user services (a Synology NAS, for instance).
+# Start the host broker at boot, on a host without user services (a Synology NAS, for instance).
 #
 # COPY THIS FILE SOMEWHERE OUTSIDE THE MOUNTS BEFORE A TASK RUNS IT. It runs as you, so leaving it in
 # the checkout means anything that can write the checkout — an agent with this repository mounted —
@@ -17,7 +17,7 @@ fi
 # DSM: Control Panel → Task Scheduler → Create → Triggered Task → Boot-up
 #   User:     the user whose GitHub credentials should author the pull requests — *not* root, which
 #             has neither that user's gh login nor that user's home.
-#   Command:  sh /usr/local/bin/host-opener-boot.sh        (the copy you made above)
+#   Command:  sh /usr/local/bin/gcb-host-boot.sh        (the copy you made above)
 #
 # Settable from the outside, because a boot task gets a minimal environment:
 #
@@ -42,11 +42,11 @@ LOG=${GIT_BROKER_OPENER_LOG:-$HOME/.gcb-opener.log}
 PIDFILE=${GIT_BROKER_OPENER_PID:-$HOME/.gcb-opener.pid}
 
 if [ "$(id -u)" = 0 ]; then
-  echo "host-opener: run this as the user whose gh credentials should be used, not as root" >&2
+  echo "gcb-host: run this as the user whose gh credentials should be used, not as root" >&2
   exit 1
 fi
 if [ ! -x "$BIN" ]; then
-  echo "host-opener: no gcb at ${BIN:-<empty>} — npm i -g gcb-host, or set GIT_BROKER_BIN=…" >&2
+  echo "gcb-host: no gcb at ${BIN:-<empty>} — npm i -g gcb-host, or set GIT_BROKER_BIN=…" >&2
   exit 1
 fi
 
@@ -57,7 +57,7 @@ if [ -f "$PIDFILE" ]; then
   # /proc/<pid>/cmdline, not kill -0: a recycled pid owned by anyone makes kill -0 succeed, so the
   # opener silently never starts, and it fails with EPERM for another user's process, so the guard
   # does not fire and a second opener starts — the race the comment above is about.
-  if [ -n "$old" ] && [ -r "/proc/$old/cmdline" ] && grep -qa 'host-opener' "/proc/$old/cmdline"; then
+  if [ -n "$old" ] && [ -r "/proc/$old/cmdline" ] && grep -qa 'gcb host' "/proc/$old/cmdline"; then
     echo "$(date) already running as pid $old" >>"$LOG"
     exit 0
   fi
@@ -67,7 +67,7 @@ fi
 echo $$ >"$PIDFILE"
 
 # exec, so the pid in the file is the opener's own, and stopping it stops the opener.
-exec "$BIN" host-opener \
+exec "$BIN" host \
   --root "$ROOT" \
   --command "$GH" \
   >>"$LOG" 2>&1

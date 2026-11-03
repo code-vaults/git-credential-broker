@@ -1,5 +1,5 @@
 /**
- * `host-opener` — fulfil the container's requests to open pull requests or issues with the gh account
+ * `host` — the host broker for typed person actions: create, reply and fork with the gh account
  * each request names.
  *
  * This runs on the host, beside the checkout the container also sees, and it does exactly one thing:
@@ -43,20 +43,20 @@ const run = promisify(execFile);
 /** How long one `pr create` or `issue create` may take. */
 const CREATE_TIMEOUT_MS = 120_000;
 
-/** Usage text for `host-opener`. */
-export const HOST_OPENER_USAGE = `Usage: gcb host-opener [options]
+/** Usage text for `host`. */
+export const HOST_BROKER_USAGE = `Usage: gcb host [options]
 
 Run on the host, once, beside the trees the container also sees. It finds the checkouts under the
-roots it is given — ones created later included — and fulfils their requests to create a pull request, issue
-or fork with the gh account each request names, so the result is authored by a person rather than by
-the app's bot. It does nothing else: it cannot push, merge or close anything.
+roots it is given — ones created later included — and fulfils their typed requests to create a pull
+request, issue or fork, or reply to a review comment, with the gh account each request names. The
+result is authored by a person rather than by the app's bot. It cannot push, merge or close anything.
 
   --root <dir>          A tree to serve, repeatable (default: $HOME)
   --depth <n>           How far below a root to look for checkouts (default: 4)
   --repo <path>         Serve this one checkout instead of discovering any
-  --config <path>       Broker config whose allowlist fork requests are checked against
+  --config <path>       Broker config whose allowlist fork and reply requests are checked against
                         (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
-  --command <path>      The program that creates a pull request, issue or fork
+  --command <path>      The program that creates, replies or forks
                         (default: $GIT_BROKER_PR_COMMAND, else gh)
   --arg <token>         An extra argument for that program, before the subcommand (repeatable)
   --interval <seconds>  How often to look for requests (default: 5)
@@ -73,7 +73,7 @@ directory, and only the roots this process scans are host-side paths.
  * Read a pull request's number and URL out of a program's output.
  *
  * `gh pr create` prints the URL, and so does anything that behaves like it. Nothing else is trusted:
- * without a URL in the output the opener reports a failure rather than guessing.
+ * without a URL in the output the host broker reports a failure rather than guessing.
  *
  * @param output - the program's standard output.
  * @returns the number and URL, or `undefined`.
@@ -99,15 +99,15 @@ export function issueUrl(output: string): { number: number; url: string } | unde
 }
 
 /**
- * Run the `host-opener` command.
+ * Run the `host` command.
  *
  * @param argv - arguments after the command name.
  * @returns the process exit code.
  */
-export async function runHostOpener(argv: readonly string[]): Promise<number> {
+export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, { booleans: ['help', 'once'] });
   if (args.has('help') || args.has('h')) {
-    say(HOST_OPENER_USAGE);
+    say(HOST_BROKER_USAGE);
     return 0;
   }
 
@@ -119,14 +119,14 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
   const command = args.value('command') ?? process.env['GIT_BROKER_PR_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
   let config: BrokerConfig | undefined;
-  /** Whether the broker's allowlist permits this host/repository, loaded only for fork requests. */
+  /** Whether the broker config allowlist permits this host/repository for a fork or reply. */
   const allowed = (host: string, repo: string): boolean => {
     if (config === undefined) {
       try {
         config = loadConfig(resolveConfigPath(configPath));
       } catch (error) {
         throw new Error(
-          `a fork needs the broker config allowlist: ${(error as Error).message}; pass --config or set GIT_BROKER_CONFIG`,
+          `a fork or reply needs the broker config allowlist: ${(error as Error).message}; pass --config or set GIT_BROKER_CONFIG`,
         );
       }
     }
@@ -159,12 +159,12 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
         pid: process.pid,
         command,
         startedAt: new Date().toISOString(),
-        kinds: ['pull-request', 'issue', 'fork'],
+        kinds: ['pull-request', 'issue', 'reply', 'fork'],
       });
     }
   };
   // However this process ends — a signal, --once, an exception — its markers go with it. A stale
-  // marker would tell the container an opener is there and make it wait for an answer that is not
+  // marker would tell the container a host broker is there and make it wait for an answer that is not
   // coming.
   process.on('exit', () => {
     for (const dir of advertised) {
@@ -187,7 +187,7 @@ export async function runHostOpener(argv: readonly string[]): Promise<number> {
   for (;;) {
     for (const { repo, dir } of targets()) {
       // One checkout the container has made hostile — its channel directory replaced by a file, say —
-      // must not stop the opener serving every other root, under Restart=always least of all.
+      // must not stop the host broker serving every other root, under Restart=always least of all.
       try {
         advertise(dir);
         await sweep(dir, repo, command, extra, allowed);
@@ -218,13 +218,13 @@ async function sweep(
 ): Promise<number> {
   let answered = 0;
   for (const id of listRequests(dir)) {
-    // Claimed, not read: two openers — a service and a hand-run --once — would otherwise both act on the
+    // Claimed, not read: two host brokers — a service and a hand-run --once — would otherwise both act on the
     // same request and each create it, under the person's name.
     const request = claimRequest(dir, id);
     if (!request) {
       // Either unreadable or already claimed, and the two are not worth telling apart here: removing
-        // anything now would delete another opener's claim, which is the claim's whole purpose.
-        warn(`skipped ${id}: unreadable, or another opener has it`);
+        // anything now would delete another host broker's claim, which is the claim's whole purpose.
+        warn(`skipped ${id}: unreadable, or another host broker has it`);
       continue;
     }
 
@@ -251,14 +251,22 @@ async function sweep(
     if (result.error !== undefined) {
       warn(
         `failed to open ${
-          request.kind === 'fork' ? 'fork' : request.kind === 'issue' ? 'issue' : request.head
+          request.kind === 'fork'
+            ? 'fork'
+            : request.kind === 'issue'
+              ? 'issue'
+              : request.kind === 'reply'
+                ? `reply on #${request.number}`
+                : request.head
         }: ${result.error}`,
       );
     } else {
       say(
         request.kind === 'fork'
           ? `forked ${request.repo} as ${request.account ?? 'this user'}: ${result.url}`
-          : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
+          : request.kind === 'reply'
+            ? `replied on #${result.number} as ${request.account ?? 'this user'}: ${result.url}`
+            : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
       );
     }
     answered += 1;
@@ -268,21 +276,21 @@ async function sweep(
 
 /** Environment for one gh call: the selected account or inherited config, plus the proxy choice. */
 function forkEnv(proxy: ProxyChoice, account: string | undefined, host: string): NodeJS.ProcessEnv {
-  const env = openerEnv(proxy, account);
+  const env = hostEnv(proxy, account);
   // gh chooses between GH_TOKEN and GH_ENTERPRISE_TOKEN by host; forcing GH_HOST is what keeps an
   // inherited token from selecting another instance. Named accounts already had their tokens removed.
   env['GH_HOST'] = host;
   return env;
 }
 
-function openerEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
+function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
   const env = { ...process.env };
   if (account !== undefined) {
     const dir = join(homedir(), '.config', `gh-${account}`);
     if (!existsSync(dir) || !statSync(dir).isDirectory()) {
       throw new Error(`no gh config for account ${JSON.stringify(account)} at ${dir}`);
     }
-    // Tokens in the opener's own environment would override the selected account's config.
+    // Tokens in the host broker's own environment would override the selected account's config.
     delete env['GH_TOKEN'];
     delete env['GITHUB_TOKEN'];
     delete env['GH_ENTERPRISE_TOKEN'];
@@ -345,6 +353,53 @@ async function openOne(
     }
   }
 
+  if (request.kind === 'reply') {
+    const host = request.host ?? 'github.com';
+    if (!HOST.test(host)) return { error: `not a host: ${JSON.stringify(host)}` };
+    try {
+      if (!allowed(host, request.repo)) {
+        return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
+      }
+    } catch (error) {
+      return { error: (error as Error).message };
+    }
+    try {
+      const { stdout, stderr } = await run(
+        command,
+        [
+          ...extra,
+          'api',
+          '--method',
+          'POST',
+          `/repos/${request.repo}/pulls/${request.number}/comments/${request.commentId}/replies`,
+          '--raw-field',
+          `body=${request.body}`,
+        ],
+        {
+          cwd: repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env: forkEnv(request.proxy, request.account, host),
+        },
+      );
+      let answer: unknown = null;
+      try {
+        answer = JSON.parse(stdout);
+      } catch {
+        answer = null;
+      }
+      const reply = (answer ?? {}) as { html_url?: unknown };
+      if (typeof reply.html_url !== 'string' || reply.html_url === '') {
+        return { error: `no reply URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}` };
+      }
+      return { number: request.number, url: reply.html_url };
+    } catch (error) {
+      const failure = error as { stderr?: string; message?: string };
+      const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
+      return { error: reason.slice(0, 300) || 'the command failed' };
+    }
+  }
+
   // The body goes to a private temp file: the program is given a path, never a string to interpret.
   const scratch = mkdtempSync(join(tmpdir(), 'gcb-'));
   const bodyFile = join(scratch, 'body.md');
@@ -369,7 +424,7 @@ async function openOne(
         '--body-file',
         bodyFile,
       ],
-      { cwd: repo, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: openerEnv(request.proxy, request.account) },
+      { cwd: repo, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: hostEnv(request.proxy, request.account) },
     );
     const found = issue ? issueUrl(stdout) : pullRequestUrl(stdout);
     if (!found) {
