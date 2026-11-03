@@ -504,6 +504,26 @@ describe('gcb issue create --as-user', () => {
     }
   });
 
+  it('never writes a request for issue edit help', async () => {
+    const host = fixture();
+    try {
+      const edit = await runClient(['issue', 'edit', '--help'], host.root);
+      assert.equal(edit.status, 0);
+      assert.match(edit.stdout, /Usage: gcb gh/u);
+
+      const before = requests(host.dir).length;
+      const help = await runClient(
+        ['issue', 'edit', '7', '--title', 't', '--as-user', 'alice', '--repo', 'acme/widget', '--help'],
+        host.root,
+      );
+      assert.equal(help.status, 0);
+      assert.match(help.stdout, /Usage: gcb gh/u);
+      assert.equal(requests(host.dir).length, before, 'help writes no request');
+    } finally {
+      host.cleanup();
+    }
+  });
+
   it('refuses flags the host route does not carry', async () => {
     const host = fixture();
     try {
