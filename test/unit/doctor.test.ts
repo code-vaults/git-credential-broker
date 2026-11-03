@@ -193,6 +193,17 @@ describe('gcb doctor', () => {
     }
   });
 
+  it('reports an unreadable audit path instead of an empty log', () => {
+    const host = fixture();
+    try {
+      fs.mkdirSync(host.audit);
+      const text = output(['--config', host.config]);
+      assert.match(text, /last reload: \(cannot read the audit log: .*not a regular file/);
+    } finally {
+      host.cleanup();
+    }
+  });
+
   it('reports no reload record when the audit log is absent', () => {
     const host = fixture();
     try {

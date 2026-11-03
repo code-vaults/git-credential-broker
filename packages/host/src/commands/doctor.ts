@@ -30,16 +30,25 @@ interface ConfigEvent {
 const CHUNK_BYTES = 64 * 1024;
 
 /** Read the last config reload record, scanning backward a chunk at a time. */
-function lastConfigEvent(path: string | null): ConfigEvent | undefined {
-  if (path === null) return undefined;
+interface LastConfig {
+  readonly event?: ConfigEvent;
+  readonly error?: Error;
+}
+
+function lastConfigEvent(path: string | null): LastConfig {
+  if (path === null) return {};
   let fd: number;
   try {
     fd = openSync(path, 'r');
-  } catch {
-    return undefined;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? {} : { error: error as Error };
   }
   try {
-    let position = fstatSync(fd).size;
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) {
+      return { error: new Error(`audit log is not a regular file: ${path}`) };
+    }
+    let position = stat.size;
     let carry = '';
     while (position > 0) {
       const length = Math.min(CHUNK_BYTES, position);
@@ -54,15 +63,15 @@ function lastConfigEvent(path: string | null): ConfigEvent | undefined {
         if (!line) continue;
         try {
           const event = JSON.parse(line) as ConfigEvent & { event?: unknown };
-          if (event.event === 'config') return event;
+          if (event.event === 'config') return { event };
         } catch {
           // A partially written line is expected after a crash; an earlier record still counts.
         }
       }
     }
-    return undefined;
-  } catch {
-    return undefined;
+    return {};
+  } catch (error) {
+    return { error: error as Error };
   } finally {
     closeSync(fd);
   }
@@ -134,12 +143,15 @@ export function runDoctor(argv: readonly string[]): number {
   }
   const digest = createHash('sha256').update(text).digest('hex');
   const auditPath = config !== undefined ? config.auditPath : rawAuditPath(text);
-  const last = lastConfigEvent(auditPath);
+  const lastResult = lastConfigEvent(auditPath);
+  const last = lastResult.event;
 
   say(loadError === undefined ? `config: ${path} ok` : `config: ${path} invalid: ${loadError.message}`);
   say(`digest: ${digest}`);
   if (!auditPath) {
     say('last reload: (no auditPath configured)');
+  } else if (lastResult.error !== undefined) {
+    say(`last reload: (cannot read the audit log: ${lastResult.error.message})`);
   } else if (last === undefined) {
     say('last reload: (no config record in the audit log)');
   } else {
