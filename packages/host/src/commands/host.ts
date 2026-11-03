@@ -318,15 +318,6 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
 }
 
 /**
- * Create one pull request, issue, review, reply or fork.
- *
- * @param repo - the checkout to create it in.
- * @param command - the program to call.
- * @param extra - arguments to pass before the subcommand.
- * @param request - what to create.
- * @returns the number and URL, or the reason it did not work.
- */
-/**
  * Run one person operation: check the allowlist, then call the program and turn its failure into a result.
  *
  * The five typed routes (review, reply, pull request edit, issue edit and issue comment) differ only in the
@@ -355,6 +346,15 @@ async function personRun(
   }
 }
 
+/**
+ * Create one pull request, issue, review, reply, edit or comment.
+ *
+ * @param repo - the checkout to run it in.
+ * @param command - the program to call.
+ * @param extra - arguments to pass before the subcommand.
+ * @param request - what to do.
+ * @returns the number and URL, or the reason it did not work.
+ */
 async function openOne(
   repo: string,
   command: string,
