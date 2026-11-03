@@ -11,11 +11,23 @@ import { tryRunAsync } from '../common/run.ts';
 
 const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));
 
-async function listen(socketPath: string, onRequest: (request: Record<string, unknown>) => void): Promise<net.Server> {
+async function listen(
+  socketPath: string,
+  onRequest: (request: Record<string, unknown>) => void,
+  extra: Record<string, unknown> = {},
+): Promise<net.Server> {
   const server = net.createServer((socket) => {
     socket.once('data', (chunk) => {
       onRequest(JSON.parse(chunk.toString().split('\n')[0] ?? '{}') as Record<string, unknown>);
-      socket.end(JSON.stringify({ ok: true, prNumber: 7, prUrl: 'https://example.test/pull/7', prStatus: 'resolved' }) + '\n');
+      socket.end(
+        JSON.stringify({
+          ok: true,
+          prNumber: 7,
+          prUrl: 'https://example.test/pull/7',
+          prStatus: 'resolved',
+          ...extra,
+        }) + '\n',
+      );
     });
   });
   await new Promise<void>((resolve) => server.listen(socketPath, resolve));
@@ -102,6 +114,75 @@ describe('gcb pr identity flags', () => {
         assert.equal(result.status, 0, extra.join(' '));
         assert.equal(seen, expected, extra.join(' '));
       }
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it('routes pr create --as-user=login to the opener', async () => {
+    const repo = checkout();
+    try {
+      const result = await tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          'create',
+          '--as-user=alice',
+          '--repo',
+          'acme/widget',
+          '--head',
+          'feat/x',
+          '--title',
+          't',
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /no host opener is watching/);
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it('keeps pr create without as-user on the catalog', async () => {
+    const repo = checkout();
+    const socketPath = path.join(repo.root, 'broker.sock');
+    try {
+      let seen: Record<string, unknown> = {};
+      const server = await listen(
+        socketPath,
+        (request) => {
+          seen = request;
+        },
+        { exitCode: 0 },
+      );
+      const result = await tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          'create',
+          '--repo',
+          'acme/widget',
+          '--head',
+          'feat/x',
+          '--base',
+          'main',
+          '--title',
+          't',
+          '--body',
+          'b',
+          '--socket',
+          socketPath,
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      assert.equal(result.status, 0);
+      assert.equal(seen['ghAction'], 'pr:create');
     } finally {
       repo.cleanup();
     }
