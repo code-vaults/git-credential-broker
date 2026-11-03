@@ -245,6 +245,26 @@ describe('gcb doctor', () => {
     }
   });
 
+  it('queries the daemon when an invalid config still names its socket', async () => {
+    const host = fixture();
+    const socketPath = path.join(host.root, 'invalid-config.sock');
+    const active = path.join(host.root, 'active-invalid.jsonl');
+    fs.writeFileSync(active, JSON.stringify({ ts: '2026-01-01T00:10:00.000Z', event: 'config', decision: 'reload' }) + '\n');
+    const server = net.createServer((socket) => {
+      socket.once('data', () => socket.end(JSON.stringify({ ok: true, auditPath: active }) + '\n'));
+    });
+    try {
+      await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+      fs.writeFileSync(host.config, `'socketPath': ${socketPath}\nhosts: [unterminated\n`);
+      const text = await output(['--config', host.config], 1);
+      assert.match(text, /last reload: reload at 2026-01-01T00:10:00.000Z/);
+      assert.match(text, new RegExp(`audit: ${active} \\(active daemon path\\)`));
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      host.cleanup();
+    }
+  });
+
   it('treats an empty auditPath as no log', async () => {
     const host = fixture();
     try {

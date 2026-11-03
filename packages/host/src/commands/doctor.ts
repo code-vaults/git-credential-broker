@@ -125,6 +125,21 @@ function rawAuditPath(text: string): string | null {
 /** How long doctor waits for the daemon's ping answer. */
 const PING_TIMEOUT_MS = 500;
 
+/** Pull socketPath out of raw YAML even when the rest of the file is invalid. */
+function rawSocketPath(text: string): string | null {
+  try {
+    const parsed = parseDocument(text).toJS() as { socketPath?: unknown } | null;
+    if (parsed !== null && typeof parsed.socketPath === 'string' && parsed.socketPath.trim() !== '') {
+      return parsed.socketPath;
+    }
+  } catch {
+    // Fall through to the line-based fallback.
+  }
+  const match = /^socketPath:[ \t]*(?:"([^"]*)"|'([^']*)'|([^\n]*?)(?:[ \t]+#.*)?)$/m.exec(text);
+  const value = (match?.[1] ?? match?.[2] ?? match?.[3])?.trim();
+  return value === undefined || value === '' ? null : value;
+}
+
 /** Ask the running daemon which audit path it actually uses: undefined means no answer. */
 function activeAuditPath(socketPath: string): Promise<string | null | undefined> {
   return new Promise((resolve) => {
@@ -201,7 +216,8 @@ export async function runDoctor(
   }
   const digest = createHash('sha256').update(text).digest('hex');
   const configured = config !== undefined ? config.auditPath : rawAuditPath(text);
-  const activePath = config === undefined ? undefined : await activeAuditPath(config.socketPath);
+  const socketPath = config !== undefined ? config.socketPath : rawSocketPath(text);
+  const activePath = socketPath === null ? undefined : await activeAuditPath(socketPath);
   const auditPath = activePath === undefined ? configured : (activePath ?? configured);
   const lastResult = lastConfigEvent(auditPath);
   const last = lastResult.event;
