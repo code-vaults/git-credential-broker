@@ -438,6 +438,30 @@ describe('gcb issue create --as-user', () => {
       assert.equal(proxy.status, 1);
       assert.match(proxy.stderr, /--proxy needs a value/u);
 
+      const empty = await runClient(
+        ['issue', 'edit', '7', '--as-user', '--repo', 'acme/widget'],
+        host.root,
+      );
+      assert.equal(empty.status, 1);
+      assert.match(empty.stderr, /issue edit needs --title, --body or --body-file/u);
+
+      const huge = await runClient(
+        [
+          'issue',
+          'edit',
+          '9223372036854775808',
+          '--title',
+          'fixed',
+          '--as-user',
+          'alice',
+          '--repo',
+          'acme/widget',
+        ],
+        host.root,
+      );
+      assert.equal(huge.status, 1);
+      assert.match(huge.stderr, /safe positive issue number/u);
+
       const both = await runClient(
         [
           'issue',

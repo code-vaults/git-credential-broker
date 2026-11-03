@@ -100,8 +100,8 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
         if (!KNOWN_FLAGS.has(name)) fail('unknown option --' + name + ' for gcb issue ' + command + ' --as-user');
       }
       const number = args.positionals[1];
-      if (number === undefined || !/^[1-9][0-9]*$/.test(number)) {
-        fail('gcb issue ' + command + ' needs the issue number');
+      if (number === undefined || !/^[1-9][0-9]*$/.test(number) || !Number.isSafeInteger(Number(number))) {
+        fail('gcb issue ' + command + ' needs a safe positive issue number');
       }
       let repo = args.value('repo');
       let host = args.value('host');
@@ -157,6 +157,14 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     }
     if (args.has('as-user') && command !== 'edit' && command !== 'comment') {
       fail('--as-user without a login only creates, edits or comments on an issue');
+    }
+    if (
+      command === 'edit' &&
+      args.value('title') === undefined &&
+      args.value('body') === undefined &&
+      args.value('body-file') === undefined
+    ) {
+      fail('issue edit needs --title, --body or --body-file');
     }
     if (command === undefined && (args.has('help') || args.has('h'))) {
       say(ISSUE_USAGE);
