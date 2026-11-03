@@ -807,10 +807,10 @@ function pullRequestNumber(value: unknown): number | undefined {
         return { number: 0, url: forked.html_url };
       }
 
-      // The two actions a person may perform are decided first: when somebody has authorized this
-      // deployment, their token is the whole authority for them, and requiring an installation as well
-      // would refuse a repository the app was never installed on — the fork-to-upstream case the allowlist
-      // exists to permit. Everything else still acts as the app, and only ever could.
+      // The person is selected explicitly, and by default for the two operations an installation token
+      // cannot perform (open/resolve): requiring an installation as well would refuse a repository the
+      // app was never installed on — the fork-to-upstream case the allowlist exists to permit. Reply,
+      // edit and comment stay on the app unless identity is explicitly 'user'.
       const wantsApp = request.identity === 'app';
       const wantsUser = request.identity === 'user';
       const personalForThis =
