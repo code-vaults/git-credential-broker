@@ -67,7 +67,7 @@ function makeHarness(
   const providers = new Map<string, Provider>([
     [HOST, providerOverride ?? createStaticProvider({ host: HOST, cfg: block })],
   ]);
-  return { handle: createRequestHandler({ config, audit, providers }), events };
+  return { handle: createRequestHandler({ audit, state: { config, providers } }), events };
 }
 
 /** A well-formed request for the allowlisted repository. */

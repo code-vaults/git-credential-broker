@@ -73,7 +73,7 @@ export function userTokenPath(privateKeyPath: string): string {
 }
 
 export const SIDECAR = {
-  configPath: '/etc/git-cred-broker/broker.config.yml',
+  configPath: '/etc/git-cred-broker/config/broker.config.yml',
   keyPath: '/etc/git-cred-broker/app.pem',
   // Beside the key, because that is how the provider derives it without being told.
   // Derived from the key rather than written again: the mount target and the reader's path at once.
@@ -437,6 +437,15 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
   };
 }
 
+/** Read configuration text, with the deployment path named on failure. */
+export function readConfigText(path: string): string {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch (error) {
+    throw new Error(`cannot read config ${path}: ${(error as Error).message}`);
+  }
+}
+
 /**
  * Read and validate a configuration file.
  *
@@ -444,12 +453,11 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
  * @returns the validated configuration.
  */
 export function loadConfig(path: string): BrokerConfig {
-  let text: string;
-  try {
-    text = readFileSync(path, 'utf8');
-  } catch (error) {
-    throw new Error(`cannot read config ${path}: ${(error as Error).message}`);
-  }
+  return loadConfigText(readConfigText(path), path);
+}
+
+/** Parse and validate configuration text already read from `path`. */
+export function loadConfigText(text: string, path: string): BrokerConfig {
   const document = parseDocument(text, {
     schema: 'core',
     uniqueKeys: true,

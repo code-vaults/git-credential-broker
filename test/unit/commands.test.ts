@@ -1131,7 +1131,9 @@ describe('compose', () => {
 
   it('mounts the key read-only and publishes no ports', () => {
     assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/);
-    assert.match(rendered, /broker\.config\.yml:\/etc\/git-cred-broker\/broker\.config\.yml:ro/);
+    assert.match(rendered, /volume1\/docker\/git-cred-broker:\/etc\/git-cred-broker\/config:ro/);
+    assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/);
+    assert.doesNotMatch(rendered, /user\.refresh:\/etc\/git-cred-broker\/config\/user\.refresh/);
     assert.equal(/^\s+ports:/m.test(rendered), false, 'the socket is the only interface');
   });
 
@@ -1166,7 +1168,7 @@ describe('compose', () => {
     } finally {
       process.stdout.write = original;
     }
-    assert.equal(output.includes(`${target}/broker.config.yml:${SIDECAR.configPath}:ro`), true);
+    assert.equal(output.includes(`${target}:${path.dirname(SIDECAR.configPath)}:ro`), true);
   });
 
   it('honors GIT_BROKER_CONFIG when no --config or --dir is given', () => {
@@ -1205,7 +1207,7 @@ describe('compose', () => {
       if (previous === undefined) delete process.env['GIT_BROKER_CONFIG'];
       else process.env['GIT_BROKER_CONFIG'] = previous;
     }
-    assert.equal(output.includes(`${configFile}:${SIDECAR.configPath}:ro`), true);
+    assert.equal(output.includes(`${target}:${path.dirname(SIDECAR.configPath)}:ro`), true);
   });
 
   it('mounts an explicitly selected config file', () => {
@@ -1218,7 +1220,112 @@ describe('compose', () => {
       packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
     });
-    assert.match(custom, /\/srv\/custom\/broker\.yml:\/etc\/git-cred-broker\/broker\.config\.yml:ro/);
+    assert.match(custom, /\/srv\/custom:\/etc\/git-cred-broker\/config:ro/);
+    assert.match(custom, /--config '\/etc\/git-cred-broker\/config\/broker\.yml'/);
+  });
+
+  it('quotes a config basename that needs one shell word', () => {
+    const custom = renderCompose({
+      dir: '/volume1/docker/git-cred-broker',
+      configPath: '/srv/custom/broker live.yml',
+      socketDir: '/srv/shared/git-broker',
+      user: '1026:100',
+      image: 'node:24-slim',
+      packageSpec: 'gcb-host@0.0.0',
+      name: 'git-cred-broker',
+    });
+    assert.match(custom, /--config '\/etc\/git-cred-broker\/config\/broker live\.yml'/);
+    const dollar = renderCompose({
+      dir: '/volume1/docker/git-cred-broker',
+      configPath: '/srv/custom/br$ker "x".yml',
+      socketDir: '/srv/shared/git-broker',
+      user: '1026:100',
+      image: 'node:24-slim',
+      packageSpec: 'gcb-host@0.0.0',
+      name: 'git-cred-broker',
+    });
+    assert.match(dollar, /--config '\/etc\/git-cred-broker\/config\/br\$\$ker "x"\.yml'/);
+  });
+
+  it('mounts the real target of a symlinked config', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-compose-link-'));
+    const targetDir = path.join(root, 'store');
+    fs.mkdirSync(targetDir);
+    const target = path.join(targetDir, 'prod.yml');
+    fs.writeFileSync(target, 'hosts: {}\n');
+    const link = path.join(root, 'selected.yml');
+    fs.symlinkSync(target, link);
+    try {
+      const custom = renderCompose({
+        dir: '/volume1/docker/git-cred-broker',
+        configPath: link,
+        socketDir: '/srv/shared/git-broker',
+        user: '1026:100',
+        image: 'node:24-slim',
+        packageSpec: 'gcb-host@0.0.0',
+        name: 'git-cred-broker',
+      });
+      assert.equal(custom.includes(targetDir + ':' + path.dirname(SIDECAR.configPath) + ':ro'), true);
+      assert.match(custom, /--config '\/etc\/git-cred-broker\/config\/prod\.yml'/);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('derives the default deployment directory from a symlink target', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-compose-link-dir-'));
+    const targetDir = path.join(root, 'store');
+    fs.mkdirSync(targetDir);
+    const target = path.join(targetDir, 'prod.yml');
+    fs.writeFileSync(
+      target,
+      stringifyYaml({
+        socketPath: SIDECAR.socketPath,
+        auditPath: SIDECAR.auditPath,
+        hosts: {
+          'github.com': {
+            provider: 'github-app',
+            allow: ['a/one'],
+            clientId: 'Iv1.example',
+            appId: 1,
+            privateKeyPath: SIDECAR.keyPath,
+            permissions: { contents: 'write' },
+          },
+        },
+      }),
+    );
+    const link = path.join(root, 'selected.yml');
+    fs.symlinkSync(target, link);
+    const original = process.stdout.write;
+    let output = '';
+    process.stdout.write = ((chunk: unknown) => {
+      output += String(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    try {
+      assert.equal(runCompose(['--config', link, '--socket-dir', '/srv/sock']), 0);
+    } finally {
+      process.stdout.write = original;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+    assert.equal(output.includes(targetDir + ':' + path.dirname(SIDECAR.configPath) + ':ro'), true);
+    assert.equal(output.includes(targetDir + '/app.pem:' + SIDECAR.keyPath + ':ro'), true);
+    assert.equal(output.includes(targetDir + '/log:' + SIDECAR.auditDir), true);
+    assert.match(output, /--config '\/etc\/git-cred-broker\/config\/prod\.yml'/);
+  });
+
+  it('quotes volume scalars whose paths contain YAML indicators', () => {
+    const custom = renderCompose({
+      dir: '/srv/broker #1',
+      socketDir: '/srv/socket #2',
+      user: '1026:100',
+      image: 'node:24-slim',
+      packageSpec: 'gcb-host@0.0.0',
+      name: 'git-cred-broker',
+    });
+    assert.equal(custom.includes('- "/srv/broker #1:/etc/git-cred-broker/config:ro"'), true);
+    assert.equal(custom.includes('- "/srv/broker #1/app.pem:/etc/git-cred-broker/app.pem:ro"'), true);
+    assert.equal(custom.includes('- "/srv/socket #2:/run/git-broker"'), true);
   });
 
   it('drops privileges and keeps the root filesystem read-only', () => {
@@ -1230,7 +1337,7 @@ describe('compose', () => {
 
   it('runs the daemon from the published package, not from a copied checkout', () => {
     assert.match(rendered, /npx --yes --package 'gcb-host@0\.0\.0' gcb daemon/);
-    assert.match(rendered, new RegExp(`--config ${SIDECAR.configPath}`));
+    assert.match(rendered, new RegExp(`--config '${SIDECAR.configPath}'`));
   });
 
   it('can run staged code from a mount instead, fetching and building nothing at boot', () => {
@@ -1280,7 +1387,7 @@ describe('compose', () => {
     assert.equal(appHost(config).privateKeyPath, SIDECAR.keyPath);
     assert.equal(config.auditPath, SIDECAR.auditPath);
 
-    assert.equal(rendered.includes(`${deployDir}/broker.config.yml:${SIDECAR.configPath}:ro`), true);
+    assert.equal(rendered.includes(`${deployDir}:${path.dirname(SIDECAR.configPath)}:ro`), true);
     assert.equal(rendered.includes(`${deployDir}/app.pem:${SIDECAR.keyPath}:ro`), true);
     assert.equal(rendered.includes(`${deployDir}/log:${SIDECAR.auditDir}`), true);
     assert.equal(

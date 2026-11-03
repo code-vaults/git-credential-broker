@@ -69,11 +69,17 @@ interface DecisionContext {
   helper_pid: number | null;
 }
 
+/** The mutable part of a running broker: reload swaps these together. */
+export interface HandlerState {
+  config: BrokerConfig;
+  providers: ReadonlyMap<string, Provider>;
+}
+
 /** Options for {@link createRequestHandler}. */
 export interface RequestHandlerOptions {
-  readonly config: BrokerConfig;
   readonly audit: AuditSink;
-  readonly providers: ReadonlyMap<string, Provider>;
+  /** The live snapshot; startBroker uses this so reload can swap it atomically. */
+  readonly state: HandlerState;
   /** Host-side diagnostics sink; never seen by the caller. */
   readonly log?: (message: string) => void;
 }
@@ -137,7 +143,8 @@ export function prepareSocketPath(socketPath: string): void {
 export function createRequestHandler(
   options: RequestHandlerOptions,
 ): (message: Record<string, unknown>) => Promise<WireResponse> {
-  const { config, audit, providers, log = () => {} } = options;
+  const { audit, log = () => {} } = options;
+  const state = options.state;
 
   /**
    * Record a refusal and produce the caller-visible response.
@@ -166,6 +173,8 @@ export function createRequestHandler(
   }
 
   async function handleRequest(message: Record<string, unknown>, proxy: ProxyChoice): Promise<WireResponse> {
+    // One request keeps the snapshot it started with, even if a reload lands mid-flight.
+    const current = { config: state.config, providers: state.providers };
     const auditEvent = auditEventFor(message['op']);
     const context: DecisionContext = {
       host: typeof message['host'] === 'string' ? message['host'] : null,
@@ -178,7 +187,7 @@ export function createRequestHandler(
     const denyPullRequest = (code: string, reason: string, message: string, hostDetail?: string): WireResponse =>
       deny(context, code, reason, message, hostDetail, auditEvent);
     if (message['op'] === 'ping') {
-      return { ok: true, version: BROKER_VERSION, hosts: [...providers.keys()] };
+      return { ok: true, version: BROKER_VERSION, hosts: [...current.providers.keys()] };
     }
     if (
       message['op'] !== 'credential' &&
@@ -196,7 +205,7 @@ export function createRequestHandler(
 
     // Host first: whether plaintext is tolerated is a property of the *host's* configuration,
     // not of the request, so the protocol can only be judged once the host is known.
-    const block = hostConfig(config, message['host']);
+    const block = hostConfig(current.config, message['host']);
     if (!block) {
       return deny(
         context,
@@ -252,7 +261,7 @@ export function createRequestHandler(
       );
     }
 
-    const provider = providers.get(block.host);
+    const provider = current.providers.get(block.host);
     if (!provider) {
       return deny(
         context,
@@ -607,6 +616,8 @@ export interface StartBrokerOptions {
 /** A running broker. */
 export interface RunningBroker {
   readonly socketPath: string;
+  /** Swap the configuration and providers; the socket path is immutable for one process. */
+  reload(config: BrokerConfig, providers: ReadonlyMap<string, Provider>): void;
   close(): Promise<void>;
 }
 
@@ -619,7 +630,12 @@ export interface RunningBroker {
 export async function startBroker(options: StartBrokerOptions): Promise<RunningBroker> {
   const { config, audit, providers, log = () => {} } = options;
   prepareSocketPath(config.socketPath);
-  const handle = createRequestHandler({ config, audit, providers, log });
+  const state: HandlerState = { config, providers };
+  const handle = createRequestHandler({ audit, log, state });
+  const reload = (nextConfig: BrokerConfig, nextProviders: ReadonlyMap<string, Provider>): void => {
+    state.config = nextConfig;
+    state.providers = nextProviders;
+  };
 
   const server = net.createServer({ allowHalfOpen: false }, (socket) => {
     socket.setTimeout(REQUEST_TIMEOUT_MS);
@@ -677,6 +693,7 @@ export async function startBroker(options: StartBrokerOptions): Promise<RunningB
 
   return {
     socketPath: config.socketPath,
+    reload,
     async close(): Promise<void> {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       try {

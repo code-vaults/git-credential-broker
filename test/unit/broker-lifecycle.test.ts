@@ -12,6 +12,54 @@ import type { AuditSink, BrokerConfig, Provider, StaticHostConfig, WireResponse 
 
 const HOST = 'github.com';
 
+async function ping(socketPath: string): Promise<WireResponse> {
+  const socket = net.connect(socketPath);
+  return new Promise<WireResponse>((resolve, reject) => {
+    let text = '';
+    socket.on('data', (chunk: Buffer) => {
+      text += chunk.toString('utf8');
+      const newline = text.indexOf('\n');
+      if (newline < 0) return;
+      socket.destroy();
+      resolve(JSON.parse(text.slice(0, newline)) as WireResponse);
+    });
+    socket.on('error', reject);
+    socket.write(JSON.stringify({ op: 'ping' }) + '\n');
+  });
+}
+
+describe('startBroker reload', () => {
+  it('serves the swapper providers without rebinding the socket', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-broker-reload-'));
+    const socketPath = path.join(root, 'broker.sock');
+    const block: StaticHostConfig = { provider: 'static', allow: ['a/one'], username: 'u', password: 'p' };
+    const config: BrokerConfig = {
+      socketPath,
+      socketMode: 0o600,
+      auditPath: null,
+      tokenCacheSkewSeconds: 300,
+      hosts: { [HOST]: block },
+    };
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() };
+    const broker = await startBroker({
+      config,
+      audit,
+      providers: new Map<string, Provider>([[HOST, createStaticProvider({ host: HOST, cfg: block })]]),
+      log: () => {},
+    });
+    try {
+      assert.deepEqual((await ping(socketPath)).hosts, [HOST]);
+      const nextHost = 'git.example';
+      const nextConfig: BrokerConfig = { ...config, hosts: { [nextHost]: { ...block, allow: ['a/one'] } } };
+      broker.reload(nextConfig, new Map<string, Provider>([[nextHost, createStaticProvider({ host: nextHost, cfg: { ...block, allow: ['a/one'] } })]]));
+      assert.deepEqual((await ping(socketPath)).hosts, [nextHost]);
+    } finally {
+      await broker.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('startBroker oversized request', () => {
   it('answers with a named bad-request instead of dropping the socket', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-broker-lifecycle-'));
