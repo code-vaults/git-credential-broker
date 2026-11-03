@@ -113,6 +113,48 @@ export interface HostReviewRequest {
   readonly pid?: number;
 }
 
+/** One request to edit a pull request's title, body or base as the host account. */
+export interface HostEditRequest {
+  readonly kind: 'edit';
+  readonly repo: string;
+  readonly host?: string;
+  readonly number: number;
+  readonly title?: string;
+  readonly body?: string;
+  readonly base?: string;
+  readonly proxy?: string | null;
+  readonly account?: string;
+  readonly session?: string;
+  readonly pid?: number;
+}
+
+/** One request to edit an issue as the host account. */
+export interface HostIssueEditRequest {
+  readonly kind: 'issue-edit';
+  readonly repo: string;
+  readonly host?: string;
+  readonly number: number;
+  readonly title?: string;
+  readonly body?: string;
+  readonly proxy?: string | null;
+  readonly account?: string;
+  readonly session?: string;
+  readonly pid?: number;
+}
+
+/** One request to comment on an issue as the host account. */
+export interface HostIssueCommentRequest {
+  readonly kind: 'issue-comment';
+  readonly repo: string;
+  readonly host?: string;
+  readonly number: number;
+  readonly body: string;
+  readonly proxy?: string | null;
+  readonly account?: string;
+  readonly session?: string;
+  readonly pid?: number;
+}
+
 /** One request to fork a repository. */
 export interface HostForkRequest {
   readonly kind: 'fork';
@@ -125,7 +167,15 @@ export interface HostForkRequest {
 }
 
 /** A request the host broker can fulfil. */
-export type HostRequest = HostOpenRequest | HostIssueRequest | HostReplyRequest | HostReviewRequest | HostForkRequest;
+export type HostRequest =
+  | HostOpenRequest
+  | HostIssueRequest
+  | HostReplyRequest
+  | HostReviewRequest
+  | HostEditRequest
+  | HostIssueEditRequest
+  | HostIssueCommentRequest
+  | HostForkRequest;
 
 /** What the opener answered. */
 export interface HostOpenResult {
@@ -348,6 +398,50 @@ export function requestProblems(request: HostRequest): string[] {
     }
     return problems;
   }
+  if (request.kind === 'issue-edit') {
+    if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
+    if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
+    if (!Number.isInteger(request.number) || request.number <= 0) problems.push('the issue number is not positive');
+    if (request.title !== undefined && (request.title.trim() === '' || request.title.length > MAX_TITLE_CHARS)) {
+      problems.push(`the title must be 1 to ${MAX_TITLE_CHARS} characters`);
+    }
+    if (request.body !== undefined && request.body.length > MAX_BODY_CHARS) {
+      problems.push(`the body must be at most ${MAX_BODY_CHARS} characters`);
+    }
+    if (request.account !== undefined && !LOGIN.test(request.account)) {
+      problems.push('the account is not a usable GitHub login');
+    }
+    return problems;
+  }
+  if (request.kind === 'issue-comment') {
+    if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
+    if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
+    if (!Number.isInteger(request.number) || request.number <= 0) problems.push('the issue number is not positive');
+    if (request.body.trim() === '') problems.push('a comment needs a body');
+    if (request.body.length > MAX_BODY_CHARS) problems.push(`the body must be at most ${MAX_BODY_CHARS} characters`);
+    if (request.account !== undefined && !LOGIN.test(request.account)) {
+      problems.push('the account is not a usable GitHub login');
+    }
+    return problems;
+  }
+  if (request.kind === 'edit') {
+    if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
+    if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
+    if (!Number.isInteger(request.number) || request.number <= 0) problems.push('the pull request number is not positive');
+    if (request.title !== undefined && (request.title.trim() === '' || request.title.length > MAX_TITLE_CHARS)) {
+      problems.push(`the title must be 1 to ${MAX_TITLE_CHARS} characters`);
+    }
+    if (request.body !== undefined && request.body.length > MAX_BODY_CHARS) {
+      problems.push(`the body must be at most ${MAX_BODY_CHARS} characters`);
+    }
+    if (request.base !== undefined && (!BRANCH.test(request.base) || request.base.includes('..'))) {
+      problems.push('the base branch name is not usable');
+    }
+    if (request.account !== undefined && !LOGIN.test(request.account)) {
+      problems.push('the account is not a usable GitHub login');
+    }
+    return problems;
+  }
   if (request.kind === 'fork') {
     if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
     if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
@@ -448,6 +542,75 @@ export function readRequest(dir: string, id: string): HostRequest | undefined {
       number: parsed.number,
       event: parsed.event,
       body: parsed.body,
+      ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
+      ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
+      ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
+      session: parsed.session,
+      pid: parsed.pid,
+    };
+  }
+  if (parsed.kind === 'issue-edit') {
+    if (
+      typeof parsed.repo !== 'string' ||
+      !REPOSITORY.test(parsed.repo) ||
+      typeof parsed.number !== 'number' ||
+      (parsed.title !== undefined && typeof parsed.title !== 'string') ||
+      (parsed.body !== undefined && typeof parsed.body !== 'string')
+    ) {
+      return undefined;
+    }
+    return {
+      kind: 'issue-edit',
+      repo: parsed.repo,
+      number: parsed.number,
+      ...(parsed.title === undefined ? {} : { title: parsed.title }),
+      ...(parsed.body === undefined ? {} : { body: parsed.body }),
+      ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
+      ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
+      ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
+      session: parsed.session,
+      pid: parsed.pid,
+    };
+  }
+  if (parsed.kind === 'issue-comment') {
+    if (
+      typeof parsed.repo !== 'string' ||
+      !REPOSITORY.test(parsed.repo) ||
+      typeof parsed.body !== 'string' ||
+      typeof parsed.number !== 'number'
+    ) {
+      return undefined;
+    }
+    return {
+      kind: 'issue-comment',
+      repo: parsed.repo,
+      number: parsed.number,
+      body: parsed.body,
+      ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
+      ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
+      ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
+      session: parsed.session,
+      pid: parsed.pid,
+    };
+  }
+  if (parsed.kind === 'edit') {
+    if (
+      typeof parsed.repo !== 'string' ||
+      !REPOSITORY.test(parsed.repo) ||
+      typeof parsed.number !== 'number' ||
+      (parsed.title !== undefined && typeof parsed.title !== 'string') ||
+      (parsed.body !== undefined && typeof parsed.body !== 'string') ||
+      (parsed.base !== undefined && typeof parsed.base !== 'string')
+    ) {
+      return undefined;
+    }
+    return {
+      kind: 'edit',
+      repo: parsed.repo,
+      number: parsed.number,
+      ...(parsed.title === undefined ? {} : { title: parsed.title }),
+      ...(parsed.body === undefined ? {} : { body: parsed.body }),
+      ...(parsed.base === undefined ? {} : { base: parsed.base }),
       ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
       ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
       ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
@@ -558,7 +721,26 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
     request !== undefined &&
     // Untyped JSON: the file can spell account as an array or a number even though the type cannot.
     (request.account === undefined || typeof request.account === 'string') &&
-    (request.kind === 'review'
+    (request.kind === 'issue-edit'
+      ? typeof request.repo === 'string' &&
+        REPOSITORY.test(request.repo) &&
+        Number.isInteger(request.number) &&
+        (request.title === undefined || typeof request.title === 'string') &&
+        (request.body === undefined || typeof request.body === 'string')
+      : request.kind === 'issue-comment'
+        ? typeof request.repo === 'string' &&
+          REPOSITORY.test(request.repo) &&
+          Number.isInteger(request.number) &&
+          typeof request.body === 'string'
+        : request.kind === 'edit'
+      ? typeof request.repo === 'string' &&
+        REPOSITORY.test(request.repo) &&
+        Number.isInteger(request.number) &&
+        (request.title === undefined || typeof request.title === 'string') &&
+        (request.body === undefined || typeof request.body === 'string') &&
+        (request.base === undefined || typeof request.base === 'string') &&
+        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
+      : request.kind === 'review'
       ? typeof request.repo === 'string' &&
         REPOSITORY.test(request.repo) &&
         typeof request.body === 'string' &&

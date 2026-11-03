@@ -238,9 +238,9 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 
   Authorization is not a token to place: `authorize` runs the device flow once from a browser
   somewhere else and leaves a refresh token beside the key, which the broker renews by itself. The user
-  token is used where the person's identity is required or preferred: authoring a pull request,
-  resolving a review thread (GraphQL refuses that for an app), replying, editing or commenting on a
-  review, and creating an issue through the action path. It needs the client id
+  token is used where the person's identity is required or preferred: authoring or editing a pull
+  request, submitting a review, resolving a review thread (GraphQL refuses that for an app), replying,
+  editing or commenting on a review, and creating an issue through the action path. It needs the client id
   in the configuration and **Enable Device Flow** in the app settings, and no client secret at all. The
   refresh token is rotated on every exchange and written back; not writing it back would work once.
 
@@ -258,9 +258,9 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   repository the app *is* installed on is the control that needs no such command.
 
   **Which actions are left is the operational half.** The host broker creates pull requests/issues,
-  submits reviews and replies to review comments (with `--as-user <login>`), while bare `--as-user`
-  through the broker also handles reply, resolve, edit and comment. Every other action still goes through the
-  installation token.
+  submits reviews, replies to review comments and edits pull requests (with `--as-user <login>`),
+  while bare `--as-user` through the broker also handles review, reply, resolve, edit and comment. Every other action still
+  goes through the installation token.
   On a repository the app is not installed on, a pull request can be opened and its review comments
   replied to, edited or resolved with bare `--as-user`, but the pull request itself cannot be edited,
   closed or merged, and neither the container nor the host broker has a route to its metadata. That is not a gap to close with a flag: acting as a

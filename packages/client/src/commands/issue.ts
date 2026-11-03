@@ -16,18 +16,19 @@ import { submitToHostBroker } from './host-submit.ts';
 
 /** Every flag the `--as-user` create path understands. */
 const KNOWN_FLAGS = new Set([
-  'help', 'h', 'title', 'body', 'body-file', 'repo', 'as-user', 'proxy', 'no-proxy',
+  'help', 'h', 'title', 'body', 'body-file', 'number', 'repo', 'as-user', 'proxy', 'no-proxy',
 ]);
 
 /** Usage text for the host broker create path. */
-export const ISSUE_USAGE = `Usage: gcb issue create [--as-user [login]] [options]
+export const ISSUE_USAGE = `Usage: gcb issue create|edit|comment [--as-user] [options]
 
-Create an issue. Without --as-user it runs through the app broker; bare --as-user uses the
-broker's authorized person; --as-user <login> writes a request for the host broker.
+Create, edit or comment on an issue. Without --as-user it runs through the app broker; bare
+--as-user uses the broker's authorized person; for create, --as-user <login> writes a request for
+the host broker.
 
-  --title <text>       The title                                     [required]
-  --body <text>        The body, inline, or use --body-file (one is required by the
-                       broker route; the host broker also takes either)
+  --title <text>       The title (create/edit)
+  --body <text>        The body, inline, or use --body-file
+  --number <n>         The issue to edit or comment on (edit/comment)
   --body-file <path>   The body, read from a file
   --repo <owner/name>  The repository; with --as-user <login> it must be in the
                        broker allowlist and needs no checkout of its own
@@ -79,9 +80,74 @@ function forwardBodyFile(argv: readonly string[], bodyFile: string): string[] {
 export async function runIssue(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, { booleans: ['help', 'no-proxy'] });
   const account = args.values('as-user')[0];
-  if (args.positionals[0] !== 'create') {
-    if (args.has('as-user') || account !== undefined) fail('--as-user only creates an issue');
-    return runGh(['issue', ...argv]);
+  const command = args.positionals[0];
+  if (command !== 'create') {
+    if (account !== undefined) {
+      if (command !== 'edit' && command !== 'comment') {
+        fail('--as-user <login> only creates, edits or comments on an issue');
+      }
+      if (!LOGIN.test(account)) fail(`--as-user must be a GitHub login, got ${JSON.stringify(account)}`);
+      for (const name of args.names) {
+        if (!KNOWN_FLAGS.has(name)) fail('unknown option --' + name + ' for gcb issue ' + command + ' --as-user');
+      }
+      const number = args.positionals[1];
+      if (number === undefined || !/^[1-9][0-9]*$/.test(number)) {
+        fail('gcb issue ' + command + ' needs the issue number');
+      }
+      const repo = args.value('repo');
+      if (repo === undefined || repo.trim() === '') {
+        fail('--as-user <login> needs --repo for issue edit or comment');
+      }
+      let body = args.value('body');
+      const bodyFile = args.value('body-file');
+      if (bodyFile !== undefined) {
+        try {
+          body = readFileSync(bodyFile, 'utf8');
+        } catch (error) {
+          fail(`cannot read ${bodyFile}: ${(error as Error).message}`);
+        }
+      }
+      if (command === 'comment' && (body === undefined || body.trim() === '')) {
+        fail('issue comment needs --body or --body-file');
+      }
+      if (command === 'edit' && body === undefined && args.value('title') === undefined) {
+        fail('issue edit needs --title, --body or --body-file');
+      }
+      const common = {
+        repo,
+        number: Number(number),
+        account,
+        proxy: args.has('no-proxy') ? null : args.value('proxy'),
+        session: 'issue',
+        pid: process.pid,
+      };
+      const success = (answer: { number?: number; url?: string }): string =>
+        (command === 'edit' ? 'edited issue #' : 'commented on issue #') +
+        `${answer.number ?? '?'} as ${account}${answer.url === undefined ? '' : `: ${answer.url}`}`;
+      if (command === 'edit') {
+        return submitToHostBroker(
+          {
+            kind: 'issue-edit',
+            ...common,
+            ...(args.value('title') === undefined ? {} : { title: args.value('title') as string }),
+            ...(body === undefined ? {} : { body }),
+          },
+          success,
+        );
+      }
+      return submitToHostBroker({ kind: 'issue-comment', ...common, body: body ?? '' }, success);
+    }
+    if (args.has('as-user') && command !== 'edit' && command !== 'comment') {
+      fail('--as-user without a login only creates, edits or comments on an issue');
+    }
+    if (command === undefined && (args.has('help') || args.has('h'))) {
+      say(ISSUE_USAGE);
+      return 0;
+    }
+    let rest = args.has('as-user') ? argv.filter((argument) => argument !== '--as-user' && argument !== '-as-user') : [...argv];
+    const bodyFile = args.value('body-file');
+    if (bodyFile !== undefined) rest = forwardBodyFile(rest, bodyFile);
+    return runGh(['issue', ...rest], args.has('as-user') ? { identity: 'user' } : {});
   }
   if (args.has('help') || args.has('h')) {
     say(ISSUE_USAGE);

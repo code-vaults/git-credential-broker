@@ -60,6 +60,36 @@ function broker(
   return new Promise((resolve) => server.listen(socketPath, () => resolve(server)));
 }
 
+describe('gcb issue edit and comment --as-user', () => {
+  it('sends the broker user identity and the catalogued action', async () => {
+    const host = fixture();
+    const socketPath = path.join(host.root, 'broker.sock');
+    try {
+      const cases: readonly { args: string[]; action: string; values: Record<string, unknown> }[] = [
+        { args: ['edit', '7', '--title', 'fixed'], action: 'issue:edit', values: { number: '7', title: 'fixed' } },
+        { args: ['comment', '7', '--body', 'a note'], action: 'issue:comment', values: { number: '7', body: 'a note' } },
+      ];
+      for (const entry of cases) {
+        let seen: Record<string, unknown> = {};
+        const server = await broker(socketPath, (request) => {
+          seen = request;
+        });
+        const result = await runClient(
+          ['issue', ...entry.args, '--as-user', '--repo', 'acme/widget', '--socket', socketPath],
+          host.root,
+        );
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        assert.equal(result.status, 0, entry.args.join(' '));
+        assert.equal(seen['identity'], 'user', entry.args.join(' '));
+        assert.equal(seen['ghAction'], entry.action, entry.args.join(' '));
+        assert.deepEqual(seen['values'], entry.values, entry.args.join(' '));
+      }
+    } finally {
+      host.cleanup();
+    }
+  });
+});
+
 describe('gcb issue create --as-user', () => {
   it('refuses when no opener is present', async () => {
     const host = fixture();
@@ -269,7 +299,7 @@ describe('gcb issue create --as-user', () => {
     try {
       const catalogue = await runClient(['issue', '--help'], host.root);
       assert.equal(catalogue.status, 0);
-      assert.match(catalogue.stdout, /Usage: gcb gh/u);
+      assert.match(catalogue.stdout, /Usage: gcb issue/u);
 
       const view = await runClient(['issue', 'view', '--help'], host.root);
       assert.equal(view.status, 0);
@@ -281,11 +311,45 @@ describe('gcb issue create --as-user', () => {
 
       const top = await runClient(['issue', '--as-user'], host.root);
       assert.equal(top.status, 1);
-      assert.match(top.stderr, /--as-user only creates an issue/u);
+      assert.match(top.stderr, /--as-user without a login only creates, edits or comments/u);
 
       const other = await runClient(['issue', 'view', '1', '--as-user', 'alice'], host.root);
       assert.equal(other.status, 1);
-      assert.match(other.stderr, /--as-user only creates an issue/u);
+      assert.match(other.stderr, /--as-user <login> only creates, edits or comments/u);
+    } finally {
+      host.cleanup();
+    }
+  });
+
+  it('sends issue edit and comment through the host broker', async () => {
+    const host = fixture();
+    try {
+      writeOpener(host.dir, { pid: process.pid, kinds: ['issue-edit', 'issue-comment'] });
+      for (const entry of [
+        { kind: 'issue-edit', args: ['edit', '7', '--title', 'fixed'] },
+        { kind: 'issue-comment', args: ['comment', '7', '--body', 'a note'] },
+      ]) {
+        const pending = runClient(
+          ['issue', ...entry.args, '--as-user', 'alice', '--repo', 'acme/widget'],
+          host.root,
+        );
+        let id: string | undefined;
+        let request;
+        for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+          id = requests(host.dir).find((candidate) => readRequest(host.dir, candidate)?.kind === entry.kind);
+          request = id === undefined ? undefined : readRequest(host.dir, id);
+          if (request === undefined) await sleep(10);
+        }
+        assert.ok(request, entry.kind + ' reached the host broker');
+        assert.equal(request?.kind, entry.kind);
+        writeResult(host.dir, id as string, {
+          number: 7,
+          url: 'https://github.com/acme/widget/issues/7',
+        });
+        const result = await pending;
+        assert.equal(result.status, 0, entry.kind);
+        assert.match(result.stdout, new RegExp(entry.kind === 'issue-edit' ? 'edited issue #7' : 'commented on issue #7'));
+      }
     } finally {
       host.cleanup();
     }

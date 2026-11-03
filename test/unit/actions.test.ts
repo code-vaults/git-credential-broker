@@ -23,6 +23,8 @@ describe('gh action catalog', () => {
       'pr:review',
       'pr:review-by-id',
       'issue:create',
+      'issue:edit',
+      'issue:comment',
       'run:view',
       'run:list',
     ]);

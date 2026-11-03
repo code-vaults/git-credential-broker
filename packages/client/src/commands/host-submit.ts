@@ -20,7 +20,7 @@ import type { HostOpenResult, HostRequest } from 'gcb-core';
 import { fail, say } from 'gcb-core';
 
 /**
- * Explain why an opener request produced no answer.
+ * Explain why a host-broker request produced no answer.
  *
  * @param dir - the channel directory.
  * @param id - the request id.
@@ -46,7 +46,7 @@ export function noAnswerMessage(dir: string, id: string, noun: string, timeoutMs
 }
 
 /**
- * Write, wait for and report one opener request.
+ * Write, wait for and report one host-broker request.
  *
  * @param request - the validated request.
  * @param success - formats the success line from the answer.
@@ -56,16 +56,16 @@ export async function submitToHostBroker(
   request: HostRequest,
   success: (answer: HostOpenResult) => string,
 ): Promise<number> {
-  const noun =
-    request.kind === 'fork'
-      ? 'fork'
-      : request.kind === 'issue'
-        ? 'issue'
-        : request.kind === 'reply'
-          ? 'reply'
-          : request.kind === 'review'
-            ? 'review'
-            : 'pull request';
+  /** How each request kind is named, and the capability an older host broker may lack. */
+  const KINDS: Readonly<Record<string, { noun: string; needed?: string }>> = {
+    'pull-request': { noun: 'pull request' },
+    issue: { noun: 'issue', needed: 'issue' },
+    fork: { noun: 'fork', needed: 'fork' },
+    reply: { noun: 'reply', needed: 'reply' },
+    edit: { noun: 'edit', needed: 'edit' },
+    review: { noun: 'review', needed: 'review' },
+  };
+  const { noun, needed } = KINDS[request.kind ?? 'pull-request'] ?? { noun: 'request' };
   const gitDir = findGitDir(process.cwd());
   if (gitDir === undefined) fail('--as-user needs a git repository: run it from the checkout');
   const dir = channelDir(gitDir);
@@ -74,24 +74,14 @@ export async function submitToHostBroker(
     fail(
       `no host broker is watching ${dir}\n` +
         '  start one on the host: gcb host --repo <that checkout>\n' +
-        '  or drop --as-user to open it as the app instead',
+        '  or drop --as-user to do it as the app instead',
     );
   }
-  const needed =
-    request.kind === 'issue'
-      ? 'issue'
-      : request.kind === 'fork'
-        ? 'fork'
-        : request.kind === 'reply'
-          ? 'reply'
-          : request.kind === 'review'
-            ? 'review'
-            : undefined;
   if (needed !== undefined && !(Array.isArray(opener.kinds) && opener.kinds.includes(needed))) {
     fail(`the host broker does not advertise ${needed} support; restart it from this gcb-host version`);
   }
 
-  // writeRequest refuses what the opener would refuse — a title past its limit, a body past its limit,
+  // writeRequest refuses what the host broker would refuse — a title past its limit, a body past its limit,
   // a head equal to its base. It throws, and a stack trace tells the caller none of that.
   let id: string;
   try {
@@ -109,7 +99,7 @@ export async function submitToHostBroker(
   if (answer === undefined) answer = await waitForResult(dir, id, 300, 50);
   if (answer === undefined) fail(noAnswerMessage(dir, id, noun, timeoutMs));
   removeResult(dir, id);
-  if (answer.error !== undefined) fail(`the host broker could not open it: ${answer.error}`);
+  if (answer.error !== undefined) fail(`the host broker could not do it: ${answer.error}`);
   say(success(answer));
   return 0;
 }

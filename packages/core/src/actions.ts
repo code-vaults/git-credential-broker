@@ -243,6 +243,33 @@ const ISSUE_CREATE: GhAction = {
   appUser: true,
 };
 
+// GitHub: PATCH /repos/{owner}/{repo}/issues/{issue_number}
+const ISSUE_EDIT: GhAction = {
+  name: 'issue:edit',
+  command: ['issue', 'edit'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [
+    { name: 'title', type: 'string' },
+    { name: 'body', type: 'string' },
+  ],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 120,
+  hostUser: true,
+  appUser: true,
+};
+
+// GitHub: POST /repos/{owner}/{repo}/issues/{issue_number}/comments
+const ISSUE_COMMENT: GhAction = {
+  name: 'issue:comment',
+  command: ['issue', 'comment'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [{ name: 'body', type: 'string', required: true }],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 120,
+  hostUser: true,
+  appUser: true,
+};
+
 // GitHub: GET /repos/{owner}/{repo}/actions/runs/{run_id}
 const RUN_VIEW: GhAction = {
   name: 'run:view',
@@ -289,6 +316,8 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:review': PR_REVIEW,
   'pr:review-by-id': PR_REVIEW_BY_ID,
   'issue:create': ISSUE_CREATE,
+  'issue:edit': ISSUE_EDIT,
+  'issue:comment': ISSUE_COMMENT,
   'run:view': RUN_VIEW,
   'run:list': RUN_LIST,
 });

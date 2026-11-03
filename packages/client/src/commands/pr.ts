@@ -53,7 +53,7 @@ Opening (the default)
                        review, reply, resolve, edit or comment; fails if no user token
                        is configured. Without it, open/review/reply/edit/comment use
                        the app; resolve always needs the person
-  --as-user <login>    Create, review or reply through the host broker, using
+  --as-user <login>    Create, review, reply or edit through the host broker, using
                        ~/.config/gh-<login> (run 'gcb host' on the host)
 
 Acting on one
@@ -61,9 +61,11 @@ Acting on one
   --proxy <url>        Use this proxy for this request
   --no-proxy           Reach GitHub directly for this request
   --status             Report its state, mergeability and the runs for its commit
-  --approve            Submit an approving review as the person (bare or login --as-user)
-  --request-changes    Request changes; needs the person and --body/--body-file
-  --review-comment     Leave a review comment; needs the person and --body/--body-file
+  --approve            Submit an approving review
+  --request-changes    Request changes; needs --body/--body-file
+  --review-comment     Leave a review comment; needs --body/--body-file
+                       No --as-user: app identity; bare --as-user: the broker's person;
+                       --as-user <login>: that host gh account
   --comment            Post an anchored review comment (also needs --file and --line);
                        for a plain comment use: gcb gh pr comment <number> --body ...
   --file <path>        Anchor that comment to a line of this file, repository-relative
@@ -102,7 +104,7 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
   // below — reading only `value` let a bare `--edit` fall through to `update`, which patched the pull
   // request itself with the body meant for the comment.
   const present = (name: string): boolean => args.has(name) || args.value(name) !== undefined;
-  if (args.has('approve') || args.has('request-changes') || args.has('review-comment')) return 'host-review' as const;
+  if (args.has('approve') || args.has('request-changes') || args.has('review-comment')) return 'submit-review' as const;
   if (present('resolve')) return 'resolve' as const;
   if (present('reply-to')) return 'reply' as const;
   if (present('edit')) return 'edit' as const;
@@ -196,13 +198,19 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (accounts.length > 1) fail('--as-user may only be given once');
   if (asUser && accounts.length > 0) fail('--as-user cannot be both bare and given a login');
   const account = accounts[0];
-  if (account !== undefined && action !== 'open' && action !== 'reply' && action !== 'host-review') {
+  if (
+    account !== undefined &&
+    action !== 'open' &&
+    action !== 'reply' &&
+    action !== 'submit-review' &&
+    action !== 'update'
+  ) {
     fail(
       '--as-user <login> only opens, replies or reviews through the host broker; use bare --as-user for ' +
         JSON.stringify(action),
     );
   }
-  if (asUser && !['open', 'resolve', 'reply', 'edit', 'comment', 'host-review'].includes(action)) {
+  if (asUser && !['open', 'resolve', 'reply', 'edit', 'comment', 'submit-review', 'update'].includes(action)) {
     fail(
       '--as-user without a login only opens, replies, resolves, edits or comments on a pull request, so it does not go with ' +
         JSON.stringify(action),
@@ -252,7 +260,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     if (!head) fail('--head is required to open a pull request');
     if (!title) fail('--title is required to open a pull request');
   } else if (action !== 'resolve' && action !== 'edit' && number === undefined) {
-    const verb = action === 'status' ? 'inspect' : action;
+    const verb = action === 'status' ? 'inspect' : action === 'submit-review' ? 'review' : action;
     fail(`--number is required to ${verb} a pull request`);
   }
   // `--resolve` and `--edit` name their target by id and need no pull request number, but one given
@@ -317,6 +325,25 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   }
 
   if (action === 'update') {
+    if (account !== undefined) {
+      return submitToHostBroker(
+        {
+          kind: 'edit',
+          repo,
+          host,
+          number: Number(number),
+          ...(title === undefined ? {} : { title }),
+          ...(body === undefined ? {} : { body }),
+          ...(base === undefined ? {} : { base }),
+          account,
+          proxy,
+          session: 'pr',
+          pid: process.pid,
+        },
+        (answer) =>
+          `edited #${answer.number ?? '?'} as ${account}${answer.url === undefined ? '' : `: ${answer.url}`}`,
+      );
+    }
     const ghArgs = ['pr', 'edit', String(number), '--repo', repo, '--host', host];
     if (title !== undefined) ghArgs.push(`--title=${title}`);
     if (body !== undefined) ghArgs.push(`--body=${body}`);
@@ -325,12 +352,12 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     if (socketArg !== undefined) ghArgs.push('--socket', socketArg);
     if (args.has('no-proxy')) ghArgs.push('--no-proxy');
     else if (args.value('proxy') !== undefined) ghArgs.push('--proxy', args.value('proxy') as string);
-    return runGh(ghArgs, { unreachableExitCode: 3 });
+    return runGh(ghArgs, { unreachableExitCode: 3, identity: asUser ? 'user' : 'app' });
   }
 
-  if (action === 'host-review') {
+  if (action === 'submit-review') {
     if (
-      ['threads', 'status', 'comment', 'reply-to', 'edit', 'resolve', 'close', 'file', 'line', 'side'].some(
+      ['threads', 'status', 'reply-to', 'edit', 'resolve', 'close', 'file', 'line', 'side', 'draft', 'head', 'base', 'title'].some(
         (name) => args.has(name) || args.value(name) !== undefined,
       )
     ) {

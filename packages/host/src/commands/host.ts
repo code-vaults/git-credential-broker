@@ -1,10 +1,10 @@
 /**
- * `host` — the host broker for typed person actions: create, reply and fork with the gh account
- * each request names.
+ * `host` — the host broker for typed person actions: create, review, reply, edit issues and pull
+ * requests, and fork with the gh account each request names.
  *
  * This runs on the host, beside the checkout the container also sees, and it does exactly one thing:
- * it turns a request file into a pull request, issue, reply or fork, using the gh account the request
- * names. That is the whole point — content authored by a person is what automated reviewers will
+ * it turns a request file into a pull request, issue, review, reply, issue edit/comment, pull
+ * request edit or fork, using the gh account the request names. That is the whole point — content authored by a person is what automated reviewers will
  * actually review, and the app cannot be that person.
  *
  * It has no other power. It cannot push, merge, close or read anything, and it never runs a shell: the
@@ -41,7 +41,7 @@ import { hostConfig, repoAllowed } from '../policy.ts';
 
 const run = promisify(execFile);
 
-/** How long one `pr create` or `issue create` may take. */
+/** How long one create, review, reply, edit or fork program may take. */
 const CREATE_TIMEOUT_MS = 120_000;
 
 /** Usage text for `host`. */
@@ -49,8 +49,8 @@ export const HOST_BROKER_USAGE = `Usage: gcb host [options]
 
 Run on the host, once, beside the trees the container also sees. It finds the checkouts under the
 roots it is given — ones created later included — and fulfils their typed requests to create a pull
-request, issue or fork, reply to a review comment, or submit a review, with the gh account each request names. The
-result is authored by a person rather than by the app's bot. It cannot push, merge or close anything.
+request, issue or fork, reply to a review comment, submit a review, or edit an issue or pull
+request, with the gh account each request names. The result is authored by a person rather than by the app's bot. It cannot push, merge or close anything.
 
   --root <dir>          A tree to serve, repeatable (default: $HOME)
   --depth <n>           How far below a root to look for checkouts (default: 4)
@@ -160,7 +160,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         pid: process.pid,
         command,
         startedAt: new Date().toISOString(),
-        kinds: ['pull-request', 'issue', 'review', 'reply', 'fork'],
+        kinds: ['pull-request', 'issue', 'issue-edit', 'issue-comment', 'review', 'reply', 'edit', 'fork'],
       });
     }
   };
@@ -260,7 +260,11 @@ async function sweep(
                 ? `reply on #${request.number}`
                 : request.kind === 'review'
                   ? `review on #${request.number}`
-                  : request.head
+                  : request.kind === 'edit'
+                    ? `edit on #${request.number}`
+                    : request.kind === 'issue-edit' || request.kind === 'issue-comment'
+                      ? `issue #${request.number}`
+                      : request.head
         }: ${result.error}`,
       );
     } else {
@@ -271,7 +275,13 @@ async function sweep(
             ? `replied on #${result.number} as ${request.account ?? 'this user'}: ${result.url}`
             : request.kind === 'review'
               ? `reviewed #${result.number} (${request.event}) as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
-              : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
+              : request.kind === 'edit'
+                ? `edited #${result.number} as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
+                : request.kind === 'issue-edit'
+                  ? `edited issue #${result.number} as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
+                  : request.kind === 'issue-comment'
+                    ? `commented on issue #${result.number} as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
+                    : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
       );
     }
     answered += 1;
@@ -398,6 +408,92 @@ async function openOne(
         return { error: `no reply URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}` };
       }
       return { number: request.number, url: reply.html_url };
+    } catch (error) {
+      const failure = error as { stderr?: string; message?: string };
+      const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
+      return { error: reason.slice(0, 300) || 'the command failed' };
+    }
+  }
+
+  if (request.kind === 'issue-edit' || request.kind === 'issue-comment') {
+    const host = request.host ?? 'github.com';
+    if (!HOST.test(host)) return { error: `not a host: ${JSON.stringify(host)}` };
+    try {
+      if (!allowed(host, request.repo)) {
+        return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
+      }
+    } catch (error) {
+      return { error: (error as Error).message };
+    }
+    const edit = request.kind === 'issue-edit';
+    try {
+      const { stdout } = await run(
+        command,
+        [
+          ...extra,
+          'issue',
+          edit ? 'edit' : 'comment',
+          String(request.number),
+          '--repo',
+          request.repo,
+          ...(edit
+            ? [
+                ...(request.title === undefined ? [] : ['--title', request.title]),
+                ...(request.body === undefined ? [] : ['--body', request.body]),
+              ]
+            : ['--body', request.body]),
+        ],
+        {
+          cwd: repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env: forkEnv(request.proxy, request.account, host),
+        },
+      );
+      const found = issueUrl(stdout);
+      if (found !== undefined) return found;
+      return { number: request.number };
+    } catch (error) {
+      const failure = error as { stderr?: string; message?: string };
+      const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
+      return { error: reason.slice(0, 300) || 'the command failed' };
+    }
+  }
+
+  if (request.kind === 'edit') {
+    const host = request.host ?? 'github.com';
+    if (!HOST.test(host)) return { error: `not a host: ${JSON.stringify(host)}` };
+    try {
+      if (!allowed(host, request.repo)) {
+        return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
+      }
+    } catch (error) {
+      return { error: (error as Error).message };
+    }
+    try {
+      const { stdout } = await run(
+        command,
+        [
+          ...extra,
+          'pr',
+          'edit',
+          String(request.number),
+          '--repo',
+          request.repo,
+          ...(request.title === undefined ? [] : ['--title', request.title]),
+          ...(request.body === undefined ? [] : ['--body', request.body]),
+          ...(request.base === undefined ? [] : ['--base', request.base]),
+        ],
+        {
+          cwd: repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env: forkEnv(request.proxy, request.account, host),
+        },
+      );
+      const found = pullRequestUrl(stdout);
+      if (found !== undefined) return found;
+      return { number: request.number };
     } catch (error) {
       const failure = error as { stderr?: string; message?: string };
       const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();

@@ -381,9 +381,50 @@ describe('a fork outside the allowlist', () => {
   });
 });
 
-describe('the host review route', () => {
-  it('runs gh pr review with the event and body file', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-broker-review-'));
+describe('the host issue edit and comment routes', () => {
+  for (const entry of [
+    { kind: 'issue-edit' as const, argv: ['issue', 'edit'], flags: ['--title', 'fixed', '--body', 'updated'] },
+    { kind: 'issue-comment' as const, argv: ['issue', 'comment'], flags: ['--body', 'a note'] },
+  ]) {
+    it(`runs gh ${entry.argv.join(' ')}`, async () => {
+      const root = mkdtempSync(join(tmpdir(), `host-broker-${entry.kind}-`));
+      const repo = join(root, 'checkout');
+      mkdirSync(join(repo, '.git'), { recursive: true });
+      writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+      const config = forkConfig(root, 'acme/widget');
+      const dir = channelDir(join(repo, '.git'));
+      const argvFile = join(root, 'argv');
+      const command = join(root, 'not-gh');
+      writeFileSync(
+        command,
+        '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "https://github.com/acme/widget/issues/7#issuecomment-1"\n',
+        'utf8',
+      );
+      chmodSync(command, 0o755);
+      try {
+        const id = writeRequest(
+          dir,
+          entry.kind === 'issue-edit'
+            ? { kind: entry.kind, repo: 'acme/widget', number: 7, title: 'fixed', body: 'updated' }
+            : { kind: entry.kind, repo: 'acme/widget', number: 7, body: 'a note' },
+        );
+        const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
+        assert.equal(code, 0);
+        assert.equal(readResult(dir, id)?.url, 'https://github.com/acme/widget/issues/7');
+        const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
+        assert.deepEqual(argv.slice(0, 2), entry.argv);
+        assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
+        for (const flag of entry.flags) assert.ok(argv.includes(flag));
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+describe('the host edit route', () => {
+  it('runs gh pr edit with the supplied fields', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-edit-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -393,7 +434,50 @@ describe('the host review route', () => {
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "https://github.com/acme/widget/pull/7#pullrequestreview-9"\n',
+      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "https://github.com/acme/widget/pull/7"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, {
+        kind: 'edit',
+        repo: 'acme/widget',
+        number: 7,
+        title: 'fixed',
+        body: 'updated body',
+      });
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      assert.equal(readResult(dir, id)?.url, 'https://github.com/acme/widget/pull/7');
+      const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
+      assert.deepEqual(argv.slice(0, 2), ['pr', 'edit']);
+      assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
+      assert.equal(argv[argv.indexOf('--title') + 1], 'fixed');
+      assert.equal(argv[argv.indexOf('--body') + 1], 'updated body');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the host review route', () => {
+  it('runs gh pr review with the event and body file', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-review-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const argvFile = join(root, 'argv');
+    const bodyCaptureFile = join(root, 'body');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' +
+        argvFile +
+        '\nwhile [ "$#" -gt 0 ]; do\n  if [ "$1" = "--body-file" ]; then cat "$2" > ' +
+        bodyCaptureFile +
+        '; break; fi\n  shift\ndone\necho "https://github.com/acme/widget/pull/7#pullrequestreview-9"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
@@ -413,6 +497,29 @@ describe('the host review route', () => {
       assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
       assert.ok(argv.includes('--request-changes'));
       assert.ok(argv.includes('--body-file'));
+      assert.equal(readFileSync(bodyCaptureFile, 'utf8'), 'please fix');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a review outside the allowlist before gh runs', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-review-denied-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'other/repo');
+    const dir = channelDir(join(repo, '.git'));
+    const marker = join(root, 'ran');
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\ntouch ' + marker + '\necho "{}"\n', 'utf8');
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, { kind: 'review', repo: 'acme/widget', number: 7, event: 'approve', body: '' });
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      assert.match(readResult(dir, id)?.error ?? '', /not in the allowlist/u);
+      assert.equal(existsSync(marker), false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

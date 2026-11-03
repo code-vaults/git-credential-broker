@@ -135,10 +135,10 @@ described below is still what runs the lifecycle `gh` cannot express (opening as
 threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr close`.
 
 For that flag-only form, creation uses the app's installation token by default; `--as-user` without
-a value uses the broker's authorized user token for open, reply, resolve, edit and comment, and
-`--as-user <login>`
-uses the host broker for creation. Resolving a review thread defaults to the user identity because the pull-request token this broker
-mints is narrowed to `pull_requests: write` and `contents: read`, while `resolveReviewThread` needs
+a value uses the broker's authorized user token for open, review, reply, resolve, edit and comment,
+and `--as-user <login>` uses the host broker for creation, review and reply. Resolving a review
+thread defaults to the user identity because the pull-request token this broker mints is narrowed to
+`pull_requests: write` and `contents: read`, while `resolveReviewThread` needs
 `contents: write` — a grant the broker gives only to the credential git pushes with, never to a
 pull-request token.
 
@@ -382,7 +382,7 @@ comment id names the comment — and its pull request — so `--edit` takes no `
 only an author change a comment, so without `--as-user` the app can change only the comments it
 authored; with bare `--as-user` it changes the authorized person's.
 
-### Opening a pull request or issue as yourself
+### Person actions: pull requests, issues and reviews
 
 There are three ways to have a pull request or issue authored by a person, and they stay alternatives: the **host
 host broker** below needs no long-lived secret anywhere and costs a process you keep running; **`userTokens`**
@@ -414,15 +414,17 @@ gcb pr --as-user octocat --repo owner/repo --head feature --base main \
 # reply as that host account
 gcb pr --as-user octocat --number 94 --reply-to 123456 --body "good point"
 
-# submit a review as the broker's authorized person, or a host account
+# submit a review or edit a pull request as the broker's authorized person, or a host account
 gcb pr --as-user --number 94 --approve
 gcb pr --as-user octocat --number 94 --approve
+gcb pr --as-user --number 94 --title "new title"
+gcb pr --as-user octocat --number 94 --body-file pr.md
 gcb pr --as-user octocat --number 94 --request-changes --body "please fix"
 gcb pr --as-user octocat --number 94 --review-comment --body "a note"
 ```
 
-The host broker creates pull requests and issues, submits reviews, replies to review comments, and
-forks with the gh account named by the request; it does not edit, close or merge. For `repo fork`, review replies and
+The host broker creates pull requests and issues, submits reviews, replies to review comments, edits
+pull requests, and forks with the gh account named by the request; it does not edit, close or merge. For `repo fork`, review replies and
 any request that names `--repo` explicitly, it checks the repository against the broker config's
 allowlist (pass `--config`). An explicit `--repo` needs no checkout of that repository; without it,
 the checkout decides.
@@ -504,8 +506,8 @@ whatever device has a browser. The refresh token is stored beside the private ke
 broker looks for it, and the broker renews it from then on — nothing else needs running.
 
 The user token is used where the person identity is required or preferred: authoring a pull request,
-resolving a review thread (GraphQL refuses that for an app), replying to or editing a review comment,
-and creating an issue through the broker action path.
+submitting a review, resolving a review thread (GraphQL refuses that for an app), replying to or
+editing a review comment, and creating an issue through the broker action path.
 
 The file needs to be **writable by the broker**, unlike the key: GitHub rotates the refresh token on
 every exchange, so mount it read-write (`./user.refresh:/etc/git-cred-broker/user.refresh:rw` in the
