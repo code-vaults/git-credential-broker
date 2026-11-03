@@ -6,7 +6,7 @@
  * good snapshot.
  */
 import { createHash } from 'node:crypto';
-import { closeSync, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
 
 import { loadConfigText, readConfigText, resolveConfigPath } from '../config.ts';
 import { fail, parseArgs, say } from 'gcb-core';
@@ -29,17 +29,18 @@ interface ConfigEvent {
 
 const CHUNK_BYTES = 64 * 1024;
 
-/** Read the last config reload record, scanning backward a chunk at a time. */
 interface LastConfig {
   readonly event?: ConfigEvent;
   readonly error?: Error;
 }
 
+/** Read the last config reload record, scanning backward a chunk at a time. */
 function lastConfigEvent(path: string | null): LastConfig {
   if (path === null) return {};
   let fd: number;
   try {
-    fd = openSync(path, 'r');
+    // O_NONBLOCK keeps a FIFO on this path from hanging the command; fstat below rejects it.
+    fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'ENOENT' ? {} : { error: error as Error };
   }

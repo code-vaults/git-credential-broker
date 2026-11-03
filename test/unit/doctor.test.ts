@@ -1,6 +1,7 @@
 /** `gcb doctor`: config validity, digest, last reload record and socket state. */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -197,6 +198,17 @@ describe('gcb doctor', () => {
     const host = fixture();
     try {
       fs.mkdirSync(host.audit);
+      const text = output(['--config', host.config]);
+      assert.match(text, /last reload: \(cannot read the audit log: .*not a regular file/);
+    } finally {
+      host.cleanup();
+    }
+  });
+
+  it('does not block on a FIFO audit path', { skip: process.platform === 'win32' }, () => {
+    const host = fixture();
+    try {
+      execFileSync('mkfifo', [host.audit]);
       const text = output(['--config', host.config]);
       assert.match(text, /last reload: \(cannot read the audit log: .*not a regular file/);
     } finally {
