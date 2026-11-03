@@ -382,6 +382,30 @@ describe('a fork outside the allowlist', () => {
   });
 });
 
+describe('a reply outside the allowlist', () => {
+  it('refuses before running gh', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-reply-denied-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'other/repo');
+    const dir = channelDir(join(repo, '.git'));
+    const marker = join(root, 'ran');
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\ntouch ' + marker + '\necho "{}"\n', 'utf8');
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, { kind: 'reply', repo: 'acme/widget', number: 7, commentId: 123, body: 'hi' });
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      assert.match(readResult(dir, id)?.error ?? '', /not in the allowlist/);
+      assert.equal(existsSync(marker), false, 'gh never ran');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('a claim that someone else holds', () => {
   it('does not act on the request, does not answer it, and does not remove the claim', async () => {
     const root = mkdtempSync(join(tmpdir(), 'opener-claim-'));

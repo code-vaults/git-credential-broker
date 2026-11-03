@@ -149,6 +149,36 @@ describe('gcb pr identity flags', () => {
     }
   });
 
+  it('refuses --host other than github.com when --repo is explicit', async () => {
+    const repo = checkout();
+    try {
+      const result = await tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          'create',
+          '--as-user',
+          'alice',
+          '--host',
+          'ghe.example',
+          '--repo',
+          'acme/widget',
+          '--head',
+          'feat/x',
+          '--title',
+          't',
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /only targets github\.com/);
+    } finally {
+      repo.cleanup();
+    }
+  });
+
   it('keeps pr create without as-user on the catalog', async () => {
     const repo = checkout();
     const socketPath = path.join(repo.root, 'broker.sock');
@@ -270,6 +300,46 @@ describe('gcb pr identity flags', () => {
       const result = await pending;
       assert.equal(result.status, 0);
       assert.match(result.stdout, /replied on #7 as alice/);
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it('sends an explicit repo on a host-broker create', async () => {
+    const repo = checkout();
+    const dir = channelDir(path.join(repo.root, '.git'));
+    try {
+      writeOpener(dir, { pid: process.pid, kinds: ['pull-request'] });
+      const pending = tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          'create',
+          '--as-user',
+          'alice',
+          '--repo',
+          'acme/widget',
+          '--head',
+          'feat/x',
+          '--title',
+          'a title',
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      let id: string | undefined;
+      let request;
+      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+        [id] = listRequests(dir);
+        request = id === undefined ? undefined : readRequest(dir, id);
+        if (request === undefined) await sleep(10);
+      }
+      assert.ok(request, 'the request reached the host broker');
+      assert.equal(request?.repo, 'acme/widget');
+      writeResult(dir, id as string, { number: 7, url: 'https://github.com/acme/widget/pull/7' });
+      const result = await pending;
+      assert.equal(result.status, 0);
     } finally {
       repo.cleanup();
     }

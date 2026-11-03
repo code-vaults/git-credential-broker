@@ -337,9 +337,12 @@ export async function runPr(argv: readonly string[]): Promise<number> {
 
   if (account !== undefined) {
     if (head === undefined || title === undefined) fail('--as-user needs --head and --title');
+    if (args.value('repo') !== undefined && host.toLowerCase() !== 'github.com') {
+      fail('--as-user <login> with --repo only targets github.com; --host is not supported for create');
+    }
     return submitToOpener(
       {
-        ...(args.has('repo') ? { repo } : {}),
+        ...(args.value('repo') === undefined ? {} : { repo }),
         head,
         base: base ?? 'main',
         title,

@@ -28,6 +28,9 @@ fi
 #   GIT_BROKER_BIN=/usr/local/bin/gcb
 #                                    where the CLI is, when it is not on the PATH below
 #   GIT_BROKER_GH=/usr/local/bin/gh  where gh is, when it is not on that PATH
+#   GIT_BROKER_CONFIG=/volume1/homes/<you>/.broker-host/broker.config.yml
+#                                    broker config; required for reply and explicit --repo requests
+#                                    (the allowlist lives there), optional otherwise
 set -u
 
 # Where a global install and its node usually live on such a host. Prepended, not replaced: a task
@@ -38,6 +41,7 @@ export PATH
 BIN=${GIT_BROKER_BIN:-$(command -v gcb || true)}
 GH=${GIT_BROKER_GH:-gh}
 ROOT=${GIT_BROKER_ROOT:-$HOME}
+CONFIG=${GIT_BROKER_CONFIG:-}
 LOG=${GIT_BROKER_OPENER_LOG:-$HOME/.gcb-opener.log}
 PIDFILE=${GIT_BROKER_OPENER_PID:-$HOME/.gcb-opener.pid}
 
@@ -57,7 +61,8 @@ if [ -f "$PIDFILE" ]; then
   # /proc/<pid>/cmdline, not kill -0: a recycled pid owned by anyone makes kill -0 succeed, so the
   # opener silently never starts, and it fails with EPERM for another user's process, so the guard
   # does not fire and a second opener starts — the race the comment above is about.
-  if [ -n "$old" ] && [ -r "/proc/$old/cmdline" ] && grep -qa 'gcb host' "/proc/$old/cmdline"; then
+  if [ -n "$old" ] && [ -r "/proc/$old/cmdline" ] &&
+    tr '\0' '\n' <"/proc/$old/cmdline" | grep -Eq '^(host|host-opener)$'; then
     echo "$(date) already running as pid $old" >>"$LOG"
     exit 0
   fi
@@ -67,7 +72,8 @@ fi
 echo $$ >"$PIDFILE"
 
 # exec, so the pid in the file is the opener's own, and stopping it stops the opener.
-exec "$BIN" host \
-  --root "$ROOT" \
-  --command "$GH" \
-  >>"$LOG" 2>&1
+set -- host --root "$ROOT" --command "$GH"
+if [ -n "$CONFIG" ]; then
+  set -- "$@" --config "$CONFIG"
+fi
+exec "$BIN" "$@" >>"$LOG" 2>&1
