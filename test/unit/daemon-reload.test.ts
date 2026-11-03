@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -90,6 +91,17 @@ describe('daemon live reload', () => {
         });
         return answer['ok'] === true ? answer : undefined;
       });
+
+      const reloadLine = await waitFor(async () => {
+        const line = fs.existsSync(auditPath)
+          ? fs.readFileSync(auditPath, 'utf8').split('\n').find((entry) => entry.includes('"decision":"reload"'))
+          : undefined;
+        return line === undefined ? undefined : line;
+      });
+      assert.equal(
+        (JSON.parse(reloadLine) as { digest?: unknown }).digest,
+        createHash('sha256').update(fs.readFileSync(file)).digest('hex'),
+      );
 
       fs.writeFileSync(file, 'hosts: [\n');
       const auditHasFailed = async (): Promise<true | undefined> =>

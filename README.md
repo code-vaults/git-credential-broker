@@ -302,6 +302,7 @@ sidecar. Commands find the configuration by convention — `--config`, else `$GI
 gcb probe --host github.com --repo owner/repo
 gcb config check --config /srv/git-cred-broker/broker.config.yml
 gcb config edit --config /srv/git-cred-broker/broker.config.yml
+gcb doctor --config /srv/git-cred-broker/broker.config.yml
 gcb diagnose --config /srv/git-cred-broker/broker.config.yml
 ```
 
@@ -314,8 +315,12 @@ deployment mode and hosts without starting the broker or reading the key. `confi
 existing file in `$VISUAL`/`$EDITOR` (it does not create a missing one; run `init` first) and
 validates it after the editor exits.
 
-`diagnose` asks GitHub what the app can actually see — the only reliable way to tell "repository does
-not exist" from "not selected for this installation", which GitHub reports identically. It reads the
+`doctor` is host-side and read-only: it validates the config, prints its SHA-256 digest, the audit
+path it read, the last `config` audit record, and the socket state (socket, missing, symlink or
+another file).
+
+`diagnose` asks GitHub what the app can actually see — the only reliable way to tell "repository
+does not exist" from "not selected for this installation", which GitHub reports identically. It reads the
 app's **private key**, so run it where the key is. On a host-process deployment that is the host; for
 a sidecar it is inside the container:
 
