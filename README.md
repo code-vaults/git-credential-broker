@@ -413,10 +413,15 @@ gcb pr --as-user octocat --repo owner/repo --head feature --base main \
 
 # reply as that host account
 gcb pr --as-user octocat --number 94 --reply-to 123456 --body "good point"
+
+# submit a review as that host account
+gcb pr --as-user octocat --number 94 --approve
+gcb pr --as-user octocat --number 94 --request-changes --body "please fix"
+gcb pr --as-user octocat --number 94 --review-comment --body "a note"
 ```
 
-The host broker creates pull requests and issues, replies to review comments, and forks with the gh
-account named by the request; it does not edit, close or merge. For `repo fork`, review replies and
+The host broker creates pull requests and issues, submits reviews, replies to review comments, and
+forks with the gh account named by the request; it does not edit, close or merge. For `repo fork`, review replies and
 any request that names `--repo` explicitly, it checks the repository against the broker config's
 allowlist (pass `--config`). An explicit `--repo` needs no checkout of that repository; without it,
 the checkout decides.

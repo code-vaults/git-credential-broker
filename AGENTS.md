@@ -257,9 +257,9 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   listing the installations and the repositories each one reaches; asking for a credential for a
   repository the app *is* installed on is the control that needs no such command.
 
-  **Which actions are left is the operational half.** The host broker creates pull requests/issues
-  and replies to review comments (with `--as-user <login>`), while bare `--as-user` through the
-  broker also handles reply, resolve, edit and comment. Every other action still goes through the
+  **Which actions are left is the operational half.** The host broker creates pull requests/issues,
+  submits reviews and replies to review comments (with `--as-user <login>`), while bare `--as-user`
+  through the broker also handles reply, resolve, edit and comment. Every other action still goes through the
   installation token.
   On a repository the app is not installed on, a pull request can be opened and its review comments
   replied to, edited or resolved with bare `--as-user`, but the pull request itself cannot be edited,

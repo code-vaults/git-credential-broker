@@ -49,7 +49,7 @@ export const HOST_BROKER_USAGE = `Usage: gcb host [options]
 
 Run on the host, once, beside the trees the container also sees. It finds the checkouts under the
 roots it is given — ones created later included — and fulfils their typed requests to create a pull
-request, issue or fork, or reply to a review comment, with the gh account each request names. The
+request, issue or fork, reply to a review comment, or submit a review, with the gh account each request names. The
 result is authored by a person rather than by the app's bot. It cannot push, merge or close anything.
 
   --root <dir>          A tree to serve, repeatable (default: $HOME)
@@ -160,7 +160,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         pid: process.pid,
         command,
         startedAt: new Date().toISOString(),
-        kinds: ['pull-request', 'issue', 'reply', 'fork'],
+        kinds: ['pull-request', 'issue', 'review', 'reply', 'fork'],
       });
     }
   };
@@ -182,7 +182,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
 
   say(single === undefined ? `serving the checkouts under ${scanned.join(', ')}` : `serving ${single}`);
   say(
-    `creating pull requests, issues, replies and forks with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
+    `creating pull requests, issues, reviews, replies and forks with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
   );
 
   for (;;) {
@@ -258,7 +258,9 @@ async function sweep(
               ? 'issue'
               : request.kind === 'reply'
                 ? `reply on #${request.number}`
-                : request.head
+                : request.kind === 'review'
+                  ? `review on #${request.number}`
+                  : request.head
         }: ${result.error}`,
       );
     } else {
@@ -267,7 +269,9 @@ async function sweep(
           ? `forked ${request.repo} as ${request.account ?? 'this user'}: ${result.url}`
           : request.kind === 'reply'
             ? `replied on #${result.number} as ${request.account ?? 'this user'}: ${result.url}`
-            : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
+            : request.kind === 'review'
+              ? `reviewed #${result.number} (${request.event}) as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
+              : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
       );
     }
     answered += 1;
@@ -304,7 +308,7 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
 }
 
 /**
- * Create one pull request, issue or fork.
+ * Create one pull request, issue, review, reply or fork.
  *
  * @param repo - the checkout to create it in.
  * @param command - the program to call.
@@ -398,6 +402,57 @@ async function openOne(
       const failure = error as { stderr?: string; message?: string };
       const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
       return { error: reason.slice(0, 300) || 'the command failed' };
+    }
+  }
+
+  if (request.kind === 'review') {
+    const host = request.host ?? 'github.com';
+    if (!HOST.test(host)) return { error: `not a host: ${JSON.stringify(host)}` };
+    try {
+      if (!allowed(host, request.repo)) {
+        return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
+      }
+    } catch (error) {
+      return { error: (error as Error).message };
+    }
+    const scratch = mkdtempSync(join(tmpdir(), 'gcb-review-'));
+    const bodyFile = join(scratch, 'body.md');
+    writeFileSync(bodyFile, request.body, 'utf8');
+    const flag =
+      request.event === 'approve'
+        ? '--approve'
+        : request.event === 'request-changes'
+          ? '--request-changes'
+          : '--comment';
+    try {
+      const { stdout } = await run(
+        command,
+        [
+          ...extra,
+          'pr',
+          'review',
+          String(request.number),
+          '--repo',
+          request.repo,
+          flag,
+          ...(request.body.trim() === '' ? [] : ['--body-file', bodyFile]),
+        ],
+        {
+          cwd: repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env: forkEnv(request.proxy, request.account, host),
+        },
+      );
+      const match = /https:\/\/[^\s]+\/pull\/\d+(?:#pullrequestreview-\d+)?/.exec(stdout);
+      if (match?.[0] !== undefined) return { number: request.number, url: match[0] };
+      return { number: request.number };
+    } catch (error) {
+      const failure = error as { stderr?: string; message?: string };
+      const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
+      return { error: reason.slice(0, 300) || 'the command failed' };
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
     }
   }
 

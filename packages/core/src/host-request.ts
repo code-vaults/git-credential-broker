@@ -99,6 +99,20 @@ export interface HostReplyRequest {
   readonly pid?: number;
 }
 
+/** One request to submit a pull request review as the host account. */
+export interface HostReviewRequest {
+  readonly kind: 'review';
+  readonly repo: string;
+  readonly host?: string;
+  readonly number: number;
+  readonly event: 'approve' | 'request-changes' | 'comment';
+  readonly body: string;
+  readonly proxy?: string | null;
+  readonly account?: string;
+  readonly session?: string;
+  readonly pid?: number;
+}
+
 /** One request to fork a repository. */
 export interface HostForkRequest {
   readonly kind: 'fork';
@@ -111,7 +125,7 @@ export interface HostForkRequest {
 }
 
 /** A request the host broker can fulfil. */
-export type HostRequest = HostOpenRequest | HostIssueRequest | HostReplyRequest | HostForkRequest;
+export type HostRequest = HostOpenRequest | HostIssueRequest | HostReplyRequest | HostReviewRequest | HostForkRequest;
 
 /** What the opener answered. */
 export interface HostOpenResult {
@@ -320,6 +334,20 @@ export function requestProblems(request: HostRequest): string[] {
     }
     return problems;
   }
+  if (request.kind === 'review') {
+    if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
+    if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
+    if (!Number.isInteger(request.number) || request.number <= 0) problems.push('the pull request number is not positive');
+    if (request.event !== 'approve' && request.event !== 'request-changes' && request.event !== 'comment') {
+      problems.push('the review event is not approve, request-changes or comment');
+    }
+    if (request.body.length > MAX_BODY_CHARS) problems.push(`the body must be at most ${MAX_BODY_CHARS} characters`);
+    if (request.event !== 'approve' && request.body.trim() === '') problems.push('this review needs a body');
+    if (request.account !== undefined && !LOGIN.test(request.account)) {
+      problems.push('the account is not a usable GitHub login');
+    }
+    return problems;
+  }
   if (request.kind === 'fork') {
     if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
     if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
@@ -378,7 +406,7 @@ export function writeRequest(dir: string, request: HostRequest): string {
  */
 export function readRequest(dir: string, id: string): HostRequest | undefined {
   const parsed = readJson(join(dir, `${id}.json`)) as
-    | (Partial<HostOpenRequest> & Partial<HostIssueRequest> & Partial<HostReplyRequest> & Partial<HostForkRequest>)
+    | (Partial<HostOpenRequest> & Partial<HostIssueRequest> & Partial<HostReplyRequest> & Partial<HostReviewRequest> & Partial<HostForkRequest>)
     | undefined;
   if (!parsed) return undefined;
   if (parsed.kind === 'reply') {
@@ -396,6 +424,29 @@ export function readRequest(dir: string, id: string): HostRequest | undefined {
       repo: parsed.repo,
       number: parsed.number,
       commentId: parsed.commentId,
+      body: parsed.body,
+      ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
+      ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
+      ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
+      session: parsed.session,
+      pid: parsed.pid,
+    };
+  }
+  if (parsed.kind === 'review') {
+    if (
+      typeof parsed.repo !== 'string' ||
+      !REPOSITORY.test(parsed.repo) ||
+      typeof parsed.body !== 'string' ||
+      typeof parsed.number !== 'number' ||
+      (parsed.event !== 'approve' && parsed.event !== 'request-changes' && parsed.event !== 'comment')
+    ) {
+      return undefined;
+    }
+    return {
+      kind: 'review',
+      repo: parsed.repo,
+      number: parsed.number,
+      event: parsed.event,
       body: parsed.body,
       ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
       ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
@@ -507,7 +558,14 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
     request !== undefined &&
     // Untyped JSON: the file can spell account as an array or a number even though the type cannot.
     (request.account === undefined || typeof request.account === 'string') &&
-    (request.kind === 'reply'
+    (request.kind === 'review'
+      ? typeof request.repo === 'string' &&
+        REPOSITORY.test(request.repo) &&
+        typeof request.body === 'string' &&
+        Number.isInteger(request.number) &&
+        (request.event === 'approve' || request.event === 'request-changes' || request.event === 'comment') &&
+        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
+      : request.kind === 'reply'
       ? typeof request.repo === 'string' &&
         REPOSITORY.test(request.repo) &&
         typeof request.body === 'string' &&

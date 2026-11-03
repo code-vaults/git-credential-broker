@@ -63,7 +63,9 @@ export async function submitToOpener(
         ? 'issue'
         : request.kind === 'reply'
           ? 'reply'
-          : 'pull request';
+          : request.kind === 'review'
+            ? 'review'
+            : 'pull request';
   const gitDir = findGitDir(process.cwd());
   if (gitDir === undefined) fail('--as-user needs a git repository: run it from the checkout');
   const dir = channelDir(gitDir);
@@ -76,7 +78,15 @@ export async function submitToOpener(
     );
   }
   const needed =
-    request.kind === 'issue' ? 'issue' : request.kind === 'fork' ? 'fork' : request.kind === 'reply' ? 'reply' : undefined;
+    request.kind === 'issue'
+      ? 'issue'
+      : request.kind === 'fork'
+        ? 'fork'
+        : request.kind === 'reply'
+          ? 'reply'
+          : request.kind === 'review'
+            ? 'review'
+            : undefined;
   if (needed !== undefined && !(Array.isArray(opener.kinds) && opener.kinds.includes(needed))) {
     fail(`the host broker does not advertise ${needed} support; restart it from this gcb-host version`);
   }

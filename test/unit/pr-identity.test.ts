@@ -390,6 +390,50 @@ describe('gcb pr identity flags', () => {
     }
   });
 
+  it('sends a host review with the selected event and body', async () => {
+    const repo = checkout();
+    const dir = channelDir(path.join(repo.root, '.git'));
+    try {
+      writeOpener(dir, { pid: process.pid, kinds: ['review'] });
+      const pending = tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          '--as-user',
+          'alice',
+          '--number',
+          '7',
+          '--review-comment',
+          '--body',
+          'looks good',
+          '--repo',
+          'acme/widget',
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      let id: string | undefined;
+      let request;
+      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+        [id] = listRequests(dir);
+        request = id === undefined ? undefined : readRequest(dir, id);
+        if (request === undefined) await sleep(10);
+      }
+      assert.ok(request, 'the review reached the host broker');
+      assert.equal(request?.kind, 'review');
+      assert.equal(request?.event, 'comment');
+      assert.equal(request?.body, 'looks good');
+      assert.equal(request?.number, 7);
+      writeResult(dir, id as string, { number: 7, url: 'https://github.com/acme/widget/pull/7#pullrequestreview-9' });
+      const result = await pending;
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /submitted comment review on #7 as alice/u);
+    } finally {
+      repo.cleanup();
+    }
+  });
+
   it('keeps a plain reply on the app identity', async () => {
     const repo = checkout();
     const socketPath = path.join(repo.root, 'broker.sock');

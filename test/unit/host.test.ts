@@ -381,6 +381,44 @@ describe('a fork outside the allowlist', () => {
   });
 });
 
+describe('the host review route', () => {
+  it('runs gh pr review with the event and body file', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-review-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const argvFile = join(root, 'argv');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "https://github.com/acme/widget/pull/7#pullrequestreview-9"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, {
+        kind: 'review',
+        repo: 'acme/widget',
+        number: 7,
+        event: 'request-changes',
+        body: 'please fix',
+      });
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      assert.equal(readResult(dir, id)?.url, 'https://github.com/acme/widget/pull/7#pullrequestreview-9');
+      const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
+      assert.deepEqual(argv.slice(0, 2), ['pr', 'review']);
+      assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
+      assert.ok(argv.includes('--request-changes'));
+      assert.ok(argv.includes('--body-file'));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('a reply outside the allowlist', () => {
   it('refuses before running gh', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-reply-denied-'));

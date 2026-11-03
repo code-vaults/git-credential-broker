@@ -25,6 +25,7 @@ const KNOWN_FLAGS = new Set([
   'help', 'h', 'draft', 'close', 'comment', 'file', 'line', 'side', 'threads',
   'reply-to', 'edit', 'resolve', 'id', 'jq', 'proxy', 'no-proxy', 'socket', 'host', 'repo',
   'head', 'base', 'title', 'body', 'body-file', 'number', 'as-user', 'via-host', 'status',
+  'approve', 'request-changes', 'review-comment',
 ]);
 
 /** Longer than a credential request: a token is minted, then the action is performed. */
@@ -60,6 +61,9 @@ Acting on one
   --proxy <url>        Use this proxy for this request
   --no-proxy           Reach GitHub directly for this request
   --status             Report its state, mergeability and the runs for its commit
+  --approve            Submit an approving review as the host account (needs --as-user <login>)
+  --request-changes    Request changes; needs --as-user <login> and --body/--body-file
+  --review-comment     Leave a review comment; needs --as-user <login> and --body/--body-file
   --comment            Post an anchored review comment (also needs --file and --line);
                        for a plain comment use: gcb gh pr comment <number> --body ...
   --file <path>        Anchor that comment to a line of this file, repository-relative
@@ -98,6 +102,7 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
   // below — reading only `value` let a bare `--edit` fall through to `update`, which patched the pull
   // request itself with the body meant for the comment.
   const present = (name: string): boolean => args.has(name) || args.value(name) !== undefined;
+  if (args.has('approve') || args.has('request-changes') || args.has('review-comment')) return 'host-review' as const;
   if (present('resolve')) return 'resolve' as const;
   if (present('reply-to')) return 'reply' as const;
   if (present('edit')) return 'edit' as const;
@@ -116,7 +121,7 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
  */
 export async function runPr(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, {
-    booleans: ['help', 'draft', 'status', 'comment', 'threads', 'no-proxy'],
+    booleans: ['help', 'draft', 'status', 'comment', 'threads', 'no-proxy', 'approve', 'request-changes', 'review-comment'],
   });
   if (args.has('help') || args.has('h')) {
     say(PR_USAGE);
@@ -139,6 +144,13 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   // is missing. An anchored comment (--file and --line) is still this command's to post.
   if (args.has('comment') && args.value('file') === undefined && args.value('line') === undefined) {
     fail('--comment only posts an anchored review comment; pass --file and --line');
+  }
+
+  if (
+    args.has('comment') &&
+    (args.has('approve') || args.has('request-changes') || args.has('review-comment'))
+  ) {
+    fail('--comment is an anchored review comment; use --review-comment for a review body');
   }
 
   if (args.has('no-proxy') && args.value('proxy') !== undefined) {
@@ -184,9 +196,9 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (accounts.length > 1) fail('--as-user may only be given once');
   if (asUser && accounts.length > 0) fail('--as-user cannot be both bare and given a login');
   const account = accounts[0];
-  if (account !== undefined && action !== 'open' && action !== 'reply') {
+  if (account !== undefined && action !== 'open' && action !== 'reply' && action !== 'host-review') {
     fail(
-      '--as-user <login> only opens or replies through the host broker; use bare --as-user for ' +
+      '--as-user <login> only opens, replies or reviews through the host broker; use bare --as-user for ' +
         JSON.stringify(action),
     );
   }
@@ -314,6 +326,44 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     if (args.has('no-proxy')) ghArgs.push('--no-proxy');
     else if (args.value('proxy') !== undefined) ghArgs.push('--proxy', args.value('proxy') as string);
     return runGh(ghArgs, { unreachableExitCode: 3 });
+  }
+
+  if (action === 'host-review') {
+    if (
+      ['threads', 'status', 'comment', 'reply-to', 'edit', 'resolve', 'close', 'file', 'line', 'side'].some(
+        (name) => args.has(name) || args.value(name) !== undefined,
+      )
+    ) {
+      fail('--approve/--request-changes/--review-comment cannot be combined with another action');
+    }
+    if (account === undefined) fail('--approve, --request-changes and --review-comment need --as-user <login>');
+    if (number === undefined) fail('submitting a review needs --number');
+    const events = [
+      args.has('approve') ? 'approve' : undefined,
+      args.has('request-changes') ? 'request-changes' : undefined,
+      args.has('review-comment') ? 'comment' : undefined,
+    ].filter((event): event is 'approve' | 'request-changes' | 'comment' => event !== undefined);
+    if (events.length !== 1) fail('choose exactly one of --approve, --request-changes or --review-comment');
+    const event = events[0] as 'approve' | 'request-changes' | 'comment';
+    if (event !== 'approve' && (body === undefined || body.trim() === '')) {
+      fail(`--${event === 'comment' ? 'review-comment' : 'request-changes'} needs --body or --body-file`);
+    }
+    return submitToOpener(
+      {
+        kind: 'review',
+        repo,
+        host,
+        number: Number(number),
+        event,
+        body: body ?? '',
+        account,
+        proxy,
+        session: 'pr',
+        pid: process.pid,
+      },
+      (answer) =>
+        `submitted ${event} review on #${answer.number ?? '?'} as ${account}${answer.url === undefined ? '' : `: ${answer.url}`}`,
+    );
   }
 
   if (account !== undefined && action === 'reply') {
