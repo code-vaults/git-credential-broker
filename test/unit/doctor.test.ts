@@ -189,6 +189,7 @@ describe('gcb doctor', () => {
       fs.writeFileSync(host.config, fs.readFileSync(host.config, 'utf8').replace(/auditPath: .*\n/, "auditPath: ''\n"));
       const text = output(['--config', host.config]);
       assert.match(text, /no auditPath configured/);
+      assert.doesNotMatch(text, /^audit:/m, 'an empty audit path is not printed as configured');
     } finally {
       host.cleanup();
     }
