@@ -1,5 +1,6 @@
 /** The client-side identity flags: the bare/value conflict. */
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -337,6 +338,46 @@ describe('gcb pr identity flags', () => {
       }
       assert.ok(request, 'the request reached the host broker');
       assert.equal(request?.repo, 'acme/widget');
+      writeResult(dir, id as string, { number: 7, url: 'https://github.com/acme/widget/pull/7' });
+      const result = await pending;
+      assert.equal(result.status, 0);
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it('does not turn a checkout-derived repo into an explicit one', async () => {
+    const repo = checkout();
+    execFileSync('git', ['init', '-q'], { cwd: repo.root });
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widget.git'], { cwd: repo.root });
+    const dir = channelDir(path.join(repo.root, '.git'));
+    try {
+      writeOpener(dir, { pid: process.pid, kinds: ['pull-request'] });
+      const pending = tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          'create',
+          '--as-user',
+          'alice',
+          '--head',
+          'feat/x',
+          '--title',
+          'a title',
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      let id: string | undefined;
+      let request;
+      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+        [id] = listRequests(dir);
+        request = id === undefined ? undefined : readRequest(dir, id);
+        if (request === undefined) await sleep(10);
+      }
+      assert.ok(request, 'the request reached the host broker');
+      assert.equal(request?.repo, undefined);
       writeResult(dir, id as string, { number: 7, url: 'https://github.com/acme/widget/pull/7' });
       const result = await pending;
       assert.equal(result.status, 0);

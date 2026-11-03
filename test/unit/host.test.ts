@@ -3,8 +3,8 @@
  *
  * The channel helpers are tested elsewhere; what this covers is the part that had none: a request
  * arriving, the argument list built for the program, the answer written back, and the two properties the
- * whole arrangement rests on — that the program is called without a shell, and that the repository is the
- * checkout the request was written in rather than anything the request asked for.
+ * whole arrangement rests on — that the program is called without a shell, and that a repository is
+ * either the checkout the request was written in or the explicit allowlisted repo it names.
  */
 import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -23,10 +23,9 @@ describe('the opener, once', () => {
   let argvFile = '';
 
   before(() => {
-    root = mkdtempSync(join(tmpdir(), 'host-opener-test-'));
+    root = mkdtempSync(join(tmpdir(), 'host-broker-test-'));
     repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
-    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     dir = channelDir(join(repo, '.git'));
     // A program that records what it was called with, and answers the way gh does.

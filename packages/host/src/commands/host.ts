@@ -182,7 +182,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
 
   say(single === undefined ? `serving the checkouts under ${scanned.join(', ')}` : `serving ${single}`);
   say(
-    `creating pull requests, issues and forks with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
+    `creating pull requests, issues, replies and forks with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
   );
 
   for (;;) {
