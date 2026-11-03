@@ -394,7 +394,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     const ghArgs = ['pr', 'review', String(number), '--repo', repo, '--host', host];
     if (event === 'approve') ghArgs.push('--approve');
     else ghArgs.push(event === 'request-changes' ? '--request-changes' : '--comment');
-    if (body !== undefined) ghArgs.push('--body', body);
+    if (body !== undefined) ghArgs.push(`--body=${body}`);
     const socketArg = args.value('socket');
     if (socketArg !== undefined) ghArgs.push('--socket', socketArg);
     if (args.has('no-proxy')) ghArgs.push('--no-proxy');
