@@ -179,7 +179,7 @@ export function runDoctor(argv: readonly string[]): number {
         (typeof last.reason === 'string' ? ` — ${last.reason}` : ''),
     );
   }
-  if (auditPath !== null) {
+  if (auditPath) {
     say(`audit: ${auditPath} (configured; the running daemon may still use its startup path)`);
   }
   if (config !== undefined) say(`socket: ${socketLine(config.socketPath, config.socketMode)}`);
