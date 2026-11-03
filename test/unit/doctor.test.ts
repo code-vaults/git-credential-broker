@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
@@ -16,6 +17,7 @@ function fixture(): { root: string; config: string; audit: string; cleanup: () =
     config,
     [
       `socketPath: ${path.join(root, 'broker.sock')}`,
+      'socketMode: 384',
       `auditPath: ${audit}`,
       'hosts:',
       '  github.com:',
@@ -138,14 +140,12 @@ describe('gcb doctor', () => {
   it('finds a config record that straddles a 64 KiB audit chunk', () => {
     const host = fixture();
     try {
-      const filler = 'x'.repeat(64 * 1024 - 40);
-      fs.writeFileSync(
-        host.audit,
-        JSON.stringify({ ts: '2026-01-01T00:00:00.000Z', event: 'allow', filler }) +
-          '\n' +
-          JSON.stringify({ ts: '2026-01-01T00:04:00.000Z', event: 'config', decision: 'reload' }) +
-          '\n',
-      );
+      const record = JSON.stringify({ ts: '2026-01-01T00:04:00.000Z', event: 'config', decision: 'reload' });
+      const target = 64 * 1024 + 10;
+      const filler = 'x'.repeat(target - record.length - 2);
+      fs.writeFileSync(host.audit, `${record}\n${filler}\n`);
+      const size = fs.statSync(host.audit).size;
+      assert.ok(size > 64 * 1024 && size - 64 * 1024 < record.length, 'the read boundary is inside the record');
       const text = output(['--config', host.config]);
       assert.match(text, /last reload: reload at 2026-01-01T00:04:00.000Z \(digest unknown\)/);
     } finally {
@@ -162,6 +162,32 @@ describe('gcb doctor', () => {
       fs.writeFileSync(host.config, `auditPath: ${audit}\nhosts: [unterminated\n`);
       const text = output(['--config', host.config], 1);
       assert.match(text, /last reload: reload at 2026-01-01T00:05:00.000Z/);
+    } finally {
+      host.cleanup();
+    }
+  });
+
+  it('reports a socket mode mismatch against the configured mode', async () => {
+    const host = fixture();
+    const socketPath = path.join(host.root, 'broker.sock');
+    const server = net.createServer();
+    try {
+      await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+      fs.chmodSync(socketPath, 0o644);
+      const text = output(['--config', host.config]);
+      assert.match(text, /socket: present \(mode 644, expected 600\):/);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      host.cleanup();
+    }
+  });
+
+  it('treats an empty auditPath as no log', () => {
+    const host = fixture();
+    try {
+      fs.writeFileSync(host.config, fs.readFileSync(host.config, 'utf8').replace(/auditPath: .*\n/, "auditPath: ''\n"));
+      const text = output(['--config', host.config]);
+      assert.match(text, /no auditPath configured/);
     } finally {
       host.cleanup();
     }

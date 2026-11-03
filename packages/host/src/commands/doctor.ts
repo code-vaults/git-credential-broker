@@ -136,7 +136,7 @@ export function runDoctor(argv: readonly string[]): number {
 
   say(loadError === undefined ? `config: ${path} ok` : `config: ${path} invalid: ${loadError.message}`);
   say(`digest: ${digest}`);
-  if (auditPath === null) {
+  if (auditPath === null || auditPath === "") {
     say('last reload: (no auditPath configured)');
   } else if (last === undefined) {
     say('last reload: (no config record in the audit log)');
