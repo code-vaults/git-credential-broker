@@ -218,7 +218,7 @@ describe('gcb doctor', () => {
       await new Promise<void>((resolve) => server.listen(socketPath, resolve));
       fs.writeFileSync(host.config, fs.readFileSync(host.config, 'utf8').replace(/socketPath: .*\n/, `socketPath: ${socketPath}\n`));
       const text = await output(['--config', host.config]);
-      assert.match(text, /last reload: reload at 2026-01-01T00:09:00.000Z/);
+      assert.match(text, /last reload \(historical, from configured audit log\): reload at 2026-01-01T00:09:00.000Z/);
       assert.match(text, new RegExp(`audit: ${host.audit} \\(configured; the running daemon writes no audit log\\)`));
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));

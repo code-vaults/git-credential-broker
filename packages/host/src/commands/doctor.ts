@@ -215,20 +215,21 @@ export async function runDoctor(
   const auditPath = activePath === undefined ? configured : (activePath ?? configured);
   const lastResult = lastConfigEvent(auditPath);
   const last = lastResult.event;
+  const reloadLabel = activePath === null ? 'last reload (historical, from configured audit log)' : 'last reload';
 
   write(loadError === undefined ? `config: ${path} ok` : `config: ${path} invalid: ${loadError.message}`);
   write(`digest: ${digest}`);
   if (!auditPath) {
-    write('last reload: (no auditPath configured)');
+    write(`${reloadLabel}: (no auditPath configured)`);
   } else if (lastResult.error !== undefined) {
-    write(`last reload: (cannot read the audit log: ${lastResult.error.message})`);
+    write(`${reloadLabel}: (cannot read the audit log: ${lastResult.error.message})`);
   } else if (last === undefined) {
-    write('last reload: (no config record in the audit log)');
+    write(`${reloadLabel}: (no config record in the audit log)`);
   } else {
     const matched =
       typeof last.digest === 'string' ? (last.digest === digest ? 'digest matches' : 'digest differs') : 'digest unknown';
     write(
-      `last reload: ${String(last.decision ?? 'unknown')} at ${String(last.ts ?? 'unknown')} (${matched})` +
+      `${reloadLabel}: ${String(last.decision ?? 'unknown')} at ${String(last.ts ?? 'unknown')} (${matched})` +
         (typeof last.reason === 'string' ? ` — ${last.reason}` : ''),
     );
   }
