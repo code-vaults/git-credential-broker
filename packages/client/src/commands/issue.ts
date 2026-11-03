@@ -91,6 +91,9 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   const account = args.values('as-user')[0];
   const command = args.positionals[0];
   if (command !== 'create') {
+    if (command !== undefined && (args.has('help') || args.has('h'))) {
+      return runGh(['issue', ...argv]);
+    }
     if (account !== undefined) {
       if (command !== 'edit' && command !== 'comment') {
         fail('--as-user <login> only creates, edits or comments on an issue');
@@ -99,22 +102,27 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
       for (const name of args.names) {
         if (!KNOWN_FLAGS.has(name)) fail('unknown option --' + name + ' for gcb issue ' + command + ' --as-user');
       }
+      if (args.positionals.length > 2) {
+        fail('unexpected argument ' + JSON.stringify(args.positionals[2]));
+      }
       const number = args.positionals[1];
       if (number === undefined || !/^[1-9][0-9]*$/.test(number) || !Number.isSafeInteger(Number(number))) {
         fail('gcb issue ' + command + ' needs a safe positive issue number');
       }
       let repo = args.value('repo');
-      let host = args.value('host');
-      if (repo === undefined || repo.trim() === '') {
+      const host = args.value('host');
+      let requestHost = host;
+      if (repo !== undefined && repo.trim() === '') fail('--repo needs a value');
+      if (repo === undefined) {
         const found = remoteRepo('origin', process.cwd());
         if (found === undefined) fail('--as-user <login> needs --repo for issue edit or comment');
         if (host !== undefined && found.host !== host.toLowerCase()) {
           fail(`the checkout's remote is on ${found.host}, but --host is ${host}; pass --repo or --host`);
         }
         repo = `${found.owner}/${found.repo}`;
-        host = host ?? found.host;
+        requestHost = host ?? found.host;
       }
-      host ??= 'github.com';
+      requestHost ??= 'github.com';
       let body = args.value('body');
       const bodyFile = args.value('body-file');
       if (bodyFile !== undefined) {
@@ -132,7 +140,7 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
       }
       const common = {
         repo,
-        host,
+        host: requestHost,
         number: Number(number),
         account,
         proxy: args.has('no-proxy') ? null : args.value('proxy'),

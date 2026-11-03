@@ -324,6 +324,10 @@ describe('gcb issue create --as-user', () => {
       assert.equal(view.status, 0);
       assert.match(view.stdout, /Usage: gcb gh/u);
 
+      const edit = await runClient(['issue', 'edit', '--help'], host.root);
+      assert.equal(edit.status, 0);
+      assert.match(edit.stdout, /Usage: gcb gh/u);
+
       const create = await runClient(['issue', 'create', '--help'], host.root);
       assert.equal(create.status, 0);
       assert.match(create.stdout, /Usage: gcb issue create/u);
@@ -437,6 +441,20 @@ describe('gcb issue create --as-user', () => {
       );
       assert.equal(proxy.status, 1);
       assert.match(proxy.stderr, /--proxy needs a value/u);
+
+      const emptyRepo = await runClient(
+        ['issue', 'edit', '7', '--title', 'fixed', '--as-user', 'alice', '--repo', ''],
+        host.root,
+      );
+      assert.equal(emptyRepo.status, 1);
+      assert.match(emptyRepo.stderr, /--repo needs a value/u);
+
+      const extra = await runClient(
+        ['issue', 'edit', '7', '8', '--title', 'fixed', '--as-user', 'alice', '--repo', 'acme/widget'],
+        host.root,
+      );
+      assert.equal(extra.status, 1);
+      assert.match(extra.stderr, /unexpected argument "8"/u);
 
       const empty = await runClient(
         ['issue', 'edit', '7', '--as-user', '--repo', 'acme/widget'],
