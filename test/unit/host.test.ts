@@ -196,10 +196,15 @@ describe('the opener explicit-repository route', () => {
     const config = forkConfig(root, 'acme/widget');
     const dir = channelDir(join(repo, '.git'));
     const argvFile = join(root, 'argv');
+    const bodyCaptureFile = join(root, 'body');
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "https://github.com/acme/widget/pull/7"\n',
+      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' +
+        argvFile +
+        '\nwhile [ "$#" -gt 0 ]; do\n  if [ "$1" = "--body-file" ]; then cat "$2" > ' +
+        bodyCaptureFile +
+        '; break; fi\n  shift\ndone\necho "https://github.com/acme/widget/pull/7"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
@@ -445,8 +450,8 @@ describe('edit routes outside the allowlist', () => {
 
 describe('the host issue edit and comment routes', () => {
   for (const entry of [
-    { kind: 'issue-edit' as const, argv: ['issue', 'edit'], flags: ['--title=fixed', '--body-file'] },
-    { kind: 'issue-comment' as const, argv: ['issue', 'comment'], flags: ['--body-file'] },
+    { kind: 'issue-edit' as const, argv: ['issue', 'edit'], flags: ['--title=fixed', '--body-file'], body: 'updated' },
+    { kind: 'issue-comment' as const, argv: ['issue', 'comment'], flags: ['--body-file'], body: '--help' },
   ]) {
     it(`runs gh ${entry.argv.join(' ')}`, async () => {
       const root = mkdtempSync(join(tmpdir(), `host-broker-${entry.kind}-`));
@@ -456,10 +461,15 @@ describe('the host issue edit and comment routes', () => {
       const config = forkConfig(root, 'acme/widget');
       const dir = channelDir(join(repo, '.git'));
       const argvFile = join(root, 'argv');
+      const bodyCaptureFile = join(root, 'body');
       const command = join(root, 'not-gh');
       writeFileSync(
         command,
-        '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "https://github.com/acme/widget/issues/7#issuecomment-1"\n',
+        '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' +
+          argvFile +
+          '\nwhile [ "$#" -gt 0 ]; do\n  if [ "$1" = "--body-file" ]; then cat "$2" > ' +
+          bodyCaptureFile +
+          '; break; fi\n  shift\ndone\necho "https://github.com/acme/widget/issues/7#issuecomment-1"\n',
         'utf8',
       );
       chmodSync(command, 0o755);
@@ -467,8 +477,8 @@ describe('the host issue edit and comment routes', () => {
         const id = writeRequest(
           dir,
           entry.kind === 'issue-edit'
-            ? { kind: entry.kind, repo: 'acme/widget', number: 7, title: 'fixed', body: 'updated' }
-            : { kind: entry.kind, repo: 'acme/widget', number: 7, body: '--help' },
+            ? { kind: entry.kind, repo: 'acme/widget', number: 7, title: 'fixed', body: entry.body }
+            : { kind: entry.kind, repo: 'acme/widget', number: 7, body: entry.body },
         );
         const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
         assert.equal(code, 0);
@@ -477,6 +487,7 @@ describe('the host issue edit and comment routes', () => {
         assert.deepEqual(argv.slice(0, 2), entry.argv);
         assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
         for (const flag of entry.flags) assert.ok(argv.includes(flag));
+        assert.equal(readFileSync(bodyCaptureFile, 'utf8'), entry.body);
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
@@ -493,10 +504,15 @@ describe('the host edit route', () => {
     const config = forkConfig(root, 'acme/widget');
     const dir = channelDir(join(repo, '.git'));
     const argvFile = join(root, 'argv');
+    const bodyCaptureFile = join(root, 'body');
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "https://github.com/acme/widget/pull/7"\n',
+      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' +
+        argvFile +
+        '\nwhile [ "$#" -gt 0 ]; do\n  if [ "$1" = "--body-file" ]; then cat "$2" > ' +
+        bodyCaptureFile +
+        '; break; fi\n  shift\ndone\necho "https://github.com/acme/widget/pull/7"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
@@ -516,6 +532,7 @@ describe('the host edit route', () => {
       assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
       assert.ok(argv.includes('--title=fixed'));
       assert.ok(argv.includes('--body-file'));
+      assert.equal(readFileSync(bodyCaptureFile, 'utf8'), '--help');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
