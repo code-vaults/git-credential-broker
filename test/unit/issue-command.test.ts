@@ -355,6 +355,47 @@ describe('gcb issue create --as-user', () => {
     }
   });
 
+  it('takes the issue number positionally and refuses --number/value-drift flags', async () => {
+    const host = fixture();
+    try {
+      const wrong = await runClient(
+        ['issue', 'edit', '--number', '7', '--title', 'fixed', '--as-user', 'alice', '--repo', 'acme/widget'],
+        host.root,
+      );
+      assert.equal(wrong.status, 1);
+      assert.match(wrong.stderr, /unknown option --number/u);
+
+      const proxy = await runClient(
+        ['issue', 'edit', '7', '--title', 'fixed', '--as-user', 'alice', '--repo', 'acme/widget', '--proxy'],
+        host.root,
+      );
+      assert.equal(proxy.status, 1);
+      assert.match(proxy.stderr, /--proxy needs a value/u);
+
+      const both = await runClient(
+        [
+          'issue',
+          'edit',
+          '7',
+          '--title',
+          'fixed',
+          '--as-user',
+          'alice',
+          '--repo',
+          'acme/widget',
+          '--proxy',
+          'http://p:1',
+          '--no-proxy',
+        ],
+        host.root,
+      );
+      assert.equal(both.status, 1);
+      assert.match(both.stderr, /mutually exclusive/u);
+    } finally {
+      host.cleanup();
+    }
+  });
+
   it('refuses flags the host route does not carry', async () => {
     const host = fixture();
     try {

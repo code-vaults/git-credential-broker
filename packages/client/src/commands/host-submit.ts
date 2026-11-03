@@ -45,6 +45,19 @@ export function noAnswerMessage(dir: string, id: string, noun: string, timeoutMs
   );
 }
 
+/** How each request kind is named, and the capability an older host broker may lack. */
+type RequestKind = NonNullable<HostRequest['kind']>;
+const KINDS: Readonly<Record<RequestKind, { noun: string; needed?: string }>> = {
+  'pull-request': { noun: 'pull request' },
+  issue: { noun: 'issue', needed: 'issue' },
+  fork: { noun: 'fork', needed: 'fork' },
+  reply: { noun: 'reply', needed: 'reply' },
+  edit: { noun: 'edit', needed: 'edit' },
+  'issue-edit': { noun: 'issue edit', needed: 'issue-edit' },
+  'issue-comment': { noun: 'issue comment', needed: 'issue-comment' },
+  review: { noun: 'review', needed: 'review' },
+};
+
 /**
  * Write, wait for and report one host-broker request.
  *
@@ -56,18 +69,7 @@ export async function submitToHostBroker(
   request: HostRequest,
   success: (answer: HostOpenResult) => string,
 ): Promise<number> {
-  /** How each request kind is named, and the capability an older host broker may lack. */
-  const KINDS: Readonly<Record<string, { noun: string; needed?: string }>> = {
-    'pull-request': { noun: 'pull request' },
-    issue: { noun: 'issue', needed: 'issue' },
-    fork: { noun: 'fork', needed: 'fork' },
-    reply: { noun: 'reply', needed: 'reply' },
-    edit: { noun: 'edit', needed: 'edit' },
-    'issue-edit': { noun: 'issue edit', needed: 'issue-edit' },
-    'issue-comment': { noun: 'issue comment', needed: 'issue-comment' },
-    review: { noun: 'review', needed: 'review' },
-  };
-  const { noun, needed } = KINDS[request.kind ?? 'pull-request'] ?? { noun: 'request' };
+  const { noun, needed } = KINDS[request.kind ?? 'pull-request'];
   const gitDir = findGitDir(process.cwd());
   if (gitDir === undefined) fail('--as-user needs a git repository: run it from the checkout');
   const dir = channelDir(gitDir);

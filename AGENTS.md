@@ -211,8 +211,9 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   a request under `<git dir>/gcb/pr-requests` (shared with the host, untracked) for `gcb host`.
   A plain `gcb pr create` (app identity) is the exception, only when the operator explicitly asks for
   an App-authored PR; automated reviewers may skip those. The flag-only `gcb pr --as-user` form is
-  for reply, edit, comment and resolve, not for opening. Bare `issue create --as-user` uses the
-  broker's person action token; `issue create --as-user <login>` uses the host broker. It runs no
+  for review, reply, PR edit, review-comment edit/comment and resolve, not for opening. Bare `issue
+  create/edit/comment --as-user` uses the broker's person action token; the login form uses the host
+  broker. It runs no
   shell, its program is configuration, and it cannot push, merge, close or read.
 
   The host broker is started once per machine, not once per repository: it discovers the checkouts under
@@ -261,11 +262,11 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   submits reviews, replies to review comments and edits pull requests (with `--as-user <login>`),
   while bare `--as-user` through the broker also handles review, reply, resolve, edit and comment. Every other action still
   goes through the installation token.
-  On a repository the app is not installed on, a pull request can be opened and its review comments
-  replied to, edited or resolved with bare `--as-user`, but the pull request itself cannot be edited,
-  closed or merged, and neither the container nor the host broker has a route to its metadata. That is not a gap to close with a flag: acting as a
-  person, from a checkout on the host that holds the person's own credentials or an allowlisted explicit
-  repository, is the design.
+  On a repository the app is not installed on, a pull request can be opened, edited, reviewed, and its
+  review comments replied to, edited or resolved with bare `--as-user`; close and merge still have no
+  route, and neither the container nor the host broker can do them. Acting as a person, from a
+  checkout on the host that holds the person's own credentials or an allowlisted explicit repository,
+  is the design.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
   Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.yml`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by

@@ -231,6 +231,7 @@ describe('gcb pr identity flags', () => {
         ['--edit', '123', '--body', 'fixed'],
         ['--number', '7', '--comment', '--file', 'a.ts', '--line', '1', '--body', 'note'],
         ['--number', '7', '--approve'],
+        ['--number', '7', '--review-comment', '--body=--approve'],
         ['--number', '7', '--title', 'fixed'],
       ];
       for (const extra of cases) {
@@ -259,6 +260,9 @@ describe('gcb pr identity flags', () => {
         if (extra.includes('--approve')) {
           assert.equal(seen['ghAction'], 'pr:review');
           assert.deepEqual(seen['values'], { number: '7', approve: true });
+        }
+        if (extra.includes('--body=--approve')) {
+          assert.equal((seen['values'] as Record<string, unknown>)['body'], '--approve');
         }
         if (extra.includes('--title')) {
           assert.equal(seen['ghAction'], 'pr:edit');

@@ -408,6 +408,9 @@ export function requestProblems(request: HostRequest): string[] {
     if (request.body !== undefined && request.body.length > MAX_BODY_CHARS) {
       problems.push(`the body must be at most ${MAX_BODY_CHARS} characters`);
     }
+    if (request.title === undefined && request.body === undefined) {
+      problems.push('an issue edit needs a title or body');
+    }
     if (request.account !== undefined && !LOGIN.test(request.account)) {
       problems.push('the account is not a usable GitHub login');
     }
@@ -436,6 +439,9 @@ export function requestProblems(request: HostRequest): string[] {
     }
     if (request.base !== undefined && (!BRANCH.test(request.base) || request.base.includes('..'))) {
       problems.push('the base branch name is not usable');
+    }
+    if (request.title === undefined && request.body === undefined && request.base === undefined) {
+      problems.push('an edit needs a title, body or base');
     }
     if (request.account !== undefined && !LOGIN.test(request.account)) {
       problems.push('the account is not a usable GitHub login');

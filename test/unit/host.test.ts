@@ -381,6 +381,35 @@ describe('a fork outside the allowlist', () => {
   });
 });
 
+describe('a review whose temp directory cannot be made', () => {
+  it('returns the setup failure instead of leaving the request claimed', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-review-tmp-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\necho "{}"\n', 'utf8');
+    chmodSync(command, 0o755);
+    const blocked = join(root, 'not-a-directory');
+    writeFileSync(blocked, 'x');
+    const previous = process.env['TMPDIR'];
+    try {
+      process.env['TMPDIR'] = blocked;
+      const id = writeRequest(dir, { kind: 'review', repo: 'acme/widget', number: 7, event: 'comment', body: 'hi' });
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      assert.match(readResult(dir, id)?.error ?? '', /ENOTDIR|not a directory|failed/u);
+      assert.deepEqual(listRequests(dir), [], 'the claimed request is not left behind');
+    } finally {
+      if (previous === undefined) delete process.env['TMPDIR'];
+      else process.env['TMPDIR'] = previous;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('the host issue edit and comment routes', () => {
   for (const entry of [
     { kind: 'issue-edit' as const, argv: ['issue', 'edit'], flags: ['--title', 'fixed', '--body', 'updated'] },

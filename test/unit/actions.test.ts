@@ -119,6 +119,27 @@ describe('buildGhArgv', () => {
     );
   });
 
+  it('builds issue edit and comment argv', () => {
+    assert.deepEqual(buildGhArgv('issue:edit', { number: 7, title: 't' }, 'acme/widget'), [
+      'issue',
+      'edit',
+      '7',
+      '--title',
+      't',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('issue:comment', { number: 7, body: 'note' }, 'acme/widget'), [
+      'issue',
+      'comment',
+      '7',
+      '--body',
+      'note',
+      '--repo',
+      'acme/widget',
+    ]);
+  });
+
   it('accepts numeric flag values without stringifying them first', () => {
     assert.deepEqual(buildGhArgv('pr:list', { limit: 10 }, 'acme/widget'), [
       'pr',

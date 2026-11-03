@@ -136,7 +136,7 @@ threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr clos
 
 For that flag-only form, creation uses the app's installation token by default; `--as-user` without
 a value uses the broker's authorized user token for open, review, reply, resolve, edit and comment,
-and `--as-user <login>` uses the host broker for creation, review and reply. Resolving a review
+and `--as-user <login>` uses the host broker for creation, review, reply and edit. Resolving a review
 thread defaults to the user identity because the pull-request token this broker mints is narrowed to
 `pull_requests: write` and `contents: read`, while `resolveReviewThread` needs
 `contents: write` — a grant the broker gives only to the credential git pushes with, never to a
@@ -451,9 +451,9 @@ picks up. The bound exists because the walk repeats every `--interval` seconds; 
 deeper layouts. To start it once and keep it,
 `examples/gcb-host.service` is a systemd user unit; on a system without user services,
 `examples/gcb-host-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
-instance at a time, and its output in a log file. Without `--as-user`, `pr` and `issue create` use
+instance at a time, and its output in a log file. Without `--as-user`, `pr` and `issue` actions use
 the broker route as the app; bare `--as-user` selects the broker's authorized person for a pull
-request or issue; `--as-user <login>` writes a request for this host broker. With a login and no host broker
+request or issue action; `--as-user <login>` writes a request for this host broker. With a login and no host broker
 running they fail; they do not fall back to the broker route.
 
 ```sh
@@ -765,6 +765,8 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr review` | `pull_requests: write` |
 | `pr review --id` (`pr:review-by-id`) | `pull_requests: read` |
 | `issue create` | `issues: write` |
+| `issue edit` | `issues: write` |
+| `issue comment` | `issues: write` |
 | `run view` | `actions: read` |
 | `run list` | `actions: read` |
 
