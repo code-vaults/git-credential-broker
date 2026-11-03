@@ -99,12 +99,10 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   const timeoutMs = options.timeoutMs ?? getGhAction(options.action).timeoutSeconds * 1000;
 
   try {
-    // A body stays out of the process table on the two issue actions; the path is what argv carries.
+    // A body stays out of the process table; only its path reaches argv. A title still travels in
+    // argv, so this is about the free-form body rather than everything the person wrote.
     let bodyFile: string | undefined;
-    if (
-      (options.action === 'issue:edit' || options.action === 'issue:comment') &&
-      typeof options.values['body'] === 'string'
-    ) {
+    if (typeof options.values['body'] === 'string') {
       bodyFile = path.join(home, 'body.md');
       writeFileSync(bodyFile, options.values['body'], { mode: 0o600 });
     }

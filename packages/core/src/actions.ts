@@ -355,6 +355,8 @@ const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
  * @param values - the caller's positional and flag values.
  * @param repo - the validated `owner/name` repository, injected as `--repo` for a command
  *   action or substituted into the endpoint for an API action.
+ * @param bodyFile - when set, the action's `body` flag is emitted as `--body-file` with this path;
+ *   only the path reaches argv.
  * @returns the argv after the `gh` binary.
  * @throws {ActionError} on an unknown action, key, flag type, or missing required value.
  */

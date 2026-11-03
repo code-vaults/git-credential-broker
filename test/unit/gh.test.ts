@@ -46,6 +46,10 @@ describe('runGhAction', { skip: onWindows }, () => {
     for (const entry of [
       { action: 'issue:edit', values: { number: 7, body: 'secret edit' } },
       { action: 'issue:comment', values: { number: 7, body: 'secret comment' } },
+      { action: 'pr:review', values: { number: 7, approve: true, body: 'secret review' } },
+      { action: 'pr:comment', values: { number: 7, body: 'secret pr comment' } },
+      { action: 'issue:create', values: { title: 't', body: 'secret issue' } },
+      { action: 'pr:create', values: { head: 'feat/x', base: 'main', title: 't', body: 'secret pr' } },
     ]) {
       const result = await runGhAction({
         action: entry.action,
