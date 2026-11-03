@@ -53,6 +53,11 @@ function isolatedGitEnv(root: string): NodeJS.ProcessEnv {
     XDG_CONFIG_HOME: path.join(home, '.config'),
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: path.join(home, '.gitconfig'),
+    // An inherited GIT_DIR/GIT_WORK_TREE or index would point git at this checkout instead.
+    GIT_DIR: undefined,
+    GIT_WORK_TREE: undefined,
+    GIT_COMMON_DIR: undefined,
+    GIT_INDEX_FILE: undefined,
   };
 }
 
