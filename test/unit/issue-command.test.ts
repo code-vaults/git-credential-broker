@@ -337,8 +337,9 @@ describe('gcb issue create --as-user', () => {
         if (request === undefined) await sleep(10);
       }
       assert.ok(request, 'the edit reached the host broker');
-      assert.equal(request?.repo, 'acme/widget');
-      assert.equal(request?.host, 'ghe.example');
+      if (request?.kind !== 'issue-edit') throw new Error('expected an issue-edit request');
+      assert.equal(request.repo, 'acme/widget');
+      assert.equal(request.host, 'ghe.example');
       writeResult(host.dir, id as string, { number: 7, url: 'https://ghe.example/acme/widget/issues/7' });
       const result = await pending;
       assert.equal(result.status, 0);
