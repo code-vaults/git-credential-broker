@@ -410,6 +410,39 @@ describe('a review whose temp directory cannot be made', () => {
   });
 });
 
+describe('edit routes outside the allowlist', () => {
+  for (const kind of ['edit', 'issue-edit', 'issue-comment'] as const) {
+    it(`refuses ${kind} before running gh`, async () => {
+      const root = mkdtempSync(join(tmpdir(), `host-broker-${kind}-denied-`));
+      const repo = join(root, 'checkout');
+      mkdirSync(join(repo, '.git'), { recursive: true });
+      writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+      const config = forkConfig(root, 'other/repo');
+      const dir = channelDir(join(repo, '.git'));
+      const marker = join(root, 'ran');
+      const command = join(root, 'not-gh');
+      writeFileSync(command, '#!/bin/sh\ntouch ' + marker + '\necho "{}"\n', 'utf8');
+      chmodSync(command, 0o755);
+      try {
+        const id = writeRequest(
+          dir,
+          kind === 'edit'
+            ? { kind, repo: 'acme/widget', number: 7, title: 'fixed' }
+            : kind === 'issue-edit'
+              ? { kind, repo: 'acme/widget', number: 7, title: 'fixed' }
+              : { kind, repo: 'acme/widget', number: 7, body: 'note' },
+        );
+        const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
+        assert.equal(code, 0);
+        assert.match(readResult(dir, id)?.error ?? '', /not in the allowlist/u);
+        assert.equal(existsSync(marker), false);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
 describe('the host issue edit and comment routes', () => {
   for (const entry of [
     { kind: 'issue-edit' as const, argv: ['issue', 'edit'], flags: ['--title', 'fixed', '--body', 'updated'] },
