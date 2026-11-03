@@ -52,7 +52,7 @@ export function noAnswerMessage(dir: string, id: string, noun: string, timeoutMs
  * @param success - formats the success line from the answer.
  * @returns 0 after the answer is reported.
  */
-export async function submitToOpener(
+export async function submitToHostBroker(
   request: HostRequest,
   success: (answer: HostOpenResult) => string,
 ): Promise<number> {

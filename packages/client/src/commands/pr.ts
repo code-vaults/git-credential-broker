@@ -17,7 +17,7 @@ import { LOGIN } from 'gcb-core';
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { baseBranchFor, qualifiedBranch, remoteRepo } from './remotes.ts';
 import { runGh } from './gh.ts';
-import { submitToOpener } from './host-submit.ts';
+import { submitToHostBroker } from './host-submit.ts';
 import { fail, parseArgs, say } from 'gcb-core';
 
 /** Every flag the flag-only lifecycle understands. */
@@ -347,7 +347,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
       fail(`--${event === 'comment' ? 'review-comment' : 'request-changes'} needs --body or --body-file`);
     }
     if (account !== undefined) {
-      return submitToOpener(
+      return submitToHostBroker(
         {
           kind: 'review',
           repo,
@@ -377,7 +377,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
 
   if (account !== undefined && action === 'reply') {
     if (number === undefined || replyTo === undefined) fail('--as-user <login> needs --number and --reply-to');
-    return submitToOpener(
+    return submitToHostBroker(
       {
         kind: 'reply',
         repo,
@@ -399,7 +399,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     if (args.value('repo') !== undefined && host.toLowerCase() !== 'github.com') {
       fail('--as-user <login> with --repo only targets github.com; --host is not supported for create');
     }
-    return submitToOpener(
+    return submitToHostBroker(
       {
         ...(args.value('repo') === undefined ? {} : { repo }),
         head,

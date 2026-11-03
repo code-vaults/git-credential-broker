@@ -164,6 +164,7 @@ const PR_EDIT: GhAction = {
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
   hostUser: true,
+  appUser: true,
 };
 
 // GitHub: POST /repos/{owner}/{repo}/issues/{issue_number}/comments
@@ -222,6 +223,7 @@ const PR_REVIEW: GhAction = {
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
   hostUser: true,
+  appUser: true,
 };
 
 // GitHub: POST /repos/{owner}/{repo}/issues

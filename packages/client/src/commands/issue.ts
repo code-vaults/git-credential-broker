@@ -12,7 +12,7 @@ import { LOGIN } from 'gcb-core';
 import { fail, parseArgs, say } from 'gcb-core';
 
 import { runGh } from './gh.ts';
-import { submitToOpener } from './host-submit.ts';
+import { submitToHostBroker } from './host-submit.ts';
 
 /** Every flag the `--as-user` create path understands. */
 const KNOWN_FLAGS = new Set([
@@ -129,7 +129,7 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     }
   }
 
-  return submitToOpener(
+  return submitToHostBroker(
     {
       kind: 'issue',
       ...(repo === undefined ? {} : { repo }),
