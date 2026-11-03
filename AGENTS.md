@@ -221,9 +221,11 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   later is picked up by the next sweep. The bound is deliberate — the walk repeats every `--interval`
   seconds — and `--depth` raises it for a deeper layout. The paths on the two sides never have to
   match — each side reads and writes its own view
-  of the same `.git` directory — so only the roots it scans are host-side paths. A request is served in the
-  checkout it was written in. That is a mechanism, not a boundary: the container can edit any checkout it can
-  write, its remote included, so what a deployment controls is which roots are served and which program runs.
+  of the same `.git` directory — so only the roots it scans are host-side paths. A request without an
+  explicit `repo` is served in the checkout it was written in; one that names `repo` uses that repository
+  and is checked against the allowlist, so no checkout of the target is required. The checkout is a
+  mechanism, not a boundary: the container can edit any checkout it can write, its remote included, so
+  what a deployment controls is which roots are served, the allowlist and which program runs.
   A request also selects an account directory: any `~/.config/gh-<login>` that exists can be named, and
   a request that names none runs as the host broker's own login. That is a selector, not a gate; a
   deployment controls which account directories exist, and the container chooses among them.
@@ -263,8 +265,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   On a repository the app is not installed on, a pull request can be opened and its review comments
   replied to, edited or resolved with bare `--as-user`, but the pull request itself cannot be edited,
   closed or merged, and neither the container nor the host broker has a route to its metadata. That is not a gap to close with a flag: acting as a
-  person, from a checkout on the host that holds the person's own credentials,
-  is the design.
+  person, from a checkout on the host that holds the person's own credentials or an allowlisted explicit
+  repository, is the design.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
   Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.yml`, and takes
   the deployment directory from the file's own location. The paths *inside* it are resolved by

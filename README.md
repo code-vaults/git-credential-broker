@@ -398,7 +398,8 @@ host, beside the same checkout, and ask for it with `--as-user <login>` from the
 ```sh
 # on the host, once — it serves every checkout below $HOME
 gcb host          # --root <dir> to narrow it, repeatable
-# for repo fork or review replies, also pass --config <broker.config.yml> so its allowlist applies
+# for repo fork, review replies or an explicit --repo, also pass --config <broker.config.yml>
+# so its allowlist applies
 # or, at boot and for good: examples/gcb-host-boot.sh (see below)
 ```
 
@@ -415,8 +416,10 @@ gcb pr --as-user octocat --number 94 --reply-to 123456 --body "good point"
 ```
 
 The host broker creates pull requests and issues, replies to review comments, and forks with the gh
-account named by the request; it does not edit, close or merge. For `repo fork` it checks the
-repository against the broker config's allowlist for the request host (pass `--config`).
+account named by the request; it does not edit, close or merge. For `repo fork`, review replies and
+any request that names `--repo` explicitly, it checks the repository against the broker config's
+allowlist (pass `--config`). An explicit `--repo` needs no checkout of that repository; without it,
+the checkout decides.
 `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
 directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. The directory must
@@ -444,7 +447,7 @@ running they fail; they do not fall back to the broker route.
 # in the container: the broker's authorized person
 gcb issue create --as-user --repo owner/repo --title "An issue title" --body-file issue.md
 # or the host broker, using its gh-<login> account
-gcb issue create --as-user octocat --title "An issue title" --body-file issue.md
+gcb issue create --as-user octocat --repo owner/repo --title "An issue title" --body-file issue.md
 ```
 
 A pull request opened with the app's installation token is authored by the app, and automated

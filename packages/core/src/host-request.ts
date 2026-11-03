@@ -59,8 +59,7 @@ export const REPOSITORY = /^(?!\.+(?:\/|$))[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.
 export const HOST = /^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::\d{1,5})?$/;
 
 interface HostRequestFields {
-  /** `owner/name` as the caller believed it. Recorded, and deliberately never used: the checkout a
-   *  request was written in decides which repository it means. */
+  /** `owner/name` for an explicit-repository request; absent means the checkout decides. */
   readonly repo?: string;
   readonly title: string;
   readonly body: string;
@@ -328,6 +327,9 @@ export function requestProblems(request: HostRequest): string[] {
       problems.push('the account is not a usable GitHub login');
     }
     return problems;
+  }
+  if (request.repo !== undefined && !REPOSITORY.test(request.repo)) {
+    problems.push('the repository is not owner/name');
   }
   if (request.kind !== 'issue') {
     if (!BRANCH.test(request.head) || request.head.includes('..')) {

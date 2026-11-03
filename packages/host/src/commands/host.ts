@@ -29,6 +29,7 @@ import {
   writeOpener,
   writeResult,
   HOST,
+  REPOSITORY,
   type HostRequest,
   type HostOpenResult,
   type BrokerConfig,
@@ -54,7 +55,7 @@ result is authored by a person rather than by the app's bot. It cannot push, mer
   --root <dir>          A tree to serve, repeatable (default: $HOME)
   --depth <n>           How far below a root to look for checkouts (default: 4)
   --repo <path>         Serve this one checkout instead of discovering any
-  --config <path>       Broker config whose allowlist fork and reply requests are checked against
+  --config <path>       Broker config whose allowlist fork, reply and explicit-repository requests use
                         (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   --command <path>      The program that creates, replies or forks
                         (default: $GIT_BROKER_PR_COMMAND, else gh)
@@ -119,14 +120,14 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const command = args.value('command') ?? process.env['GIT_BROKER_PR_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
   let config: BrokerConfig | undefined;
-  /** Whether the broker config allowlist permits this host/repository for a fork or reply. */
+  /** Whether the broker config allowlist permits this host/repository for a fork, reply or explicit repository. */
   const allowed = (host: string, repo: string): boolean => {
     if (config === undefined) {
       try {
         config = loadConfig(resolveConfigPath(configPath));
       } catch (error) {
         throw new Error(
-          `a fork or reply needs the broker config allowlist: ${(error as Error).message}; pass --config or set GIT_BROKER_CONFIG`,
+          `a fork, reply or explicit repository needs the broker config allowlist: ${(error as Error).message}; pass --config or set GIT_BROKER_CONFIG`,
         );
       }
     }
@@ -400,6 +401,19 @@ async function openOne(
     }
   }
 
+  // An explicit repository is the allowlist's decision, not the checkout's: the request may name a
+  // repository this machine has no checkout of. Without one, gh still resolves the checkout.
+  const target = request.repo;
+  if (target !== undefined) {
+    if (!REPOSITORY.test(target)) return { error: `not a repository: ${JSON.stringify(target)}` };
+    try {
+      if (!allowed('github.com', target)) {
+        return { error: `repository ${target} is not in the allowlist for github.com` };
+      }
+    } catch (error) {
+      return { error: (error as Error).message };
+    }
+  }
   // The body goes to a private temp file: the program is given a path, never a string to interpret.
   const scratch = mkdtempSync(join(tmpdir(), 'gcb-'));
   const bodyFile = join(scratch, 'body.md');
@@ -412,19 +426,25 @@ async function openOne(
         ...extra,
         issue ? 'issue' : 'pr',
         'create',
-        // No `--repo`: gh resolves the repository from the checkout it runs in, which is the checkout the
-        // request was written in. That is a mechanism, not a boundary — the container can edit that checkout,
-        // its remote included. What a deployment controls is which roots are served, which program runs
-        // and which account directories exist; what this reaches is whatever the account the request
-        // names can reach.
+        // Without an explicit repository gh resolves the checkout it runs in; with one the allowlist
+        // above is the boundary, and no checkout of the target is required.
         ...(!issue && request.draft === true ? ['--draft'] : []),
+        ...(target === undefined ? [] : ['--repo', target]),
         ...(issue ? [] : ['--base', request.base, '--head', request.head]),
         '--title',
         request.title,
         '--body-file',
         bodyFile,
       ],
-      { cwd: repo, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: hostEnv(request.proxy, request.account) },
+      {
+        cwd: repo,
+        timeout: CREATE_TIMEOUT_MS,
+        maxBuffer: 1 << 20,
+        env:
+          target === undefined
+            ? hostEnv(request.proxy, request.account)
+            : forkEnv(request.proxy, request.account, 'github.com'),
+      },
     );
     const found = issue ? issueUrl(stdout) : pullRequestUrl(stdout);
     if (!found) {

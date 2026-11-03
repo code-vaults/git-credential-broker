@@ -46,7 +46,6 @@ describe('the opener, once', () => {
 
   it('fulfils a request, records the answer, and passes on what it was asked to', async () => {
     const id = writeRequest(dir, {
-      repo: 'someone/else',
       head: 'feat/thing',
       base: 'main',
       title: 'a title',
@@ -71,7 +70,7 @@ describe('the opener, once', () => {
     assert.ok(argv.includes('--body-file'));
     assert.ok(
       !argv.includes('--repo'),
-      'and never the repository the request named: the checkout decides, so a request cannot aim it elsewhere',
+      'no explicit repository: the checkout still decides',
     );
   });
 
@@ -156,6 +155,54 @@ describe('the opener issue route', () => {
       assert.ok(argv.includes('--body-file'));
       assert.ok(!argv.includes('--base'));
       assert.ok(!argv.includes('--head'));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the opener explicit-repository issue route', () => {
+  it('passes the named repository to gh instead of using the checkout', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-opener-issue-repo-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const argvFile = join(root, 'argv');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "https://github.com/acme/widget/issues/9"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, { kind: 'issue', repo: 'acme/widget', title: 'a title', body: 'a body' });
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      assert.equal(readResult(dir, id)?.number, 9);
+      const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
+      assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses an explicit repository without the allowlist config', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-opener-issue-no-config-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(join(repo, '.git'));
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\necho "https://github.com/acme/widget/issues/9"\n', 'utf8');
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, { kind: 'issue', repo: 'acme/widget', title: 'a title', body: 'a body' });
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--once']);
+      assert.equal(code, 0);
+      assert.match(readResult(dir, id)?.error ?? '', /needs the broker config allowlist/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

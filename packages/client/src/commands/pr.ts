@@ -339,7 +339,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     if (head === undefined || title === undefined) fail('--as-user needs --head and --title');
     return submitToOpener(
       {
-        repo,
+        ...(args.has('repo') ? { repo } : {}),
         head,
         base: base ?? 'main',
         title,

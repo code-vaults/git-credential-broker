@@ -142,6 +142,7 @@ describe('the host request channel', () => {
     assert.match(requestProblems({ ...GOOD, body: 'x'.repeat(70_000) }).join(' '), /body/);
     assert.deepEqual(requestProblems({ ...GOOD, account: 'octocat' }), []);
     assert.match(requestProblems({ ...GOOD, account: 'not a login' }).join(' '), /account/);
+    assert.match(requestProblems({ ...GOOD, repo: 'not a repo' }).join(' '), /repository/);
 
     assert.throws(() => writeRequest(dir, { ...GOOD, head: '../escape' }), /head branch/);
     assert.deepEqual(listRequests(dir), [], 'and a refused request is not waiting');
