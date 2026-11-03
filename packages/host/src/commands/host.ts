@@ -554,48 +554,44 @@ async function openOne(
   }
   // The body goes to a private temp file: the program is given a path, never a string to interpret.
   const issue = request.kind === 'issue';
-  let scratch: string | undefined;
   try {
-    scratch = mkdtempSync(join(tmpdir(), 'gcb-'));
-    const bodyFile = join(scratch, 'body.md');
-    writeFileSync(bodyFile, request.body, 'utf8');
-    const { stdout, stderr } = await run(
-      command,
-      [
-        ...extra,
-        issue ? 'issue' : 'pr',
-        'create',
-        // Without an explicit repository gh resolves the checkout it runs in; with one the allowlist
-        // above is the boundary, and no checkout of the target is required.
-        ...(!issue && request.draft === true ? ['--draft'] : []),
-        ...(target === undefined ? [] : ['--repo', target]),
-        ...(issue ? [] : ['--base', request.base, '--head', request.head]),
-        `--title=${request.title}`,
-        '--body-file',
-        bodyFile,
-      ],
-      {
-        cwd: repo,
-        timeout: CREATE_TIMEOUT_MS,
-        maxBuffer: 1 << 20,
-        env:
-          target === undefined
-            ? hostEnv(request.proxy, request.account)
-            : forkEnv(request.proxy, request.account, 'github.com'),
-      },
-    );
-    const found = issue ? issueUrl(stdout) : pullRequestUrl(stdout);
-    if (!found) {
-      return {
-        error: `no ${issue ? 'issue' : 'pull request'} URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}`,
-      };
-    }
-    return found;
+    return await withBodyFile(request.body, async (bodyFile) => {
+      const { stdout, stderr } = await run(
+        command,
+        [
+          ...extra,
+          issue ? 'issue' : 'pr',
+          'create',
+          // Without an explicit repository gh resolves the checkout it runs in; with one the allowlist
+          // above is the boundary, and no checkout of the target is required.
+          ...(!issue && request.draft === true ? ['--draft'] : []),
+          ...(target === undefined ? [] : ['--repo', target]),
+          ...(issue ? [] : ['--base', request.base, '--head', request.head]),
+          `--title=${request.title}`,
+          '--body-file',
+          bodyFile,
+        ],
+        {
+          cwd: repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env:
+            target === undefined
+              ? hostEnv(request.proxy, request.account)
+              : forkEnv(request.proxy, request.account, 'github.com'),
+        },
+      );
+      const found = issue ? issueUrl(stdout) : pullRequestUrl(stdout);
+      if (!found) {
+        return {
+          error: `no ${issue ? 'issue' : 'pull request'} URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}`,
+        };
+      }
+      return found;
+    });
   } catch (error) {
     const failure = error as { stderr?: string; message?: string };
     const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
     return { error: reason.slice(0, 300) || 'the command failed' };
-  } finally {
-    if (scratch !== undefined) rmSync(scratch, { recursive: true, force: true });
   }
 }
