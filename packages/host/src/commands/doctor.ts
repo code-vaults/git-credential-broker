@@ -6,15 +6,16 @@
  * good snapshot.
  */
 import { createHash } from 'node:crypto';
+import net from 'node:net';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
 import { parseDocument } from 'yaml';
 
 import { loadConfigText, readConfigText, resolveConfigPath } from '../config.ts';
-import { fail, parseArgs, say } from 'gcb-core';
+import { createLineReader, fail, parseArgs, say } from 'gcb-core';
 
 export const DOCTOR_USAGE = `Usage: gcb doctor [options]
 
-Report the configuration digest, the last reload result and the socket file.
+Report the configuration digest, the audit path, the last reload result and the socket file.
 
   --config <path>  Config file (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   -h, --help       Show this help
@@ -100,19 +101,28 @@ function socketLine(path: string, expectedMode: number): string {
   return `present (mode ${mode}${mode === expected ? '' : `, expected ${expected}`}): ${path}`;
 }
 
-/** Pull auditPath out of raw YAML even when the rest of the file is invalid. */
-function rawAuditPath(text: string): string | null {
+/**
+ * Read one string key from raw YAML when the rest of the file is invalid.
+ *
+ * @param text - the raw configuration text.
+ * @param key - the top-level key to read.
+ * @returns the value, or null when absent/empty or an unquoted null/~.
+ */
+export function rawString(text: string, key: 'auditPath' | 'socketPath'): string | null {
   try {
-    const parsed = parseDocument(text).toJS() as { auditPath?: unknown } | null;
-    if (parsed !== null && Object.hasOwn(parsed, 'auditPath')) {
-      const value = parsed.auditPath;
+    const parsed = parseDocument(text).toJS() as Record<string, unknown> | null;
+    if (parsed !== null && Object.hasOwn(parsed, key)) {
+      const value = parsed[key];
       if (typeof value === 'string') return value.trim() === '' ? null : value;
       if (value === null || value === undefined) return null;
     }
   } catch {
     // An unparseable file still gets the line-based fallback below.
   }
-  const match = /^auditPath:[ \t]*(?:"([^"]*)"|'([^']*)'|([^\n]*?)(?:[ \t]+#.*)?)$/m.exec(text);
+  const match = new RegExp(
+    `^(?:"${key}"|'${key}'|${key}):[ \\t]*(?:"([^"]*)"|'([^']*)'|([^\\n]*?))(?:[ \\t]+#.*)?$`,
+    'm',
+  ).exec(text);
   if (match?.[1] !== undefined || match?.[2] !== undefined) {
     const quoted = (match[1] ?? match[2] ?? '').trim();
     return quoted === '' ? null : quoted;
@@ -121,16 +131,56 @@ function rawAuditPath(text: string): string | null {
   return value === undefined || value === '' || value === 'null' || value === '~' ? null : value;
 }
 
+/** How long doctor waits for the daemon's ping answer. */
+const PING_TIMEOUT_MS = 500;
+
+/** Ask the running daemon which audit path it actually uses: undefined means no answer. */
+function activeAuditPath(socketPath: string): Promise<string | null | undefined> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    const socket = net.connect(socketPath);
+    const finish = (answer: string | null | undefined): void => {
+      if (settled) return;
+      settled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      socket.destroy();
+      resolve(answer);
+    };
+    timer = setTimeout(() => finish(undefined), PING_TIMEOUT_MS);
+    const reader = createLineReader({
+      onLine: (line) => {
+        try {
+          const answer = JSON.parse(line) as { ok?: unknown; auditPath?: unknown };
+          if (answer.ok === true && (answer.auditPath === null || typeof answer.auditPath === 'string')) {
+            finish(answer.auditPath === '' ? null : answer.auditPath);
+            return;
+          }
+        } catch {
+          // Not a ping answer; fall back to the configured path.
+        }
+        finish(undefined);
+      },
+    });
+    socket.on('data', reader);
+    socket.once('connect', () => socket.write(JSON.stringify({ op: 'ping' }) + '\n'));
+    socket.once('error', () => finish(undefined));
+  });
+}
+
 /**
  * Run the `doctor` command.
  *
  * @param argv - arguments after the command name.
  * @returns the process exit code.
  */
-export function runDoctor(argv: readonly string[]): number {
+export async function runDoctor(
+  argv: readonly string[],
+  write: (line: string) => void = say,
+): Promise<number> {
   const args = parseArgs(argv, { booleans: ['help'] });
   if (args.has('help') || args.has('h')) {
-    say(DOCTOR_USAGE);
+    write(DOCTOR_USAGE);
     return 0;
   }
   if (args.positionals.length > 0) fail(`unexpected argument ${JSON.stringify(args.positionals[0])}`);
@@ -159,29 +209,40 @@ export function runDoctor(argv: readonly string[]): number {
     loadError = error as Error;
   }
   const digest = createHash('sha256').update(text).digest('hex');
-  const auditPath = config !== undefined ? config.auditPath : rawAuditPath(text);
+  const configured = config !== undefined ? config.auditPath : rawString(text, 'auditPath');
+  const socketPath = config !== undefined ? config.socketPath : rawString(text, 'socketPath');
+  const activePath = socketPath === null ? undefined : await activeAuditPath(socketPath);
+  const auditPath = activePath === undefined ? configured : (activePath ?? configured);
   const lastResult = lastConfigEvent(auditPath);
   const last = lastResult.event;
+  const reloadLabel =
+    activePath === null && auditPath ? 'last reload (historical, from configured audit log)' : 'last reload';
 
-  say(loadError === undefined ? `config: ${path} ok` : `config: ${path} invalid: ${loadError.message}`);
-  say(`digest: ${digest}`);
+  write(loadError === undefined ? `config: ${path} ok` : `config: ${path} invalid: ${loadError.message}`);
+  write(`digest: ${digest}`);
   if (!auditPath) {
-    say('last reload: (no auditPath configured)');
+    write(`${reloadLabel}: (no auditPath configured)`);
   } else if (lastResult.error !== undefined) {
-    say(`last reload: (cannot read the audit log: ${lastResult.error.message})`);
+    write(`${reloadLabel}: (cannot read the audit log: ${lastResult.error.message})`);
   } else if (last === undefined) {
-    say('last reload: (no config record in the audit log)');
+    write(`${reloadLabel}: (no config record in the audit log)`);
   } else {
     const matched =
       typeof last.digest === 'string' ? (last.digest === digest ? 'digest matches' : 'digest differs') : 'digest unknown';
-    say(
-      `last reload: ${String(last.decision ?? 'unknown')} at ${String(last.ts ?? 'unknown')} (${matched})` +
+    write(
+      `${reloadLabel}: ${String(last.decision ?? 'unknown')} at ${String(last.ts ?? 'unknown')} (${matched})` +
         (typeof last.reason === 'string' ? ` — ${last.reason}` : ''),
     );
   }
   if (auditPath) {
-    say(`audit: ${auditPath} (configured; the running daemon may still use its startup path)`);
+    write(
+      activePath === undefined
+        ? `audit: ${auditPath} (configured; the running daemon may still use its startup path)`
+        : activePath === null
+          ? `audit: ${auditPath} (configured; the running daemon writes no audit log)`
+          : `audit: ${auditPath} (active daemon path)`,
+    );
   }
-  if (config !== undefined) say(`socket: ${socketLine(config.socketPath, config.socketMode)}`);
+  if (config !== undefined) write(`socket: ${socketLine(config.socketPath, config.socketMode)}`);
   return loadError === undefined ? 0 : 1;
 }
