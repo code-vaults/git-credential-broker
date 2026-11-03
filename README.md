@@ -316,7 +316,7 @@ existing file in `$VISUAL`/`$EDITOR` (it does not create a missing one; run `ini
 validates it after the editor exits.
 
 `doctor` is host-side and read-only: it validates the config, prints its SHA-256 digest, the last
-`config` audit record and whether the socket file is present.
+`config` audit record, and the socket state (socket, missing, symlink or another file).
 
 `diagnose` asks GitHub what the app can actually see — the only reliable way to tell "repository
 does not exist" from "not selected for this installation", which GitHub reports identically. It reads the

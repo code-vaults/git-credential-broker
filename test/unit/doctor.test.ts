@@ -124,6 +124,49 @@ describe('gcb doctor', () => {
     }
   });
 
+  it('reports a symlink where the broker expects a socket', () => {
+    const host = fixture();
+    try {
+      fs.symlinkSync(path.join(host.root, 'elsewhere'), path.join(host.root, 'broker.sock'));
+      const text = output(['--config', host.config]);
+      assert.match(text, /socket: symlink \(broker refuses\):/);
+    } finally {
+      host.cleanup();
+    }
+  });
+
+  it('finds a config record that straddles a 64 KiB audit chunk', () => {
+    const host = fixture();
+    try {
+      const filler = 'x'.repeat(64 * 1024 - 40);
+      fs.writeFileSync(
+        host.audit,
+        JSON.stringify({ ts: '2026-01-01T00:00:00.000Z', event: 'allow', filler }) +
+          '\n' +
+          JSON.stringify({ ts: '2026-01-01T00:04:00.000Z', event: 'config', decision: 'reload' }) +
+          '\n',
+      );
+      const text = output(['--config', host.config]);
+      assert.match(text, /last reload: reload at 2026-01-01T00:04:00.000Z \(digest unknown\)/);
+    } finally {
+      host.cleanup();
+    }
+  });
+
+  it('keeps a hash in an audit path when the config is invalid', () => {
+    const host = fixture();
+    try {
+      const audit = path.join(host.root, 'a#1', 'audit.jsonl');
+      fs.mkdirSync(path.dirname(audit));
+      fs.writeFileSync(audit, JSON.stringify({ ts: '2026-01-01T00:05:00.000Z', event: 'config', decision: 'reload' }) + '\n');
+      fs.writeFileSync(host.config, `auditPath: ${audit}\nhosts: [unterminated\n`);
+      const text = output(['--config', host.config], 1);
+      assert.match(text, /last reload: reload at 2026-01-01T00:05:00.000Z/);
+    } finally {
+      host.cleanup();
+    }
+  });
+
   it('reports no reload record when the audit log is absent', () => {
     const host = fixture();
     try {

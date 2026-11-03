@@ -88,8 +88,8 @@ function socketLine(path: string, expectedMode: number): string {
 
 /** Pull auditPath out of raw YAML even when the rest of the file is invalid. */
 function rawAuditPath(text: string): string | null {
-  const match = /^auditPath:\s*(?:"([^"]*)"|'([^']*)'|([^#\n]+))/m.exec(text);
-  const value = match?.[1] ?? match?.[2] ?? match?.[3]?.trim();
+  const match = /^auditPath:\s*(?:"([^"]*)"|'([^']*)'|([^\n]*?)(?:[ \t]+#.*)?)$/m.exec(text);
+  const value = (match?.[1] ?? match?.[2] ?? match?.[3])?.trim();
   return value === undefined || value === '' ? null : value;
 }
 
@@ -118,7 +118,11 @@ export function runDoctor(argv: readonly string[]): number {
   let config: ReturnType<typeof loadConfigText> | undefined;
   let text: string;
   let loadError: Error | undefined;
-  text = readConfigText(path);
+  try {
+    text = readConfigText(path);
+  } catch (error) {
+    fail((error as Error).message);
+  }
   try {
     // One read: the digest must describe the bytes that were validated, even if the host replaces
     // the file between the load and the report.
@@ -127,7 +131,7 @@ export function runDoctor(argv: readonly string[]): number {
     loadError = error as Error;
   }
   const digest = createHash('sha256').update(text).digest('hex');
-  const auditPath = config?.auditPath ?? rawAuditPath(text);
+  const auditPath = config !== undefined ? config.auditPath : rawAuditPath(text);
   const last = lastConfigEvent(auditPath);
 
   say(loadError === undefined ? `config: ${path} ok` : `config: ${path} invalid: ${loadError.message}`);
