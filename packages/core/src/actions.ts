@@ -358,7 +358,12 @@ const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
  * @returns the argv after the `gh` binary.
  * @throws {ActionError} on an unknown action, key, flag type, or missing required value.
  */
-export function buildGhArgv(name: string, values: ActionValues, repo: string): string[] {
+export function buildGhArgv(
+  name: string,
+  values: ActionValues,
+  repo: string,
+  bodyFile?: string,
+): string[] {
   const action = getGhAction(name);
   const [owner, repository] = repo.split('/');
   if (
@@ -436,6 +441,11 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
       continue;
     }
 
+    if (flag.name === 'body' && bodyFile !== undefined) {
+      argv.push('--body-file', bodyFile);
+      present.add(flag.name);
+      continue;
+    }
     if (flag.repeatable === true) {
       for (const item of asStringList(value, flag.name)) {
         argv.push(`--${flag.name}`, flag.type === 'number' ? String(asNumber(item, flag.name)) : item);
