@@ -192,7 +192,7 @@ describe('gcb doctor', () => {
         const answer = JSON.stringify({ ok: true, auditPath: active }) + '\n';
         // Split the frame across data events; the line reader must reassemble it.
         socket.write(answer.slice(0, 12));
-        socket.end(answer.slice(12));
+        setTimeout(() => socket.end(answer.slice(12)), 10);
       });
     });
     try {
@@ -226,7 +226,8 @@ describe('gcb doctor', () => {
     }
   });
 
-  it('falls back within the ping bound when the daemon never answers', async () => {
+  it('falls back within the ping bound when the daemon never answers', { timeout: 5_000 }, async () => {
+    const started = Date.now();
     const host = fixture();
     const socketPath = path.join(host.root, 'silent.sock');
     const server = net.createServer((socket) => {
@@ -239,6 +240,7 @@ describe('gcb doctor', () => {
       fs.writeFileSync(host.config, fs.readFileSync(host.config, 'utf8').replace(/socketPath: .*\n/, `socketPath: ${socketPath}\n`));
       const text = await output(['--config', host.config]);
       assert.match(text, /audit: .* \(configured; the running daemon may still use its startup path\)/);
+      assert.ok(Date.now() - started < 1_500, 'the ping bound is 500ms, not seconds');
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       host.cleanup();
@@ -260,6 +262,23 @@ describe('gcb doctor', () => {
       assert.match(text, /last reload: reload at 2026-01-01T00:10:00.000Z/);
       assert.match(text, new RegExp(`audit: ${active} \\(active daemon path\\)`));
     } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      host.cleanup();
+    }
+  });
+
+  it('falls back when an older daemon omits auditPath', async () => {
+    const host = fixture();
+    const socketPath = path.join(host.root, 'old.sock');
+    const server = net.createServer((socket) => {
+      socket.once('data', () => socket.end('{"ok":true,"version":"0.9.0","hosts":[]}\n'));
+    });
+    try {
+      await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+      fs.writeFileSync(host.config, fs.readFileSync(host.config, 'utf8').replace(/socketPath: .*\n/, `socketPath: ${socketPath}\n`));
+      const text = await output(['--config', host.config]);
+      assert.match(text, /audit: .* \(configured; the running daemon may still use its startup path\)/);
+          } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       host.cleanup();
     }
