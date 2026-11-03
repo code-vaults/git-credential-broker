@@ -185,6 +185,34 @@ describe('the host request channel', () => {
     removeRequest(dir, id);
   });
 
+  it('refuses an edit with nothing to change', () => {
+    assert.throws(
+      () => writeRequest(dir, { kind: 'edit', repo: 'acme/widget', number: 7 }),
+      /edit needs a title, body or base/u,
+    );
+    assert.throws(
+      () => writeRequest(dir, { kind: 'issue-edit', repo: 'acme/widget', number: 7 }),
+      /issue edit needs a title or body/u,
+    );
+    assert.deepEqual(listRequests(dir), [], 'and neither is waiting');
+  });
+
+  it('drops an issue edit or comment whose host is not a string', () => {
+    for (const kind of ['issue-edit', 'issue-comment'] as const) {
+      mkdirSync(dir, { recursive: true });
+      const rawId = newId();
+      writeFileSync(
+        join(dir, rawId + '.json'),
+        JSON.stringify(
+          kind === 'issue-edit'
+            ? { v: 1, id: rawId, kind, repo: 'acme/widget', number: 7, title: 't', host: 42 }
+            : { v: 1, id: rawId, kind, repo: 'acme/widget', number: 7, body: 'b', host: 42 },
+        ),
+      );
+      assert.equal(claimRequest(dir, rawId), undefined, kind + ' with a non-string host is not claimed');
+    }
+  });
+
   it('carries a fork request without branches or text', async () => {
     const fork = { kind: 'fork' as const, repo: 'acme/widget', account: 'octocat' };
     assert.deepEqual(requestProblems(fork), []);

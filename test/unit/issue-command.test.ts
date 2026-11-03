@@ -3,6 +3,7 @@
  * and one successful submission answered by a fake opener.
  */
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -316,6 +317,31 @@ describe('gcb issue create --as-user', () => {
       const other = await runClient(['issue', 'view', '1', '--as-user', 'alice'], host.root);
       assert.equal(other.status, 1);
       assert.match(other.stderr, /--as-user <login> only creates, edits or comments/u);
+    } finally {
+      host.cleanup();
+    }
+  });
+
+  it('resolves the issue repository and host from origin', async () => {
+    const host = fixture();
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: host.root });
+      execFileSync('git', ['remote', 'add', 'origin', 'git@ghe.example:acme/widget.git'], { cwd: host.root });
+      writeOpener(host.dir, { pid: process.pid, kinds: ['issue-edit'] });
+      const pending = runClient(['issue', 'edit', '7', '--title', 'fixed', '--as-user', 'alice'], host.root);
+      let id: string | undefined;
+      let request;
+      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+        id = requests(host.dir).find((candidate) => readRequest(host.dir, candidate)?.kind === 'issue-edit');
+        request = id === undefined ? undefined : readRequest(host.dir, id);
+        if (request === undefined) await sleep(10);
+      }
+      assert.ok(request, 'the edit reached the host broker');
+      assert.equal(request?.repo, 'acme/widget');
+      assert.equal(request?.host, 'ghe.example');
+      writeResult(host.dir, id as string, { number: 7, url: 'https://ghe.example/acme/widget/issues/7' });
+      const result = await pending;
+      assert.equal(result.status, 0);
     } finally {
       host.cleanup();
     }
