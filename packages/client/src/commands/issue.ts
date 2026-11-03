@@ -91,7 +91,7 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   const account = args.values('as-user')[0];
   const command = args.positionals[0];
   if (command !== 'create') {
-    const helpAsValue = ['title', 'body', 'body-file'].some((name) => args.value(name) === '-h');
+    const helpAsValue = ['title', 'body-file'].some((name) => args.value(name) === '-h');
     if (command !== undefined && (args.has('help') || args.has('h') || helpAsValue)) {
       return runGh(['issue', command, '--help']);
     }
@@ -186,7 +186,7 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     if (bodyFile !== undefined) rest = forwardBodyFile(rest, bodyFile);
     return runGh(['issue', ...rest], args.has('as-user') ? { identity: 'user' } : {});
   }
-  if (args.has('help') || args.has('h')) {
+  if (args.has('help') || args.has('h') || args.value('title') === '-h' || args.value('body-file') === '-h') {
     say(ISSUE_USAGE);
     return 0;
   }

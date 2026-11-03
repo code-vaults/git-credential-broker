@@ -489,6 +489,35 @@ describe('gcb pr identity flags', () => {
     }
   });
 
+  it('treats -h in a title or body-file position as help', async () => {
+    const repo = checkout();
+    try {
+      for (const flag of ['--title', '--body-file']) {
+        const result = await tryRunAsync(
+          process.execPath,
+          [
+            '--conditions=development',
+            CLIENT_BIN,
+            'pr',
+            '--as-user',
+            'alice',
+            '--number',
+            '7',
+            flag,
+            '-h',
+            '--repo',
+            'acme/widget',
+          ],
+          { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+        );
+        assert.equal(result.status, 0, flag);
+        assert.match(result.stdout, /Usage: gcb pr/u);
+      }
+    } finally {
+      repo.cleanup();
+    }
+  });
+
   it('refuses a review comment without a body', async () => {
     const repo = checkout();
     try {

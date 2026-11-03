@@ -511,6 +511,21 @@ describe('gcb issue create --as-user', () => {
     }
   });
 
+  it('treats -h in an issue create title as help', async () => {
+    const host = fixture();
+    try {
+      const result = await runClient(
+        ['issue', 'create', '--as-user', 'alice', '--repo', 'acme/widget', '--title', '-h', '--body', 'b'],
+        host.root,
+      );
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /Usage: gcb issue/u);
+      assert.deepEqual(requests(host.dir), [], 'no request is written');
+    } finally {
+      host.cleanup();
+    }
+  });
+
   it('never writes a request for issue edit help', async () => {
     const host = fixture();
     try {

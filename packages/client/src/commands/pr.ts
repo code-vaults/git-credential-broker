@@ -129,6 +129,12 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     say(PR_USAGE);
     return 0;
   }
+  // gh.ts deliberately treats a body of exactly -h/--help as data, so only title and body-file
+  // are help here; body stays content on every command.
+  if (args.value('title') === '-h' || args.value('body-file') === '-h') {
+    say(PR_USAGE);
+    return 0;
+  }
   if (args.has('via-host') || args.value('via-host') !== undefined) {
     fail('--via-host was replaced by --as-user <login>');
   }
