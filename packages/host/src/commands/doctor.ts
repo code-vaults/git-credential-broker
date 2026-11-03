@@ -153,7 +153,7 @@ function activeAuditPath(socketPath: string): Promise<string | null | undefined>
         try {
           const answer = JSON.parse(line) as { ok?: unknown; auditPath?: unknown };
           if (answer.ok === true && (answer.auditPath === null || typeof answer.auditPath === 'string')) {
-            finish(answer.auditPath);
+            finish(answer.auditPath === '' ? null : answer.auditPath);
             return;
           }
         } catch {

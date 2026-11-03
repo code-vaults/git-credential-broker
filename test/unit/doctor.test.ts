@@ -298,6 +298,25 @@ describe('gcb doctor', () => {
     assert.equal(rawString('auditPath: null' + broken, 'auditPath'), null);
   });
 
+  it('treats an empty daemon auditPath like null', async () => {
+    const host = fixture();
+    const socketPath = path.join(host.root, 'empty-active.sock');
+    fs.writeFileSync(host.audit, JSON.stringify({ ts: '2026-01-01T00:11:00.000Z', event: 'config', decision: 'reload' }) + '\n');
+    const server = net.createServer((socket) => {
+      socket.once('data', () => socket.end('{"ok":true,"auditPath":""}\n'));
+    });
+    try {
+      await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+      fs.writeFileSync(host.config, fs.readFileSync(host.config, 'utf8').replace(/socketPath: .*\n/, `socketPath: ${socketPath}\n`));
+      const text = await output(['--config', host.config]);
+      assert.match(text, /last reload \(historical, from configured audit log\): reload at 2026-01-01T00:11:00.000Z/);
+      assert.match(text, new RegExp(`audit: ${host.audit} \\(configured; the running daemon writes no audit log\\)`));
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      host.cleanup();
+    }
+  });
+
   it('treats an empty auditPath as no log', async () => {
     const host = fixture();
     try {
