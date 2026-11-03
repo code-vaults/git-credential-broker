@@ -110,7 +110,7 @@ gcb compose --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" \
 Change only the `exec npx --yes --package … gcb` prefix to `exec gcb`, keeping `daemon --config …`:
 
 ```sh
-exec gcb daemon --config /etc/git-cred-broker/broker.config.yml
+exec gcb daemon --config /etc/git-cred-broker/config/broker.config.yml
 ```
 
 The dev image already installs the package; do **not** keep a staged `/opt/gcb` mount, or the
