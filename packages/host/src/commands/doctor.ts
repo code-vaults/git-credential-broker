@@ -102,7 +102,7 @@ function socketLine(path: string, expectedMode: number): string {
 }
 
 /** Read one string key from raw YAML when the rest of the file is invalid. */
-function rawString(text: string, key: 'auditPath' | 'socketPath'): string | null {
+export function rawString(text: string, key: 'auditPath' | 'socketPath'): string | null {
   try {
     const parsed = parseDocument(text).toJS() as Record<string, unknown> | null;
     if (parsed !== null && Object.hasOwn(parsed, key)) {

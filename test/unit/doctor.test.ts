@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 
-import { runDoctor } from '../../packages/host/src/commands/doctor.ts';
+import { rawString, runDoctor } from '../../packages/host/src/commands/doctor.ts';
 
 function fixture(): { root: string; config: string; audit: string; cleanup: () => void } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-doctor-'));
@@ -257,7 +257,7 @@ describe('gcb doctor', () => {
     });
     try {
       await new Promise<void>((resolve) => server.listen(socketPath, resolve));
-      fs.writeFileSync(host.config, `'socketPath': ${socketPath}\nhosts: [unterminated\n`);
+      fs.writeFileSync(host.config, `'socketPath': "${socketPath}"\nhosts: [unterminated\n`);
       const text = await output(['--config', host.config], 1);
       assert.match(text, /last reload: reload at 2026-01-01T00:10:00.000Z/);
       assert.match(text, new RegExp(`audit: ${active} \\(active daemon path\\)`));
@@ -282,6 +282,16 @@ describe('gcb doctor', () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       host.cleanup();
     }
+  });
+
+  it('keeps quoted paths and drops unquoted null/~ in the raw fallback', () => {
+    const broken = '\nfoo: *missing\n';
+    assert.equal(rawString('socketPath: "/tmp/a#1.sock"' + broken, 'socketPath'), '/tmp/a#1.sock');
+    assert.equal(rawString('socketPath: "null"' + broken, 'socketPath'), 'null');
+    assert.equal(rawString('socketPath: null' + broken, 'socketPath'), null);
+    assert.equal(rawString('socketPath: ~' + broken, 'socketPath'), null);
+    assert.equal(rawString('auditPath: "/tmp/a#1.jsonl"' + broken, 'auditPath'), '/tmp/a#1.jsonl');
+    assert.equal(rawString('auditPath: null' + broken, 'auditPath'), null);
   });
 
   it('treats an empty auditPath as no log', async () => {
