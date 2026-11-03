@@ -1,6 +1,6 @@
 {
   "name": "gcb-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Shared command runtime and protocol for gcb-client and gcb-host.",
   "license": "MIT",
   "author": "JounQin <admin@1stg.me>",

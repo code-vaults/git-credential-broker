@@ -1,5 +1,20 @@
 # gcb-host
 
+## 0.2.0
+
+### Minor Changes
+
+- [#61](https://github.com/code-vaults/git-credential-broker/pull/61) [`165a95d`](https://github.com/code-vaults/git-credential-broker/commit/165a95d0f0d2b2ceac3222fc038d661373eb3375) Thanks [@JounQin](https://github.com/JounQin)! - Reload `broker.config.yml` without restarting: use a directory watch plus a 5-second safety poll,
+  accept `SIGHUP`, keep the last good snapshot on a parse/validation failure, and swap providers
+  atomically. The generated sidecar mounts the configuration directory at
+  `/etc/git-cred-broker/config` and passes the matching `--config`; the key and refresh token stay
+  outside that mount. `socketPath`, `socketMode` and `auditPath` still need a restart.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - gcb-core@0.2.0
+
 ## 0.1.0
 
 ### Minor Changes
