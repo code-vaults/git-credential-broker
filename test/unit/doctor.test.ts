@@ -194,6 +194,28 @@ describe('gcb doctor', () => {
     }
   });
 
+  it('keeps a multi-byte reason when the chunk boundary splits it', () => {
+    const host = fixture();
+    try {
+      const record = JSON.stringify({
+        ts: '2026-01-01T00:07:00.000Z',
+        event: 'config',
+        decision: 'reload-failed',
+        reason: 'café 世界',
+      });
+      const offset = Buffer.byteLength(record.slice(0, record.indexOf('世'))) + 1;
+      const target = 64 * 1024 + offset;
+      const filler = 'x'.repeat(target - Buffer.byteLength(record) - 1);
+      fs.writeFileSync(host.audit, `${record}\n${filler}`);
+      assert.equal(fs.statSync(host.audit).size, target);
+      const text = output(['--config', host.config]);
+      assert.match(text, /café 世界/);
+      assert.match(text, /reload-failed/);
+    } finally {
+      host.cleanup();
+    }
+  });
+
   it('reports an unreadable audit path instead of an empty log', () => {
     const host = fixture();
     try {
