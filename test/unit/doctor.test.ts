@@ -332,6 +332,10 @@ describe('gcb doctor', () => {
       const text = await output(['--config', host.config]);
       assert.match(text, /^last reload: \(no auditPath configured\)$/m);
       assert.doesNotMatch(text, /historical/);
+      fs.writeFileSync(host.config, fs.readFileSync(host.config, 'utf8').replace(/auditPath: .*\n/, "auditPath: ''\n"));
+      const empty = await output(['--config', host.config]);
+      assert.match(empty, /^last reload: \(no auditPath configured\)$/m);
+      assert.doesNotMatch(empty, /historical/);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       host.cleanup();
