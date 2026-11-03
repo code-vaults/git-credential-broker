@@ -120,7 +120,7 @@ export function rawString(text: string, key: 'auditPath' | 'socketPath'): string
     // An unparseable file still gets the line-based fallback below.
   }
   const match = new RegExp(
-    `^(?:"${key}"|'${key}'|${key}):[ \\t]*(?:"([^"]*)"|'([^']*)'|([^\\n]*?)(?:[ \\t]+#.*)?)$`,
+    `^(?:"${key}"|'${key}'|${key}):[ \\t]*(?:"([^"]*)"|'([^']*)'|([^\\n]*?))(?:[ \\t]+#.*)?$`,
     'm',
   ).exec(text);
   if (match?.[1] !== undefined || match?.[2] !== undefined) {

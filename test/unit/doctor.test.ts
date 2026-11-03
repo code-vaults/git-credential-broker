@@ -288,6 +288,8 @@ describe('gcb doctor', () => {
     const broken = '\nfoo: *missing\n';
     assert.equal(rawString('socketPath: "/tmp/a#1.sock"' + broken, 'socketPath'), '/tmp/a#1.sock');
     assert.equal(rawString('"socketPath": "/tmp/quoted.sock"' + broken, 'socketPath'), '/tmp/quoted.sock');
+    assert.equal(rawString('socketPath: "/tmp/a#1.sock" # note' + broken, 'socketPath'), '/tmp/a#1.sock');
+    assert.equal(rawString("'auditPath': '/tmp/a#1.jsonl' # note" + broken, 'auditPath'), '/tmp/a#1.jsonl');
     assert.equal(rawString("'auditPath': '/tmp/quoted.jsonl'" + broken, 'auditPath'), '/tmp/quoted.jsonl');
     assert.equal(rawString('socketPath: "null"' + broken, 'socketPath'), 'null');
     assert.equal(rawString('socketPath: null' + broken, 'socketPath'), null);
