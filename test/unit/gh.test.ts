@@ -54,6 +54,22 @@ describe('runGhAction', { skip: onWindows }, () => {
     );
   });
 
+  it('charges the issue-target probe to the action deadline', async () => {
+    const gh = shim('sleep 2; if [ "$1" = "api" ]; then echo false; fi');
+    const started = Date.now();
+    const result = await runGhAction({
+      action: 'issue:close',
+      values: { number: 7 },
+      repo: 'acme/widget',
+      token: 'app-token',
+      ghPath: gh,
+      timeoutMs: 3_000,
+      env: { PATH: process.env.PATH },
+    });
+    assert.equal(result.timedOut, true);
+    assert.ok(Date.now() - started < 4_500, 'the probe and action share one deadline');
+  });
+
   it('keeps bodies out of the process arguments', async () => {
     const gh = shim(
       'printf "ARGS=%s\n" "$*"; while [ "$#" -gt 0 ]; do if [ "$1" = "--body-file" ]; then printf "BODY="; cat "$2"; fi; shift; done',

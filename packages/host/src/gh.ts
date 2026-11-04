@@ -5,12 +5,11 @@
  * boundary: a temp HOME/GH_CONFIG_DIR, a minimal environment, no shell, a hard timeout and an output
  * ceiling. The host user's gh configuration and token are never read.
  */
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
-import { promisify } from 'node:util';
 
 import { buildGhArgv, getGhAction, type ActionValues } from 'gcb-core';
 import { applyProxyChoice, PROXY_ENV_KEYS } from './http.ts';
@@ -55,7 +54,62 @@ export interface GhRunOptions {
  * @param options - action, values, repository and token.
  * @returns the bounded process result.
  */
-const runFile = promisify(execFile);
+/** Run the issue-target probe with a process-group deadline. */
+function probeIssueTarget(
+  command: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+  repo: string,
+  issueNumber: number,
+  timeoutMs: number,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      command,
+      ['api', `repos/${repo}/issues/${String(issueNumber)}`, '--jq', '.pull_request != null'],
+      { cwd, env, shell: false, detached: true, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let timedOut = false;
+
+    const killGroup = (signal: NodeJS.Signals): void => {
+      if (child.pid === undefined) return;
+      try {
+        process.kill(-child.pid, signal);
+      } catch {
+        child.kill(signal);
+      }
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup('SIGTERM');
+      setTimeout(() => killGroup('SIGKILL'), 200).unref();
+    }, timeoutMs);
+
+    child.stdout?.on('data', (chunk: Buffer) => {
+      if (stdout.length < 64_000) stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      if (stderr.length < 64_000) stderr += chunk.toString();
+    });
+    child.on('error', (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (timedOut) reject(new Error('issue-target probe timed out'));
+      else if (code === 0) resolve(stdout);
+      else reject(new Error(stderr.trim() || `gh api exited ${String(code)}`));
+    });
+  });
+}
 
 /** Refuse an issue-only action when the number names a pull request. */
 async function assertIssueTarget(
@@ -71,11 +125,7 @@ async function assertIssueTarget(
     throw new Error(`${String(number)} is not an issue number`);
   }
   try {
-    const { stdout } = await runFile(
-      command,
-      ['api', `repos/${repo}/issues/${String(issueNumber)}`, '--jq', '.pull_request != null'],
-      { cwd, env, timeout: timeoutMs, maxBuffer: 1 << 20 },
-    );
+    const stdout = await probeIssueTarget(command, env, cwd, repo, issueNumber, timeoutMs);
     if (stdout.trim() === 'true') {
       throw new Error(`#${String(issueNumber)} is a pull request, not an issue`);
     }
