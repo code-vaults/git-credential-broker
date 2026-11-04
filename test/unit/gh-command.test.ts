@@ -123,9 +123,16 @@ describe('gcb gh', () => {
   });
 
   it('refuses the login form and appUser-less actions', async () => {
-    const login = await runGhCli(['issue', 'comment', '7', '--body', 'x', '--as-user', 'alice', '--repo', 'acme/widget']);
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-login-'));
+    fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const login = await runGhCli(
+      ['issue', 'comment', '7', '--body', 'x', '--as-user', 'alice', '--repo', 'acme/widget'],
+      root,
+    );
+    fs.rmSync(root, { recursive: true, force: true });
     assert.equal(login.status, 1);
-    assert.match(login.stderr, /no host broker is watching|does not advertise action/u);
+    assert.match(login.stderr, /no host broker is watching/u);
 
     const unsupported = await runGhCli(['pr', 'create', '--head', 'h', '--title', 't', '--body', 'b', '--as-user', '--repo', 'acme/widget']);
     assert.equal(unsupported.status, 1);
