@@ -552,7 +552,7 @@ Every broker command also accepts a per-command choice:
 
 ```sh
 gcb gh pr view 7 --no-proxy
-gcb pr status --number 7 --proxy http://proxy.example:7890
+gcb pr --status --number 7 --proxy http://proxy.example:7890
 ```
 
 For `git push`, the credential helper has no per-command argument, so it reads
@@ -766,7 +766,7 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr edit` | `pull_requests: write` |
 | `pr close` | `pull_requests: write` |
 | `pr reopen` | `pull_requests: write` |
-| `pr checks` | `checks: read`, `statuses: read` |
+| `pr checks` | `pull_requests: read`, `checks: read`, `statuses: read` |
 | `pr status` | `pull_requests: read`, `checks: read`, `statuses: read` |
 | `pr comment` | `pull_requests: write` |
 | `pr review` | `pull_requests: write` |

@@ -399,8 +399,11 @@ export async function runGh(
     process.stderr.write('warning: the action output was truncated at the broker\x27s limit\n');
   }
   if (response.timedOut === true) {
+    const writeCaveat = Object.values(action.permissions).some((permission) => permission === 'write')
+      ? '; a write may have completed before it was killed'
+      : '';
     process.stderr.write(
-      `warning: the action timed out after ${action.timeoutSeconds}s; a write may have completed before it was killed\n`,
+      `warning: the action timed out after ${action.timeoutSeconds}s${writeCaveat}\n`,
     );
     return 1;
   }

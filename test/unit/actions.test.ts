@@ -53,16 +53,6 @@ describe('gh action catalog', () => {
     assert.deepEqual(getGhAction('pr:reopen').permissions, { pull_requests: 'write' });
     assert.deepEqual(getGhAction('issue:close').permissions, { issues: 'write' });
     assert.deepEqual(getGhAction('issue:reopen').permissions, { issues: 'write' });
-    assert.deepEqual(getGhAction('pr:checks').permissions, { checks: 'read', statuses: 'read' });
-    assert.deepEqual(getGhAction('pr:status').permissions, {
-      pull_requests: 'read',
-      checks: 'read',
-      statuses: 'read',
-    });
-    assert.deepEqual(getGhAction('issue:view').permissions, { issues: 'read' });
-    assert.deepEqual(getGhAction('issue:list').permissions, { issues: 'read' });
-    assert.equal(getGhAction('pr:checks').timeoutSeconds, 300);
-    assert.equal(getGhAction('issue:view').hostUser, false);
   });
 
   it('keeps creation token permissions narrow', () => {
@@ -149,6 +139,25 @@ describe('buildGhArgv', () => {
       buildGhArgv('pr:edit', { number: 7, title: 't', base: 'main' }, 'acme/widget'),
       ['pr', 'edit', '7', '--title', 't', '--base', 'main', '--repo', 'acme/widget'],
     );
+  });
+
+  it('declares the read-side policy', () => {
+    for (const name of ['pr:checks', 'pr:status', 'issue:view', 'issue:list']) {
+      assert.equal(getGhAction(name).hostUser, false, name);
+    }
+    assert.deepEqual(getGhAction('pr:checks').permissions, {
+      pull_requests: 'read',
+      checks: 'read',
+      statuses: 'read',
+    });
+    assert.deepEqual(getGhAction('pr:status').permissions, {
+      pull_requests: 'read',
+      checks: 'read',
+      statuses: 'read',
+    });
+    assert.deepEqual(getGhAction('issue:view').permissions, { issues: 'read' });
+    assert.deepEqual(getGhAction('issue:list').permissions, { issues: 'read' });
+    assert.equal(getGhAction('pr:checks').timeoutSeconds, 300);
   });
 
   it('builds the read action argv', () => {

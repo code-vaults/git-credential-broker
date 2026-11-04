@@ -207,7 +207,7 @@ const PR_REOPEN: GhAction = {
   hostUser: true,
 };
 
-// GitHub: GET /repos/{owner}/{repo}/commits/{ref}/check-runs and commit statuses
+// GitHub: GET /repos/{owner}/{repo}/pulls/{number} then its check-runs and commit statuses
 const PR_CHECKS: GhAction = {
   name: 'pr:checks',
   command: ['pr', 'checks'],
@@ -220,14 +220,14 @@ const PR_CHECKS: GhAction = {
     { name: 'required', type: 'boolean' },
     { name: 'template', type: 'string' },
     { name: 'watch', type: 'boolean' },
-    { name: 'web', type: 'boolean' },
   ],
-  permissions: { checks: 'read', statuses: 'read' },
+  permissions: { pull_requests: 'read', checks: 'read', statuses: 'read' },
   timeoutSeconds: 300,
   hostUser: false,
 };
 
-// GitHub: GET /repos/{owner}/{repo}/pulls and checks for the current branch
+// GitHub: the app's authored pull requests and review requests, with checks. A --repo override
+// suppresses gh's current-branch section.
 const PR_STATUS: GhAction = {
   name: 'pr:status',
   command: ['pr', 'status'],
@@ -361,7 +361,6 @@ const ISSUE_VIEW: GhAction = {
     { name: 'jq', type: 'string' },
     { name: 'json', type: 'string' },
     { name: 'template', type: 'string' },
-    { name: 'web', type: 'boolean' },
   ],
   permissions: { issues: 'read' },
   timeoutSeconds: 120,
@@ -387,7 +386,6 @@ const ISSUE_LIST: GhAction = {
     { name: 'state', type: 'string' },
     { name: 'template', type: 'string' },
     { name: 'type', type: 'string' },
-    { name: 'web', type: 'boolean' },
   ],
   permissions: { issues: 'read' },
   timeoutSeconds: 120,
