@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -25,6 +25,37 @@ function runClient(args: readonly string[], cwd?: string, input?: string): Promi
 
 function runGhCli(args: readonly string[], cwd?: string, input?: string): Promise<RunResult> {
   return runClient(['gh', ...args], cwd, input);
+}
+
+/** Run the client while keeping stdin open; an ordering bug then hangs instead of reading EOF. */
+function runClientWithOpenStdin(args: readonly string[]): Promise<RunResult> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ['--conditions=development', CLIENT_BIN, ...args], {
+      env: process.env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      finish(null);
+    }, 2_000);
+    function finish(status: number | null): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ status, stdout, stderr, error: null });
+    }
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', () => finish(null));
+    child.on('close', (status) => finish(status));
+  });
 }
 
 describe('gcb gh', () => {
@@ -90,8 +121,14 @@ describe('gcb gh', () => {
     assert.match(result.stdout, /Usage: gcb gh/u);
   });
 
+  it('shows help when -as-user is body data', async () => {
+    const result = await runClient(['gh', 'issue', 'comment', '7', '--body', '-as-user', '--help']);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /Usage: gcb gh/u);
+  });
+
   it('rejects review conflicts before reading stdin', async () => {
-    const result = await runClient([
+    const result = await runClientWithOpenStdin([
       'gh',
       'pr',
       'review',
@@ -108,7 +145,7 @@ describe('gcb gh', () => {
   });
 
   it('rejects an empty resolve id before reading stdin', async () => {
-    const result = await runClient(['pr', '--resolve=', '--body-file', '-', '--repo', 'acme/widget']);
+    const result = await runClientWithOpenStdin(['pr', '--resolve=', '--body-file', '-', '--repo', 'acme/widget']);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /--resolve needs/u);
   });
