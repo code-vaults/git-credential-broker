@@ -55,6 +55,8 @@ export interface GhAction {
   readonly flags: readonly FlagSpec[];
   /** Exactly one of these flags must be present, when set. */
   readonly exactlyOneOf?: readonly string[];
+  /** At least one of these flags must be present. */
+  readonly atLeastOneOf?: readonly string[];
   /** This body must be present when any of these flags is present. */
   readonly bodyRequiredWith?: readonly string[];
   readonly permissions: Readonly<Partial<Record<GhPermission, PermissionLevel>>>;
@@ -161,6 +163,7 @@ const PR_EDIT: GhAction = {
     { name: 'body', type: 'string' },
     { name: 'base', type: 'string' },
   ],
+  atLeastOneOf: ['title', 'body', 'base'],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
   hostUser: true,
@@ -252,6 +255,7 @@ const ISSUE_EDIT: GhAction = {
     { name: 'title', type: 'string' },
     { name: 'body', type: 'string' },
   ],
+  atLeastOneOf: ['title', 'body'],
   permissions: { issues: 'write' },
   timeoutSeconds: 120,
   hostUser: true,
@@ -461,6 +465,11 @@ export function buildGhArgv(
     present.add(flag.name);
   }
 
+  if (action.atLeastOneOf !== undefined && !action.atLeastOneOf.some((flag) => present.has(flag))) {
+    throw new ActionError(
+      `${name} needs at least one of ${action.atLeastOneOf.map((flag) => `--${flag}`).join(', ')}`,
+    );
+  }
   if (action.exactlyOneOf !== undefined) {
     const chosen = action.exactlyOneOf.filter((flag) => present.has(flag));
     if (chosen.length !== 1) {

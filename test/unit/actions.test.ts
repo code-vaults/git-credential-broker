@@ -140,6 +140,14 @@ describe('buildGhArgv', () => {
     ]);
   });
 
+  it('requires at least one edit field', () => {
+    assert.throws(() => buildGhArgv('issue:edit', { number: 7 }, 'acme/widget'), /at least one of --title, --body/u);
+    assert.throws(
+      () => buildGhArgv('pr:edit', { number: 7 }, 'acme/widget'),
+      /at least one of --title, --body, --base/u,
+    );
+  });
+
   it('validates a body before substituting the body file', () => {
     assert.throws(
       () => buildGhArgv('issue:comment', { number: 7, body: false }, 'acme/widget', '/tmp/body'),

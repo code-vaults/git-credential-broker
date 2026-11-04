@@ -139,9 +139,15 @@ export function hasSeparatedValue(
   names: readonly string[],
   value = '-h',
 ): boolean {
+  const normalizedNames = names.map((name) =>
+    name.replace(/^-h$/, '--help').replace(/^-(?=[A-Za-z])/, '--'),
+  );
   for (let index = 0; index < argv.length; index += 1) {
     if (argv[index] === '--') return false;
-    if (names.includes(argv[index] as string) && argv[index + 1] === value) return true;
+    const argument = (argv[index] as string)
+      .replace(/^-h$/, '--help')
+      .replace(/^-(?=[A-Za-z])/, '--');
+    if (normalizedNames.includes(argument) && argv[index + 1] === value) return true;
   }
   return false;
 }
