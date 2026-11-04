@@ -575,11 +575,18 @@ describe('gcb issue create --as-user', () => {
   it('lets the catalog report unknown and missing options without a login', async () => {
     const host = fixture();
     try {
-      const unknown = await runClient(['issue', 'edit', '7', '--bogus', '--repo', 'acme/widget'], host.root);
+      const socketPath = path.join(host.root, 'missing.sock');
+      const unknown = await runClient(
+        ['issue', 'edit', '7', '--bogus', '--repo', 'acme/widget', '--socket', socketPath],
+        host.root,
+      );
       assert.equal(unknown.status, 1);
       assert.match(unknown.stderr, /unknown option --bogus for gcb gh issue edit/u);
 
-      const missing = await runClient(['issue', 'edit', '7', '--title', '--repo', 'acme/widget'], host.root);
+      const missing = await runClient(
+        ['issue', 'edit', '7', '--title', '--repo', 'acme/widget', '--socket', socketPath],
+        host.root,
+      );
       assert.equal(missing.status, 1);
       assert.match(missing.stderr, /--title needs a value/u);
     } finally {

@@ -196,8 +196,6 @@ export async function runGh(
     }
     repo = found.repo;
   }
-  const socketPath = resolveSocketPath(args.value('socket'), process.env);
-  if (socketPath === undefined) fail('no broker socket is configured');
 
   for (const argument of rest) {
     if (argument === '--') break;
@@ -241,6 +239,9 @@ export async function runGh(
     if (flag.repeatable === true) values[flag.name] = entries;
     else values[flag.name] = entries[0] as string;
   }
+
+  const socketPath = resolveSocketPath(args.value('socket'), process.env);
+  if (socketPath === undefined) fail('no broker socket is configured');
 
   let response;
   try {
