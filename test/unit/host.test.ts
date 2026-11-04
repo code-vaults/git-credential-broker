@@ -89,11 +89,12 @@ describe('bounded action output', () => {
   it('appends the timeout note when the child had already written stderr', async () => {
     const result = await runBounded(
       process.execPath,
-      ['-e', 'process.stderr.write("before\n"); setTimeout(() => {}, 5000);'],
-      { cwd: tmpdir(), env: process.env, timeoutMs: 50 },
+      ['-e', 'process.stderr.write("before\\n" + "x".repeat(60000)); setTimeout(() => {}, 5000);'],
+      { cwd: tmpdir(), env: process.env, timeoutMs: 500 },
     );
     assert.equal(result.code, 1);
     assert.match(result.stderr, /before/u);
+    assert.match(result.stderr, /\[output truncated\]/u);
     assert.match(result.stderr, /timed out; a write may have completed/u);
     assert.ok(Buffer.byteLength(result.stderr) <= 48_000);
   });
