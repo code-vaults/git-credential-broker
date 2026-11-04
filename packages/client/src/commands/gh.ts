@@ -162,7 +162,7 @@ Common
   --socket <path>          Broker socket (default: GIT_BROKER_SOCKET)
   --proxy <url>            Use this proxy for this action
   --body-file <path>       Read a body from a file, or '-' for stdin, for actions that accept --body
-  --as-user [login]        Person route for create/reply/review/edit; see gcb pr/issue --help
+  --as-user [login]        Person route for create/comment/review/reply/edit; see gcb pr/issue --help
   --no-proxy               Reach GitHub directly for this action
   -h, --help               Show this help
 
