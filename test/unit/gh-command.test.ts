@@ -47,6 +47,59 @@ describe('gcb gh', () => {
     assert.match(result.stderr, /--body and --body-file are mutually exclusive/u);
   });
 
+  it('accepts bare --as-user for an appUser action', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-as-user-'));
+    const socketPath = path.join(root, 'broker.sock');
+    const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] };
+    const config: BrokerConfig = {
+      socketPath,
+      socketMode: 0o600,
+      auditPath: null,
+      tokenCacheSkewSeconds: 300,
+      hosts: { 'github.com': block },
+    };
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() };
+    let identity: string | undefined;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async (request) => {
+        identity = request.identity;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
+    try {
+      const result = await runGhCli([
+        'issue',
+        'comment',
+        '7',
+        '--body',
+        'x',
+        '--as-user',
+        '--repo',
+        'acme/widget',
+        '--socket',
+        socketPath,
+      ]);
+      assert.equal(result.status, 0);
+      assert.equal(identity, 'user');
+    } finally {
+      await broker.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses the login form and appUser-less actions', async () => {
+    const login = await runGhCli(['issue', 'comment', '7', '--body', 'x', '--as-user', 'alice', '--repo', 'acme/widget']);
+    assert.equal(login.status, 1);
+    assert.match(login.stderr, /gcb pr\/gcb issue host route/u);
+
+    const unsupported = await runGhCli(['pr', 'create', '--head', 'h', '--title', 't', '--body', 'b', '--as-user', '--repo', 'acme/widget']);
+    assert.equal(unsupported.status, 1);
+    assert.match(unsupported.stderr, /does not support --as-user/u);
+  });
+
   it('reads --body-file - from stdin', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-stdin-'));
     const socketPath = path.join(root, 'broker.sock');

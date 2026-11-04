@@ -141,6 +141,36 @@ function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionSca
   return { rest, missingValue, help, allowed };
 }
 
+/**
+ * Pull a bare --as-user out of an action's argv.
+ *
+ * `gcb gh` supports the person identity the app broker can execute. The login form belongs to the
+ * typed host routes in `gcb pr`/`gcb issue`, not to a generic gh action.
+ */
+function extractAsUser(rawRest: readonly string[]): { rest: string[]; asUser: boolean } {
+  const terminator = rawRest.indexOf('--');
+  const options = terminator === -1 ? rawRest : rawRest.slice(0, terminator);
+  const operands = terminator === -1 ? [] : rawRest.slice(terminator);
+  const out: string[] = [];
+  let asUser = false;
+  for (let index = 0; index < options.length; index += 1) {
+    const argument = options[index];
+    if (argument === '--as-user' || argument === '-as-user') {
+      const next = options[index + 1];
+      if (next !== undefined && !next.startsWith('-')) {
+        fail('--as-user <login> is a gcb pr/gcb issue host route; gcb gh only takes bare --as-user');
+      }
+      asUser = true;
+      continue;
+    }
+    if (argument?.startsWith('--as-user=') || argument?.startsWith('-as-user=')) {
+      fail('--as-user <login> is a gcb pr/gcb issue host route; gcb gh only takes bare --as-user');
+    }
+    if (argument !== undefined) out.push(argument);
+  }
+  return { rest: [...out, ...operands], asUser };
+}
+
 /** Whether a catalogued action's argv asks for help, using the same scan. */
 export function actionHelpRequested(actionName: string, rawRest: readonly string[]): boolean {
   try {
@@ -164,8 +194,9 @@ Common (gcb gh does not accept --as-user; person routes are on gcb pr / gcb issu
   --body-file <path>       Read a body from a file, or '-' for stdin, for actions that accept --body
   --no-proxy               Reach GitHub directly for this action
 
-Person routes (gcb pr / gcb issue only)
-  --as-user [login]        Authorized person or host gh account; see their --help
+Person routes
+  --as-user                App-broker person identity, for appUser actions; no login form here
+  --as-user <login>        Only gcb pr / gcb issue host routes; see their --help
   -h, --help               Show this help
 
 Commands, from the action catalog
@@ -197,19 +228,24 @@ export async function runGh(
     say(GH_USAGE);
     return 1;
   }
+  const { rest: actionArgs, asUser } = extractAsUser(rawRest);
   const actionName = `${domain}:${command}`;
   let action;
   try {
     action = getGhAction(actionName);
   } catch {
-    if (rawRest.includes('--help') || rawRest.includes('-h')) {
+    if (actionArgs.includes('--help') || actionArgs.includes('-h')) {
       say(GH_USAGE);
       return 0;
     }
     fail(`unknown gh action ${JSON.stringify(actionName)}`);
   }
 
-  const { rest, missingValue, help, allowed } = scanActionArgs(action, rawRest);
+  const identity = options.identity ?? (asUser ? 'user' : 'app');
+  if (identity === 'user' && action.appUser !== true) {
+    fail(`${actionName} does not support --as-user`);
+  }
+  const { rest, missingValue, help, allowed } = scanActionArgs(action, actionArgs);
   if (help) {
     say(GH_USAGE);
     return 0;
@@ -234,15 +270,6 @@ export async function runGh(
   for (const argument of rest) {
     if (argument === '--') break;
     const match = /^--([^=]+)/.exec(argument);
-    if (match?.[1] === 'as-user') {
-      fail(
-        domain === 'issue' && command === 'create'
-          ? 'use gcb issue create --as-user (bare for the broker user, or with a login for the host broker)'
-          : domain === 'pr' && command === 'create'
-            ? 'use gcb pr --as-user (bare for the broker user, or with a login for the host broker)'
-            : 'use gcb pr --as-user with --reply-to, --edit or --comment, or gcb issue create --as-user',
-      );
-    }
     if (match?.[1] !== undefined && !allowed.has(match[1])) {
       fail(`unknown option --${match[1]} for gcb gh ${domain} ${command}`);
     }
@@ -308,7 +335,7 @@ export async function runGh(
         path: repo,
         ghAction: actionName,
         values: values as ActionValues,
-        ...(options.identity === undefined ? {} : { identity: options.identity }),
+        ...(identity === 'user' ? { identity } : {}),
         proxy,
         session: 'gh',
         pid: process.pid,

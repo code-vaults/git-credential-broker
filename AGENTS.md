@@ -85,7 +85,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   action only with that command’s GitHub endpoint documentation and a test. Catalogued client
   subcommands dispatch through one primary adapter (`GCB_PRIMARY`, default `gh`); an unsupported
   primary fails closed, and `gcb issue` keeps only its host-login route rather than a second
-  forwarding layer.
+  forwarding layer. `gcb gh` accepts bare `--as-user` for `appUser` actions; the login form stays on
+  the typed `gcb pr` / `gcb issue` host routes.
 - **Dependencies belong to the package that uses them.** `gcb-client` has no runtime dependencies;
   `gcb-host` owns `yaml`. npm installs them; there is no esbuild/bundle step. `stage` is export-only
   and does not install or build, so a commit deployment must install its production dependencies in

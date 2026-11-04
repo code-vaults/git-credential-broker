@@ -25,6 +25,9 @@ gcb setup
 `GCB_PRIMARY` selects the CLI adapter for catalogued actions. The default is `gh`; an unsupported
 name fails closed. The host broker still performs the action.
 
+`gcb gh` accepts bare `--as-user` for actions the app broker can run with the person identity.
+The login form (`--as-user <login>`) is a typed host route on `gcb pr` / `gcb issue`.
+
 ## Requirements
 
 - Node.js 24 or newer
