@@ -72,9 +72,17 @@ function hasAsUserLogin(argv: readonly string[]): boolean {
   return false;
 }
 
+/** The boolean flags of a catalogued action, so help scanning parses values the same way. */
+function actionBooleans(domain: string, sub: string | undefined): string[] {
+  const action = sub === undefined ? undefined : GH_ACTIONS[`${domain}:${sub}`];
+  return action === undefined
+    ? []
+    : action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
+}
+
 /** Help wins over primary selection, but only when the token is not a flag value. */
-function asksHelp(argv: readonly string[]): boolean {
-  return helpRequested(parseArgs(argv, { booleans: ['help'] }), argv);
+function asksHelp(argv: readonly string[], booleans: readonly string[] = []): boolean {
+  return helpRequested(parseArgs(argv, { booleans: ['help', ...booleans] }), argv);
 }
 
 export async function runClient(argv: readonly string[], primary?: Primary): Promise<number> {
@@ -103,7 +111,7 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));
       }
       if (sub !== undefined && Object.hasOwn(GH_ACTIONS, `pr:${sub}`)) {
-        if (asksHelp(rest)) {
+        if (asksHelp(rest, actionBooleans('pr', sub))) {
           return (await import('./commands/gh.ts')).runGh(['pr', ...rest], { unreachableExitCode: 3 });
         }
         return (await choose()).run(['pr', ...rest], { unreachableExitCode: 3 });
@@ -111,7 +119,7 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
       return (await import('./commands/pr.ts')).runPr(rest);
     }
     case 'run':
-      if (asksHelp(rest)) {
+      if (asksHelp(rest, actionBooleans('run', rest[0]))) {
         return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
       }
       return (await choose()).run(['run', ...rest]);
@@ -129,10 +137,10 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
         return (await choose()).run(['issue', ...rest]);
       }
       if (hasAsUserLogin(rest)) return (await import('./commands/issue.ts')).runIssue(rest);
-      if (sub === 'create' && asksHelp(rest)) {
+      if (sub === 'create' && asksHelp(rest, actionBooleans('issue', 'create'))) {
         return (await import('./commands/issue.ts')).runIssue(rest);
       }
-      if (asksHelp(rest)) {
+      if (asksHelp(rest, actionBooleans('issue', sub))) {
         return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
       }
       const forwarded = hasAsUser(rest)

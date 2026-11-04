@@ -56,7 +56,7 @@ Common
   --host <host>            Host as configured, e.g. github.com (default: github.com)
   --socket <path>          Broker socket (default: GIT_BROKER_SOCKET)
   --proxy <url>            Use this proxy for this action
-  --body-file <path>       Read a body from a file for actions that accept --body
+  --body-file <path>       Read a body from a file, or '-' for stdin, for actions that accept --body
   --no-proxy               Reach GitHub directly for this action
   -h, --help               Show this help
 

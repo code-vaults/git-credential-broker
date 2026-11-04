@@ -14,16 +14,16 @@ import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../
 const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));
 
 /** Run the installed client as a child, so its output never replaces the test reporter. */
-function runClient(args: readonly string[], cwd?: string): Promise<RunResult> {
+function runClient(args: readonly string[], cwd?: string, input?: string): Promise<RunResult> {
   return tryRunAsync(
     process.execPath,
     ['--conditions=development', CLIENT_BIN, ...args],
-    { cwd, env: process.env, timeoutMs: 5000 },
+    { cwd, env: process.env, input, timeoutMs: 5000 },
   );
 }
 
-function runGhCli(args: readonly string[], cwd?: string): Promise<RunResult> {
-  return runClient(['gh', ...args], cwd);
+function runGhCli(args: readonly string[], cwd?: string, input?: string): Promise<RunResult> {
+  return runClient(['gh', ...args], cwd, input);
 }
 
 describe('gcb gh', () => {
@@ -45,6 +45,42 @@ describe('gcb gh', () => {
     const result = await runGhCli(['pr', 'comment', '7', '--body', 'x', '--body-file', 'f', '--repo', 'acme/widget']);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /--body and --body-file are mutually exclusive/u);
+  });
+
+  it('reads --body-file - from stdin', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-stdin-'));
+    const socketPath = path.join(root, 'broker.sock');
+    const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] };
+    const config: BrokerConfig = {
+      socketPath,
+      socketMode: 0o600,
+      auditPath: null,
+      tokenCacheSkewSeconds: 300,
+      hosts: { 'github.com': block },
+    };
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() };
+    let seen: Record<string, unknown> = {};
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async (request) => {
+        seen = { ...request.values };
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
+    try {
+      const result = await runGhCli(
+        ['pr', 'comment', '7', '--body-file', '-', '--repo', 'acme/widget', '--socket', socketPath],
+        undefined,
+        'from stdin\n',
+      );
+      assert.equal(result.status, 0);
+      assert.equal(seen['body'], 'from stdin\n');
+    } finally {
+      await broker.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('reports truncation and timed-out writes', async () => {

@@ -26,7 +26,7 @@ broker. issue edit <number> and issue comment <number> take the issue number as 
 
   --title <text>       The title (create/edit)
   --body <text>        The body, inline, or use --body-file
-  --body-file <path>   The body, read from a file
+  --body-file <path>   The body from a file, or '-' for stdin
   --repo <owner/name>  The repository; with --as-user <login> it must be in the
                        broker allowlist and needs no checkout of its own
   --as-user            Use the broker's authorized person

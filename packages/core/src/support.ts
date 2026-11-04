@@ -180,7 +180,7 @@ export function bodyFromArgs(args: Args): string | undefined {
   }
   if (file === undefined) return inline;
   try {
-    return fs.readFileSync(file, 'utf8');
+    return file === '-' ? fs.readFileSync(0, 'utf8') : fs.readFileSync(file, 'utf8');
   } catch (error) {
     fail(`cannot read ${file}: ${(error as Error).message}`);
   }

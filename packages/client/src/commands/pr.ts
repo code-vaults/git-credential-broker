@@ -45,7 +45,7 @@ Opening (the default)
                        A <remote>:<branch> here names the same repository as --repo
   --title <text>       The title                                     [required]
   --body <text>        The body, inline
-  --body-file <path>   The body, read from a file — a pull request body is usually long
+  --body-file <path>   The body from a file, or '-' for stdin — usually long
   --draft              Open it as a draft
   --as-user            Act as the authorized person through the broker for open,
                        review, reply, resolve, edit or comment; fails if no user token

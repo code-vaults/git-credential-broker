@@ -62,6 +62,7 @@ describe('the primary dispatch seam', () => {
     for (const args of [
       ['pr', '--help'],
       ['pr', 'view', '--help'],
+      ['pr', 'review', '--comment', '-h'],
       ['issue', 'edit', '--help'],
       ['issue', 'view', '--help'],
       ['run', '--help'],
