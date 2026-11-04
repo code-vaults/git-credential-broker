@@ -525,6 +525,27 @@ async function openOne(
     const host = request.host ?? 'github.com';
     return personRun(host, request.repo, allowed, async (host) => {
       const action = getGhAction(request.action);
+      if (action.target === 'issue') {
+        const number = request.values['number'];
+        if (typeof number !== 'string' && typeof number !== 'number') {
+          return { error: `${request.action} needs an issue number` };
+        }
+        const probe = await runBounded(
+          command,
+          [...extra, 'api', `repos/${request.repo}/issues/${String(number)}`, '--jq', '.pull_request != null'],
+          {
+            cwd: repo,
+            env: forkEnv(request.proxy, request.account, host),
+            timeoutMs: action.timeoutSeconds * 1_000,
+          },
+        );
+        if (probe.code !== 0) {
+          return { error: probe.stderr.trim() || 'could not verify the issue target' };
+        }
+        if (probe.stdout.trim() === 'true') {
+          return { error: `#${String(number)} is a pull request, not an issue` };
+        }
+      }
       const body = typeof request.values['body'] === 'string' ? request.values['body'] : undefined;
       const invoke = async (bodyFile?: string): Promise<HostResult> => {
         const argv = buildGhArgv(request.action, request.values, request.repo, bodyFile);

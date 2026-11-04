@@ -66,6 +66,8 @@ export interface GhAction {
   readonly timeoutSeconds: number;
   /** Whether the host broker may run this as a person with `--as-user`. */
   readonly hostUser: boolean;
+  /** The object kind this action may target, when the CLI command also accepts the other kind. */
+  readonly target?: 'issue' | 'pr';
   /** Whether the app broker may run this with `identity: 'user'`; narrower than `hostUser`. */
   readonly appUser?: boolean;
   /** When set, the executor runs `gh api` for this fixed request instead of the command above. */
@@ -297,6 +299,7 @@ const ISSUE_CLOSE: GhAction = {
   timeoutSeconds: 60,
   hostUser: true,
   appUser: true,
+  target: 'issue',
 };
 
 // GitHub: PATCH /repos/{owner}/{repo}/issues/{issue_number}
@@ -309,6 +312,7 @@ const ISSUE_REOPEN: GhAction = {
   timeoutSeconds: 60,
   hostUser: true,
   appUser: true,
+  target: 'issue',
 };
 
 // GitHub: GET /repos/{owner}/{repo}/actions/runs/{run_id}

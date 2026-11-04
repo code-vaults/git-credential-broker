@@ -5,11 +5,12 @@
  * boundary: a temp HOME/GH_CONFIG_DIR, a minimal environment, no shell, a hard timeout and an output
  * ceiling. The host user's gh configuration and token are never read.
  */
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
+import { promisify } from 'node:util';
 
 import { buildGhArgv, getGhAction, type ActionValues } from 'gcb-core';
 import { applyProxyChoice, PROXY_ENV_KEYS } from './http.ts';
@@ -54,6 +55,33 @@ export interface GhRunOptions {
  * @param options - action, values, repository and token.
  * @returns the bounded process result.
  */
+const runFile = promisify(execFile);
+
+/** Refuse an issue-only action when the number names a pull request. */
+async function assertIssueTarget(
+  command: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+  repo: string,
+  number: string | number,
+  timeoutMs: number,
+): Promise<void> {
+  try {
+    const { stdout } = await runFile(
+      command,
+      ['api', `repos/${repo}/issues/${String(number)}`, '--jq', '.pull_request != null'],
+      { cwd, env, timeout: timeoutMs, maxBuffer: 1 << 20 },
+    );
+    if (stdout.trim() === 'true') {
+      throw new Error(`#${String(number)} is a pull request, not an issue`);
+    }
+  } catch (error) {
+    const message = (error as Error).message;
+    if (message.includes('is a pull request')) throw error;
+    throw new Error(`could not verify that #${String(number)} is an issue: ${message}`);
+  }
+}
+
 export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   const maxBytes = options.maxOutputBytes ?? DEFAULT_GH_OUTPUT_BYTES;
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
@@ -96,7 +124,15 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   if (!usesJq) env.GH_TOKEN = options.token;
   applyProxyChoice(env, options.proxy);
 
-  const timeoutMs = options.timeoutMs ?? getGhAction(options.action).timeoutSeconds * 1000;
+  const action = getGhAction(options.action);
+  const timeoutMs = options.timeoutMs ?? action.timeoutSeconds * 1000;
+  if (action.target === 'issue') {
+    const number = options.values['number'];
+    if (typeof number !== 'string' && typeof number !== 'number') {
+      throw new Error(`${options.action} needs an issue number`);
+    }
+    await assertIssueTarget(options.ghPath ?? 'gh', env, home, options.repo, number, timeoutMs);
+  }
 
   try {
     // A body stays out of the process table; only its path reaches argv. A title still travels in
@@ -106,7 +142,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
       bodyFile = path.join(home, 'body.md');
       writeFileSync(bodyFile, options.values['body'], { mode: 0o600 });
     }
-    const argv = buildGhArgv(options.action, options.values, options.repo, bodyFile);
+    const argv = buildGhArgv(action.name, options.values, options.repo, bodyFile);
     return await new Promise<GhRunResult>((resolve) => {
       let stdout = '';
       let stderr = '';

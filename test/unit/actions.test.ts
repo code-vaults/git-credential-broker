@@ -44,6 +44,8 @@ describe('gh action catalog', () => {
     assert.equal(getGhAction('pr:reopen').appUser, undefined);
     assert.equal(getGhAction('issue:close').appUser, true);
     assert.equal(getGhAction('issue:reopen').appUser, true);
+    assert.equal(getGhAction('issue:close').target, 'issue');
+    assert.equal(getGhAction('issue:reopen').target, 'issue');
     assert.deepEqual(getGhAction('pr:reopen').permissions, { pull_requests: 'write' });
     assert.deepEqual(getGhAction('issue:close').permissions, { issues: 'write' });
     assert.deepEqual(getGhAction('issue:reopen').permissions, { issues: 'write' });

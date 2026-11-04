@@ -39,6 +39,21 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.doesNotMatch(result.stdout, /host-token/);
   });
 
+  it('refuses an issue-only action on a pull request', async () => {
+    const gh = shim('if [ "$1" = "api" ]; then echo true; exit 0; fi; echo SHOULD_NOT_RUN');
+    await assert.rejects(
+      runGhAction({
+        action: 'issue:close',
+        values: { number: 7 },
+        repo: 'acme/widget',
+        token: 'app-token',
+        ghPath: gh,
+        env: { PATH: process.env.PATH },
+      }),
+      /pull request, not an issue/u,
+    );
+  });
+
   it('keeps bodies out of the process arguments', async () => {
     const gh = shim(
       'printf "ARGS=%s\n" "$*"; while [ "$#" -gt 0 ]; do if [ "$1" = "--body-file" ]; then printf "BODY="; cat "$2"; fi; shift; done',
