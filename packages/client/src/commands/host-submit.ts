@@ -13,6 +13,7 @@ import {
   findGitDir,
   readOpener,
   removeResult,
+  requestProblems,
   waitForResult,
   writeRequest,
 } from 'gcb-core';
@@ -20,7 +21,7 @@ import type { HostOpenResult, HostRequest } from 'gcb-core';
 import { fail, say } from 'gcb-core';
 
 /**
- * Explain why an opener request produced no answer.
+ * Explain why a host-broker request produced no answer.
  *
  * @param dir - the channel directory.
  * @param id - the request id.
@@ -45,25 +46,33 @@ export function noAnswerMessage(dir: string, id: string, noun: string, timeoutMs
   );
 }
 
+/** How each request kind is named, and the capability an older host broker may lack. */
+type RequestKind = NonNullable<HostRequest['kind']>;
+const KINDS: Readonly<Record<RequestKind, { noun: string; needed?: string }>> = {
+  'pull-request': { noun: 'pull request' },
+  issue: { noun: 'issue', needed: 'issue' },
+  fork: { noun: 'fork', needed: 'fork' },
+  reply: { noun: 'reply', needed: 'reply' },
+  edit: { noun: 'edit', needed: 'edit' },
+  'issue-edit': { noun: 'issue edit', needed: 'issue-edit' },
+  'issue-comment': { noun: 'issue comment', needed: 'issue-comment' },
+  review: { noun: 'review', needed: 'review' },
+};
+
 /**
- * Write, wait for and report one opener request.
+ * Write, wait for and report one host-broker request.
  *
  * @param request - the validated request.
  * @param success - formats the success line from the answer.
  * @returns 0 after the answer is reported.
  */
-export async function submitToOpener(
+export async function submitToHostBroker(
   request: HostRequest,
   success: (answer: HostOpenResult) => string,
 ): Promise<number> {
-  const noun =
-    request.kind === 'fork'
-      ? 'fork'
-      : request.kind === 'issue'
-        ? 'issue'
-        : request.kind === 'reply'
-          ? 'reply'
-          : 'pull request';
+  const problems = requestProblems(request);
+  if (problems.length > 0) fail(problems.join('; '));
+  const { noun, needed } = KINDS[request.kind ?? 'pull-request'];
   const gitDir = findGitDir(process.cwd());
   if (gitDir === undefined) fail('--as-user needs a git repository: run it from the checkout');
   const dir = channelDir(gitDir);
@@ -72,17 +81,15 @@ export async function submitToOpener(
     fail(
       `no host broker is watching ${dir}\n` +
         '  start one on the host: gcb host --repo <that checkout>\n' +
-        '  or drop --as-user to open it as the app instead',
+        '  or drop --as-user to do it as the app instead',
     );
   }
-  const needed =
-    request.kind === 'issue' ? 'issue' : request.kind === 'fork' ? 'fork' : request.kind === 'reply' ? 'reply' : undefined;
   if (needed !== undefined && !(Array.isArray(opener.kinds) && opener.kinds.includes(needed))) {
     fail(`the host broker does not advertise ${needed} support; restart it from this gcb-host version`);
   }
 
-  // writeRequest refuses what the opener would refuse — a title past its limit, a body past its limit,
-  // a head equal to its base. It throws, and a stack trace tells the caller none of that.
+  // requestProblems above already checked the contract. Keep the catch as defence in case the two
+  // validators ever diverge; a stack trace would tell the caller none of it.
   let id: string;
   try {
     id = writeRequest(dir, request);
@@ -99,7 +106,7 @@ export async function submitToOpener(
   if (answer === undefined) answer = await waitForResult(dir, id, 300, 50);
   if (answer === undefined) fail(noAnswerMessage(dir, id, noun, timeoutMs));
   removeResult(dir, id);
-  if (answer.error !== undefined) fail(`the host broker could not open it: ${answer.error}`);
+  if (answer.error !== undefined) fail(`the host broker could not do it: ${answer.error}`);
   say(success(answer));
   return 0;
 }

@@ -38,6 +38,8 @@ export interface FlagSpec {
   readonly repeatable?: boolean;
   /** The flag must be present. */
   readonly required?: boolean;
+  /** The value must not be empty or whitespace-only. */
+  readonly nonEmpty?: boolean;
 }
 
 /** A fixed `gh api` request, with only typed values substituted. */
@@ -55,6 +57,8 @@ export interface GhAction {
   readonly flags: readonly FlagSpec[];
   /** Exactly one of these flags must be present, when set. */
   readonly exactlyOneOf?: readonly string[];
+  /** At least one of these flags must be present. */
+  readonly atLeastOneOf?: readonly string[];
   /** This body must be present when any of these flags is present. */
   readonly bodyRequiredWith?: readonly string[];
   readonly permissions: Readonly<Partial<Record<GhPermission, PermissionLevel>>>;
@@ -161,9 +165,11 @@ const PR_EDIT: GhAction = {
     { name: 'body', type: 'string' },
     { name: 'base', type: 'string' },
   ],
+  atLeastOneOf: ['title', 'body', 'base'],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
   hostUser: true,
+  appUser: true,
 };
 
 // GitHub: POST /repos/{owner}/{repo}/issues/{issue_number}/comments
@@ -171,7 +177,7 @@ const PR_COMMENT: GhAction = {
   name: 'pr:comment',
   command: ['pr', 'comment'],
   positionals: [{ name: 'number', type: 'number', required: true }],
-  flags: [{ name: 'body', type: 'string', required: true }],
+  flags: [{ name: 'body', type: 'string', required: true, nonEmpty: true }],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
   hostUser: true,
@@ -222,6 +228,7 @@ const PR_REVIEW: GhAction = {
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
   hostUser: true,
+  appUser: true,
 };
 
 // GitHub: POST /repos/{owner}/{repo}/issues
@@ -235,6 +242,34 @@ const ISSUE_CREATE: GhAction = {
     { name: 'label', type: 'string', repeatable: true },
     { name: 'assignee', type: 'string', repeatable: true },
   ],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 120,
+  hostUser: true,
+  appUser: true,
+};
+
+// GitHub: PATCH /repos/{owner}/{repo}/issues/{issue_number}
+const ISSUE_EDIT: GhAction = {
+  name: 'issue:edit',
+  command: ['issue', 'edit'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [
+    { name: 'title', type: 'string' },
+    { name: 'body', type: 'string' },
+  ],
+  atLeastOneOf: ['title', 'body'],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 120,
+  hostUser: true,
+  appUser: true,
+};
+
+// GitHub: POST /repos/{owner}/{repo}/issues/{issue_number}/comments
+const ISSUE_COMMENT: GhAction = {
+  name: 'issue:comment',
+  command: ['issue', 'comment'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [{ name: 'body', type: 'string', required: true, nonEmpty: true }],
   permissions: { issues: 'write' },
   timeoutSeconds: 120,
   hostUser: true,
@@ -287,6 +322,8 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:review': PR_REVIEW,
   'pr:review-by-id': PR_REVIEW_BY_ID,
   'issue:create': ISSUE_CREATE,
+  'issue:edit': ISSUE_EDIT,
+  'issue:comment': ISSUE_COMMENT,
   'run:view': RUN_VIEW,
   'run:list': RUN_LIST,
 });
@@ -324,10 +361,17 @@ const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
  * @param values - the caller's positional and flag values.
  * @param repo - the validated `owner/name` repository, injected as `--repo` for a command
  *   action or substituted into the endpoint for an API action.
+ * @param bodyFile - when set, the action's `body` flag is emitted as `--body-file` with this path;
+ *   only the path reaches argv.
  * @returns the argv after the `gh` binary.
  * @throws {ActionError} on an unknown action, key, flag type, or missing required value.
  */
-export function buildGhArgv(name: string, values: ActionValues, repo: string): string[] {
+export function buildGhArgv(
+  name: string,
+  values: ActionValues,
+  repo: string,
+  bodyFile?: string,
+): string[] {
   const action = getGhAction(name);
   const [owner, repository] = repo.split('/');
   if (
@@ -405,6 +449,15 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
       continue;
     }
 
+    if (flag.name === 'body' && bodyFile !== undefined) {
+      const text = asString(value, flag.name);
+      if (flag.nonEmpty === true && text.trim() === '') {
+        throw new ActionError(`${name} needs a non-empty --${flag.name}`);
+      }
+      argv.push('--body-file', bodyFile);
+      present.add(flag.name);
+      continue;
+    }
     if (flag.repeatable === true) {
       for (const item of asStringList(value, flag.name)) {
         argv.push(`--${flag.name}`, flag.type === 'number' ? String(asNumber(item, flag.name)) : item);
@@ -412,11 +465,20 @@ export function buildGhArgv(name: string, values: ActionValues, repo: string): s
     } else if (flag.type === 'number') {
       argv.push(`--${flag.name}`, String(asNumber(value, flag.name)));
     } else {
-      argv.push(`--${flag.name}`, asString(value, flag.name));
+      const text = asString(value, flag.name);
+      if (flag.nonEmpty === true && text.trim() === '') {
+        throw new ActionError(`${name} needs a non-empty --${flag.name}`);
+      }
+      argv.push(`--${flag.name}`, text);
     }
     present.add(flag.name);
   }
 
+  if (action.atLeastOneOf !== undefined && !action.atLeastOneOf.some((flag) => present.has(flag))) {
+    throw new ActionError(
+      `${name} needs at least one of ${action.atLeastOneOf.map((flag) => `--${flag}`).join(', ')}`,
+    );
+  }
   if (action.exactlyOneOf !== undefined) {
     const chosen = action.exactlyOneOf.filter((flag) => present.has(flag));
     if (chosen.length !== 1) {

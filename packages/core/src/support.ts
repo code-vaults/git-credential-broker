@@ -19,6 +19,10 @@ export interface Args {
   value(name: string): string | undefined;
   /** Whether a boolean flag was present. */
   has(name: string): boolean;
+  /** Whether a value-taking flag was present without its operand. */
+  missing(name: string): boolean;
+  /** Every value-taking flag that was present without its operand. */
+  readonly missingNames: readonly string[];
   /** Every option name seen, after the parser's normalization. */
   readonly names: readonly string[];
   /** Arguments that were not flags. */
@@ -29,6 +33,8 @@ export interface Args {
 export interface ParseArgsOptions {
   /** Flags that take no value. */
   readonly booleans?: readonly string[];
+  /** Flags whose value is optional, so a bare occurrence is not a missing operand. */
+  readonly optionalValues?: readonly string[];
 }
 
 /**
@@ -43,6 +49,8 @@ export interface ParseArgsOptions {
  */
 export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {}): Args {
   const booleans = new Set(options.booleans ?? []);
+  const optionalValues = new Set(options.optionalValues ?? []);
+  const missing = new Set<string>();
   const collected = new Map<string, string[]>();
   const flags = new Set<string>();
   const positionals: string[] = [];
@@ -63,6 +71,7 @@ export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {
     const equals = argument.indexOf('=');
     if (equals >= 0) {
       const name = argument.slice(2, equals);
+      if (booleans.has(name)) fail(`--${name} does not take a value`);
       collected.set(name, [...(collected.get(name) ?? []), argument.slice(equals + 1)]);
       continue;
     }
@@ -72,11 +81,18 @@ export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {
       continue;
     }
     const next = argv[index + 1];
+    // A body is data even when it spells a help flag; gh.ts documents the same exception.
+    if (name === 'body' && next === '--help') {
+      collected.set(name, [...(collected.get(name) ?? []), next]);
+      index += 1;
+      continue;
+    }
     if (next !== undefined && !next.startsWith('--')) {
       collected.set(name, [...(collected.get(name) ?? []), next]);
       index += 1;
     } else {
       flags.add(name);
+      if (!optionalValues.has(name)) missing.add(name);
     }
   }
 
@@ -84,9 +100,97 @@ export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {
     values: (name) => collected.get(name) ?? [],
     value: (name) => collected.get(name)?.[0],
     has: (name) => flags.has(name),
+    missing: (name) => missing.has(name),
+    missingNames: [...missing],
     names: [...new Set([...collected.keys(), ...flags])],
     positionals,
   };
+}
+
+/**
+ * Resolve the checks every command shares, in one order: help, then unknown flags, then missing
+ * operands. Help must win over a missing value, and a typo must be named as unknown rather than as a
+ * missing operand.
+ *
+ * @param args - the parsed arguments.
+ * @param argv - the raw arguments, for the help scan.
+ * @param known - the flags this command knows; omit when another layer validates them.
+ * @param command - the command name for the unknown-option message.
+ * @returns true when help should be printed.
+ */
+export function validateArgs(
+  args: Args,
+  argv: readonly string[],
+  known?: ReadonlySet<string>,
+  command?: string,
+): boolean {
+  if (helpRequested(args, argv)) return true;
+  // Without a flag set the caller's own layer owns both checks: it can tell a typo from a missing
+  // operand, which this helper cannot.
+  if (known !== undefined) {
+    for (const name of args.names) {
+      if (!known.has(name)) fail(`unknown option --${name}${command === undefined ? '' : ` for ${command}`}`);
+    }
+    requireNoMissing(args);
+  }
+  return false;
+}
+
+/**
+ * Refuse the command line when any value-taking flag is missing its operand.
+ *
+ * The parser records every such flag, so a command does not have to keep a list of names and cannot
+ * forget one when it grows a flag.
+ *
+ * @param args - the parsed arguments.
+ */
+export function requireNoMissing(args: Args): void {
+  const name = args.missingNames[0];
+  if (name !== undefined) fail(`--${name} needs a value`);
+}
+
+/**
+ * Whether this command line asks for help.
+ *
+ * A separated `-h` used as a title or body-file value means help; `--title=-h` stays data, and
+ * `--body -h` is handled by parseArgs as body data.
+ *
+ * @param args - the parsed arguments.
+ * @param argv - the raw arguments.
+ * @returns true when help should be printed.
+ */
+export function helpRequested(args: Args, argv: readonly string[]): boolean {
+  return args.has('help') || args.has('h') || hasSeparatedValue(argv, ['--title', '--body-file']);
+}
+
+/**
+ * Whether a flag appears with a separated value somewhere in the raw argv.
+ *
+ * Used for the one place where a value of `-h` means help: `--title -h` and `--body-file -h`.
+ * The inline spelling `--title=-h` is data, and scanning stops at `--`, so this matches what a
+ * person typed rather than how parseArgs happened to collect it.
+ *
+ * @param argv - the raw arguments.
+ * @param names - the long flag names to look for, with dashes.
+ * @param value - the value that means help.
+ * @returns true when one of the flags is followed by that value.
+ */
+export function hasSeparatedValue(
+  argv: readonly string[],
+  names: readonly string[],
+  value = '-h',
+): boolean {
+  const normalizedNames = names.map((name) =>
+    name.replace(/^-h$/, '--help').replace(/^-(?=[A-Za-z])/, '--'),
+  );
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] === '--') return false;
+    const argument = (argv[index] as string)
+      .replace(/^-h$/, '--help')
+      .replace(/^-(?=[A-Za-z])/, '--');
+    if (normalizedNames.includes(argument) && argv[index + 1] === value) return true;
+  }
+  return false;
 }
 
 /**

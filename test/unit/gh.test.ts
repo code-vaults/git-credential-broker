@@ -39,6 +39,33 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.doesNotMatch(result.stdout, /host-token/);
   });
 
+  it('keeps bodies out of the process arguments', async () => {
+    const gh = shim(
+      'printf "ARGS=%s\n" "$*"; while [ "$#" -gt 0 ]; do if [ "$1" = "--body-file" ]; then printf "BODY="; cat "$2"; fi; shift; done',
+    );
+    for (const entry of [
+      { action: 'issue:edit', values: { number: 7, body: 'secret edit' } },
+      { action: 'issue:comment', values: { number: 7, body: 'secret comment' } },
+      { action: 'pr:review', values: { number: 7, approve: true, body: 'secret review' } },
+      { action: 'pr:comment', values: { number: 7, body: 'secret pr comment' } },
+      { action: 'issue:create', values: { title: 't', body: 'secret issue' } },
+      { action: 'pr:create', values: { head: 'feat/x', base: 'main', title: 't', body: 'secret pr' } },
+    ]) {
+      const result = await runGhAction({
+        action: entry.action,
+        values: entry.values,
+        repo: 'acme/widget',
+        token: 'app-token',
+        ghPath: gh,
+        env: { PATH: process.env.PATH },
+      });
+      assert.equal(result.code, 0, entry.action);
+      assert.match(result.stdout, /BODY=secret/u);
+      assert.doesNotMatch(result.stdout, /ARGS=.*secret/u, entry.action + ' body stays out of argv');
+      assert.match(result.stdout, /--body-file/u);
+    }
+  });
+
   it('keeps the token out of the jq process environment', async () => {
     const gh = shim('printf "TOKEN=[%s]\nCONFIG=%s\n" "$GH_TOKEN" "$(cat "$GH_CONFIG_DIR/hosts.yml")"');
     const result = await runGhAction({

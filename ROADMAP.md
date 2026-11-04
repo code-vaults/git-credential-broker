@@ -366,8 +366,10 @@ Account selection:
       - `gh auth switch` is global mutable state and races concurrent requests;
       - a request names the account; the host broker refuses an unknown account and lists the configured
         ones.
-- [ ] Extend host broker operations beyond `pr create`:
+- [x] Extend host broker operations beyond `pr create`:
       - `pr review` (approve / request changes / comment);
+      - `pr edit` (title / body / base);
+      - `issue edit` / `issue comment`;
       - `issue create`;
       - `pr comment` if the per-user identity matters.
       Each operation is a typed request with a host-side command table, canonical argv, repo

@@ -633,6 +633,52 @@ describe('broker actions', () => {
     assert.match(String(response.reason), /no usable identity/);
   });
 
+  it('allows the user identity for a review', async () => {
+    let called = false;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async () => {
+        called = true;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(undefined, provider);
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'pr:review',
+      values: { number: 7, approve: true },
+      identity: 'user',
+    });
+    assert.equal(response.ok, true);
+    assert.equal(called, true);
+  });
+
+  it('allows the user identity for a pull request edit', async () => {
+    let called = false;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async () => {
+        called = true;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(undefined, provider);
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'pr:edit',
+      values: { number: 7, title: 'fixed' },
+      identity: 'user',
+    });
+    assert.equal(response.ok, true);
+    assert.equal(called, true);
+  });
+
   it('refuses the user identity for an action that does not declare appUser', async () => {
     let called = false;
     const provider: Provider = {

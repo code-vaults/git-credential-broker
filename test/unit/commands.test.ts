@@ -19,7 +19,7 @@ import { renderCompose, runCompose } from '../../packages/host/src/commands/comp
 import { runDiagnose } from '../../packages/host/src/commands/diagnose.ts';
 import { SIDECAR, loadConfig, resolveConfigPath, deploymentDir } from '../../packages/host/src/config.ts';
 import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit, resolveInitSelection } from '../../packages/host/src/commands/init.ts';
-import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../packages/core/src/support.ts';
+import { parseArgs, listFlag, insideMountedPath, mountedPaths, helpRequested } from '../../packages/core/src/support.ts';
 import { performSetup } from '../../packages/client/src/commands/setup.ts';
 import type { BrokerConfig, GithubAppHostConfig } from '../../packages/core/src/types.ts';
 import { runProbe } from '../../packages/client/src/commands/probe.ts';
@@ -91,6 +91,28 @@ describe('parseArgs', () => {
   it('splits comma-separated list flags', () => {
     const args = parseArgs(['--allow', 'a/b,c/d', '--allow', 'e/f']);
     assert.deepEqual(listFlag(args, 'allow'), ['a/b', 'c/d', 'e/f']);
+  });
+
+  it('distinguishes a missing operand from an optional value', () => {
+    const missing = parseArgs(['--body']);
+    assert.equal(missing.has('body'), true);
+    assert.equal(missing.missing('body'), true);
+
+    const bare = parseArgs(['--as-user'], { optionalValues: ['as-user'] });
+    assert.equal(bare.has('as-user'), true);
+    assert.equal(bare.missing('as-user'), false);
+
+    const valued = parseArgs(['--as-user', 'alice'], { optionalValues: ['as-user'] });
+    assert.equal(valued.value('as-user'), 'alice');
+    assert.equal(valued.missing('as-user'), false);
+  });
+
+  it('decides help from raw values while leaving body data alone', () => {
+    assert.equal(helpRequested(parseArgs(['--help']), ['--help']), true);
+    assert.equal(helpRequested(parseArgs(['--title', '-h']), ['--title', '-h']), true);
+    assert.equal(helpRequested(parseArgs(['-title', '-h']), ['-title', '-h']), true);
+    assert.equal(helpRequested(parseArgs(['--title=-h']), ['--title=-h']), false);
+    assert.equal(helpRequested(parseArgs(['--body', '--help']), ['--body', '--help']), false);
   });
 
   it('treats a flag followed by another flag as a boolean, not a value', () => {
@@ -1486,7 +1508,7 @@ describe('the anchor flags, at the CLI boundary', () => {
   it('refuses a bare --jq', () => {
     const result = cli(['review', ...base, '--id', '9', '--jq']);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /--jq needs an expression/);
+    assert.match(result.stderr, /--jq needs a value/);
   });
 
   it('refuses an empty --jq', () => {
@@ -1509,11 +1531,19 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(result.stdout, /Usage: gcb gh/);
   });
 
+  it('refuses an equals value on a boolean flag', () => {
+    for (const flag of ['--request-changes=true', '--approve=yes', '--review-comment=1']) {
+      const result = cli(['--number', '7', flag, '--body', 'review text', '--repo', 'acme/widget']);
+      assert.equal(result.status, 1, flag);
+      assert.match(result.stderr, /does not take a value/u);
+    }
+  });
+
   it('refuses unknown options, including removed merge flags', () => {
     for (const flag of [['--merge'], ['-merge'], ['--merge-xxx'], ['--method', 'squash'], ['--method-xxx', 'squash'], ['--xafajbsfbafabsjkf']]) {
       const result = cli([...base, ...flag, '--title', 'a title']);
       assert.equal(result.status, 1);
-      assert.match(result.stderr, /unknown option/);
+      assert.match(result.stderr, new RegExp(`unknown option --${flag[0]?.replace(/^-+/, '')} for gcb pr`, 'u'));
     }
 
     const value = cli([...base, '--title=--not-a-flag']);
@@ -1595,9 +1625,9 @@ describe('the anchor flags, at the CLI boundary', () => {
     // has to be selected from the flag's presence: reading only its value let the command fall through
     // to `update`, which patched the body meant for the comment onto the pull request itself.
     for (const [flag, message] of [
-      ['--edit', /--edit needs the id of the review comment/],
-      ['--reply-to', /--reply-to needs the id of the comment/],
-      ['--resolve', /--resolve needs the id of the thread/],
+      ['--edit', /--edit needs a value/],
+      ['--reply-to', /--reply-to needs a value/],
+      ['--resolve', /--resolve needs a value/],
     ] as const) {
       const refused = cli([...base, flag, '--body', 'a corrected note']);
       assert.equal(refused.status, 1, `a bare ${flag} is refused`);

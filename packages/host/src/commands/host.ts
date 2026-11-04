@@ -1,10 +1,10 @@
 /**
- * `host` — the host broker for typed person actions: create, reply and fork with the gh account
- * each request names.
+ * `host` — the host broker for typed person actions: create, review, reply, edit issues and pull
+ * requests, and fork with the gh account each request names.
  *
  * This runs on the host, beside the checkout the container also sees, and it does exactly one thing:
- * it turns a request file into a pull request, issue, reply or fork, using the gh account the request
- * names. That is the whole point — content authored by a person is what automated reviewers will
+ * it turns a request file into a pull request, issue, review, reply, issue edit/comment, pull
+ * request edit or fork, using the gh account the request names. That is the whole point — content authored by a person is what automated reviewers will
  * actually review, and the app cannot be that person.
  *
  * It has no other power. It cannot push, merge, close or read anything, and it never runs a shell: the
@@ -41,7 +41,7 @@ import { hostConfig, repoAllowed } from '../policy.ts';
 
 const run = promisify(execFile);
 
-/** How long one `pr create` or `issue create` may take. */
+/** How long one create, review, reply, edit or fork program may take. */
 const CREATE_TIMEOUT_MS = 120_000;
 
 /** Usage text for `host`. */
@@ -49,8 +49,8 @@ export const HOST_BROKER_USAGE = `Usage: gcb host [options]
 
 Run on the host, once, beside the trees the container also sees. It finds the checkouts under the
 roots it is given — ones created later included — and fulfils their typed requests to create a pull
-request, issue or fork, or reply to a review comment, with the gh account each request names. The
-result is authored by a person rather than by the app's bot. It cannot push, merge or close anything.
+request, issue or fork, reply to a review comment, submit a review, or edit an issue or pull
+request, with the gh account each request names. The result is authored by a person rather than by the app's bot. It cannot push, merge or close anything.
 
   --root <dir>          A tree to serve, repeatable (default: $HOME)
   --depth <n>           How far below a root to look for checkouts (default: 4)
@@ -160,7 +160,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         pid: process.pid,
         command,
         startedAt: new Date().toISOString(),
-        kinds: ['pull-request', 'issue', 'reply', 'fork'],
+        kinds: ['pull-request', 'issue', 'issue-edit', 'issue-comment', 'review', 'reply', 'edit', 'fork'],
       });
     }
   };
@@ -182,7 +182,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
 
   say(single === undefined ? `serving the checkouts under ${scanned.join(', ')}` : `serving ${single}`);
   say(
-    `creating pull requests, issues, replies and forks with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
+    `creating pull requests, issues, reviews, replies and forks with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
   );
 
   for (;;) {
@@ -258,7 +258,13 @@ async function sweep(
               ? 'issue'
               : request.kind === 'reply'
                 ? `reply on #${request.number}`
-                : request.head
+                : request.kind === 'review'
+                  ? `review on #${request.number}`
+                  : request.kind === 'edit'
+                    ? `edit on #${request.number}`
+                    : request.kind === 'issue-edit' || request.kind === 'issue-comment'
+                      ? `issue #${request.number}`
+                      : request.head
         }: ${result.error}`,
       );
     } else {
@@ -267,7 +273,15 @@ async function sweep(
           ? `forked ${request.repo} as ${request.account ?? 'this user'}: ${result.url}`
           : request.kind === 'reply'
             ? `replied on #${result.number} as ${request.account ?? 'this user'}: ${result.url}`
-            : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
+            : request.kind === 'review'
+              ? `reviewed #${result.number} (${request.event}) as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
+              : request.kind === 'edit'
+                ? `edited #${result.number} as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
+                : request.kind === 'issue-edit'
+                  ? `edited issue #${result.number} as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
+                  : request.kind === 'issue-comment'
+                    ? `commented on issue #${result.number} as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
+                    : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
       );
     }
     answered += 1;
@@ -304,12 +318,56 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
 }
 
 /**
- * Create one pull request, issue or fork.
+ * Run one person operation: check the allowlist, then call the program and turn its failure into a result.
  *
- * @param repo - the checkout to create it in.
+ * The five typed routes (review, reply, pull request edit, issue edit and issue comment) differ only in the
+ * argv they build, so the check and the catch live here once instead of being copied per route.
+ */
+async function personRun(
+  host: string,
+  repository: string,
+  allowed: (host: string, repo: string) => boolean,
+  work: (host: string) => Promise<HostOpenResult>,
+): Promise<HostOpenResult> {
+  if (!HOST.test(host)) return { error: `not a host: ${JSON.stringify(host)}` };
+  try {
+    if (!allowed(host, repository)) {
+      return { error: `repository ${repository} is not in the allowlist for ${host}` };
+    }
+  } catch (error) {
+    return { error: (error as Error).message };
+  }
+  try {
+    return await work(host);
+  } catch (error) {
+    const failure = error as { stderr?: string; message?: string };
+    const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
+    return { error: reason.slice(0, 300) || 'the command failed' };
+  }
+}
+
+/** Run work with a body in a private temp file, and remove it afterwards. */
+async function withBodyFile(
+  body: string,
+  work: (bodyFile: string) => Promise<HostOpenResult>,
+): Promise<HostOpenResult> {
+  const scratch = mkdtempSync(join(tmpdir(), 'gcb-body-'));
+  try {
+    const bodyFile = join(scratch, 'body.md');
+    writeFileSync(bodyFile, body, 'utf8');
+    return await work(bodyFile);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Create one pull request, issue, review, reply, edit or comment.
+ *
+ * @param repo - the checkout to run it in.
  * @param command - the program to call.
  * @param extra - arguments to pass before the subcommand.
- * @param request - what to create.
+ * @param request - what to do.
  * @returns the number and URL, or the reason it did not work.
  */
 async function openOne(
@@ -356,15 +414,7 @@ async function openOne(
 
   if (request.kind === 'reply') {
     const host = request.host ?? 'github.com';
-    if (!HOST.test(host)) return { error: `not a host: ${JSON.stringify(host)}` };
-    try {
-      if (!allowed(host, request.repo)) {
-        return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
-      }
-    } catch (error) {
-      return { error: (error as Error).message };
-    }
-    try {
+    return personRun(host, request.repo, allowed, async (host) => {
       const { stdout, stderr } = await run(
         command,
         [
@@ -394,11 +444,99 @@ async function openOne(
         return { error: `no reply URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}` };
       }
       return { number: request.number, url: reply.html_url };
-    } catch (error) {
-      const failure = error as { stderr?: string; message?: string };
-      const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
-      return { error: reason.slice(0, 300) || 'the command failed' };
-    }
+    });
+  }
+
+  if (request.kind === 'issue-edit' || request.kind === 'issue-comment') {
+    const host = request.host ?? 'github.com';
+    const edit = request.kind === 'issue-edit';
+    return personRun(host, request.repo, allowed, async (host) => {
+      const invoke = (bodyFile?: string) =>
+        run(
+          command,
+          [
+            ...extra,
+            'issue',
+            edit ? 'edit' : 'comment',
+            String(request.number),
+            '--repo',
+            request.repo,
+            ...(edit && request.title !== undefined ? [`--title=${request.title}`] : []),
+            ...(bodyFile === undefined ? [] : ['--body-file', bodyFile]),
+          ],
+          {
+            cwd: repo,
+            timeout: CREATE_TIMEOUT_MS,
+            maxBuffer: 1 << 20,
+            env: forkEnv(request.proxy, request.account, host),
+          },
+        ).then(({ stdout }) => issueUrl(stdout) ?? { number: request.number });
+      return request.body === undefined ? invoke() : withBodyFile(request.body, invoke);
+    });
+  }
+
+  if (request.kind === 'edit') {
+    const host = request.host ?? 'github.com';
+    return personRun(host, request.repo, allowed, async (host) => {
+      const invoke = (bodyFile?: string) =>
+        run(
+          command,
+          [
+            ...extra,
+            'pr',
+            'edit',
+            String(request.number),
+            '--repo',
+            request.repo,
+            ...(request.title === undefined ? [] : [`--title=${request.title}`]),
+            ...(bodyFile === undefined ? [] : ['--body-file', bodyFile]),
+            ...(request.base === undefined ? [] : [`--base=${request.base}`]),
+          ],
+          {
+            cwd: repo,
+            timeout: CREATE_TIMEOUT_MS,
+            maxBuffer: 1 << 20,
+            env: forkEnv(request.proxy, request.account, host),
+          },
+        ).then(({ stdout }) => pullRequestUrl(stdout) ?? { number: request.number });
+      return request.body === undefined ? invoke() : withBodyFile(request.body, invoke);
+    });
+  }
+
+  if (request.kind === 'review') {
+    const host = request.host ?? 'github.com';
+    const flag =
+      request.event === 'approve'
+        ? '--approve'
+        : request.event === 'request-changes'
+          ? '--request-changes'
+          : '--comment';
+    return personRun(host, request.repo, allowed, async (host) => {
+      const invoke = (bodyFile?: string) =>
+        run(
+          command,
+          [
+            ...extra,
+            'pr',
+            'review',
+            String(request.number),
+            '--repo',
+            request.repo,
+            flag,
+            ...(bodyFile === undefined ? [] : ['--body-file', bodyFile]),
+          ],
+          {
+            cwd: repo,
+            timeout: CREATE_TIMEOUT_MS,
+            maxBuffer: 1 << 20,
+            env: forkEnv(request.proxy, request.account, host),
+          },
+        ).then(({ stdout }) => {
+          const match = /https:\/\/[^\s]+\/pull\/\d+(?:#pullrequestreview-\d+)?/.exec(stdout);
+          return match?.[0] === undefined ? { number: request.number } : { number: request.number, url: match[0] };
+        });
+      return request.body.trim() === '' ? invoke() : withBodyFile(request.body, invoke);
+    });
   }
 
   // An explicit repository is the allowlist's decision, not the checkout's: the request may name a
@@ -415,49 +553,45 @@ async function openOne(
     }
   }
   // The body goes to a private temp file: the program is given a path, never a string to interpret.
-  const scratch = mkdtempSync(join(tmpdir(), 'gcb-'));
-  const bodyFile = join(scratch, 'body.md');
-  writeFileSync(bodyFile, request.body, 'utf8');
   const issue = request.kind === 'issue';
   try {
-    const { stdout, stderr } = await run(
-      command,
-      [
-        ...extra,
-        issue ? 'issue' : 'pr',
-        'create',
-        // Without an explicit repository gh resolves the checkout it runs in; with one the allowlist
-        // above is the boundary, and no checkout of the target is required.
-        ...(!issue && request.draft === true ? ['--draft'] : []),
-        ...(target === undefined ? [] : ['--repo', target]),
-        ...(issue ? [] : ['--base', request.base, '--head', request.head]),
-        '--title',
-        request.title,
-        '--body-file',
-        bodyFile,
-      ],
-      {
-        cwd: repo,
-        timeout: CREATE_TIMEOUT_MS,
-        maxBuffer: 1 << 20,
-        env:
-          target === undefined
-            ? hostEnv(request.proxy, request.account)
-            : forkEnv(request.proxy, request.account, 'github.com'),
-      },
-    );
-    const found = issue ? issueUrl(stdout) : pullRequestUrl(stdout);
-    if (!found) {
-      return {
-        error: `no ${issue ? 'issue' : 'pull request'} URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}`,
-      };
-    }
-    return found;
+    return await withBodyFile(request.body, async (bodyFile) => {
+      const { stdout, stderr } = await run(
+        command,
+        [
+          ...extra,
+          issue ? 'issue' : 'pr',
+          'create',
+          // Without an explicit repository gh resolves the checkout it runs in; with one the allowlist
+          // above is the boundary, and no checkout of the target is required.
+          ...(!issue && request.draft === true ? ['--draft'] : []),
+          ...(target === undefined ? [] : ['--repo', target]),
+          ...(issue ? [] : ['--base', request.base, '--head', request.head]),
+          `--title=${request.title}`,
+          '--body-file',
+          bodyFile,
+        ],
+        {
+          cwd: repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env:
+            target === undefined
+              ? hostEnv(request.proxy, request.account)
+              : forkEnv(request.proxy, request.account, 'github.com'),
+        },
+      );
+      const found = issue ? issueUrl(stdout) : pullRequestUrl(stdout);
+      if (!found) {
+        return {
+          error: `no ${issue ? 'issue' : 'pull request'} URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}`,
+        };
+      }
+      return found;
+    });
   } catch (error) {
     const failure = error as { stderr?: string; message?: string };
     const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
     return { error: reason.slice(0, 300) || 'the command failed' };
-  } finally {
-    rmSync(scratch, { recursive: true, force: true });
   }
 }

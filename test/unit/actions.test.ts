@@ -23,6 +23,8 @@ describe('gh action catalog', () => {
       'pr:review',
       'pr:review-by-id',
       'issue:create',
+      'issue:edit',
+      'issue:comment',
       'run:view',
       'run:list',
     ]);
@@ -114,6 +116,49 @@ describe('buildGhArgv', () => {
     assert.deepEqual(
       buildGhArgv('pr:edit', { number: 7, title: 't', base: 'main' }, 'acme/widget'),
       ['pr', 'edit', '7', '--title', 't', '--base', 'main', '--repo', 'acme/widget'],
+    );
+  });
+
+  it('builds issue edit and comment argv', () => {
+    assert.deepEqual(buildGhArgv('issue:edit', { number: 7, title: 't' }, 'acme/widget'), [
+      'issue',
+      'edit',
+      '7',
+      '--title',
+      't',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('issue:comment', { number: 7, body: 'note' }, 'acme/widget'), [
+      'issue',
+      'comment',
+      '7',
+      '--body',
+      'note',
+      '--repo',
+      'acme/widget',
+    ]);
+  });
+
+  it('requires at least one edit field', () => {
+    assert.throws(() => buildGhArgv('issue:edit', { number: 7 }, 'acme/widget'), /at least one of --title, --body/u);
+    assert.throws(
+      () => buildGhArgv('pr:edit', { number: 7 }, 'acme/widget'),
+      /at least one of --title, --body, --base/u,
+    );
+  });
+
+  it('rejects an empty comment body in the catalog', () => {
+    assert.throws(
+      () => buildGhArgv('issue:comment', { number: 7, body: '   ' }, 'acme/widget'),
+      /issue:comment needs a non-empty --body/u,
+    );
+  });
+
+  it('validates a body before substituting the body file', () => {
+    assert.throws(
+      () => buildGhArgv('issue:comment', { number: 7, body: false }, 'acme/widget', '/tmp/body'),
+      /body must be a string/u,
     );
   });
 

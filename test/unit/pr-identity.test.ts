@@ -113,7 +113,7 @@ describe('gcb pr identity flags', () => {
           { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
         );
         await new Promise<void>((resolve) => server.close(() => resolve()));
-        assert.equal(result.status, 0, extra.join(' '));
+        assert.equal(result.status, 0, extra.join(' ') + '\n' + result.stderr);
         assert.equal(seen, expected, extra.join(' '));
       }
     } finally {
@@ -230,12 +230,16 @@ describe('gcb pr identity flags', () => {
       const cases: readonly string[][] = [
         ['--edit', '123', '--body', 'fixed'],
         ['--number', '7', '--comment', '--file', 'a.ts', '--line', '1', '--body', 'note'],
+        ['--number', '7', '--approve'],
+        ['--number', '7', '--review-comment', '--body=--approve'],
+        ['--number', '7', '--review-comment', '--body', '--help'],
+        ['--number', '7', '--title', 'fixed'],
       ];
       for (const extra of cases) {
         let seen: Record<string, unknown> = {};
         const server = await listen(socketPath, (request) => {
           seen = request;
-        });
+        }, { exitCode: 0 });
         const result = await tryRunAsync(
           process.execPath,
           [
@@ -254,6 +258,20 @@ describe('gcb pr identity flags', () => {
         await new Promise<void>((resolve) => server.close(() => resolve()));
         assert.equal(result.status, 0, extra.join(' '));
         assert.equal(seen['identity'], 'user', extra.join(' '));
+        if (extra.includes('--approve')) {
+          assert.equal(seen['ghAction'], 'pr:review');
+          assert.deepEqual(seen['values'], { number: '7', approve: true });
+        }
+        if (extra.includes('--body=--approve')) {
+          assert.equal((seen['values'] as Record<string, unknown>)['body'], '--approve');
+        }
+        if (extra.at(-1) === '--help') {
+          assert.equal((seen['values'] as Record<string, unknown>)['body'], '--help');
+        }
+        if (extra.includes('--title')) {
+          assert.equal(seen['ghAction'], 'pr:edit');
+          assert.equal((seen['values'] as Record<string, unknown>)['title'], 'fixed');
+        }
       }
     } finally {
       repo.cleanup();
@@ -385,6 +403,192 @@ describe('gcb pr identity flags', () => {
       writeResult(dir, id as string, { number: 7, url: 'https://github.com/acme/widget/pull/7' });
       const result = await pending;
       assert.equal(result.status, 0);
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it('sends a host review with the selected event and body', async () => {
+    const repo = checkout();
+    const dir = channelDir(path.join(repo.root, '.git'));
+    try {
+      writeOpener(dir, { pid: process.pid, kinds: ['review'] });
+      const pending = tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          '--as-user',
+          'alice',
+          '--number',
+          '7',
+          '--review-comment',
+          '--body',
+          'looks good',
+          '--repo',
+          'acme/widget',
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      let id: string | undefined;
+      let request;
+      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+        [id] = listRequests(dir);
+        request = id === undefined ? undefined : readRequest(dir, id);
+        if (request === undefined) await sleep(10);
+      }
+      assert.ok(request, 'the review reached the host broker');
+      assert.equal(request?.kind, 'review');
+      assert.equal(request?.event, 'comment');
+      assert.equal(request?.body, 'looks good');
+      assert.equal(request?.number, 7);
+      writeResult(dir, id as string, { number: 7, url: 'https://github.com/acme/widget/pull/7#pullrequestreview-9' });
+      const result = await pending;
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /submitted comment review on #7 as alice/u);
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it('sends an edit with the login through the host broker', async () => {
+    const repo = checkout();
+    const dir = channelDir(path.join(repo.root, '.git'));
+    try {
+      writeOpener(dir, { pid: process.pid, kinds: ['edit'] });
+      const pending = tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          '--as-user',
+          'alice',
+          '--number',
+          '7',
+          '--title',
+          'fixed',
+          '--repo',
+          'acme/widget',
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      let id: string | undefined;
+      let request;
+      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+        [id] = listRequests(dir);
+        request = id === undefined ? undefined : readRequest(dir, id);
+        if (request === undefined) await sleep(10);
+      }
+      assert.ok(request, 'the edit reached the host broker');
+      assert.equal(request?.kind, 'edit');
+      assert.equal(request?.title, 'fixed');
+      writeResult(dir, id as string, { number: 7, url: 'https://github.com/acme/widget/pull/7' });
+      const result = await pending;
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /edited #7 as alice/u);
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it('treats -h in a title or body-file position as help', async () => {
+    const repo = checkout();
+    try {
+      for (const flag of ['--title', '--body-file']) {
+        const result = await tryRunAsync(
+          process.execPath,
+          [
+            '--conditions=development',
+            CLIENT_BIN,
+            'pr',
+            '--as-user',
+            'alice',
+            '--number',
+            '7',
+            flag,
+            '-h',
+            '--repo',
+            'acme/widget',
+          ],
+          { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+        );
+        assert.equal(result.status, 0, flag);
+        assert.match(result.stdout, /Usage: gcb pr/u);
+      }
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it('refuses a review body with no value', async () => {
+    const repo = checkout();
+    try {
+      const result = await tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          '--as-user',
+          '--number',
+          '7',
+          '--approve',
+          '--body',
+          '--repo',
+          'acme/widget',
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /--body needs a value/u);
+
+      const base = await tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          '--as-user',
+          'alice',
+          '--number',
+          '7',
+          '--title',
+          't',
+          '--base',
+          '--repo',
+          'acme/widget',
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      assert.equal(base.status, 1);
+      assert.match(base.stderr, /--base needs a value/u);
+    } finally {
+      repo.cleanup();
+    }
+  });
+
+  it('refuses a review comment without a body', async () => {
+    const repo = checkout();
+    try {
+      const result = await tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          '--as-user',
+          '--number',
+          '7',
+          '--review-comment',
+          '--repo',
+          'acme/widget',
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /review-comment needs --body or --body-file/u);
     } finally {
       repo.cleanup();
     }

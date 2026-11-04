@@ -9,7 +9,7 @@ import { LOGIN, REPOSITORY, fail, parseArgs, say } from 'gcb-core';
 
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { remoteRepo } from './remotes.ts';
-import { submitToOpener } from './host-submit.ts';
+import { submitToHostBroker } from './host-submit.ts';
 
 const KNOWN_FLAGS = new Set([
   'help', 'h', 'as-user', 'proxy', 'no-proxy', 'socket', 'host',
@@ -79,7 +79,7 @@ export async function runRepo(argv: readonly string[]): Promise<number> {
   const host = hostValue ?? origin?.host ?? 'github.com';
 
   if (account !== undefined) {
-    return submitToOpener(
+    return submitToHostBroker(
       { kind: 'fork', repo: source, host, account, proxy, session: 'repo', pid: process.pid },
       (answer) => `forked ${source} as ${account}: ${answer.url ?? '(no url)'}`,
     );
