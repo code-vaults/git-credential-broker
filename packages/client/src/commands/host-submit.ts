@@ -51,12 +51,9 @@ export function noAnswerMessage(dir: string, id: string, noun: string, timeoutMs
 type RequestKind = NonNullable<HostRequest['kind']>;
 const KINDS: Readonly<Record<RequestKind, { noun: string; needed?: string }>> = {
   'pull-request': { noun: 'pull request' },
-  issue: { noun: 'issue', needed: 'issue' },
   fork: { noun: 'fork', needed: 'fork' },
   reply: { noun: 'reply', needed: 'reply' },
   edit: { noun: 'edit', needed: 'edit' },
-  'issue-edit': { noun: 'issue edit', needed: 'issue-edit' },
-  'issue-comment': { noun: 'issue comment', needed: 'issue-comment' },
   review: { noun: 'review', needed: 'review' },
   action: { noun: 'action', needed: 'action' },
 };

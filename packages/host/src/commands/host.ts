@@ -3,12 +3,12 @@
  * actions, and fork with the gh account each request names.
  *
  * This runs on the host, beside the checkout the container also sees, and it does exactly one thing:
- * it turns a request file into a pull request, issue, review, reply, issue edit/comment, pull
- * request edit or fork, using the gh account the request names. That is the whole point — content authored by a person is what automated reviewers will
+ * it turns a request file into a pull request, review, reply, pull request edit, catalogued action
+ * or fork, using the gh account the request names. That is the whole point — content authored by a person is what automated reviewers will
  * actually review, and the app cannot be that person.
  *
- * It has no other power. It cannot push, merge, close or read anything, and it never runs a shell: the
- * program it calls is configuration, and it is called with an argument list built here.
+ * It has no other power than the catalogued actions: it cannot push or merge, and it never runs a
+ * shell; the program it calls is configuration, and it is called with an argument list built here.
  */
 import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -148,8 +148,8 @@ export const HOST_BROKER_USAGE = `Usage: gcb host [options]
 
 Run on the host, once, beside the trees the container also sees. It finds the checkouts under the
 roots it is given — ones created later included — and fulfils their typed requests to create a pull
-request, issue or fork, reply to a review comment, submit a review, or edit an issue or pull
-request, with the gh account each request names. The result is authored by a person rather than by the app's bot. It cannot push, merge or close anything.
+request, reply to a review comment, submit a review, edit a pull request, run a catalogued action or
+fork, with the gh account each request names. The result is authored by a person rather than by the app's bot.
 
   --root <dir>          A tree to serve, repeatable (default: $HOME)
   --depth <n>           How far below a root to look for checkouts (default: 4)
@@ -259,7 +259,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         pid: process.pid,
         command,
         startedAt: new Date().toISOString(),
-        kinds: ['pull-request', 'issue', 'issue-edit', 'issue-comment', 'review', 'reply', 'edit', 'action', 'fork'],
+        kinds: ['pull-request', 'review', 'reply', 'edit', 'action', 'fork'],
       });
     }
   };
@@ -353,17 +353,13 @@ async function sweep(
         `failed to open ${
           request.kind === 'fork'
             ? 'fork'
-            : request.kind === 'issue'
-              ? 'issue'
-              : request.kind === 'reply'
+            : request.kind === 'reply'
                 ? `reply on #${request.number}`
                 : request.kind === 'review'
                   ? `review on #${request.number}`
                   : request.kind === 'edit'
                     ? `edit on #${request.number}`
-                    : request.kind === 'issue-edit' || request.kind === 'issue-comment'
-                      ? `issue #${request.number}`
-                      : request.kind === 'action'
+                    : request.kind === 'action'
                         ? request.action
                         : request.head
         }: ${result.error}`,
@@ -378,10 +374,6 @@ async function sweep(
               ? `reviewed #${result.number} (${request.event}) as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
               : request.kind === 'edit'
                 ? `edited #${result.number} as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
-                : request.kind === 'issue-edit'
-                  ? `edited issue #${result.number} as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
-                  : request.kind === 'issue-comment'
-                    ? `commented on issue #${result.number} as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
                     : request.kind === 'action'
                       ? `ran ${request.action} as ${request.account ?? 'this user'}`
                       : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
@@ -423,8 +415,8 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
 /**
  * Run one person operation: check the allowlist, then call the program and turn its failure into a result.
  *
- * The five typed routes (review, reply, pull request edit, issue edit and issue comment) differ only in the
- * argv they build, so the check and the catch live here once instead of being copied per route.
+ * The typed routes differ only in the argv they build, so the check and the catch live here once
+ * instead of being copied per route.
  */
 async function personRun(
   host: string,
@@ -568,34 +560,6 @@ async function openOne(
     });
   }
 
-  if (request.kind === 'issue-edit' || request.kind === 'issue-comment') {
-    const host = request.host ?? 'github.com';
-    const edit = request.kind === 'issue-edit';
-    return personRun(host, request.repo, allowed, async (host) => {
-      const invoke = (bodyFile?: string) =>
-        run(
-          command,
-          [
-            ...extra,
-            'issue',
-            edit ? 'edit' : 'comment',
-            String(request.number),
-            '--repo',
-            request.repo,
-            ...(edit && request.title !== undefined ? [`--title=${request.title}`] : []),
-            ...(bodyFile === undefined ? [] : ['--body-file', bodyFile]),
-          ],
-          {
-            cwd: repo,
-            timeout: CREATE_TIMEOUT_MS,
-            maxBuffer: 1 << 20,
-            env: forkEnv(request.proxy, request.account, host),
-          },
-        ).then(({ stdout }) => issueUrl(stdout) ?? { number: request.number });
-      return request.body === undefined ? invoke() : withBodyFile(request.body, invoke);
-    });
-  }
-
   if (request.kind === 'edit') {
     const host = request.host ?? 'github.com';
     return personRun(host, request.repo, allowed, async (host) => {
@@ -674,20 +638,19 @@ async function openOne(
     }
   }
   // The body goes to a private temp file: the program is given a path, never a string to interpret.
-  const issue = request.kind === 'issue';
   try {
     return await withBodyFile(request.body, async (bodyFile) => {
       const { stdout, stderr } = await run(
         command,
         [
           ...extra,
-          issue ? 'issue' : 'pr',
+          'pr',
           'create',
           // Without an explicit repository gh resolves the checkout it runs in; with one the allowlist
           // above is the boundary, and no checkout of the target is required.
-          ...(!issue && request.draft === true ? ['--draft'] : []),
+          ...(request.draft === true ? ['--draft'] : []),
           ...(target === undefined ? [] : ['--repo', target]),
-          ...(issue ? [] : ['--base', request.base, '--head', request.head]),
+          '--base', request.base, '--head', request.head,
           `--title=${request.title}`,
           '--body-file',
           bodyFile,
@@ -702,11 +665,9 @@ async function openOne(
               : forkEnv(request.proxy, request.account, 'github.com'),
         },
       );
-      const found = issue ? issueUrl(stdout) : pullRequestUrl(stdout);
+      const found = pullRequestUrl(stdout);
       if (!found) {
-        return {
-          error: `no ${issue ? 'issue' : 'pull request'} URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}`,
-        };
+        return { error: `no pull request URL in the output: ${(stdout.trim() || stderr.trim()).slice(0, 300)}` };
       }
       return found;
     });

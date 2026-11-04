@@ -429,9 +429,9 @@ gcb issue edit 94 --as-user --title "new title"
 gcb issue comment 94 --as-user --body "a note"
 ```
 
-The host broker creates pull requests and issues, submits reviews, replies to review comments, edits
-pull requests and issues, and forks with the gh account named by the request; it does not close or
-merge. For `repo fork`, review replies, reviews, pull request edit, issue edit/comment and any
+The host broker creates pull requests, submits reviews, replies to review comments, edits pull
+requests, runs catalogued actions and forks with the gh account named by the request; catalogued
+actions include issue create/edit/comment and close. It has no merge action. For `repo fork`, review replies, reviews, pull request edit, issue edit/comment and any
 request that names `--repo` explicitly — every review always carries its repository, even when
 derived from origin —
 it checks the repository against the broker config's allowlist (pass `--config`). An explicit `--repo` needs no checkout of that repository; without it,

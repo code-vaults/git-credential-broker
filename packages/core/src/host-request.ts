@@ -80,11 +80,6 @@ export interface HostOpenRequest extends HostRequestFields {
   readonly draft?: boolean;
 }
 
-/** One request to open an issue. */
-export interface HostIssueRequest extends HostRequestFields {
-  readonly kind: 'issue';
-}
-
 /** One request to reply inside a pull request review thread. */
 export interface HostReplyRequest {
   readonly kind: 'reply';
@@ -128,33 +123,6 @@ export interface HostEditRequest {
   readonly pid?: number;
 }
 
-/** One request to edit an issue as the host account. */
-export interface HostIssueEditRequest {
-  readonly kind: 'issue-edit';
-  readonly repo: string;
-  readonly host?: string;
-  readonly number: number;
-  readonly title?: string;
-  readonly body?: string;
-  readonly proxy?: string | null;
-  readonly account?: string;
-  readonly session?: string;
-  readonly pid?: number;
-}
-
-/** One request to comment on an issue as the host account. */
-export interface HostIssueCommentRequest {
-  readonly kind: 'issue-comment';
-  readonly repo: string;
-  readonly host?: string;
-  readonly number: number;
-  readonly body: string;
-  readonly proxy?: string | null;
-  readonly account?: string;
-  readonly session?: string;
-  readonly pid?: number;
-}
-
 /** One catalogued action to run as the host account. */
 export interface HostActionRequest {
   readonly kind: 'action';
@@ -182,12 +150,9 @@ export interface HostForkRequest {
 /** A request the host broker can fulfil. */
 export type HostRequest =
   | HostOpenRequest
-  | HostIssueRequest
   | HostReplyRequest
   | HostReviewRequest
   | HostEditRequest
-  | HostIssueEditRequest
-  | HostIssueCommentRequest
   | HostActionRequest
   | HostForkRequest;
 
@@ -420,35 +385,6 @@ export function requestProblems(request: HostRequest): string[] {
     }
     return problems;
   }
-  if (request.kind === 'issue-edit') {
-    if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
-    if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
-    if (!isPositiveNumber(request.number)) problems.push('the issue number is not positive');
-    if (request.title !== undefined && (request.title.trim() === '' || request.title.length > MAX_TITLE_CHARS)) {
-      problems.push(`the title must be 1 to ${MAX_TITLE_CHARS} characters`);
-    }
-    if (request.body !== undefined && request.body.length > MAX_BODY_CHARS) {
-      problems.push(`the body must be at most ${MAX_BODY_CHARS} characters`);
-    }
-    if (request.title === undefined && request.body === undefined) {
-      problems.push('an issue edit needs a title or body');
-    }
-    if (request.account !== undefined && !LOGIN.test(request.account)) {
-      problems.push('the account is not a usable GitHub login');
-    }
-    return problems;
-  }
-  if (request.kind === 'issue-comment') {
-    if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
-    if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
-    if (!isPositiveNumber(request.number)) problems.push('the issue number is not positive');
-    if (request.body.trim() === '') problems.push('a comment needs a body');
-    if (request.body.length > MAX_BODY_CHARS) problems.push(`the body must be at most ${MAX_BODY_CHARS} characters`);
-    if (request.account !== undefined && !LOGIN.test(request.account)) {
-      problems.push('the account is not a usable GitHub login');
-    }
-    return problems;
-  }
   if (request.kind === 'edit') {
     if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
     if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
@@ -493,15 +429,13 @@ export function requestProblems(request: HostRequest): string[] {
   if (request.repo !== undefined && !REPOSITORY.test(request.repo)) {
     problems.push('the repository is not owner/name');
   }
-  if (request.kind !== 'issue') {
-    if (!BRANCH.test(request.head) || request.head.includes('..')) {
-      problems.push('the head branch name is not usable');
-    }
-    if (!BRANCH.test(request.base) || request.base.includes('..')) {
-      problems.push('the base branch name is not usable');
-    }
-    if (request.head === request.base) problems.push('the head and the base are the same branch');
+  if (!BRANCH.test(request.head) || request.head.includes('..')) {
+    problems.push('the head branch name is not usable');
   }
+  if (!BRANCH.test(request.base) || request.base.includes('..')) {
+    problems.push('the base branch name is not usable');
+  }
+  if (request.head === request.base) problems.push('the head and the base are the same branch');
   if (request.title.trim() === '' || request.title.length > MAX_TITLE_CHARS) {
     problems.push(`the title must be 1 to ${MAX_TITLE_CHARS} characters`);
   }
@@ -541,7 +475,6 @@ export function writeRequest(dir: string, request: HostRequest): string {
 export function readRequest(dir: string, id: string): HostRequest | undefined {
   const parsed = readJson(join(dir, `${id}.json`)) as
     | (Partial<HostOpenRequest> &
-        Partial<HostIssueRequest> &
         Partial<HostReplyRequest> &
         Partial<HostReviewRequest> &
         Partial<HostActionRequest> &
@@ -586,50 +519,6 @@ export function readRequest(dir: string, id: string): HostRequest | undefined {
       repo: parsed.repo,
       number: parsed.number,
       event: parsed.event,
-      body: parsed.body,
-      ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
-      ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
-      ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
-      session: parsed.session,
-      pid: parsed.pid,
-    };
-  }
-  if (parsed.kind === 'issue-edit') {
-    if (
-      typeof parsed.repo !== 'string' ||
-      !REPOSITORY.test(parsed.repo) ||
-      typeof parsed.number !== 'number' ||
-      (parsed.title !== undefined && typeof parsed.title !== 'string') ||
-      (parsed.body !== undefined && typeof parsed.body !== 'string')
-    ) {
-      return undefined;
-    }
-    return {
-      kind: 'issue-edit',
-      repo: parsed.repo,
-      number: parsed.number,
-      ...(parsed.title === undefined ? {} : { title: parsed.title }),
-      ...(parsed.body === undefined ? {} : { body: parsed.body }),
-      ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
-      ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
-      ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
-      session: parsed.session,
-      pid: parsed.pid,
-    };
-  }
-  if (parsed.kind === 'issue-comment') {
-    if (
-      typeof parsed.repo !== 'string' ||
-      !REPOSITORY.test(parsed.repo) ||
-      typeof parsed.body !== 'string' ||
-      typeof parsed.number !== 'number'
-    ) {
-      return undefined;
-    }
-    return {
-      kind: 'issue-comment',
-      repo: parsed.repo,
-      number: parsed.number,
       body: parsed.body,
       ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
       ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
@@ -708,7 +597,6 @@ export function readRequest(dir: string, id: string): HostRequest | undefined {
     session: parsed.session,
     pid: parsed.pid,
   };
-  if (parsed.kind === 'issue') return { kind: 'issue', ...common };
   if (typeof parsed.head !== 'string' || typeof parsed.base !== 'string') return undefined;
   return { ...common, head: parsed.head, base: parsed.base, draft: parsed.draft === true };
 }
@@ -790,20 +678,7 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
         request.values !== null &&
         typeof request.values === 'object' &&
         !Array.isArray(request.values)
-      : request.kind === 'issue-edit'
-      ? typeof request.repo === 'string' &&
-        REPOSITORY.test(request.repo) &&
-        Number.isInteger(request.number) &&
-        (request.title === undefined || typeof request.title === 'string') &&
-        (request.body === undefined || typeof request.body === 'string') &&
-        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
-      : request.kind === 'issue-comment'
-        ? typeof request.repo === 'string' &&
-          REPOSITORY.test(request.repo) &&
-          Number.isInteger(request.number) &&
-          typeof request.body === 'string' &&
-          (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
-        : request.kind === 'edit'
+      : request.kind === 'edit'
       ? typeof request.repo === 'string' &&
         REPOSITORY.test(request.repo) &&
         Number.isInteger(request.number) &&
@@ -831,9 +706,8 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
         (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
       : typeof request.title === 'string' &&
         typeof request.body === 'string' &&
-        (request.kind === 'issue'
-          ? true
-          : typeof request.head === 'string' && typeof request.base === 'string'));
+        typeof request.head === 'string' &&
+        typeof request.base === 'string');
   if (!shaped) {
     rmSync(claimed, { force: true, recursive: true });
     return undefined;

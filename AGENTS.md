@@ -262,14 +262,14 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   listing the installations and the repositories each one reaches; asking for a credential for a
   repository the app *is* installed on is the control that needs no such command.
 
-  **Which actions are left is the operational half.** The host broker creates pull requests/issues,
-  submits reviews, replies to review comments, edits pull requests, edits or comments on issues and
-  runs catalogued actions (with `--as-user <login>`),
+  **Which actions are left is the operational half.** The host broker creates pull requests, submits
+  reviews, replies to review comments, edits pull requests, runs catalogued actions (with
+  `--as-user <login>`) — including issue create/edit/comment and close —
   while bare `--as-user` through the broker also handles review, reply, resolve, edit and comment. Every other action still
   goes through the installation token.
   On a repository the app is not installed on, a pull request can be opened, edited, reviewed, and its
-  review comments replied to, edited or resolved with bare `--as-user`; merge still has no route, and
-  close is available as a catalogued action on the host route. Neither route pushes. Acting as a person, from a
+  review comments replied to, edited or resolved with bare `--as-user`; merge has no route. The host
+  action route can close as a person; neither route pushes. Acting as a person, from a
   checkout on the host that holds the person's own credentials or an allowlisted explicit repository,
   is the design.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**

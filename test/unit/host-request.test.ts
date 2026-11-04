@@ -148,22 +148,6 @@ describe('the host request channel', () => {
     assert.deepEqual(listRequests(dir), [], 'and a refused request is not waiting');
   });
 
-  it('carries an issue request without branch fields', async () => {
-    const issue = { kind: 'issue' as const, title: 'a title', body: 'a body', account: 'octocat' };
-    assert.deepEqual(requestProblems(issue), []);
-    const id = writeRequest(dir, issue);
-    assert.deepEqual(readRequest(dir, id), {
-      kind: 'issue',
-      title: 'a title',
-      body: 'a body',
-      account: 'octocat',
-      repo: undefined,
-      session: undefined,
-      pid: undefined,
-    });
-    removeRequest(dir, id);
-  });
-
   it('carries a typed review reply', async () => {
     const reply = {
       kind: 'reply' as const,
@@ -191,10 +175,6 @@ describe('the host request channel', () => {
       requestProblems({ kind: 'review', repo: 'acme/widget', number: unsafe, event: 'approve', body: '' }).join(' '),
       /number is not positive/u,
     );
-    assert.match(
-      requestProblems({ kind: 'issue-comment', repo: 'acme/widget', number: unsafe, body: 'x' }).join(' '),
-      /number is not positive/u,
-    );
   });
 
   it('refuses an edit with nothing to change', () => {
@@ -202,27 +182,7 @@ describe('the host request channel', () => {
       () => writeRequest(dir, { kind: 'edit', repo: 'acme/widget', number: 7 }),
       /edit needs a title, body or base/u,
     );
-    assert.throws(
-      () => writeRequest(dir, { kind: 'issue-edit', repo: 'acme/widget', number: 7 }),
-      /issue edit needs a title or body/u,
-    );
     assert.deepEqual(listRequests(dir), [], 'and neither is waiting');
-  });
-
-  it('drops an issue edit or comment whose host is not a string', () => {
-    for (const kind of ['issue-edit', 'issue-comment'] as const) {
-      mkdirSync(dir, { recursive: true });
-      const rawId = newId();
-      writeFileSync(
-        join(dir, rawId + '.json'),
-        JSON.stringify(
-          kind === 'issue-edit'
-            ? { v: 1, id: rawId, kind, repo: 'acme/widget', number: 7, title: 't', host: 42 }
-            : { v: 1, id: rawId, kind, repo: 'acme/widget', number: 7, body: 'b', host: 42 },
-        ),
-      );
-      assert.equal(claimRequest(dir, rawId), undefined, kind + ' with a non-string host is not claimed');
-    }
   });
 
   it('carries a fork request without branches or text', async () => {
