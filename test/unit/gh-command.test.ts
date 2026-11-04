@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import { startBroker } from '../../packages/host/src/broker.ts';
+import { channelDir, listRequests, readRequest, writeHostBroker, writeResult } from '../../packages/core/src/host-request.ts';
 import { tryRunAsync, type RunResult } from '../common/run.ts';
 import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../packages/core/src/types.ts';
 
@@ -14,19 +15,429 @@ import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../
 const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));
 
 /** Run the installed client as a child, so its output never replaces the test reporter. */
-function runClient(args: readonly string[], cwd?: string): Promise<RunResult> {
+function runClient(args: readonly string[], cwd?: string, input?: string): Promise<RunResult> {
   return tryRunAsync(
     process.execPath,
     ['--conditions=development', CLIENT_BIN, ...args],
-    { cwd, env: process.env, timeoutMs: 5000 },
+    { cwd, env: process.env, input, timeoutMs: 5000 },
   );
 }
 
-function runGhCli(args: readonly string[], cwd?: string): Promise<RunResult> {
-  return runClient(['gh', ...args], cwd);
+function runGhCli(args: readonly string[], cwd?: string, input?: string): Promise<RunResult> {
+  return runClient(['gh', ...args], cwd, input);
+}
+
+/** Run the client while keeping stdin open; an ordering bug then hangs instead of reading EOF. */
+function runClientWithOpenStdin(args: readonly string[]): Promise<RunResult> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ['--conditions=development', CLIENT_BIN, ...args], {
+      env: process.env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      finish(null);
+    }, 2_000);
+    function finish(status: number | null): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ status, stdout, stderr, error: null });
+    }
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', () => finish(null));
+    child.on('close', (status) => finish(status));
+  });
 }
 
 describe('gcb gh', () => {
+  it('reports an unreadable body file', async () => {
+    const result = await runGhCli([
+      'issue',
+      'comment',
+      '7',
+      '--body-file',
+      '/definitely/not/here',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /cannot read \/definitely\/not\/here/u);
+  });
+
+  it('routes issue through the same catalog checks', async () => {
+    const unknown = await runClient(['issue', '--bogus']);
+    assert.equal(unknown.status, 1);
+    assert.match(unknown.stderr, /unknown gh action "issue:--bogus"/u);
+
+    const missing = await runClient(['issue', 'create', '--title']);
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /--title needs a value/u);
+
+    const action = await runClient(['issue', 'view', '7', '--repo', 'acme/widget']);
+    assert.equal(action.status, 1);
+    assert.match(action.stderr, /unknown gh action "issue:view"/u);
+
+    const unconfigured = await runClient(['issue', 'create', '--title', 't', '--body', 'b', '--repo', 'acme/widget']);
+    assert.equal(unconfigured.status, 1);
+    assert.match(unconfigured.stderr, /error: /u);
+    assert.doesNotMatch(unconfigured.stderr, /unknown gh action|needs --title/u);
+  });
+
+  it('refuses a repository option with no parsed value', async () => {
+    for (const flag of ['--repo', '--R']) {
+      const result = await runClient(['gh', 'pr', 'close', '7', flag, '--']);
+      assert.equal(result.status, 1, flag);
+      assert.match(result.stderr, /--repo needs a value; refusing to fall back to the checkout/u);
+    }
+  });
+
+  it('does not read a post-terminator --as-user as identity', async () => {
+    const result = await runClient([
+      'gh',
+      'pr',
+      'close',
+      '7',
+      '--repo',
+      'acme/widget',
+      '--socket',
+      '/definitely/not/here.sock',
+      '--',
+      '--as-user',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /too many positional/u);
+  });
+
+  it('rejects a missing title before --as-user', async () => {
+    const result = await runClient([
+      'gh',
+      'pr',
+      'edit',
+      '1',
+      '--title',
+      '--as-user',
+      '--body',
+      'b',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--title needs a value/u);
+  });
+
+  it('does not read -as-user as identity when it is a value', async () => {
+    const result = await runClient([
+      'gh',
+      'pr',
+      'edit',
+      '1',
+      '--title',
+      '-as-user',
+      '--repo',
+      'acme/widget',
+      '--socket',
+      '/definitely/not/here.sock',
+    ]);
+    assert.doesNotMatch(result.stderr, /--as-user/u);
+    assert.match(result.stderr, /unreachable|cannot reach/u);
+  });
+
+  it('does not read -R as a repository option when it is body data', async () => {
+    const result = await runClient([
+      'gh',
+      'issue',
+      'comment',
+      '7',
+      '--body',
+      '-R',
+      '--socket',
+      '/definitely/not/here.sock',
+    ]);
+    assert.doesNotMatch(result.stderr, /--repo needs a value/u);
+    assert.match(result.stderr, /unreachable|cannot reach|--repo is required/u);
+  });
+
+  it('shows help before refusing an unsupported identity', async () => {
+    const result = await runClient(['gh', 'pr', 'view', '--as-user', '--help']);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /Usage: gcb gh/u);
+  });
+
+  it('shows help when -as-user is body data', async () => {
+    const result = await runClient(['gh', 'issue', 'comment', '7', '--body', '-as-user', '--help']);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /Usage: gcb gh/u);
+
+    const duplicate = await runClient(['gh', 'pr', 'view', '1', '--as-user', '--as-user', '--help']);
+    assert.equal(duplicate.status, 0);
+    assert.match(duplicate.stdout, /Usage: gcb gh/u);
+  });
+
+  it('rejects --socket on the login route before reading stdin', async () => {
+    const result = await runClientWithOpenStdin([
+      'gh',
+      'issue',
+      'comment',
+      '7',
+      '--body-file',
+      '-',
+      '--as-user',
+      'alice',
+      '--repo',
+      'acme/widget',
+      '--socket',
+      '/definitely/not/here.sock',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--socket is the app broker route/u);
+  });
+
+  it('rejects built-in pr review conflicts before reading stdin', async () => {
+    const result = await runClientWithOpenStdin([
+      'pr',
+      '--approve',
+      '--request-changes',
+      '--body-file',
+      '-',
+      '--number',
+      '7',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /exactly one of/u);
+  });
+
+  it('rejects an invalid login before reading stdin', async () => {
+    const result = await runClientWithOpenStdin([
+      'gh',
+      'issue',
+      'comment',
+      '7',
+      '--body-file',
+      '-',
+      '--as-user',
+      'not a login',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--as-user must be a GitHub login/u);
+  });
+
+  it('rejects review conflicts before reading stdin', async () => {
+    const result = await runClientWithOpenStdin([
+      'gh',
+      'pr',
+      'review',
+      '1',
+      '--approve',
+      '--request-changes',
+      '--body-file',
+      '-',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /exactly one of/u);
+  });
+
+  it('rejects an empty resolve id before reading stdin', async () => {
+    const result = await runClientWithOpenStdin(['pr', '--resolve=', '--body-file', '-', '--repo', 'acme/widget']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--resolve needs/u);
+  });
+
+  it('refuses --body together with --body-file', async () => {
+    const result = await runGhCli(['pr', 'comment', '7', '--body', 'x', '--body-file', 'f', '--repo', 'acme/widget']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--body and --body-file are mutually exclusive/u);
+  });
+
+  it('accepts bare --as-user for an appUser action', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-as-user-'));
+    const socketPath = path.join(root, 'broker.sock');
+    const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] };
+    const config: BrokerConfig = {
+      socketPath,
+      socketMode: 0o600,
+      auditPath: null,
+      tokenCacheSkewSeconds: 300,
+      hosts: { 'github.com': block },
+    };
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() };
+    let identity: string | undefined;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async (request) => {
+        identity = request.identity;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
+    try {
+      const result = await runGhCli([
+        'issue',
+        'comment',
+        '7',
+        '--body',
+        'x',
+        '--as-user',
+        '--repo',
+        'acme/widget',
+        '--socket',
+        socketPath,
+      ]);
+      assert.equal(result.status, 0);
+      assert.equal(identity, 'user');
+    } finally {
+      await broker.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('times out a claimed action without reporting it lost', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-claim-'));
+    fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(path.join(root, '.git'));
+    writeHostBroker(dir, { pid: process.pid, kinds: ['action'] });
+    try {
+      const pending = tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'issue',
+          'comment',
+          '7',
+          '--body',
+          'x',
+          '--as-user',
+          'alice',
+          '--repo',
+          'acme/widget',
+        ],
+        {
+          cwd: root,
+          env: { ...process.env, GCB_HOST_TIMEOUT_MS: '1000' },
+          timeoutMs: 5_000,
+        },
+      );
+      let claimed = false;
+      for (let attempt = 0; attempt < 200 && !claimed; attempt += 1) {
+        const [id] = listRequests(dir);
+        if (id !== undefined) {
+          fs.renameSync(path.join(dir, `${id}.json`), path.join(dir, `${id}.json.working`));
+          claimed = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      assert.equal(claimed, true);
+      const result = await pending;
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /did not answer/u);
+      assert.match(result.stderr, /within 1s/u);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('runs a login action through the host broker', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-host-action-'));
+    fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(path.join(root, '.git'));
+    writeHostBroker(dir, { pid: process.pid, kinds: ['action'] });
+    try {
+      const pending = runGhCli(
+        ['issue', 'comment', '7', '--body', 'x', '--as-user', 'alice', '--repo', 'acme/widget'],
+        root,
+      );
+      let id: string | undefined;
+      let request;
+      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+        [id] = listRequests(dir);
+        request = id === undefined ? undefined : readRequest(dir, id);
+        if (request === undefined) await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.ok(request, 'the action reached the host broker');
+      assert.equal(request?.kind, 'action');
+      assert.equal(request?.kind === 'action' ? request.action : undefined, 'issue:comment');
+      assert.equal(request?.account, 'alice');
+      writeResult(dir, id as string, { stdout: 'ok\n', stderr: '', code: 0 });
+      const result = await pending;
+      assert.equal(result.status, 0);
+      assert.equal(result.stdout, 'ok\n');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses the login form and appUser-less actions', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-login-'));
+    fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const login = await runGhCli(
+      ['issue', 'comment', '7', '--body', 'x', '--as-user', 'alice', '--repo', 'acme/widget'],
+      root,
+    );
+    fs.rmSync(root, { recursive: true, force: true });
+    assert.equal(login.status, 1);
+    assert.match(login.stderr, /no host broker is watching/u);
+
+    const unsupported = await runGhCli(['pr', 'create', '--head', 'h', '--title', 't', '--body', 'b', '--as-user', '--repo', 'acme/widget']);
+    assert.equal(unsupported.status, 1);
+    assert.match(unsupported.stderr, /does not support --as-user/u);
+  });
+
+  it('reads --body-file - from stdin', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-stdin-'));
+    const socketPath = path.join(root, 'broker.sock');
+    const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] };
+    const config: BrokerConfig = {
+      socketPath,
+      socketMode: 0o600,
+      auditPath: null,
+      tokenCacheSkewSeconds: 300,
+      hosts: { 'github.com': block },
+    };
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() };
+    let seen: Record<string, unknown> = {};
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async (request) => {
+        seen = { ...request.values };
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
+    try {
+      const result = await runGhCli(
+        ['pr', 'comment', '7', '--body-file', '-', '--repo', 'acme/widget', '--socket', socketPath],
+        undefined,
+        'from stdin\n',
+      );
+      assert.equal(result.status, 0);
+      assert.equal(seen['body'], 'from stdin\n');
+    } finally {
+      await broker.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('reports truncation and timed-out writes', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-output-'));
     const socketPath = path.join(root, 'broker.sock');

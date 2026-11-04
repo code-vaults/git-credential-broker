@@ -1,5 +1,5 @@
 /**
- * The channel between this side and a host-side opener.
+ * The channel between this side and a host-side host broker.
  *
  * Creating a pull request or issue is the operation that has to happen as a person rather than as the
  * app: content authored by the app's bot is something automated reviewers are entitled to skip, and
@@ -29,13 +29,13 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { canonicalPath } from './paths.ts';
 
 /** The directory under the git directory that carries requests and answers. */
-export const CHANNEL_PATH = 'gcb/pr-requests';
+export const CHANNEL_PATH = 'gcb/host-broker';
 
-/** The file naming the running opener. */
-export const OPENER_FILE = 'opener.json';
+/** The file naming the running host broker. */
+export const HOST_BROKER_FILE = 'host-broker.json';
 
 /** How long a caller waits for an answer. */
-// Longer than the opener's own program timeout (CREATE_TIMEOUT_MS, 120s) plus the interval at which it
+// Longer than the host broker's own program timeout (CREATE_TIMEOUT_MS, 120s) plus the interval at which it
 // notices a request, because the caller is waiting for an answer to work that has not started yet.
 export const ANSWER_TIMEOUT_MS = 180_000;
 
@@ -63,9 +63,9 @@ interface HostRequestFields {
   readonly repo?: string;
   readonly title: string;
   readonly body: string;
-  /** Egress for the opener's gh call: absent = its environment, null = direct, string = proxy URL. */
+  /** Egress for the host broker's gh call: absent = its environment, null = direct, string = proxy URL. */
   readonly proxy?: string | null;
-  /** GitHub login whose `~/.config/gh-<login>` the opener uses; absent = its own gh config. */
+  /** GitHub login whose `~/.config/gh-<login>` the host broker uses; absent = its own gh config. */
   readonly account?: string;
   readonly session?: string;
   readonly pid?: number;
@@ -78,11 +78,6 @@ export interface HostOpenRequest extends HostRequestFields {
   readonly base: string;
   /** Open it as a draft. */
   readonly draft?: boolean;
-}
-
-/** One request to open an issue. */
-export interface HostIssueRequest extends HostRequestFields {
-  readonly kind: 'issue';
 }
 
 /** One request to reply inside a pull request review thread. */
@@ -128,27 +123,13 @@ export interface HostEditRequest {
   readonly pid?: number;
 }
 
-/** One request to edit an issue as the host account. */
-export interface HostIssueEditRequest {
-  readonly kind: 'issue-edit';
+/** One catalogued action to run as the host account. */
+export interface HostActionRequest {
+  readonly kind: 'action';
+  readonly action: string;
   readonly repo: string;
   readonly host?: string;
-  readonly number: number;
-  readonly title?: string;
-  readonly body?: string;
-  readonly proxy?: string | null;
-  readonly account?: string;
-  readonly session?: string;
-  readonly pid?: number;
-}
-
-/** One request to comment on an issue as the host account. */
-export interface HostIssueCommentRequest {
-  readonly kind: 'issue-comment';
-  readonly repo: string;
-  readonly host?: string;
-  readonly number: number;
-  readonly body: string;
+  readonly values: Readonly<Record<string, string | number | boolean | readonly string[]>>;
   readonly proxy?: string | null;
   readonly account?: string;
   readonly session?: string;
@@ -169,23 +150,24 @@ export interface HostForkRequest {
 /** A request the host broker can fulfil. */
 export type HostRequest =
   | HostOpenRequest
-  | HostIssueRequest
   | HostReplyRequest
   | HostReviewRequest
   | HostEditRequest
-  | HostIssueEditRequest
-  | HostIssueCommentRequest
+  | HostActionRequest
   | HostForkRequest;
 
-/** What the opener answered. */
-export interface HostOpenResult {
+/** What the host broker answered. */
+export interface HostResult {
   readonly number?: number;
   readonly url?: string;
+  readonly stdout?: string;
+  readonly stderr?: string;
+  readonly code?: number | null;
   readonly error?: string;
 }
 
-/** The running opener, as it advertises itself. */
-export interface OpenerInfo {
+/** The running host broker, as it advertises itself. */
+export interface HostBrokerInfo {
   readonly pid?: number;
   readonly command?: string;
   readonly startedAt?: string;
@@ -263,7 +245,7 @@ const SKIP = new Set(['.git', 'node_modules', '@eaDir', '#recycle', '$RECYCLE.BI
 /**
  * Find the checkouts under a root.
  *
- * The opener is meant to be started once for a machine, so it is given roots rather than one
+ * The host broker is meant to be started once for a machine, so it is given roots rather than one
  * repository: every checkout below them is served, including ones created later. Dotted
  * directories are *not* skipped — a repository whose name begins with a dot is a checkout like any
  * other. A directory holding a checkout is not descended into, which keeps the walk cheap.
@@ -282,7 +264,7 @@ export function discoverCheckouts(root: string, maxDepth = 4): { repo: string; d
     const gitDir = gitDirAt(current);
     if (gitDir !== undefined) {
       // A `gitdir:` pointer is written by whoever has the checkout, which is the container. Serving a
-      // channel at a path it names would let it choose where the opener creates files, and running `gh`
+      // channel at a path it names would let it choose where the host broker creates files, and running `gh`
       // there would let it choose which repository that checkout means. A worktree's pointer stays under
       // the same root.
       if (canonicalPath(gitDir).startsWith(`${realRoot}${sep}`)) {
@@ -317,35 +299,35 @@ export function channelDir(gitDir: string): string {
 }
 
 /**
- * Read the opener's marker.
+ * Read the host broker's marker.
  *
  * @param dir - the channel directory.
- * @returns what the opener said about itself, or `undefined` when none is running.
+ * @returns what the host broker said about itself, or `undefined` when none is running.
  */
-export function readOpener(dir: string): OpenerInfo | undefined {
+export function readHostBroker(dir: string): HostBrokerInfo | undefined {
   // Through readJson, which takes lstat and a size: a FIFO here would block open(2) forever, and it would
-  // block synchronously, so one such file stops the opener serving every root with nothing in the log.
-  const parsed = readJson(join(dir, OPENER_FILE));
-  return typeof parsed === 'object' && parsed !== null ? (parsed as OpenerInfo) : undefined;
+  // block synchronously, so one such file stops the host broker serving every root with nothing in the log.
+  const parsed = readJson(join(dir, HOST_BROKER_FILE));
+  return typeof parsed === 'object' && parsed !== null ? (parsed as HostBrokerInfo) : undefined;
 }
 
 /**
- * Write the opener's marker.
+ * Write the host broker's marker.
  *
  * @param dir - the channel directory.
  * @param info - what to advertise.
  */
-export function writeOpener(dir: string, info: OpenerInfo): void {
-  writeJsonAtomic(join(dir, OPENER_FILE), info);
+export function writeHostBroker(dir: string, info: HostBrokerInfo): void {
+  writeJsonAtomic(join(dir, HOST_BROKER_FILE), info);
 }
 
 /**
- * Remove the opener's marker.
+ * Remove the host broker's marker.
  *
  * @param dir - the channel directory.
  */
-export function clearOpener(dir: string): void {
-  rmSync(join(dir, OPENER_FILE), { force: true });
+export function clearHostBroker(dir: string): void {
+  rmSync(join(dir, HOST_BROKER_FILE), { force: true });
 }
 
 /**
@@ -403,35 +385,6 @@ export function requestProblems(request: HostRequest): string[] {
     }
     return problems;
   }
-  if (request.kind === 'issue-edit') {
-    if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
-    if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
-    if (!isPositiveNumber(request.number)) problems.push('the issue number is not positive');
-    if (request.title !== undefined && (request.title.trim() === '' || request.title.length > MAX_TITLE_CHARS)) {
-      problems.push(`the title must be 1 to ${MAX_TITLE_CHARS} characters`);
-    }
-    if (request.body !== undefined && request.body.length > MAX_BODY_CHARS) {
-      problems.push(`the body must be at most ${MAX_BODY_CHARS} characters`);
-    }
-    if (request.title === undefined && request.body === undefined) {
-      problems.push('an issue edit needs a title or body');
-    }
-    if (request.account !== undefined && !LOGIN.test(request.account)) {
-      problems.push('the account is not a usable GitHub login');
-    }
-    return problems;
-  }
-  if (request.kind === 'issue-comment') {
-    if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
-    if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
-    if (!isPositiveNumber(request.number)) problems.push('the issue number is not positive');
-    if (request.body.trim() === '') problems.push('a comment needs a body');
-    if (request.body.length > MAX_BODY_CHARS) problems.push(`the body must be at most ${MAX_BODY_CHARS} characters`);
-    if (request.account !== undefined && !LOGIN.test(request.account)) {
-      problems.push('the account is not a usable GitHub login');
-    }
-    return problems;
-  }
   if (request.kind === 'edit') {
     if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
     if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
@@ -453,6 +406,18 @@ export function requestProblems(request: HostRequest): string[] {
     }
     return problems;
   }
+  if (request.kind === 'action') {
+    if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
+    if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
+    if (!/^[a-z]+:[a-z0-9-]+$/.test(request.action)) problems.push('the action name is not usable');
+    if (request.values === null || typeof request.values !== 'object' || Array.isArray(request.values)) {
+      problems.push('the action values are not an object');
+    }
+    if (request.account !== undefined && !LOGIN.test(request.account)) {
+      problems.push('the account is not a usable GitHub login');
+    }
+    return problems;
+  }
   if (request.kind === 'fork') {
     if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
     if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
@@ -464,15 +429,13 @@ export function requestProblems(request: HostRequest): string[] {
   if (request.repo !== undefined && !REPOSITORY.test(request.repo)) {
     problems.push('the repository is not owner/name');
   }
-  if (request.kind !== 'issue') {
-    if (!BRANCH.test(request.head) || request.head.includes('..')) {
-      problems.push('the head branch name is not usable');
-    }
-    if (!BRANCH.test(request.base) || request.base.includes('..')) {
-      problems.push('the base branch name is not usable');
-    }
-    if (request.head === request.base) problems.push('the head and the base are the same branch');
+  if (!BRANCH.test(request.head) || request.head.includes('..')) {
+    problems.push('the head branch name is not usable');
   }
+  if (!BRANCH.test(request.base) || request.base.includes('..')) {
+    problems.push('the base branch name is not usable');
+  }
+  if (request.head === request.base) problems.push('the head and the base are the same branch');
   if (request.title.trim() === '' || request.title.length > MAX_TITLE_CHARS) {
     problems.push(`the title must be 1 to ${MAX_TITLE_CHARS} characters`);
   }
@@ -491,7 +454,7 @@ export function requestProblems(request: HostRequest): string[] {
  * @param dir - the channel directory.
  * @param request - what to ask for.
  * @returns the identifier the answer will carry.
- * @throws {Error} when the request is not one the opener would accept.
+ * @throws {Error} when the request is not one the host broker would accept.
  */
 export function writeRequest(dir: string, request: HostRequest): string {
   const problems = requestProblems(request);
@@ -511,7 +474,11 @@ export function writeRequest(dir: string, request: HostRequest): string {
  */
 export function readRequest(dir: string, id: string): HostRequest | undefined {
   const parsed = readJson(join(dir, `${id}.json`)) as
-    | (Partial<HostOpenRequest> & Partial<HostIssueRequest> & Partial<HostReplyRequest> & Partial<HostReviewRequest> & Partial<HostForkRequest>)
+    | (Partial<HostOpenRequest> &
+        Partial<HostReplyRequest> &
+        Partial<HostReviewRequest> &
+        Partial<HostActionRequest> &
+        Partial<HostForkRequest>)
     | undefined;
   if (!parsed) return undefined;
   if (parsed.kind === 'reply') {
@@ -560,50 +527,6 @@ export function readRequest(dir: string, id: string): HostRequest | undefined {
       pid: parsed.pid,
     };
   }
-  if (parsed.kind === 'issue-edit') {
-    if (
-      typeof parsed.repo !== 'string' ||
-      !REPOSITORY.test(parsed.repo) ||
-      typeof parsed.number !== 'number' ||
-      (parsed.title !== undefined && typeof parsed.title !== 'string') ||
-      (parsed.body !== undefined && typeof parsed.body !== 'string')
-    ) {
-      return undefined;
-    }
-    return {
-      kind: 'issue-edit',
-      repo: parsed.repo,
-      number: parsed.number,
-      ...(parsed.title === undefined ? {} : { title: parsed.title }),
-      ...(parsed.body === undefined ? {} : { body: parsed.body }),
-      ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
-      ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
-      ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
-      session: parsed.session,
-      pid: parsed.pid,
-    };
-  }
-  if (parsed.kind === 'issue-comment') {
-    if (
-      typeof parsed.repo !== 'string' ||
-      !REPOSITORY.test(parsed.repo) ||
-      typeof parsed.body !== 'string' ||
-      typeof parsed.number !== 'number'
-    ) {
-      return undefined;
-    }
-    return {
-      kind: 'issue-comment',
-      repo: parsed.repo,
-      number: parsed.number,
-      body: parsed.body,
-      ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
-      ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
-      ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
-      session: parsed.session,
-      pid: parsed.pid,
-    };
-  }
   if (parsed.kind === 'edit') {
     if (
       typeof parsed.repo !== 'string' ||
@@ -622,6 +545,29 @@ export function readRequest(dir: string, id: string): HostRequest | undefined {
       ...(parsed.title === undefined ? {} : { title: parsed.title }),
       ...(parsed.body === undefined ? {} : { body: parsed.body }),
       ...(parsed.base === undefined ? {} : { base: parsed.base }),
+      ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
+      ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
+      ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
+      session: parsed.session,
+      pid: parsed.pid,
+    };
+  }
+  if (parsed.kind === 'action') {
+    if (
+      typeof parsed.repo !== 'string' ||
+      !REPOSITORY.test(parsed.repo) ||
+      typeof parsed.action !== 'string' ||
+      parsed.values === null ||
+      typeof parsed.values !== 'object' ||
+      Array.isArray(parsed.values)
+    ) {
+      return undefined;
+    }
+    return {
+      kind: 'action',
+      action: parsed.action,
+      repo: parsed.repo,
+      values: parsed.values as HostActionRequest['values'],
       ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
       ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
       ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
@@ -651,7 +597,6 @@ export function readRequest(dir: string, id: string): HostRequest | undefined {
     session: parsed.session,
     pid: parsed.pid,
   };
-  if (parsed.kind === 'issue') return { kind: 'issue', ...common };
   if (typeof parsed.head !== 'string' || typeof parsed.base !== 'string') return undefined;
   return { ...common, head: parsed.head, base: parsed.base, draft: parsed.draft === true };
 }
@@ -666,13 +611,13 @@ export function listRequests(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { withFileTypes: true })
     // Only regular files. The container writes this directory, so anything else here — a directory, a FIFO,
-    // a symlink to a host file — is aimed at the opener rather than written by it.
+    // a symlink to a host file — is aimed at the host broker rather than written by it.
     .filter(
       (entry) =>
         entry.isFile() &&
         entry.name.endsWith('.json') &&
         !entry.name.endsWith('.result.json') &&
-        entry.name !== OPENER_FILE,
+        entry.name !== HOST_BROKER_FILE,
     )
     .map((entry) => entry.name.slice(0, -'.json'.length))
     .sort();
@@ -683,11 +628,39 @@ export function listRequests(dir: string): string[] {
  *
  * @param dir - the channel directory.
  * @param id - the identifier of the request it answers.
- * @returns the answer, or `undefined` while the opener has not replied.
+ * @returns the answer, or `undefined` while the host broker has not replied.
  */
-export function readResult(dir: string, id: string): HostOpenResult | undefined {
-  const parsed = readJson(join(dir, `${id}.result.json`)) as Partial<HostOpenResult> | undefined;
+export function readResult(dir: string, id: string): HostResult | undefined {
+  const parsed = readJson(join(dir, `${id}.result.json`)) as Partial<HostResult> | undefined;
   return parsed ?? undefined;
+}
+
+/** Per-stream JSON-escaped budget; two streams plus the envelope stay under the reader's cap. */
+const MAX_STREAM_JSON_BYTES = 60_000;
+
+/** Bytes one string contributes after JSON escaping. */
+function jsonStringBytes(text: string): number {
+  return Buffer.byteLength(JSON.stringify(text)) - 2;
+}
+
+/** Trim a result stream until its JSON-escaped form fits the result envelope. */
+function clampJsonStream(text: string): string {
+  if (jsonStringBytes(text) <= MAX_STREAM_JSON_BYTES) return text;
+  const suffix = '\n[output truncated]\n';
+  let low = 0;
+  let high = text.length;
+  let best = suffix;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = text.slice(0, middle) + suffix;
+    if (jsonStringBytes(candidate) <= MAX_STREAM_JSON_BYTES) {
+      best = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return best;
 }
 
 /**
@@ -697,8 +670,13 @@ export function readResult(dir: string, id: string): HostOpenResult | undefined 
  * @param id - the identifier of the request it answers.
  * @param result - what happened.
  */
-export function writeResult(dir: string, id: string, result: HostOpenResult): void {
-  writeJsonAtomic(join(dir, `${id}.result.json`), { v: 1, id, ...result });
+export function writeResult(dir: string, id: string, result: HostResult): void {
+  const bounded: HostResult = {
+    ...result,
+    ...(typeof result.stdout === 'string' ? { stdout: clampJsonStream(result.stdout) } : {}),
+    ...(typeof result.stderr === 'string' ? { stderr: clampJsonStream(result.stderr) } : {}),
+  };
+  writeJsonAtomic(join(dir, `${id}.result.json`), { v: 1, id, ...bounded });
 }
 
 /**
@@ -720,26 +698,20 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
     return undefined;
   }
   const request = readJson(claimed) as HostRequest | undefined;
-  // The channel is written by the container, so the shape is not a given: the opener's own checks run on
+  // The channel is written by the container, so the shape is not a given: the host broker's own checks run on
   // this next, and a request missing a string field would make them index undefined and take it down.
   const shaped =
     request !== undefined &&
     // Untyped JSON: the file can spell account as an array or a number even though the type cannot.
     (request.account === undefined || typeof request.account === 'string') &&
-    (request.kind === 'issue-edit'
+    (request.kind === 'action'
       ? typeof request.repo === 'string' &&
         REPOSITORY.test(request.repo) &&
-        Number.isInteger(request.number) &&
-        (request.title === undefined || typeof request.title === 'string') &&
-        (request.body === undefined || typeof request.body === 'string') &&
-        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
-      : request.kind === 'issue-comment'
-        ? typeof request.repo === 'string' &&
-          REPOSITORY.test(request.repo) &&
-          Number.isInteger(request.number) &&
-          typeof request.body === 'string' &&
-          (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
-        : request.kind === 'edit'
+        typeof request.action === 'string' &&
+        request.values !== null &&
+        typeof request.values === 'object' &&
+        !Array.isArray(request.values)
+      : request.kind === 'edit'
       ? typeof request.repo === 'string' &&
         REPOSITORY.test(request.repo) &&
         Number.isInteger(request.number) &&
@@ -767,9 +739,8 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
         (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
       : typeof request.title === 'string' &&
         typeof request.body === 'string' &&
-        (request.kind === 'issue'
-          ? true
-          : typeof request.head === 'string' && typeof request.base === 'string'));
+        typeof request.head === 'string' &&
+        typeof request.base === 'string');
   if (!shaped) {
     rmSync(claimed, { force: true, recursive: true });
     return undefined;
@@ -785,7 +756,7 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
  */
 export function removeRequest(dir: string, id: string): void {
   // Recursive: a directory here is not a request, and it must not be able to make this throw. The claimed
-  // copy goes too: only the opener holding it reaches a removal, and only after answering or refusing, so
+  // copy goes too: only the host broker holding it reaches a removal, and only after answering or refusing, so
   // this is the release — without it every request left a copy of itself, body and all, in the git
   // directory, and nothing ever removed it.
   rmSync(join(dir, `${id}.json`), { force: true, recursive: true });
@@ -816,7 +787,7 @@ export async function waitForResult(
   id: string,
   timeoutMs: number = ANSWER_TIMEOUT_MS,
   pollMs = 500,
-): Promise<HostOpenResult | undefined> {
+): Promise<HostResult | undefined> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const result = readResult(dir, id);
@@ -857,14 +828,14 @@ function writeJsonAtomic(file: string, value: unknown): void {
   const exclusive = (path: string) => writeFileSync(path, payload, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
   try {
     // wx is the whole protection: the name is predictable and the container can write this directory, so
-    // without O_EXCL a symlink here would choose which host file the opener — running as a person — writes.
+    // without O_EXCL a symlink here would choose which host file the host broker — running as a person — writes.
     exclusive(temp);
   } catch (error) {
     if ((error as { code?: string }).code !== 'EEXIST') throw error;
     rmSync(temp, { force: true, recursive: true });
     exclusive(temp);
   }
-  // A directory where the destination belongs would make the rename throw and take the opener with it.
+  // A directory where the destination belongs would make the rename throw and take the host broker with it.
   try {
     if (!lstatSync(file).isFile()) rmSync(file, { force: true, recursive: true });
   } catch {

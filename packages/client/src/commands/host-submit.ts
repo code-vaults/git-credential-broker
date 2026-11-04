@@ -11,14 +11,15 @@ import {
   ANSWER_TIMEOUT_MS,
   channelDir,
   findGitDir,
-  readOpener,
+  readHostBroker,
+  readResult,
   removeResult,
   requestProblems,
   waitForResult,
   writeRequest,
 } from 'gcb-core';
-import type { HostOpenResult, HostRequest } from 'gcb-core';
-import { fail, say } from 'gcb-core';
+import type { HostActionRequest, HostResult, HostRequest } from 'gcb-core';
+import { fail, getGhAction, say } from 'gcb-core';
 
 /**
  * Explain why a host-broker request produced no answer.
@@ -50,14 +51,89 @@ export function noAnswerMessage(dir: string, id: string, noun: string, timeoutMs
 type RequestKind = NonNullable<HostRequest['kind']>;
 const KINDS: Readonly<Record<RequestKind, { noun: string; needed?: string }>> = {
   'pull-request': { noun: 'pull request' },
-  issue: { noun: 'issue', needed: 'issue' },
   fork: { noun: 'fork', needed: 'fork' },
   reply: { noun: 'reply', needed: 'reply' },
   edit: { noun: 'edit', needed: 'edit' },
-  'issue-edit': { noun: 'issue edit', needed: 'issue-edit' },
-  'issue-comment': { noun: 'issue comment', needed: 'issue-comment' },
   review: { noun: 'review', needed: 'review' },
+  action: { noun: 'action', needed: 'action' },
 };
+
+/** Write, wait for and return one host-broker answer. */
+async function exchange(
+  request: HostRequest,
+  timeoutMs: number = ANSWER_TIMEOUT_MS,
+  claimedTimeoutMs?: number,
+): Promise<HostResult> {
+  const problems = requestProblems(request);
+  if (problems.length > 0) fail(problems.join('; '));
+  const { noun, needed } = KINDS[request.kind ?? 'pull-request'];
+  const gitDir = findGitDir(process.cwd());
+  if (gitDir === undefined) fail('--as-user needs a git repository: run it from the checkout');
+  const dir = channelDir(gitDir);
+  const hostBroker = readHostBroker(dir);
+  if (hostBroker === undefined) {
+    fail(
+      `no host broker is watching ${dir}\n` +
+        '  start one on the host: gcb host --repo <that checkout>\n' +
+        '  if one is already running, restart it from this gcb-host version\n' +
+        '  or drop --as-user to do it as the app instead',
+    );
+  }
+  if (needed !== undefined && !(Array.isArray(hostBroker.kinds) && hostBroker.kinds.includes(needed))) {
+    fail(`the host broker does not advertise ${needed} support; restart it from this gcb-host version`);
+  }
+
+  let id: string;
+  try {
+    id = writeRequest(dir, request);
+  } catch (error) {
+    fail((error as Error).message);
+  }
+  const configured = Number(process.env['GCB_HOST_TIMEOUT_MS']);
+  if (Number.isInteger(configured) && configured > 0) {
+    timeoutMs = configured;
+    if (claimedTimeoutMs !== undefined) claimedTimeoutMs = Math.min(claimedTimeoutMs, configured);
+  }
+  let answer = await waitForAnswer(dir, id, timeoutMs, claimedTimeoutMs);
+  if (answer === undefined) answer = await waitForResult(dir, id, 300, 50);
+  if (answer === undefined) {
+    const waited =
+      claimedTimeoutMs !== undefined && existsSync(join(dir, `${id}.json.working`))
+        ? claimedTimeoutMs
+        : timeoutMs;
+    fail(noAnswerMessage(dir, id, noun, waited));
+  }
+  removeResult(dir, id);
+  return answer;
+}
+
+/**
+ * Wait for an answer, giving a claimed request its own deadline after queue time.
+ *
+ * Without this the action timeout would start when the request was written, so a request claimed
+ * late could still be running when the client reported it lost.
+ */
+async function waitForAnswer(
+  dir: string,
+  id: string,
+  queueTimeoutMs: number,
+  claimedTimeoutMs: number | undefined,
+): Promise<HostResult | undefined> {
+  const queueDeadline = Date.now() + queueTimeoutMs;
+  let claimedDeadline: number | undefined;
+  for (;;) {
+    const answer = readResult(dir, id);
+    if (answer !== undefined) return answer;
+    const now = Date.now();
+    if (claimedTimeoutMs !== undefined && existsSync(join(dir, `${id}.json.working`))) {
+      claimedDeadline ??= now + claimedTimeoutMs;
+      if (now >= claimedDeadline) return undefined;
+    } else if (now >= queueDeadline) {
+      return undefined;
+    }
+    await new Promise((done) => setTimeout(done, 50));
+  }
+}
 
 /**
  * Write, wait for and report one host-broker request.
@@ -68,45 +144,29 @@ const KINDS: Readonly<Record<RequestKind, { noun: string; needed?: string }>> = 
  */
 export async function submitToHostBroker(
   request: HostRequest,
-  success: (answer: HostOpenResult) => string,
+  success: (answer: HostResult) => string,
 ): Promise<number> {
-  const problems = requestProblems(request);
-  if (problems.length > 0) fail(problems.join('; '));
-  const { noun, needed } = KINDS[request.kind ?? 'pull-request'];
-  const gitDir = findGitDir(process.cwd());
-  if (gitDir === undefined) fail('--as-user needs a git repository: run it from the checkout');
-  const dir = channelDir(gitDir);
-  const opener = readOpener(dir);
-  if (opener === undefined) {
-    fail(
-      `no host broker is watching ${dir}\n` +
-        '  start one on the host: gcb host --repo <that checkout>\n' +
-        '  or drop --as-user to do it as the app instead',
-    );
-  }
-  if (needed !== undefined && !(Array.isArray(opener.kinds) && opener.kinds.includes(needed))) {
-    fail(`the host broker does not advertise ${needed} support; restart it from this gcb-host version`);
-  }
-
-  // requestProblems above already checked the contract. Keep the catch as defence in case the two
-  // validators ever diverge; a stack trace would tell the caller none of it.
-  let id: string;
-  try {
-    id = writeRequest(dir, request);
-  } catch (error) {
-    fail((error as Error).message);
-  }
-  // A short override makes the timeout path testable without a 180-second test; absent means the
-  // contract value.
-  const configured = Number(process.env['GCB_OPENER_TIMEOUT_MS']);
-  const timeoutMs = Number.isInteger(configured) && configured > 0 ? configured : ANSWER_TIMEOUT_MS;
-  let answer = await waitForResult(dir, id, timeoutMs, 50);
-  // A result can land between the deadline and the cleanup. Re-read before claiming the request
-  // disappeared; deleting it first would turn a successful, late answer into a false "dropped".
-  if (answer === undefined) answer = await waitForResult(dir, id, 300, 50);
-  if (answer === undefined) fail(noAnswerMessage(dir, id, noun, timeoutMs));
-  removeResult(dir, id);
+  const answer = await exchange(request);
   if (answer.error !== undefined) fail(`the host broker could not do it: ${answer.error}`);
   say(success(answer));
   return 0;
+}
+
+/**
+ * Run one catalogued action through the host broker and forward its output.
+ *
+ * @param request - the validated action request.
+ * @returns the child's exit status as 0 or 1.
+ */
+export async function submitActionToHostBroker(request: HostActionRequest): Promise<number> {
+  const action = getGhAction(request.action);
+  const answer = await exchange(
+    request,
+    ANSWER_TIMEOUT_MS,
+    action.timeoutSeconds * 1_000 + 30_000,
+  );
+  if (answer.error !== undefined) fail(`the host broker could not do it: ${answer.error}`);
+  if (answer.stdout !== undefined && answer.stdout !== '') process.stdout.write(answer.stdout);
+  if (answer.stderr !== undefined && answer.stderr !== '') process.stderr.write(answer.stderr);
+  return answer.code === 0 ? 0 : 1;
 }

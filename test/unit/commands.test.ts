@@ -1505,6 +1505,12 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(result.stderr, /--jq only goes with --id/);
   });
 
+  it('refuses --body together with --body-file in the pr lifecycle', () => {
+    const both = cli(['--number', '7', '--approve', '--body', 'x', '--body-file', 'f', '--repo', 'acme/widget']);
+    assert.equal(both.status, 1);
+    assert.match(both.stderr, /--body and --body-file are mutually exclusive/u);
+  });
+
   it('refuses a bare --jq', () => {
     const result = cli(['review', ...base, '--id', '9', '--jq']);
     assert.equal(result.status, 1);

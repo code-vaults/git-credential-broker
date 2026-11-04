@@ -1,4 +1,4 @@
-/** The two ways an opener request can produce no answer. */
+/** The two ways an host broker request can produce no answer. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -15,7 +15,7 @@ function fixture(): { dir: string; cleanup: () => void } {
   return { dir: channelDir(path.join(root, '.git')), cleanup: () => fs.rmSync(root, { recursive: true, force: true }) };
 }
 
-describe('an opener request without an answer', () => {
+describe('an host broker request without an answer', () => {
   it('says the request was taken and dropped when neither copy remains', () => {
     const host = fixture();
     try {

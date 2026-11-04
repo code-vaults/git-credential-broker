@@ -11,14 +11,12 @@
  *
  * Exit codes: 0 done, 1 refused, 3 broker unreachable.
  */
-import { readFileSync } from 'node:fs';
-
 import { LOGIN } from 'gcb-core';
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { baseBranchFor, qualifiedBranch, remoteRepo } from './remotes.ts';
 import { runGh } from './gh.ts';
 import { submitToHostBroker } from './host-submit.ts';
-import { fail, parseArgs, say, validateArgs } from 'gcb-core';
+import { bodyFromArgs, fail, parseArgs, say, validateArgs } from 'gcb-core';
 
 /** Every flag the flag-only lifecycle understands. */
 const KNOWN_FLAGS = new Set([
@@ -47,7 +45,7 @@ Opening (the default)
                        A <remote>:<branch> here names the same repository as --repo
   --title <text>       The title                                     [required]
   --body <text>        The body, inline
-  --body-file <path>   The body, read from a file — a pull request body is usually long
+  --body-file <path>   The body from a file, or '-' for stdin; a PR body is usually long
   --draft              Open it as a draft
   --as-user            Act as the authorized person through the broker for open,
                        review, reply, resolve, edit or comment; fails if no user token
@@ -239,15 +237,6 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const head = qualified(args.value('head'));
   const base = baseBranch();
   const title = args.value('title');
-  const bodyFile = args.value('body-file');
-  let body = args.value('body');
-  if (bodyFile !== undefined) {
-    try {
-      body = readFileSync(bodyFile, 'utf8');
-    } catch (error) {
-      fail(`cannot read ${bodyFile}: ${(error as Error).message}`);
-    }
-  }
 
   if (action === 'open') {
     if (!head) fail('--head is required to open a pull request');
@@ -268,13 +257,6 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (jq !== undefined && action !== 'review') {
     fail('--jq only goes with --id');
   }
-  if (action === 'update' && title === undefined && body === undefined && base === undefined) {
-    fail('an update has to change something: pass --title, --body/--body-file or --base');
-  }
-  if ((action === 'comment' || action === 'reply' || action === 'edit') && (body === undefined || body.trim() === '')) {
-    fail('a comment has to say something: pass --body or --body-file');
-  }
-
   const filePath = args.value('file');
   const lineArg = args.value('line');
   const side = (args.value('side') ?? 'right').toLowerCase();
@@ -307,6 +289,26 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     fail(`--resolve needs the id of the thread being resolved, got ${JSON.stringify(resolveId)}`);
   }
 
+  const hasBody = args.value('body') !== undefined || args.value('body-file') !== undefined;
+  let bodyValue: string | undefined;
+  let bodyRead = false;
+  const readBody = (): string | undefined => {
+    if (!bodyRead) {
+      bodyValue = bodyFromArgs(args);
+      bodyRead = true;
+    }
+    return bodyValue;
+  };
+  if (action === 'update' && title === undefined && !hasBody && base === undefined) {
+    fail('an update has to change something: pass --title, --body/--body-file or --base');
+  }
+  if ((action === 'comment' || action === 'reply' || action === 'edit') && !hasBody) {
+    fail('a comment has to say something: pass --body or --body-file');
+  }
+  if ((action === 'comment' || action === 'reply' || action === 'edit') && readBody()?.trim() === '') {
+    fail('a comment has to say something: pass --body or --body-file');
+  }
+
   if (action === 'review') {
     const ghArgs = ['pr', 'review-by-id', String(number), reviewId as string, '--repo', repo, '--host', host];
     const socketArg = args.value('socket');
@@ -318,6 +320,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   }
 
   if (action === 'update') {
+    const body = hasBody ? readBody() : undefined;
     if (account !== undefined) {
       return submitToHostBroker(
         {
@@ -363,7 +366,11 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     ].filter((event): event is 'approve' | 'request-changes' | 'comment' => event !== undefined);
     if (events.length !== 1) fail('choose exactly one of --approve, --request-changes or --review-comment');
     const event = events[0] as 'approve' | 'request-changes' | 'comment';
-    if (event !== 'approve' && (body === undefined || body.trim() === '')) {
+    if (event !== 'approve' && !hasBody) {
+      fail(`--${event === 'comment' ? 'review-comment' : 'request-changes'} needs --body or --body-file`);
+    }
+    const body = event === 'approve' && !hasBody ? undefined : readBody();
+    if (event !== 'approve' && body?.trim() === '') {
       fail(`--${event === 'comment' ? 'review-comment' : 'request-changes'} needs --body or --body-file`);
     }
     if (account !== undefined) {
@@ -397,6 +404,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
 
   if (account !== undefined && action === 'reply') {
     if (number === undefined || replyTo === undefined) fail('--as-user <login> needs --number and --reply-to');
+    const body = readBody();
     return submitToHostBroker(
       {
         kind: 'reply',
@@ -416,6 +424,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
 
   if (account !== undefined) {
     if (head === undefined || title === undefined) fail('--as-user needs --head and --title');
+    const body = hasBody ? readBody() : undefined;
     if (args.value('repo') !== undefined && host.toLowerCase() !== 'github.com') {
       fail('--as-user <login> with --repo only targets github.com; --host is not supported for create');
     }
@@ -439,6 +448,8 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (socketPath === undefined) {
     fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `gcb setup`');
   }
+
+  const body = ['open', 'comment', 'reply', 'edit'].includes(action) && hasBody ? readBody() : undefined;
 
   let response;
   try {

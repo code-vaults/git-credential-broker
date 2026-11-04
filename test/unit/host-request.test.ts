@@ -1,5 +1,5 @@
 /**
- * The request channel, and the one thing the opener reads out of a program's output.
+ * The request channel, and the one thing the host broker reads out of a program's output.
  *
  * The channel is two processes talking through a directory, so these tests are about the file
  * protocol: what a request looks like, what is refused before it is written, and what a caller sees
@@ -16,19 +16,19 @@ import { pullRequestUrl } from '../../packages/host/src/commands/host.ts';
 import {
   channelDir,
   claimRequest,
-  clearOpener,
+  clearHostBroker,
   discoverCheckouts,
   findGitDir,
   listRequests,
   newId,
-  readOpener,
+  readHostBroker,
   readRequest,
   readResult,
   removeRequest,
   removeResult,
   requestProblems,
   waitForResult,
-  writeOpener,
+  writeHostBroker,
   writeRequest,
   writeResult,
 } from '../../packages/core/src/host-request.ts';
@@ -43,8 +43,8 @@ describe('what the channel refuses to read', () => {
     mkdirSync(dir, { recursive: true });
     // A directory is the non-regular file a test can make without blocking; the guard is the same lstat
     // check that a FIFO needs, and a FIFO would block open(2) before any assertion ran.
-    mkdirSync(join(dir, 'opener.json'), { recursive: true });
-    assert.equal(readOpener(dir), undefined, 'a directory is not a marker');
+    mkdirSync(join(dir, 'host-broker.json'), { recursive: true });
+    assert.equal(readHostBroker(dir), undefined, 'a directory is not a marker');
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -89,17 +89,17 @@ describe('the host request channel', () => {
     assert.equal(findGitDir(tmpdir()), undefined);
   });
 
-  it('advertises a running opener, and forgets it when it stops', () => {
-    assert.equal(readOpener(dir), undefined, 'nothing is running to begin with');
+  it('advertises a running host broker, and forgets it when it stops', () => {
+    assert.equal(readHostBroker(dir), undefined, 'nothing is running to begin with');
 
-    writeOpener(dir, { pid: 4321, command: 'gh', startedAt: '2026-10-01T00:00:00.000Z' });
-    assert.deepEqual(readOpener(dir), { pid: 4321, command: 'gh', startedAt: '2026-10-01T00:00:00.000Z' });
+    writeHostBroker(dir, { pid: 4321, command: 'gh', startedAt: '2026-10-01T00:00:00.000Z' });
+    assert.deepEqual(readHostBroker(dir), { pid: 4321, command: 'gh', startedAt: '2026-10-01T00:00:00.000Z' });
 
-    clearOpener(dir);
-    assert.equal(readOpener(dir), undefined);
+    clearHostBroker(dir);
+    assert.equal(readHostBroker(dir), undefined);
   });
 
-  it('carries a request to the opener and an answer back', async () => {
+  it('carries a request to the host broker and an answer back', async () => {
     const id = writeRequest(dir, GOOD);
 
     assert.deepEqual(listRequests(dir), [id], 'and it is the only thing waiting');
@@ -123,17 +123,27 @@ describe('the host request channel', () => {
     assert.equal(readResult(dir, id), undefined, 'and nothing is left behind');
   });
 
+  it('keeps a large control-character answer readable', () => {
+    const id = writeRequest(dir, GOOD);
+    writeResult(dir, id, { stdout: '\u0000'.repeat(200_000), stderr: '', code: 0 });
+    const answer = readResult(dir, id);
+    assert.ok(answer, 'the answer is readable');
+    assert.match(answer.stdout ?? '', /\[output truncated\]/u);
+    removeRequest(dir, id);
+    removeResult(dir, id);
+  });
+
   it('keeps the marker and the answers out of the list of work to do', () => {
-    writeOpener(dir, { pid: 1 });
+    writeHostBroker(dir, { pid: 1 });
     writeResult(dir, '20261001T000000-0000', { error: 'nope' });
 
     assert.deepEqual(listRequests(dir), [], 'neither is a request');
 
-    clearOpener(dir);
+    clearHostBroker(dir);
     removeResult(dir, '20261001T000000-0000');
   });
 
-  it('refuses what the opener would refuse, before writing anything', () => {
+  it('refuses what the host broker would refuse, before writing anything', () => {
     assert.deepEqual(requestProblems(GOOD), []);
     assert.match(requestProblems({ ...GOOD, head: '../escape' }).join(' '), /head branch/);
     assert.match(requestProblems({ ...GOOD, base: 'a..b' }).join(' '), /base branch/);
@@ -146,22 +156,6 @@ describe('the host request channel', () => {
 
     assert.throws(() => writeRequest(dir, { ...GOOD, head: '../escape' }), /head branch/);
     assert.deepEqual(listRequests(dir), [], 'and a refused request is not waiting');
-  });
-
-  it('carries an issue request without branch fields', async () => {
-    const issue = { kind: 'issue' as const, title: 'a title', body: 'a body', account: 'octocat' };
-    assert.deepEqual(requestProblems(issue), []);
-    const id = writeRequest(dir, issue);
-    assert.deepEqual(readRequest(dir, id), {
-      kind: 'issue',
-      title: 'a title',
-      body: 'a body',
-      account: 'octocat',
-      repo: undefined,
-      session: undefined,
-      pid: undefined,
-    });
-    removeRequest(dir, id);
   });
 
   it('carries a typed review reply', async () => {
@@ -191,10 +185,6 @@ describe('the host request channel', () => {
       requestProblems({ kind: 'review', repo: 'acme/widget', number: unsafe, event: 'approve', body: '' }).join(' '),
       /number is not positive/u,
     );
-    assert.match(
-      requestProblems({ kind: 'issue-comment', repo: 'acme/widget', number: unsafe, body: 'x' }).join(' '),
-      /number is not positive/u,
-    );
   });
 
   it('refuses an edit with nothing to change', () => {
@@ -202,27 +192,7 @@ describe('the host request channel', () => {
       () => writeRequest(dir, { kind: 'edit', repo: 'acme/widget', number: 7 }),
       /edit needs a title, body or base/u,
     );
-    assert.throws(
-      () => writeRequest(dir, { kind: 'issue-edit', repo: 'acme/widget', number: 7 }),
-      /issue edit needs a title or body/u,
-    );
     assert.deepEqual(listRequests(dir), [], 'and neither is waiting');
-  });
-
-  it('drops an issue edit or comment whose host is not a string', () => {
-    for (const kind of ['issue-edit', 'issue-comment'] as const) {
-      mkdirSync(dir, { recursive: true });
-      const rawId = newId();
-      writeFileSync(
-        join(dir, rawId + '.json'),
-        JSON.stringify(
-          kind === 'issue-edit'
-            ? { v: 1, id: rawId, kind, repo: 'acme/widget', number: 7, title: 't', host: 42 }
-            : { v: 1, id: rawId, kind, repo: 'acme/widget', number: 7, body: 'b', host: 42 },
-        ),
-      );
-      assert.equal(claimRequest(dir, rawId), undefined, kind + ' with a non-string host is not claimed');
-    }
   });
 
   it('carries a fork request without branches or text', async () => {
@@ -260,7 +230,7 @@ describe('the host request channel', () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'broken.json'), '{oops', 'utf8');
     assert.deepEqual(listRequests(dir), ['broken']);
-    assert.equal(readRequest(dir, 'broken'), undefined, 'so the opener drops it instead of guessing');
+    assert.equal(readRequest(dir, 'broken'), undefined, 'so the host broker drops it instead of guessing');
     removeRequest(dir, 'broken');
   });
 });

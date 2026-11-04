@@ -3,7 +3,7 @@
  *
  * A directory can have more than one name — a symlinked `$HOME`, a mount the host spells one way and
  * the container another — and a lexical prefix comparison calls those different places. The checks
- * that keep the broker's code out of a container mount, and the opener inside the roots it serves,
+ * that keep the broker's code out of a container mount, and the host broker inside the roots it serves,
  * have to compare real paths rather than spellings.
  */
 import fs from 'node:fs';

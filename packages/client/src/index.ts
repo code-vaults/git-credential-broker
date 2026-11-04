@@ -5,6 +5,7 @@
  */
 import { CLIENT_COMMANDS, GH_ACTIONS } from 'gcb-core';
 import type { CommandBackend } from 'gcb-core';
+import type { Primary } from './primary.ts';
 
 export { runHelper } from './helper.ts';
 
@@ -47,10 +48,20 @@ Environment
   GIT_BROKER_REQUIRE=1    Fail closed instead of behaving as if not installed when unconfigured
   GIT_BROKER_SOCKET_FILE  Where to read the socket path from when no variable is set
   GCB_PROXY               Per-push broker proxy: a URL, or empty for direct
+  GCB_PRIMARY             CLI that runs catalogued actions (default: gh)
 
 Host commands such as init/stage/compose/diagnose are in gcb-host.`;
 
-async function run(argv: readonly string[]): Promise<number> {
+/** Ask the selected action's own scan, rather than a second interpretation of its argv. */
+async function actionAsksHelp(domain: string, sub: string | undefined, argv: readonly string[]): Promise<boolean> {
+  if (sub === undefined || sub.startsWith('-')) {
+    return argv.includes('--help') || argv.includes('-h');
+  }
+  return (await import('./commands/gh.ts')).actionHelpRequested(`${domain}:${sub}`, argv);
+}
+
+export async function runClient(argv: readonly string[], primary?: Primary): Promise<number> {
+  const choose = async (): Promise<Primary> => primary ?? (await import('./primary.ts')).primaryFromEnv();
   const [command, ...rest] = argv;
   switch (command) {
     case 'setup':
@@ -64,34 +75,34 @@ async function run(argv: readonly string[]): Promise<number> {
       // second list: a subcommand the catalog does not have stays with the flag-only lifecycle.
       // Bare `pr` asks the catalog too, where `run` needs no branch: the flag-only path would only
       // tell it that --repo is required.
-      if (rest.length === 0) return (await import('./commands/gh.ts')).runGh(['pr']);
+      if (rest.length === 0) return (await choose()).run(['pr']);
       const sub = rest[0];
       if (sub === 'review' && rest.some((argument) => argument === '--id' || argument.startsWith('--id='))) {
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));
       }
-      if (
-        sub === 'create' &&
-        rest.some(
-          (argument) =>
-            argument === '--as-user' ||
-            argument.startsWith('--as-user=') ||
-            argument === '-as-user' ||
-            argument.startsWith('-as-user='),
-        )
-      ) {
+      if (sub === 'create' && (await import('./commands/gh.ts')).actionHasAsUser('pr:create', rest)) {
         // `pr create` is the catalogued action, but `--as-user` is the flag-only lifecycle's flag.
         // Accept the obvious spelling instead of making the caller discover that `create` must go.
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));
       }
       if (sub !== undefined && Object.hasOwn(GH_ACTIONS, `pr:${sub}`)) {
-        return (await import('./commands/gh.ts')).runGh(['pr', ...rest], { unreachableExitCode: 3 });
+        if (await actionAsksHelp('pr', sub, rest)) {
+          return (await import('./commands/gh.ts')).runGh(['pr', ...rest], { unreachableExitCode: 3 });
+        }
+        return (await choose()).run(['pr', ...rest], { unreachableExitCode: 3 });
       }
       return (await import('./commands/pr.ts')).runPr(rest);
     }
     case 'run':
-      return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
+      if (await actionAsksHelp('run', rest[0], rest)) {
+        return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
+      }
+      return (await choose()).run(['run', ...rest]);
     case 'issue':
-      return (await import('./commands/issue.ts')).runIssue(rest);
+      if (await actionAsksHelp('issue', rest[0], rest)) {
+        return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
+      }
+      return (await choose()).run(['issue', ...rest]);
     case 'repo':
       return (await import('./commands/repo.ts')).runRepo(rest);
     case 'gh':
@@ -106,5 +117,5 @@ export const clientBackend: CommandBackend = {
   role: 'client',
   commands: CLIENT_COMMANDS,
   help: CLIENT_HELP,
-  run,
+  run: runClient,
 };

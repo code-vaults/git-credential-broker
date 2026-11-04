@@ -82,7 +82,11 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   defines its command, flags, positionals, permissions and timeout; the token mint, the creation
   preflight, the command table and the docs must read it rather than keep a second list. The broker
   rebuilds a canonical argv from validated values and never forwards the caller’s argv. Add an
-  action only with that command’s GitHub endpoint documentation and a test.
+  action only with that command’s GitHub endpoint documentation and a test. Catalogued client
+  subcommands dispatch through one primary adapter (`GCB_PRIMARY`, default `gh`); an unsupported
+  primary fails closed, and `gcb issue` is a catalog shell through the same adapter rather than a
+  second forwarding layer. `gcb gh` accepts bare `--as-user` for `appUser` actions and `--as-user <login>`
+  for a catalogued host action; the latter stays a typed, allowlisted request, never raw argv.
 - **Dependencies belong to the package that uses them.** `gcb-client` has no runtime dependencies;
   `gcb-host` owns `yaml`. npm installs them; there is no esbuild/bundle step. `stage` is export-only
   and does not install or build, so a commit deployment must install its production dependencies in
@@ -208,13 +212,13 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   author instead — through the broker's authorized user token, or through the host broker.**
   Opening a pull request is a person action: use `gcb pr create --as-user` (broker's authorized
   person) by default, or `pr create --as-user <login>` for a specific host account; the latter writes
-  a request under `<git dir>/gcb/pr-requests` (shared with the host, untracked) for `gcb host`.
+  a request under `<git dir>/gcb/host-broker` (shared with the host, untracked) for `gcb host`.
   A plain `gcb pr create` (app identity) is the exception, only when the operator explicitly asks for
   an App-authored PR; automated reviewers may skip those. The flag-only `gcb pr --as-user` form also
   opens with `--head/--title`, and covers review, reply, PR edit, review-comment edit/comment and
   resolve. Bare `issue create/edit/comment --as-user` uses the broker's person action token; the login
-  form uses the host broker. It runs no shell, its program is configuration, and it cannot push,
-  merge, close or read.
+  form uses the host broker. It runs no shell, its program is configuration, and it cannot push or merge. The
+  generic `gcb gh --as-user <login>` route adds every catalogued action, including pull request close.
 
   The host broker is started once per machine, not once per repository: it discovers the checkouts under
   its `--root`s (default `$HOME`) within `--depth` levels of each (4 by default), so anything added
@@ -258,14 +262,14 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   listing the installations and the repositories each one reaches; asking for a credential for a
   repository the app *is* installed on is the control that needs no such command.
 
-  **Which actions are left is the operational half.** The host broker creates pull requests/issues,
-  submits reviews, replies to review comments, edits pull requests and edits or comments on issues
-  (with `--as-user <login>`),
+  **Which actions are left is the operational half.** The host broker creates pull requests, submits
+  reviews, replies to review comments, edits pull requests, runs catalogued actions (with
+  `--as-user <login>`) — including issue create/edit/comment and pull request close —
   while bare `--as-user` through the broker also handles review, reply, resolve, edit and comment. Every other action still
   goes through the installation token.
   On a repository the app is not installed on, a pull request can be opened, edited, reviewed, and its
-  review comments replied to, edited or resolved with bare `--as-user`; close and merge still have no
-  route, and neither the container nor the host broker can do them. Acting as a person, from a
+  review comments replied to, edited or resolved with bare `--as-user`; merge has no route. The host
+  action route can close a pull request as a person; neither route pushes. Acting as a person, from a
   checkout on the host that holds the person's own credentials or an allowlisted explicit repository,
   is the design.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
@@ -324,7 +328,8 @@ Full detail and the measurements behind them:
 |---|---|
 | `packages/core/src/` | shared parser, help/version, protocol, types, platform, paths and the gh action catalog |
 | `packages/client/src/helper.ts` | the container-side credential helper |
-| `packages/client/src/commands/` | setup, probe, logs, pr, issue, repo, gh, remotes and the shared host-submit helper |
+| `packages/client/src/primary.ts` | the catalogued-action primary adapter (default `gh`) |
+| `packages/client/src/commands/` | setup, probe, logs, pr, repo, gh, remotes and the shared host-submit helper |
 | `packages/host/src/broker.ts` | unix socket server, refusal codes, audit records |
 | `packages/host/src/config.ts` | YAML configuration |
 | `packages/host/src/gh.ts` | the isolated gh action executor |

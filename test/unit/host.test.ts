@@ -1,5 +1,5 @@
 /**
- * The opener's own command path, driven end to end with a program that is not gh.
+ * The host broker's own command path, driven end to end with a program that is not gh.
  *
  * The channel helpers are tested elsewhere; what this covers is the part that had none: a request
  * arriving, the argument list built for the program, the answer written back, and the two properties the
@@ -7,15 +7,15 @@
  * either the checkout the request was written in or the explicit allowlisted repo it names.
  */
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
-import { runHostBroker } from '../../packages/host/src/commands/host.ts';
+import { runBounded, runHostBroker } from '../../packages/host/src/commands/host.ts';
 import { channelDir, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 
-describe('the opener, once', () => {
+describe('the host broker, once', () => {
   let root = '';
   let repo = '';
   let dir = '';
@@ -85,6 +85,21 @@ describe('the opener, once', () => {
   });
 });
 
+describe('bounded action output', () => {
+  it('appends the timeout note when the child had already written stderr', async () => {
+    const result = await runBounded(
+      process.execPath,
+      ['-e', 'process.stderr.write("before\\n" + "x".repeat(60000)); setTimeout(() => {}, 5000);'],
+      { cwd: tmpdir(), env: process.env, timeoutMs: 500 },
+    );
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /before/u);
+    assert.match(result.stderr, /\[output truncated\]/u);
+    assert.match(result.stderr, /timed out; a write may have completed/u);
+    assert.ok(Buffer.byteLength(result.stderr) <= 48_000);
+  });
+});
+
 describe('the host reply route', () => {
   it('runs gh api for a review reply and returns the comment URL', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-reply-'));
@@ -128,66 +143,7 @@ describe('the host reply route', () => {
   });
 });
 
-describe('the opener issue route', () => {
-  it('runs gh issue create without branch flags', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-broker-issue-'));
-    const repo = join(root, 'checkout');
-    mkdirSync(join(repo, '.git'), { recursive: true });
-    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    const dir = channelDir(join(repo, '.git'));
-    const argvFile = join(root, 'argv');
-    const command = join(root, 'not-gh');
-    writeFileSync(
-      command,
-      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "https://github.com/acme/widget/issues/9"\n',
-      'utf8',
-    );
-    chmodSync(command, 0o755);
-    try {
-      const id = writeRequest(dir, { kind: 'issue', title: 'a title', body: 'a body' });
-      const code = await runHostBroker(['--repo', repo, '--command', command, '--once']);
-      assert.equal(code, 0);
-      assert.equal(readResult(dir, id)?.number, 9);
-      const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
-      assert.deepEqual(argv.slice(0, 2), ['issue', 'create']);
-      assert.ok(argv.includes('--title=a title'));
-      assert.ok(argv.includes('--body-file'));
-      assert.ok(!argv.includes('--base'));
-      assert.ok(!argv.includes('--head'));
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-});
-
-describe('the opener explicit-repository route', () => {
-  it('passes the named repository to gh instead of using the checkout', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-broker-issue-repo-'));
-    const repo = join(root, 'checkout');
-    mkdirSync(join(repo, '.git'), { recursive: true });
-    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    const config = forkConfig(root, 'acme/widget');
-    const dir = channelDir(join(repo, '.git'));
-    const argvFile = join(root, 'argv');
-    const command = join(root, 'not-gh');
-    writeFileSync(
-      command,
-      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "https://github.com/acme/widget/issues/9"\n',
-      'utf8',
-    );
-    chmodSync(command, 0o755);
-    try {
-      const id = writeRequest(dir, { kind: 'issue', repo: 'acme/widget', title: 'a title', body: 'a body' });
-      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
-      assert.equal(code, 0);
-      assert.equal(readResult(dir, id)?.number, 9);
-      const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
-      assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
+describe('the host broker explicit-repository route', () => {
   it('passes an explicit repository to gh for a pull request too', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-pr-repo-'));
     const repo = join(root, 'checkout');
@@ -227,24 +183,6 @@ describe('the opener explicit-repository route', () => {
     }
   });
 
-  it('refuses an explicit repository without the allowlist config', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-broker-issue-no-config-'));
-    const repo = join(root, 'checkout');
-    mkdirSync(join(repo, '.git'), { recursive: true });
-    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    const dir = channelDir(join(repo, '.git'));
-    const command = join(root, 'not-gh');
-    writeFileSync(command, '#!/bin/sh\necho "https://github.com/acme/widget/issues/9"\n', 'utf8');
-    chmodSync(command, 0o755);
-    try {
-      const id = writeRequest(dir, { kind: 'issue', repo: 'acme/widget', title: 'a title', body: 'a body' });
-      const code = await runHostBroker(['--repo', repo, '--command', command, '--once']);
-      assert.equal(code, 0);
-      assert.match(readResult(dir, id)?.error ?? '', /needs the broker config allowlist/);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
 });
 
 function forkConfig(root: string, allow: string, host = 'github.com'): string {
@@ -257,7 +195,7 @@ function forkConfig(root: string, allow: string, host = 'github.com'): string {
   return path;
 }
 
-describe('the opener fork route', () => {
+describe('the host broker fork route', () => {
   it('runs gh repo fork with the repository and returns its URL', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-fork-'));
     const repo = join(root, 'checkout');
@@ -417,7 +355,7 @@ describe('a review whose temp directory cannot be made', () => {
 });
 
 describe('edit routes outside the allowlist', () => {
-  for (const kind of ['edit', 'issue-edit', 'issue-comment'] as const) {
+  for (const kind of ['edit'] as const) {
     it(`refuses ${kind} before running gh`, async () => {
       const root = mkdtempSync(join(tmpdir(), `host-broker-${kind}-denied-`));
       const repo = join(root, 'checkout');
@@ -430,14 +368,7 @@ describe('edit routes outside the allowlist', () => {
       writeFileSync(command, '#!/bin/sh\ntouch ' + marker + '\necho "{}"\n', 'utf8');
       chmodSync(command, 0o755);
       try {
-        const id = writeRequest(
-          dir,
-          kind === 'edit'
-            ? { kind, repo: 'acme/widget', number: 7, title: 'fixed' }
-            : kind === 'issue-edit'
-              ? { kind, repo: 'acme/widget', number: 7, title: 'fixed' }
-              : { kind, repo: 'acme/widget', number: 7, body: 'note' },
-        );
+        const id = writeRequest(dir, { kind, repo: 'acme/widget', number: 7, title: 'fixed' });
         const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
         assert.equal(code, 0);
         assert.match(readResult(dir, id)?.error ?? '', /not in the allowlist/u);
@@ -449,51 +380,127 @@ describe('edit routes outside the allowlist', () => {
   }
 });
 
-describe('the host issue edit and comment routes', () => {
-  for (const entry of [
-    { kind: 'issue-edit' as const, argv: ['issue', 'edit'], flags: ['--title=fixed', '--body-file'], body: 'updated' },
-    { kind: 'issue-comment' as const, argv: ['issue', 'comment'], flags: ['--body-file'], body: '--help' },
-  ]) {
-    it(`runs gh ${entry.argv.join(' ')}`, async () => {
-      const root = mkdtempSync(join(tmpdir(), `host-broker-${entry.kind}-`));
-      const repo = join(root, 'checkout');
-      mkdirSync(join(repo, '.git'), { recursive: true });
-      writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-      const config = forkConfig(root, 'acme/widget');
-      const dir = channelDir(join(repo, '.git'));
-      const argvFile = join(root, 'argv');
-      const bodyCaptureFile = join(root, 'body');
-      const command = join(root, 'not-gh');
-      writeFileSync(
-        command,
-        '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' +
-          argvFile +
-          '\nwhile [ "$#" -gt 0 ]; do\n  if [ "$1" = "--body-file" ]; then cat "$2" > ' +
-          bodyCaptureFile +
-          '; break; fi\n  shift\ndone\necho "https://github.com/acme/widget/issues/7#issuecomment-1"\n',
-        'utf8',
+describe('the host action route', () => {
+  it('runs a catalogued action and returns its output', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-action-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const argvFile = join(root, 'argv');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "action output"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'issue:comment',
+        repo: 'acme/widget',
+        values: { number: 7, body: 'x' },
+      });
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      const result = readResult(dir, id);
+      assert.equal(result?.stdout, 'action output\n');
+      assert.equal(result?.code, 0);
+      const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
+      assert.deepEqual(argv.slice(0, 3), ['issue', 'comment', '7']);
+      assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
+      assert.ok(argv.includes('--body-file'));
+      assert.ok(argv[argv.indexOf('--body-file') + 1]?.endsWith('body.md'));
+
+      writeFileSync(command, '#!/bin/sh\nyes a | head -c 60000\n', 'utf8');
+      const largeId = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'acme/widget',
+        values: { number: 7 },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      const large = readResult(dir, largeId);
+      assert.match(large?.stdout ?? '', /\[output truncated\]/u);
+      assert.ok(Buffer.byteLength(large?.stdout ?? '') <= 48_000);
+
+      const deniedId = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'other/repo',
+        values: { number: 7 },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.match(readResult(dir, deniedId)?.error ?? '', /allowlist/u);
+
+      const unknownId = writeRequest(dir, {
+        kind: 'action',
+        action: 'issue:view',
+        repo: 'acme/widget',
+        values: { number: 7 },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.match(readResult(dir, unknownId)?.error ?? '', /unknown gh action/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps an asynchronous spawn error in the result', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-spawn-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'acme/widget',
+        values: { number: 7 },
+      });
+      assert.equal(
+        await runHostBroker(['--repo', repo, '--command', join(root, 'missing-gh'), '--config', config, '--once']),
+        0,
       );
-      chmodSync(command, 0o755);
-      try {
-        const id = writeRequest(
-          dir,
-          entry.kind === 'issue-edit'
-            ? { kind: entry.kind, repo: 'acme/widget', number: 7, title: 'fixed', body: entry.body }
-            : { kind: entry.kind, repo: 'acme/widget', number: 7, body: entry.body },
-        );
-        const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
-        assert.equal(code, 0);
-        assert.equal(readResult(dir, id)?.url, 'https://github.com/acme/widget/issues/7');
-        const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
-        assert.deepEqual(argv.slice(0, 2), entry.argv);
-        assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
-        for (const flag of entry.flags) assert.ok(argv.includes(flag));
-        assert.equal(readFileSync(bodyCaptureFile, 'utf8'), entry.body);
-      } finally {
-        rmSync(root, { recursive: true, force: true });
-      }
-    });
-  }
+      const result = readResult(dir, id);
+      assert.equal(result?.code, 1);
+      assert.match(result?.stderr ?? '', /ENOENT|spawn/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a request the client already stopped waiting for', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-expired-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const marker = join(root, 'ran');
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\ntouch ' + marker + '\n', 'utf8');
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'acme/widget',
+        values: { number: 7 },
+      });
+      const old = new Date(Date.now() - 10 * 60_000);
+      utimesSync(join(dir, `${id}.json`), old, old);
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.equal(existsSync(marker), false);
+      assert.match(readResult(dir, id)?.error ?? '', /expired/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('the host edit route', () => {
@@ -632,7 +639,7 @@ describe('a reply outside the allowlist', () => {
 
 describe('a claim that someone else holds', () => {
   it('does not act on the request, does not answer it, and does not remove the claim', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'opener-claim-'));
+    const root = mkdtempSync(join(tmpdir(), 'host broker-claim-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -656,7 +663,7 @@ describe('a claim that someone else holds', () => {
   });
 });
 
-describe('the opener account selection', () => {
+describe('the host broker account selection', () => {
   it('uses ~/.config/gh-<login> and clears inherited tokens', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-account-'));
     const repo = join(root, 'checkout');
@@ -765,7 +772,7 @@ describe('the opener account selection', () => {
   });
 });
 
-describe('the opener proxy choice', () => {
+describe('the host broker proxy choice', () => {
   it('applies, keeps or clears the proxy environment per request', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-proxy-'));
     const repo = join(root, 'checkout');
