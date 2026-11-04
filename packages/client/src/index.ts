@@ -3,7 +3,7 @@
  *
  * The host commands are not imported here; installing `gcb-client` never pulls `yaml`.
  */
-import { CLIENT_COMMANDS, GH_ACTIONS, helpRequested, parseArgs } from 'gcb-core';
+import { CLIENT_COMMANDS, GH_ACTIONS } from 'gcb-core';
 import type { CommandBackend } from 'gcb-core';
 import type { Primary } from './primary.ts';
 
@@ -72,17 +72,12 @@ function hasAsUserLogin(argv: readonly string[]): boolean {
   return false;
 }
 
-/** The boolean flags of a catalogued action, so help scanning parses values the same way. */
-function actionBooleans(domain: string, sub: string | undefined): string[] {
-  const action = sub === undefined ? undefined : GH_ACTIONS[`${domain}:${sub}`];
-  return action === undefined
-    ? []
-    : action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
-}
-
-/** Help wins over primary selection, but only when the token is not a flag value. */
-function asksHelp(argv: readonly string[], booleans: readonly string[] = []): boolean {
-  return helpRequested(parseArgs(argv, { booleans: ['help', ...booleans] }), argv);
+/** Ask the selected action's own scan, rather than a second interpretation of its argv. */
+async function actionAsksHelp(domain: string, sub: string | undefined, argv: readonly string[]): Promise<boolean> {
+  if (sub === undefined || sub.startsWith('-')) {
+    return argv.includes('--help') || argv.includes('-h');
+  }
+  return (await import('./commands/gh.ts')).actionHelpRequested(`${domain}:${sub}`, argv);
 }
 
 export async function runClient(argv: readonly string[], primary?: Primary): Promise<number> {
@@ -111,7 +106,7 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));
       }
       if (sub !== undefined && Object.hasOwn(GH_ACTIONS, `pr:${sub}`)) {
-        if (asksHelp(rest, actionBooleans('pr', sub))) {
+        if (await actionAsksHelp('pr', sub, rest)) {
           return (await import('./commands/gh.ts')).runGh(['pr', ...rest], { unreachableExitCode: 3 });
         }
         return (await choose()).run(['pr', ...rest], { unreachableExitCode: 3 });
@@ -119,7 +114,7 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
       return (await import('./commands/pr.ts')).runPr(rest);
     }
     case 'run':
-      if (asksHelp(rest, actionBooleans('run', rest[0]))) {
+      if (await actionAsksHelp('run', rest[0], rest)) {
         return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
       }
       return (await choose()).run(['run', ...rest]);
@@ -133,14 +128,13 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
         if (sub?.startsWith('-') || hasAsUser(rest)) {
           return (await import('./commands/issue.ts')).runIssue(rest);
         }
-        if (asksHelp(rest)) return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
+        if (rest.includes('--help') || rest.includes('-h')) {
+          return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
+        }
         return (await choose()).run(['issue', ...rest]);
       }
       if (hasAsUserLogin(rest)) return (await import('./commands/issue.ts')).runIssue(rest);
-      if (sub === 'create' && asksHelp(rest, actionBooleans('issue', 'create'))) {
-        return (await import('./commands/issue.ts')).runIssue(rest);
-      }
-      if (asksHelp(rest, actionBooleans('issue', sub))) {
+      if (await actionAsksHelp('issue', sub, rest)) {
         return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
       }
       const forwarded = hasAsUser(rest)

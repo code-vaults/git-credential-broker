@@ -63,6 +63,8 @@ describe('the primary dispatch seam', () => {
       ['pr', '--help'],
       ['pr', 'view', '--help'],
       ['pr', 'review', '--comment', '-h'],
+      ['pr', 'list', '--label', '-h'],
+      ['issue', 'create', '--label', '-h', '--title', 't', '--body', 'b'],
       ['issue', 'edit', '--help'],
       ['issue', 'view', '--help'],
       ['run', '--help'],

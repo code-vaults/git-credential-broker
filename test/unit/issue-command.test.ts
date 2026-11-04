@@ -342,7 +342,7 @@ describe('gcb issue create --as-user', () => {
 
       const create = await runClient(['issue', 'create', '--help'], host.root);
       assert.equal(create.status, 0);
-      assert.match(create.stdout, /Usage: gcb issue create/u);
+      assert.match(create.stdout, /Usage: gcb gh/u);
 
       const top = await runClient(['issue', '--as-user'], host.root);
       assert.equal(top.status, 1);

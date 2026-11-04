@@ -4,7 +4,7 @@
  * The action catalog defines the command, flags, positionals and permissions. The client only
  * parses names and values; the broker rebuilds the canonical argv and runs gh with its own token.
  */
-import { GH_ACTIONS, bodyFromArgs, buildGhArgv, getGhAction, parseArgs, say, fail, type ActionValues } from 'gcb-core';
+import { GH_ACTIONS, bodyFromArgs, buildGhArgv, getGhAction, parseArgs, say, fail, type ActionValues, type GhAction } from 'gcb-core';
 
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { remoteRepo } from './remotes.ts';
@@ -45,6 +45,100 @@ function repoFromCheckout(cwd: string): { repo: string; host: string } | undefin
 }
 
 /** Usage text for `gh`. */
+/** The argv scan shared by execution and the dispatcher's help decision. */
+interface ActionScan {
+  readonly rest: string[];
+  readonly missingValue: string | undefined;
+  readonly help: boolean;
+  readonly allowed: ReadonlySet<string>;
+}
+
+/**
+ * Scan one action's raw argv the way runGh consumes it.
+ *
+ * @param action - the catalogued action.
+ * @param rawRest - arguments after the domain and command.
+ * @returns the normalized rest, a missing operand, and whether help was requested.
+ */
+function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionScan {
+  const hasBody = action.flags.some((flag) => flag.name === 'body');
+  const valueFlags = new Set([
+    ...action.flags.filter((flag) => flag.type !== 'boolean').map((flag) => flag.name),
+    ...(hasBody ? ['body-file'] : []),
+    'repo',
+    'R',
+    'host',
+    'socket',
+    'proxy',
+  ]);
+  const allowed = new Set([
+    ...action.flags.map((flag) => flag.name),
+    ...(hasBody ? ['body-file'] : []),
+    'repo',
+    'R',
+    'host',
+    'socket',
+    'proxy',
+    'no-proxy',
+  ]);
+  const knownFlags = new Set([...allowed, 'help']);
+
+  const rest: string[] = [];
+  let missingValue: string | undefined;
+  let help = false;
+  for (let index = 0; index < rawRest.length; index += 1) {
+    const raw = rawRest[index];
+    const argument = raw?.replace(/^-h$/, '--help').replace(/^-(?=[A-Za-z])/, '--');
+    if (argument === undefined) continue;
+    if (argument === '--') {
+      rest.push(...rawRest.slice(index));
+      break;
+    }
+    if (argument === '--help') {
+      help = true;
+      rest.push(argument);
+      continue;
+    }
+    const name = argument.startsWith('--') && !argument.includes('=') ? argument.slice(2) : undefined;
+    if (name === undefined || !valueFlags.has(name)) {
+      rest.push(argument);
+      continue;
+    }
+    const next = rawRest[index + 1];
+    if (next === undefined) {
+      missingValue ??= `${raw} needs a value`;
+      rest.push(argument);
+      continue;
+    }
+    if (next === '--help' || next === '-h') {
+      if (name === 'body') {
+        rest.push(`${argument}=${next}`);
+        index += 1;
+      } else {
+        help = true;
+        rest.push(argument);
+      }
+      continue;
+    }
+    if (next.startsWith('--')) {
+      const nextName = next.slice(2).split('=')[0];
+      if (nextName !== undefined && knownFlags.has(nextName)) {
+        missingValue ??= `${raw} needs a value`;
+      }
+      rest.push(argument);
+      continue;
+    }
+    rest.push(`${argument}=${next}`);
+    index += 1;
+  }
+  return { rest, missingValue, help, allowed };
+}
+
+/** Whether a catalogued action's argv asks for help, using the same scan. */
+export function actionHelpRequested(actionName: string, rawRest: readonly string[]): boolean {
+  return scanActionArgs(getGhAction(actionName), rawRest).help;
+}
+
 export const GH_USAGE = `Usage: gcb gh <domain> <command> [options]
 
 Run a catalogued GitHub action through the broker.
@@ -101,90 +195,13 @@ export async function runGh(
     fail(`unknown gh action ${JSON.stringify(actionName)}`);
   }
 
-  // A known value-taking flag consumes the next token only when that token is a value. A following
-  // known flag is not taken as a value (so a missing value fails as missing), except a literal
-  // --help/-h: a body that is exactly one of those is data, not a help request. The parser then
-  // sees --body=--help.
-  const hasBody = action.flags.some((flag) => flag.name === 'body');
-  const valueFlags = new Set([
-    ...action.flags.filter((flag) => flag.type !== 'boolean').map((flag) => flag.name),
-    ...(hasBody ? ['body-file'] : []),
-    'repo',
-    'R',
-    'host',
-    'socket',
-    'proxy',
-  ]);
-
-  const allowed = new Set([
-    ...action.flags.map((flag) => flag.name),
-    ...(hasBody ? ['body-file'] : []),
-    'repo',
-    'R',
-    'host',
-    'socket',
-    'proxy',
-    'no-proxy',
-  ]);
-  const knownFlags = new Set([...allowed, 'help']);
-
-  const rest: string[] = [];
-  let missingValue: string | undefined;
-  let help = false;
-  for (let index = 0; index < rawRest.length; index += 1) {
-    const raw = rawRest[index];
-    // Match parseArgs: -h is help everywhere; any other single-dash letter is its long flag. A
-    // single-dash operand belongs to a preceding value flag and was consumed before this point.
-    const argument = raw?.replace(/^-h$/, '--help').replace(/^-(?=[A-Za-z])/, '--');
-    if (argument === undefined) continue;
-    if (argument === '--') {
-      rest.push(...rawRest.slice(index));
-      break;
-    }
-    if (argument === '--help') {
-      help = true;
-      rest.push(argument);
-      continue;
-    }
-    const name = argument.startsWith('--') && !argument.includes('=') ? argument.slice(2) : undefined;
-    if (name === undefined || !valueFlags.has(name)) {
-      rest.push(argument);
-      continue;
-    }
-    const next = rawRest[index + 1];
-    if (next === undefined) {
-      missingValue ??= `${raw} needs a value`;
-      rest.push(argument);
-      continue;
-    }
-    if (next === '--help' || next === '-h') {
-      if (name === 'body') {
-        rest.push(`${argument}=${next}`);
-        index += 1;
-      } else {
-        help = true;
-        rest.push(argument);
-      }
-      continue;
-    }
-    if (next.startsWith('--')) {
-      const nextName = next.slice(2).split('=')[0];
-      if (nextName !== undefined && knownFlags.has(nextName)) {
-        missingValue ??= `${raw} needs a value`;
-      }
-      // Leave both tokens alone: a known flag is a missing value, an unknown one must reach the
-      // unknown-option check rather than becoming a value.
-      rest.push(argument);
-      continue;
-    }
-    rest.push(`${argument}=${next}`);
-    index += 1;
-  }
+  const { rest, missingValue, help, allowed } = scanActionArgs(action, rawRest);
   if (help) {
     say(GH_USAGE);
     return 0;
   }
   if (missingValue !== undefined) fail(missingValue);
+
 
   const booleans = action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
   const args = parseArgs(rest, { booleans: [...booleans, 'no-proxy'] });
