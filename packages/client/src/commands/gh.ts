@@ -52,6 +52,10 @@ interface ActionScan {
   readonly missingValue: string | undefined;
   readonly help: boolean;
   readonly allowed: ReadonlySet<string>;
+  readonly asUser: boolean;
+  readonly account: string | undefined;
+  readonly identityError: string | undefined;
+  readonly repoOption: boolean;
 }
 
 /** The flags that consume the following token, shared by the scan and identity extraction. */
@@ -77,7 +81,6 @@ function actionValueFlags(action: GhAction): ReadonlySet<string> {
 function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionScan {
   const hasBody = action.flags.some((flag) => flag.name === 'body');
   const valueFlags = actionValueFlags(action);
-
   const allowed = new Set([
     ...action.flags.map((flag) => flag.name),
     ...(hasBody ? ['body-file'] : []),
@@ -90,16 +93,16 @@ function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionSca
   ]);
   const knownFlags = new Set([...allowed, 'help']);
 
-  // A known value-taking flag consumes the next token only when that token is a value. A following
-  // known flag is not taken as a value (so a missing value fails as missing), except a literal
-  // --help/-h: a body that is exactly one of those is data, not a help request.
   const rest: string[] = [];
   let missingValue: string | undefined;
   let help = false;
+  let asUser = false;
+  let account: string | undefined;
+  let identityError: string | undefined;
+  let repoOption = false;
+
   for (let index = 0; index < rawRest.length; index += 1) {
     const raw = rawRest[index];
-    // Match parseArgs: -h is help everywhere; any other single-dash letter is its long flag. A
-    // single-dash operand belongs to a preceding value flag and was consumed before this point.
     const argument = raw?.replace(/^-h$/, '--help').replace(/^-(?=[A-Za-z])/, '--');
     if (argument === undefined) continue;
     if (argument === '--') {
@@ -111,7 +114,27 @@ function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionSca
       rest.push(argument);
       continue;
     }
+    if (argument === '--as-user') {
+      if (asUser || account !== undefined) identityError ??= '--as-user may be given once';
+      const next = rawRest[index + 1];
+      if (next !== undefined && !next.startsWith('-')) {
+        account = next;
+        index += 1;
+      } else {
+        asUser = true;
+      }
+      continue;
+    }
+    if (argument.startsWith('--as-user=')) {
+      if (asUser || account !== undefined) identityError ??= '--as-user may be given once';
+      const value = argument.slice('--as-user='.length);
+      if (value === '') asUser = true;
+      else account = value;
+      continue;
+    }
     const name = argument.startsWith('--') && !argument.includes('=') ? argument.slice(2) : undefined;
+    if (name === 'repo' || name === 'R') repoOption = true;
+    if (/^--(?:repo|R)=/.test(argument)) repoOption = true;
     if (name === undefined || !valueFlags.has(name)) {
       rest.push(argument);
       continue;
@@ -137,79 +160,13 @@ function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionSca
       if (nextName !== undefined && knownFlags.has(nextName)) {
         missingValue ??= `${raw} needs a value`;
       }
-      // Leave both tokens alone: a known flag is a missing value, an unknown one must reach the
-      // unknown-option check rather than becoming a value.
       rest.push(argument);
       continue;
     }
     rest.push(`${argument}=${next}`);
     index += 1;
   }
-  return { rest, missingValue, help, allowed };
-}
-
-/**
- * Pull a bare --as-user out of an action's argv.
- *
- * `gcb gh` supports both person forms: bare for the app broker, a login for the host action route.
- */
-function extractAsUser(
-  rawRest: readonly string[],
-  action: GhAction,
-): { rest: string[]; asUser: boolean; account?: string } {
-  const terminator = rawRest.indexOf('--');
-  const options = terminator === -1 ? rawRest : rawRest.slice(0, terminator);
-  const operands = terminator === -1 ? [] : rawRest.slice(terminator);
-  const out: string[] = [];
-  let asUser = false;
-  let account: string | undefined;
-  const valueFlags = actionValueFlags(action);
-
-  for (let index = 0; index < options.length; index += 1) {
-    const argument = options[index];
-    if (argument === undefined) continue;
-    const normalized = argument.replace(/^-(?=[A-Za-z])/, '--');
-    const name = normalized.startsWith('--') && !normalized.includes('=') ? normalized.slice(2) : undefined;
-    const next = options[index + 1];
-    if (name !== undefined && valueFlags.has(name) && next !== undefined) {
-      out.push(argument, next);
-      index += 1;
-      continue;
-    }
-    if (argument === '--as-user' || argument === '-as-user') {
-      if (asUser || account !== undefined) fail('--as-user may be given once');
-      const next = options[index + 1];
-      if (next !== undefined && !next.startsWith('-')) {
-        account = next;
-        index += 1;
-      } else {
-        asUser = true;
-      }
-      continue;
-    }
-    if (argument?.startsWith('--as-user=') || argument?.startsWith('-as-user=')) {
-      if (asUser || account !== undefined) fail('--as-user may be given once');
-      const value = argument.split('=', 2)[1] ?? '';
-      if (value === '') asUser = true;
-      else account = value;
-      continue;
-    }
-    if (argument !== undefined) out.push(argument);
-  }
-  if (asUser && account !== undefined) fail('--as-user cannot be both bare and given a login');
-  return { rest: [...out, ...operands], asUser, ...(account === undefined ? {} : { account }) };
-}
-
-/** Whether argv names a repository option before the terminator. */
-function hasRepoOption(argv: readonly string[]): boolean {
-  for (const argument of argv) {
-    if (argument === '--') return false;
-    const normalized = argument.replace(/^-(?=[A-Za-z])/, '--');
-    if (!normalized.startsWith('--')) continue;
-    const name = normalized.slice(2).split('=')[0];
-    if (name === 'repo' || name === 'R') return true;
-  }
-  return false;
+  return { rest, missingValue, help, allowed, asUser, account, identityError, repoOption };
 }
 
 /** Whether a catalogued action's argv asks for help, using the same scan. */
@@ -281,19 +238,15 @@ export async function runGh(
     fail(`unknown gh action ${JSON.stringify(actionName)}`);
   }
 
-  // Help wins over identity extraction: --body -as-user --help is a help request, not a body write.
-  if (scanActionArgs(action, rawRest).help) {
-    say(GH_USAGE);
-    return 0;
-  }
-  const { rest: actionArgs, asUser, account } = extractAsUser(rawRest, action);
-  const identity = options.identity ?? (asUser ? 'user' : 'app');
-  const { rest, missingValue, help, allowed } = scanActionArgs(action, actionArgs);
+  const scan = scanActionArgs(action, rawRest);
+  const { rest, missingValue, help, allowed, asUser, account, identityError, repoOption } = scan;
   if (help) {
     say(GH_USAGE);
     return 0;
   }
   if (missingValue !== undefined) fail(missingValue);
+  if (identityError !== undefined) fail(identityError);
+  const identity = options.identity ?? (asUser ? 'user' : 'app');
   if (account === undefined && identity === 'user' && action.appUser !== true) {
     fail(`${actionName} does not support --as-user`);
   }
@@ -304,7 +257,7 @@ export async function runGh(
   const proxy = args.has('no-proxy') ? null : args.value('proxy');
   const host = args.value('host') ?? 'github.com';
   let repo = args.value('repo') ?? args.value('R');
-  if (repo === undefined && hasRepoOption(rest)) {
+  if (repo === undefined && repoOption) {
     fail('--repo needs a value; refusing to fall back to the checkout');
   }
   if (repo === undefined) {
