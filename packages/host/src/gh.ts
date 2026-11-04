@@ -66,19 +66,23 @@ async function assertIssueTarget(
   number: string | number,
   timeoutMs: number,
 ): Promise<void> {
+  const issueNumber = Number(number);
+  if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error(`${String(number)} is not an issue number`);
+  }
   try {
     const { stdout } = await runFile(
       command,
-      ['api', `repos/${repo}/issues/${String(number)}`, '--jq', '.pull_request != null'],
+      ['api', `repos/${repo}/issues/${String(issueNumber)}`, '--jq', '.pull_request != null'],
       { cwd, env, timeout: timeoutMs, maxBuffer: 1 << 20 },
     );
     if (stdout.trim() === 'true') {
-      throw new Error(`#${String(number)} is a pull request, not an issue`);
+      throw new Error(`#${String(issueNumber)} is a pull request, not an issue`);
     }
   } catch (error) {
     const message = (error as Error).message;
     if (message.includes('is a pull request')) throw error;
-    throw new Error(`could not verify that #${String(number)} is an issue: ${message}`);
+    throw new Error(`could not verify that #${String(issueNumber)} is an issue: ${message}`);
   }
 }
 
@@ -126,15 +130,22 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
 
   const action = getGhAction(options.action);
   const timeoutMs = options.timeoutMs ?? action.timeoutSeconds * 1000;
-  if (action.target === 'issue') {
-    const number = options.values['number'];
-    if (typeof number !== 'string' && typeof number !== 'number') {
-      throw new Error(`${options.action} needs an issue number`);
-    }
-    await assertIssueTarget(options.ghPath ?? 'gh', env, home, options.repo, number, timeoutMs);
-  }
-
+  const deadline = Date.now() + timeoutMs;
   try {
+    if (action.target === 'issue') {
+      const number = options.values['number'];
+      if (typeof number !== 'string' && typeof number !== 'number') {
+        throw new Error(`${options.action} needs an issue number`);
+      }
+      await assertIssueTarget(
+        options.ghPath ?? 'gh',
+        env,
+        home,
+        options.repo,
+        number,
+        Math.max(1, deadline - Date.now()),
+      );
+    }
     // A body stays out of the process table; only its path reaches argv. A title still travels in
     // argv, so this is about the free-form body rather than everything the person wrote.
     let bodyFile: string | undefined;
@@ -244,7 +255,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         // Ask politely first; a gh process that ignores SIGTERM is killed on the grace deadline.
         if (!signalGroup('SIGTERM')) return;
         setTimeout(() => chase(), KILL_GRACE_MS).unref();
-      }, timeoutMs);
+      }, Math.max(1, deadline - Date.now()));
 
       child.stdout?.on('data', (chunk: Buffer) => take('stdout', chunk));
       child.stderr?.on('data', (chunk: Buffer) => take('stderr', chunk));

@@ -525,10 +525,16 @@ async function openOne(
     const host = request.host ?? 'github.com';
     return personRun(host, request.repo, allowed, async (host) => {
       const action = getGhAction(request.action);
+      const deadline = Date.now() + action.timeoutSeconds * 1_000;
       if (action.target === 'issue') {
-        const number = request.values['number'];
-        if (typeof number !== 'string' && typeof number !== 'number') {
-          return { error: `${request.action} needs an issue number` };
+        try {
+          buildGhArgv(request.action, request.values, request.repo);
+        } catch (error) {
+          return { error: (error as Error).message };
+        }
+        const number = Number(request.values['number']);
+        if (!Number.isSafeInteger(number) || number <= 0) {
+          return { error: `${String(number)} is not an issue number` };
         }
         const probe = await runBounded(
           command,
@@ -536,7 +542,7 @@ async function openOne(
           {
             cwd: repo,
             env: forkEnv(request.proxy, request.account, host),
-            timeoutMs: action.timeoutSeconds * 1_000,
+            timeoutMs: Math.max(1, deadline - Date.now()),
           },
         );
         if (probe.code !== 0) {
@@ -552,7 +558,7 @@ async function openOne(
         const result = await runBounded(command, [...extra, ...argv], {
           cwd: repo,
           env: forkEnv(request.proxy, request.account, host),
-          timeoutMs: action.timeoutSeconds * 1_000,
+          timeoutMs: Math.max(1, deadline - Date.now()),
         });
         return result;
       };
