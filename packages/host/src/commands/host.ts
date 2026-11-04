@@ -39,7 +39,7 @@ import {
   type BrokerConfig,
 } from 'gcb-core';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
-import { applyProxyChoice, parseProxy, type ProxyChoice } from '../http.ts';
+import { applyProxyChoice, parseProxy, proxyHasCredentials, type ProxyChoice } from '../http.ts';
 import { loadConfig, resolveConfigPath } from '../config.ts';
 import { hostConfig, repoAllowed } from '../policy.ts';
 
@@ -68,7 +68,7 @@ export interface BoundedResult {
 export function runBounded(
   command: string,
   args: readonly string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number },
+  options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number; writeCaveat?: boolean },
 ): Promise<BoundedResult> {
   return new Promise((resolve) => {
     let child;
@@ -86,7 +86,10 @@ export function runBounded(
     }
 
     const suffix = '\n[output truncated]\n';
-    const timeoutNote = 'the action timed out; a write may have completed before it was killed\n';
+    const timeoutNote =
+      options.writeCaveat === false
+        ? 'the action timed out\n'
+        : 'the action timed out; a write may have completed before it was killed\n';
     const outKeep = HOST_ACTION_OUTPUT_BYTES - Buffer.byteLength(suffix);
     const errKeep = outKeep - Buffer.byteLength(timeoutNote);
     const stdout = new StringDecoder('utf8');
@@ -525,6 +528,10 @@ async function openOne(
     const host = request.host ?? 'github.com';
     return personRun(host, request.repo, allowed, async (host) => {
       const action = getGhAction(request.action);
+      const actionEnv = forkEnv(request.proxy, request.account, host);
+      if (request.values['jq'] !== undefined && proxyHasCredentials(actionEnv)) {
+        return { error: '--jq cannot run while the proxy URL contains credentials; use --json instead' };
+      }
       const deadline = Date.now() + action.timeoutSeconds * 1_000;
       if (action.target === 'issue') {
         try {
@@ -541,7 +548,7 @@ async function openOne(
           [...extra, 'api', `repos/${request.repo}/issues/${String(number)}`, '--jq', '.pull_request != null'],
           {
             cwd: repo,
-            env: forkEnv(request.proxy, request.account, host),
+            env: actionEnv,
             timeoutMs: Math.max(1, deadline - Date.now()),
           },
         );
@@ -557,8 +564,9 @@ async function openOne(
         const argv = buildGhArgv(request.action, request.values, request.repo, bodyFile);
         const result = await runBounded(command, [...extra, ...argv], {
           cwd: repo,
-          env: forkEnv(request.proxy, request.account, host),
+          env: actionEnv,
           timeoutMs: Math.max(1, deadline - Date.now()),
+          writeCaveat: Object.values(action.permissions).some((permission) => permission === 'write'),
         });
         return result;
       };
