@@ -77,12 +77,11 @@ describe('gcb gh', () => {
       '7',
       '--body',
       '-R',
-      '--repo',
-      'acme/widget',
       '--socket',
       '/definitely/not/here.sock',
     ]);
     assert.doesNotMatch(result.stderr, /--repo needs a value/u);
+    assert.match(result.stderr, /unreachable|cannot reach|--repo is required/u);
   });
 
   it('shows help before refusing an unsupported identity', async () => {
