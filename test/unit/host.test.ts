@@ -13,7 +13,6 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { runBounded, runHostBroker } from '../../packages/host/src/commands/host.ts';
-import { tryRunAsync } from '../common/run.ts';
 import { channelDir, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 
 describe('the host broker, once', () => {
@@ -99,7 +98,9 @@ describe('bounded action output', () => {
     assert.match(result.stderr, /timed out; a write may have completed/u);
     assert.ok(Buffer.byteLength(result.stderr) <= 48_000);
   });
+});
 
+describe('bounded action output', () => {
   it('omits the write caveat when writeCaveat is false', async () => {
     const result = await runBounded(
       process.execPath,
@@ -561,140 +562,6 @@ describe('the host action route', () => {
       assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
       assert.match(readResult(dir, id)?.error ?? '', /boom/u);
       assert.equal(existsSync(marker), false);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('refuses jq when the proxy URL contains credentials', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-broker-jq-proxy-'));
-    const repo = join(root, 'checkout');
-    mkdirSync(join(repo, '.git'), { recursive: true });
-    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    const config = forkConfig(root, 'acme/widget');
-    const dir = channelDir(join(repo, '.git'));
-    const marker = join(root, 'ran');
-    const command = join(root, 'not-gh');
-    writeFileSync(command, '#!/bin/sh\ntouch ' + marker + '\n', 'utf8');
-    chmodSync(command, 0o755);
-    try {
-      const id = writeRequest(dir, {
-        kind: 'action',
-        action: 'issue:list',
-        repo: 'acme/widget',
-        values: { jq: '.' },
-        proxy: 'http://user:secret@proxy.example:8080',
-      });
-      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
-      assert.match(readResult(dir, id)?.error ?? '', /--jq cannot run/u);
-      assert.equal(existsSync(marker), false);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('keeps a GH_TOKEN login in a temp config for the action, then removes it', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-broker-jq-token-'));
-    const repo = join(root, 'checkout');
-    mkdirSync(join(repo, '.git'), { recursive: true });
-    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    const config = forkConfig(root, 'acme/widget');
-    const dir = channelDir(join(repo, '.git'));
-    const command = join(root, 'not-gh');
-    writeFileSync(
-      command,
-      '#!/bin/sh\nprintf "TOKEN=%s\\nCONFIG=%s\\n" "$GH_TOKEN" "$GH_CONFIG_DIR"\ncat "$GH_CONFIG_DIR/hosts.yml"\n',
-      'utf8',
-    );
-    chmodSync(command, 0o755);
-    const env: NodeJS.ProcessEnv = { ...process.env, HOME: join(root, 'home'), GH_TOKEN: 'host-secret' };
-    for (const key of ['GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GH_CONFIG_DIR', 'GH_HOST']) {
-      delete env[key];
-    }
-    try {
-      const id = writeRequest(dir, {
-        kind: 'action',
-        action: 'issue:list',
-        repo: 'acme/widget',
-        values: { jq: '.', limit: 1 },
-        proxy: null,
-      });
-      const result = await tryRunAsync(
-        process.execPath,
-        [
-          '--conditions=development',
-          join(process.cwd(), 'packages/host/bin/gcb.js'),
-          'host',
-          '--repo',
-          repo,
-          '--command',
-          command,
-          '--config',
-          config,
-          '--once',
-        ],
-        { cwd: process.cwd(), env, timeoutMs: 10_000 },
-      );
-      assert.equal(result.status, 0, result.stderr);
-      const stdout = readResult(dir, id)?.stdout ?? '';
-      assert.match(stdout, /^TOKEN=\n/u);
-      const match = /^CONFIG=(.+)$/mu.exec(stdout);
-      assert.ok(match?.[1], stdout);
-      assert.match(stdout, /oauth_token: host-secret/u);
-      assert.equal(existsSync(match[1]), false, 'the temporary config is removed after the action');
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('selects the enterprise token for a non-github host', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-broker-jq-enterprise-'));
-    const repo = join(root, 'checkout');
-    mkdirSync(join(repo, '.git'), { recursive: true });
-    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    const config = forkConfig(root, 'acme/widget', 'ghe.example');
-    const dir = channelDir(join(repo, '.git'));
-    const command = join(root, 'not-gh');
-    writeFileSync(command, '#!/bin/sh\ncat "$GH_CONFIG_DIR/hosts.yml"\n', 'utf8');
-    chmodSync(command, 0o755);
-    const env: NodeJS.ProcessEnv = {
-      ...process.env,
-      HOME: join(root, 'home'),
-      GH_TOKEN: 'github-token',
-      GH_ENTERPRISE_TOKEN: 'enterprise-token',
-    };
-    for (const key of ['GITHUB_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GH_CONFIG_DIR', 'GH_HOST']) {
-      delete env[key];
-    }
-    try {
-      const id = writeRequest(dir, {
-        kind: 'action',
-        action: 'issue:list',
-        repo: 'acme/widget',
-        host: 'ghe.example',
-        values: { jq: '.', limit: 1 },
-        proxy: null,
-      });
-      const result = await tryRunAsync(
-        process.execPath,
-        [
-          '--conditions=development',
-          join(process.cwd(), 'packages/host/bin/gcb.js'),
-          'host',
-          '--repo',
-          repo,
-          '--command',
-          command,
-          '--config',
-          config,
-          '--once',
-        ],
-        { cwd: process.cwd(), env, timeoutMs: 10_000 },
-      );
-      assert.equal(result.status, 0, result.stderr);
-      const stdout = readResult(dir, id)?.stdout ?? '';
-      assert.match(stdout, /oauth_token: enterprise-token/u);
-      assert.doesNotMatch(stdout, /github-token/u);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

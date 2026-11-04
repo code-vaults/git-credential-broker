@@ -39,13 +39,7 @@ import {
   type BrokerConfig,
 } from 'gcb-core';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
-import {
-  applyProxyChoice,
-  parseProxy,
-  PROXY_ENV_KEYS,
-  proxyHasCredentials,
-  type ProxyChoice,
-} from '../http.ts';
+import { applyProxyChoice, parseProxy, type ProxyChoice } from '../http.ts';
 import { loadConfig, resolveConfigPath } from '../config.ts';
 import { hostConfig, repoAllowed } from '../policy.ts';
 
@@ -435,68 +429,6 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
   return env;
 }
 
-/** gh's host split for token selection: github.com, github.localhost and tenancy hosts. */
-function isGithubHost(host: string): boolean {
-  const name = host.toLowerCase().replace(/:\d+$/u, '');
-  return name === 'github.com' || name === 'github.localhost' || name.endsWith('.ghe.com');
-}
-
-/** Mirror go-gh's tokenForHost: the public hosts use GH_TOKEN, every other host the enterprise pair. */
-function tokenForHost(host: string, env: NodeJS.ProcessEnv): string | undefined {
-  return isGithubHost(host)
-    ? env['GH_TOKEN'] ?? env['GITHUB_TOKEN']
-    : env['GH_ENTERPRISE_TOKEN'] ?? env['GITHUB_ENTERPRISE_TOKEN'];
-}
-
-/**
- * Minimal environment for a jq action.
- *
- * go-gh evaluates jq with the process environment, so a jq expression could read any inherited
- * secret. Keep gh's own config/proxy/PATH, but do not hand it the broker's environment. When the
- * only login is GH_TOKEN, copy it into a temporary gh config so authentication still works.
- */
-function jqEnv(
-  proxy: ProxyChoice,
-  account: string | undefined,
-  host: string,
-): { env: NodeJS.ProcessEnv; cleanup: () => void } {
-  const base = forkEnv(proxy, account, host);
-  const env: NodeJS.ProcessEnv = {
-    PATH: base['PATH'] ?? '',
-    HOME: base['HOME'] ?? homedir(),
-    GH_HOST: host,
-    NO_COLOR: '1',
-    GH_PROMPT_DISABLED: '1',
-    GH_NO_UPDATE_NOTIFIER: '1',
-    GIT_TERMINAL_PROMPT: '0',
-  };
-  let configDir = base['GH_CONFIG_DIR'];
-  let cleanup = (): void => {};
-  const token = tokenForHost(host, base);
-  if (account === undefined && token !== undefined && token !== '') {
-    const temp = mkdtempSync(join(tmpdir(), 'gcb-jq-gh-'));
-    try {
-      writeFileSync(join(temp, 'hosts.yml'), `${host}:\n    oauth_token: ${token}\n    user: gcb\n`, {
-        mode: 0o600,
-      });
-    } catch (error) {
-      rmSync(temp, { recursive: true, force: true });
-      throw error;
-    }
-    configDir = temp;
-    cleanup = () => rmSync(temp, { recursive: true, force: true });
-  } else if (configDir === undefined) {
-    const baseConfig = base['XDG_CONFIG_HOME'] ?? join(base['HOME'] ?? homedir(), '.config');
-    configDir = join(baseConfig, 'gh');
-  }
-  env['GH_CONFIG_DIR'] = configDir;
-  for (const key of PROXY_ENV_KEYS) {
-    const value = base[key];
-    if (value !== undefined) env[key] = value;
-  }
-  return { env, cleanup };
-}
-
 /**
  * Run one person operation: check the allowlist, then call the program and turn its failure into a result.
  *
@@ -596,56 +528,45 @@ async function openOne(
     const host = request.host ?? 'github.com';
     return personRun(host, request.repo, allowed, async (host) => {
       const action = getGhAction(request.action);
-      const prepared = request.values['jq'] !== undefined
-        ? jqEnv(request.proxy, request.account, host)
-        : { env: forkEnv(request.proxy, request.account, host), cleanup: (): void => {} };
-      const actionEnv = prepared.env;
-      try {
-        if (request.values['jq'] !== undefined && proxyHasCredentials(actionEnv)) {
-          return { error: '--jq cannot run while the proxy URL contains credentials; use --json instead' };
+      const deadline = Date.now() + action.timeoutSeconds * 1_000;
+      if (action.target === 'issue') {
+        try {
+          buildGhArgv(request.action, request.values, request.repo);
+        } catch (error) {
+          return { error: (error as Error).message };
         }
-        const deadline = Date.now() + action.timeoutSeconds * 1_000;
-        if (action.target === 'issue') {
-          try {
-            buildGhArgv(request.action, request.values, request.repo);
-          } catch (error) {
-            return { error: (error as Error).message };
-          }
-          const number = Number(request.values['number']);
-          if (!Number.isSafeInteger(number) || number <= 0) {
-            return { error: `${String(number)} is not an issue number` };
-          }
-          const probe = await runBounded(
-            command,
-            [...extra, 'api', `repos/${request.repo}/issues/${String(number)}`, '--jq', '.pull_request != null'],
-            {
-              cwd: repo,
-              env: actionEnv,
-              timeoutMs: Math.max(1, deadline - Date.now()),
-            },
-          );
-          if (probe.code !== 0) {
-            return { error: probe.stderr.trim() || 'could not verify the issue target' };
-          }
-          if (probe.stdout.trim() === 'true') {
-            return { error: `#${String(number)} is a pull request, not an issue` };
-          }
+        const number = Number(request.values['number']);
+        if (!Number.isSafeInteger(number) || number <= 0) {
+          return { error: `${String(number)} is not an issue number` };
         }
-        const body = typeof request.values['body'] === 'string' ? request.values['body'] : undefined;
-        const invoke = async (bodyFile?: string): Promise<HostResult> => {
-          const argv = buildGhArgv(request.action, request.values, request.repo, bodyFile);
-          const result = await runBounded(command, [...extra, ...argv], {
+        const probe = await runBounded(
+          command,
+          [...extra, 'api', `repos/${request.repo}/issues/${String(number)}`, '--jq', '.pull_request != null'],
+          {
             cwd: repo,
-            env: actionEnv,
+            env: forkEnv(request.proxy, request.account, host),
             timeoutMs: Math.max(1, deadline - Date.now()),
-            writeCaveat: Object.values(action.permissions).some((permission) => permission === 'write'),
-          });
-          return result;
-        };
-        return await (body === undefined ? invoke() : withBodyFile(body, invoke));
-      } finally {
-        prepared.cleanup();
+          },
+        );
+        if (probe.code !== 0) {
+          return { error: probe.stderr.trim() || 'could not verify the issue target' };
+        }
+        if (probe.stdout.trim() === 'true') {
+          return { error: `#${String(number)} is a pull request, not an issue` };
+        }
       }
+      const body = typeof request.values['body'] === 'string' ? request.values['body'] : undefined;
+      const invoke = async (bodyFile?: string): Promise<HostResult> => {
+        const argv = buildGhArgv(request.action, request.values, request.repo, bodyFile);
+        const result = await runBounded(command, [...extra, ...argv], {
+          cwd: repo,
+          env: forkEnv(request.proxy, request.account, host),
+          timeoutMs: Math.max(1, deadline - Date.now()),
+          writeCaveat: Object.values(action.permissions).some((permission) => permission === 'write'),
+        });
+        return result;
+      };
+      return body === undefined ? invoke() : withBodyFile(body, invoke);
     });
   }
 

@@ -679,27 +679,6 @@ describe('broker actions', () => {
     assert.equal(called, true);
   });
 
-  it('passes a ProviderConfigError action refusal to the caller', async () => {
-    const provider: Provider = {
-      name: 'static',
-      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
-      runAction: async () => {
-        throw new ProviderConfigError('--jq cannot run while the proxy URL contains credentials');
-      },
-    };
-    const harness = makeHarness(undefined, provider);
-    const response = await harness.handle({
-      op: 'action',
-      host: HOST,
-      path: 'acme/widget',
-      ghAction: 'issue:list',
-      values: { jq: '.' },
-    });
-    assert.equal(response.ok, false);
-    assert.equal(response.code, CODES.PROVIDER_ERROR);
-    assert.match(String(response.reason), /--jq cannot run/u);
-  });
-
   it('refuses the user identity for an action that does not declare appUser', async () => {
     let called = false;
     const provider: Provider = {

@@ -11,8 +11,8 @@ import { tmpdir } from 'node:os';
 import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 
-import { buildGhArgv, getGhAction, ProviderConfigError, type ActionValues } from 'gcb-core';
-import { applyProxyChoice, PROXY_ENV_KEYS, proxyHasCredentials } from './http.ts';
+import { buildGhArgv, getGhAction, type ActionValues } from 'gcb-core';
+import { applyProxyChoice, PROXY_ENV_KEYS } from './http.ts';
 
 /** The default stdout/stderr ceiling, in bytes per stream. */
 export const DEFAULT_GH_OUTPUT_BYTES = 200_000;
@@ -182,11 +182,6 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   const timeoutMs = options.timeoutMs ?? action.timeoutSeconds * 1000;
   const deadline = Date.now() + timeoutMs;
   try {
-    if (options.values['jq'] !== undefined && proxyHasCredentials(env)) {
-      throw new ProviderConfigError(
-        '--jq cannot run while the proxy URL contains credentials; use --json instead',
-      );
-    }
     if (action.target === 'issue') {
       const number = options.values['number'];
       if (typeof number !== 'string' && typeof number !== 'number') {

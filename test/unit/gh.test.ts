@@ -85,21 +85,6 @@ describe('runGhAction', { skip: onWindows }, () => {
     );
   });
 
-  it('refuses jq when the proxy URL contains credentials', async () => {
-    const gh = shim('echo SHOULD_NOT_RUN');
-    await assert.rejects(
-      runGhAction({
-        action: 'issue:list',
-        values: { jq: '.' },
-        repo: 'acme/widget',
-        token: 'app-token',
-        ghPath: gh,
-        env: { PATH: process.env.PATH, HTTPS_PROXY: 'http://user:secret@proxy.example:8080' },
-      }),
-      /--jq cannot run while the proxy URL contains credentials/u,
-    );
-  });
-
   it('keeps bodies out of the process arguments', async () => {
     const gh = shim(
       'printf "ARGS=%s\n" "$*"; while [ "$#" -gt 0 ]; do if [ "$1" = "--body-file" ]; then printf "BODY="; cat "$2"; fi; shift; done',

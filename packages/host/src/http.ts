@@ -36,22 +36,6 @@ export function applyProxyChoice(env: NodeJS.ProcessEnv, proxy: ProxyChoice): vo
   env.NO_PROXY = 'localhost,127.0.0.1';
 }
 
-/** Whether any proxy variable carries credentials in its URL. */
-export function proxyHasCredentials(env: NodeJS.ProcessEnv): boolean {
-  for (const key of ['http_proxy', 'https_proxy', 'all_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY'] as const) {
-    const value = env[key];
-    if (value === undefined || value === '') continue;
-    try {
-      const url = new URL(value);
-      if (url.username !== '' || url.password !== '') return true;
-    } catch {
-      // An unparseable proxy is not trusted either; anything with userinfo stays refused.
-      if (value.includes('@')) return true;
-    }
-  }
-  return false;
-}
-
 /** Parse a proxy choice; false means it is not a usable http(s) URL. */
 export function parseProxy(value: unknown): ProxyChoice | false {
   if (value === undefined) return undefined;
