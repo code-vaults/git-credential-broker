@@ -13,6 +13,7 @@ import {
   findGitDir,
   readOpener,
   removeResult,
+  requestProblems,
   waitForResult,
   writeRequest,
 } from 'gcb-core';
@@ -69,6 +70,8 @@ export async function submitToHostBroker(
   request: HostRequest,
   success: (answer: HostOpenResult) => string,
 ): Promise<number> {
+  const problems = requestProblems(request);
+  if (problems.length > 0) fail(problems.join('; '));
   const { noun, needed } = KINDS[request.kind ?? 'pull-request'];
   const gitDir = findGitDir(process.cwd());
   if (gitDir === undefined) fail('--as-user needs a git repository: run it from the checkout');
