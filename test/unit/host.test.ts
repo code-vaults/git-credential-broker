@@ -581,6 +581,34 @@ describe('the host action route', () => {
     }
   });
 
+  it('runs jq actions without the broker environment', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-jq-env-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\nprintf "TOKEN=%s\\n" "$GH_TOKEN"\n', 'utf8');
+    chmodSync(command, 0o755);
+    const previous = process.env['GH_TOKEN'];
+    process.env['GH_TOKEN'] = 'host-secret';
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'issue:list',
+        repo: 'acme/widget',
+        values: { jq: '.', limit: 1 },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.equal(readResult(dir, id)?.stdout, 'TOKEN=\n');
+    } finally {
+      if (previous === undefined) delete process.env['GH_TOKEN'];
+      else process.env['GH_TOKEN'] = previous;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('refuses a request the client already stopped waiting for', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-expired-'));
     const repo = join(root, 'checkout');

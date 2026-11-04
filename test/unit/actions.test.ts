@@ -62,7 +62,6 @@ describe('gh action catalog', () => {
     });
     assert.deepEqual(getGhAction('issue:create').permissions, { issues: 'write' });
   });
-});
 
   it('declares the read-side policy', () => {
     for (const name of ['pr:checks', 'pr:status', 'issue:view', 'issue:list']) {
@@ -82,6 +81,7 @@ describe('gh action catalog', () => {
     assert.deepEqual(getGhAction('issue:list').permissions, { issues: 'read' });
     assert.equal(getGhAction('pr:checks').timeoutSeconds, 300);
   });
+});
 
 describe('buildGhArgv', () => {
   it('rebuilds the canonical argv and injects the repository', () => {

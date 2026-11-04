@@ -8,5 +8,6 @@ checks. The `--web` flags were left out: the broker runs headless, and `--json` 
 (`url` for issues, `link` for checks). They are available through the ordinary client, host action
 and allowlist routes.
 
-`--jq` is refused when a proxy URL contains credentials: gh evaluates jq inside the process that
-holds the proxy environment, so an expression could otherwise read the proxy password.
+`--jq` on a host action runs with a minimal environment (PATH/HOME/GH_CONFIG_DIR/proxy), so it
+cannot read the broker's inherited secrets; when a proxy URL contains credentials the action is
+refused, because gh evaluates jq inside the process that holds the proxy environment.

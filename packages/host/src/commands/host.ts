@@ -39,7 +39,13 @@ import {
   type BrokerConfig,
 } from 'gcb-core';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
-import { applyProxyChoice, parseProxy, proxyHasCredentials, type ProxyChoice } from '../http.ts';
+import {
+  applyProxyChoice,
+  parseProxy,
+  PROXY_ENV_KEYS,
+  proxyHasCredentials,
+  type ProxyChoice,
+} from '../http.ts';
 import { loadConfig, resolveConfigPath } from '../config.ts';
 import { hostConfig, repoAllowed } from '../policy.ts';
 
@@ -430,6 +436,31 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
 }
 
 /**
+ * Minimal environment for a jq action.
+ *
+ * go-gh evaluates jq with the process environment, so a jq expression could read any inherited
+ * secret. Keep gh's own config/proxy/PATH, but do not hand it the broker's environment.
+ */
+function jqEnv(proxy: ProxyChoice, account: string | undefined, host: string): NodeJS.ProcessEnv {
+  const base = forkEnv(proxy, account, host);
+  const env: NodeJS.ProcessEnv = {
+    PATH: base['PATH'] ?? '',
+    HOME: base['HOME'] ?? '',
+    GH_HOST: host,
+    NO_COLOR: '1',
+    GH_PROMPT_DISABLED: '1',
+    GH_NO_UPDATE_NOTIFIER: '1',
+    GIT_TERMINAL_PROMPT: '0',
+  };
+  if (base['GH_CONFIG_DIR'] !== undefined) env['GH_CONFIG_DIR'] = base['GH_CONFIG_DIR'];
+  for (const key of PROXY_ENV_KEYS) {
+    const value = base[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
+/**
  * Run one person operation: check the allowlist, then call the program and turn its failure into a result.
  *
  * The typed routes differ only in the argv they build, so the check and the catch live here once
@@ -528,7 +559,10 @@ async function openOne(
     const host = request.host ?? 'github.com';
     return personRun(host, request.repo, allowed, async (host) => {
       const action = getGhAction(request.action);
-      const actionEnv = forkEnv(request.proxy, request.account, host);
+      const actionEnv =
+        request.values['jq'] !== undefined
+          ? jqEnv(request.proxy, request.account, host)
+          : forkEnv(request.proxy, request.account, host);
       if (request.values['jq'] !== undefined && proxyHasCredentials(actionEnv)) {
         return { error: '--jq cannot run while the proxy URL contains credentials; use --json instead' };
       }
