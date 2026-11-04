@@ -1535,7 +1535,7 @@ describe('the anchor flags, at the CLI boundary', () => {
     for (const flag of [['--merge'], ['-merge'], ['--merge-xxx'], ['--method', 'squash'], ['--method-xxx', 'squash'], ['--xafajbsfbafabsjkf']]) {
       const result = cli([...base, ...flag, '--title', 'a title']);
       assert.equal(result.status, 1);
-      assert.match(result.stderr, /unknown option/);
+      assert.match(result.stderr, new RegExp(`unknown option --${flag[0]?.replace(/^-+/, '')} for gcb pr`, 'u'));
     }
 
     const value = cli([...base, '--title=--not-a-flag']);

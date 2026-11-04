@@ -126,7 +126,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     booleans: ['help', 'draft', 'status', 'comment', 'threads', 'no-proxy', 'approve', 'request-changes', 'review-comment'],
     optionalValues: ['as-user', 'close'],
   });
-  if (validateArgs(args, argv, KNOWN_FLAGS)) {
+  if (validateArgs(args, argv, KNOWN_FLAGS, 'gcb pr')) {
     say(PR_USAGE);
     return 0;
   }

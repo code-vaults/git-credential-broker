@@ -437,7 +437,7 @@ describe('gcb issue create --as-user', () => {
         host.root,
       );
       assert.equal(wrong.status, 1);
-      assert.match(wrong.stderr, /unknown option --number/u);
+      assert.match(wrong.stderr, /unknown option --number for gcb issue edit --as-user/u);
 
       const proxy = await runClient(
         ['issue', 'edit', '7', '--title', 'fixed', '--as-user', 'alice', '--repo', 'acme/widget', '--proxy'],

@@ -114,17 +114,19 @@ export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {
  * @param args - the parsed arguments.
  * @param argv - the raw arguments, for the help scan.
  * @param known - the flags this command knows; omit when another layer validates them.
+ * @param command - the command name for the unknown-option message.
  * @returns true when help should be printed.
  */
 export function validateArgs(
   args: Args,
   argv: readonly string[],
   known?: ReadonlySet<string>,
+  command?: string,
 ): boolean {
   if (helpRequested(args, argv)) return true;
   if (known !== undefined) {
     for (const name of args.names) {
-      if (!known.has(name)) fail(`unknown option --${name}`);
+      if (!known.has(name)) fail(`unknown option --${name}${command === undefined ? '' : ` for ${command}`}`);
     }
   }
   requireNoMissing(args);

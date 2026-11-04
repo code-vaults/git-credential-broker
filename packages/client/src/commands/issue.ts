@@ -87,7 +87,12 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   }
   const account = args.values('as-user')[0];
   const command = args.positionals[0];
-  if (validateArgs(args, argv, account === undefined ? undefined : KNOWN_FLAGS)) {
+  if (validateArgs(
+    args,
+    argv,
+    account === undefined ? undefined : KNOWN_FLAGS,
+    account === undefined || command === undefined ? undefined : `gcb issue ${command} --as-user`,
+  )) {
     if (command === undefined || command === 'create') {
       say(ISSUE_USAGE);
       return 0;
