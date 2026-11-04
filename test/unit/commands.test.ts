@@ -1508,7 +1508,7 @@ describe('the anchor flags, at the CLI boundary', () => {
   it('refuses a bare --jq', () => {
     const result = cli(['review', ...base, '--id', '9', '--jq']);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /--jq needs an expression/);
+    assert.match(result.stderr, /--jq needs a value/);
   });
 
   it('refuses an empty --jq', () => {
@@ -1617,9 +1617,9 @@ describe('the anchor flags, at the CLI boundary', () => {
     // has to be selected from the flag's presence: reading only its value let the command fall through
     // to `update`, which patched the body meant for the comment onto the pull request itself.
     for (const [flag, message] of [
-      ['--edit', /--edit needs the id of the review comment/],
-      ['--reply-to', /--reply-to needs the id of the comment/],
-      ['--resolve', /--resolve needs the id of the thread/],
+      ['--edit', /--edit needs a value/],
+      ['--reply-to', /--reply-to needs a value/],
+      ['--resolve', /--resolve needs a value/],
     ] as const) {
       const refused = cli([...base, flag, '--body', 'a corrected note']);
       assert.equal(refused.status, 1, `a bare ${flag} is refused`);

@@ -18,7 +18,7 @@ import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { baseBranchFor, qualifiedBranch, remoteRepo } from './remotes.ts';
 import { runGh } from './gh.ts';
 import { submitToHostBroker } from './host-submit.ts';
-import { fail, helpRequested, parseArgs, say } from 'gcb-core';
+import { fail, helpRequested, parseArgs, requireNoMissing, say } from 'gcb-core';
 
 /** Every flag the flag-only lifecycle understands. */
 const KNOWN_FLAGS = new Set([
@@ -130,13 +130,11 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     say(PR_USAGE);
     return 0;
   }
-  for (const name of ['title', 'body', 'body-file', 'base']) {
-    if (args.missing(name)) fail(`--${name} needs a value`);
-  }
   // Unknown options are refused rather than ignored: a typo must not silently fall through to an update.
   for (const name of args.names) {
     if (!KNOWN_FLAGS.has(name)) fail('unknown option --' + name + ' for gcb pr');
   }
+  requireNoMissing(args);
   if (args.positionals.length > 0) fail('unexpected argument ' + JSON.stringify(args.positionals[0]) + ' for gcb pr');
 
   // Before --repo: the point of the message is to name the command that does it now.
@@ -159,7 +157,6 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (args.has('no-proxy') && args.value('proxy') !== undefined) {
     fail('--proxy and --no-proxy are mutually exclusive');
   }
-  if (args.missing('proxy')) fail('--proxy needs a value');
   const proxy = args.has('no-proxy') ? null : args.value('proxy');
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const looksLikeOption = (value: string): boolean =>

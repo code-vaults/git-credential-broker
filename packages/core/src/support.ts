@@ -21,6 +21,8 @@ export interface Args {
   has(name: string): boolean;
   /** Whether a value-taking flag was present without its operand. */
   missing(name: string): boolean;
+  /** Every value-taking flag that was present without its operand. */
+  readonly missingNames: readonly string[];
   /** Every option name seen, after the parser's normalization. */
   readonly names: readonly string[];
   /** Arguments that were not flags. */
@@ -98,9 +100,23 @@ export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {
     value: (name) => collected.get(name)?.[0],
     has: (name) => flags.has(name),
     missing: (name) => missing.has(name),
+    missingNames: [...missing],
     names: [...new Set([...collected.keys(), ...flags])],
     positionals,
   };
+}
+
+/**
+ * Refuse the command line when any value-taking flag is missing its operand.
+ *
+ * The parser records every such flag, so a command does not have to keep a list of names and cannot
+ * forget one when it grows a flag.
+ *
+ * @param args - the parsed arguments.
+ */
+export function requireNoMissing(args: Args): void {
+  const name = args.missingNames[0];
+  if (name !== undefined) fail(`--${name} needs a value`);
 }
 
 /**

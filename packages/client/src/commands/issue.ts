@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs';
 
 import { LOGIN } from 'gcb-core';
-import { fail, helpRequested, parseArgs, say } from 'gcb-core';
+import { fail, helpRequested, parseArgs, requireNoMissing, say } from 'gcb-core';
 
 import { runGh } from './gh.ts';
 import { remoteRepo } from './remotes.ts';
@@ -82,21 +82,23 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   if (args.has('as-user') && args.values('as-user').length > 0) {
     fail('--as-user cannot be both bare and given a login');
   }
-  if (args.missing('proxy')) fail('--proxy needs a value');
-  if (args.missing('host')) fail('--host needs a value');
   if (args.has('no-proxy') && (args.has('proxy') || args.values('proxy').length > 0)) {
     fail('--proxy and --no-proxy are mutually exclusive');
   }
-  if (!args.has('help') && !args.has('h')) {
-    for (const name of ['title', 'body', 'body-file']) {
-      if (args.missing(name)) fail('--' + name + ' needs a value');
-    }
-  }
+  if (!args.has('help') && !args.has('h')) requireNoMissing(args);
   const account = args.values('as-user')[0];
   const command = args.positionals[0];
   if (command !== 'create') {
     if (command !== undefined && helpRequested(args, argv)) {
       return runGh(['issue', command, '--help']);
+    }
+    if (
+      command === 'edit' &&
+      args.value('title') === undefined &&
+      args.value('body') === undefined &&
+      args.value('body-file') === undefined
+    ) {
+      fail('issue edit needs --title, --body or --body-file');
     }
     if (account !== undefined) {
       if (command !== 'edit' && command !== 'comment') {
@@ -171,14 +173,6 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     }
     if (args.has('as-user') && command !== 'edit' && command !== 'comment') {
       fail('--as-user without a login only creates, edits or comments on an issue');
-    }
-    if (
-      command === 'edit' &&
-      args.value('title') === undefined &&
-      args.value('body') === undefined &&
-      args.value('body-file') === undefined
-    ) {
-      fail('issue edit needs --title, --body or --body-file');
     }
     if (command === undefined && (args.has('help') || args.has('h'))) {
       say(ISSUE_USAGE);
