@@ -18,7 +18,7 @@ import {
   waitForResult,
   writeRequest,
 } from 'gcb-core';
-import type { HostActionRequest, HostOpenResult, HostRequest } from 'gcb-core';
+import type { HostActionRequest, HostResult, HostRequest } from 'gcb-core';
 import { fail, getGhAction, say } from 'gcb-core';
 
 /**
@@ -63,7 +63,7 @@ async function exchange(
   request: HostRequest,
   timeoutMs: number = ANSWER_TIMEOUT_MS,
   claimedTimeoutMs?: number,
-): Promise<HostOpenResult> {
+): Promise<HostResult> {
   const problems = requestProblems(request);
   if (problems.length > 0) fail(problems.join('; '));
   const { noun, needed } = KINDS[request.kind ?? 'pull-request'];
@@ -118,7 +118,7 @@ async function waitForAnswer(
   id: string,
   queueTimeoutMs: number,
   claimedTimeoutMs: number | undefined,
-): Promise<HostOpenResult | undefined> {
+): Promise<HostResult | undefined> {
   const queueDeadline = Date.now() + queueTimeoutMs;
   let claimedDeadline: number | undefined;
   for (;;) {
@@ -144,7 +144,7 @@ async function waitForAnswer(
  */
 export async function submitToHostBroker(
   request: HostRequest,
-  success: (answer: HostOpenResult) => string,
+  success: (answer: HostResult) => string,
 ): Promise<number> {
   const answer = await exchange(request);
   if (answer.error !== undefined) fail(`the host broker could not do it: ${answer.error}`);

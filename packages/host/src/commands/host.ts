@@ -32,7 +32,7 @@ import {
   HOST,
   REPOSITORY,
   type HostRequest,
-  type HostOpenResult,
+  type HostResult,
   buildGhArgv,
   getGhAction,
   type BrokerConfig,
@@ -164,7 +164,7 @@ fork, with the gh account each request names. The result is authored by a person
   --config <path>       Broker config whose allowlist fork, reply and explicit-repository requests use
                         (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   --command <path>      The program that creates, replies or forks
-                        (default: $GIT_BROKER_PR_COMMAND, else gh)
+                        (default: $GCB_HOST_COMMAND, else gh)
   --arg <token>         An extra argument for that program, before the subcommand (repeatable)
   --interval <seconds>  How often to look for requests (default: 5)
   --once                Fulfil what is waiting, then exit
@@ -210,7 +210,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const roots = listFlag(args, 'root');
   const scanned = roots.length > 0 ? roots.map((root) => resolve(root)) : [homedir()];
   const depth = Number(args.value('depth') ?? '4');
-  const command = args.value('command') ?? process.env['GIT_BROKER_PR_COMMAND'] ?? 'gh';
+  const command = args.value('command') ?? process.env['GCB_HOST_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
   let config: BrokerConfig | undefined;
   /** Whether the broker config allowlist permits this host/repository for a fork, reply or explicit repository. */
@@ -416,8 +416,8 @@ async function personRun(
   host: string,
   repository: string,
   allowed: (host: string, repo: string) => boolean,
-  work: (host: string) => Promise<HostOpenResult>,
-): Promise<HostOpenResult> {
+  work: (host: string) => Promise<HostResult>,
+): Promise<HostResult> {
   if (!HOST.test(host)) return { error: `not a host: ${JSON.stringify(host)}` };
   try {
     if (!allowed(host, repository)) {
@@ -438,8 +438,8 @@ async function personRun(
 /** Run work with a body in a private temp file, and remove it afterwards. */
 async function withBodyFile(
   body: string,
-  work: (bodyFile: string) => Promise<HostOpenResult>,
-): Promise<HostOpenResult> {
+  work: (bodyFile: string) => Promise<HostResult>,
+): Promise<HostResult> {
   const scratch = mkdtempSync(join(tmpdir(), 'gcb-body-'));
   try {
     const bodyFile = join(scratch, 'body.md');
@@ -465,7 +465,7 @@ async function openOne(
   extra: readonly string[],
   request: HostRequest,
   allowed: (host: string, repo: string) => boolean,
-): Promise<HostOpenResult> {
+): Promise<HostResult> {
   if (request.kind === 'fork') {
     if (request.host !== undefined && !HOST.test(request.host)) {
       return { error: `not a host: ${JSON.stringify(request.host)}` };
@@ -506,7 +506,7 @@ async function openOne(
     return personRun(host, request.repo, allowed, async (host) => {
       const action = getGhAction(request.action);
       const body = typeof request.values['body'] === 'string' ? request.values['body'] : undefined;
-      const invoke = async (bodyFile?: string): Promise<HostOpenResult> => {
+      const invoke = async (bodyFile?: string): Promise<HostResult> => {
         const argv = buildGhArgv(request.action, request.values, request.repo, bodyFile);
         const result = await runBounded(command, [...extra, ...argv], {
           cwd: repo,

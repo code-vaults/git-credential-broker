@@ -157,7 +157,7 @@ export type HostRequest =
   | HostForkRequest;
 
 /** What the host broker answered. */
-export interface HostOpenResult {
+export interface HostResult {
   readonly number?: number;
   readonly url?: string;
   readonly stdout?: string;
@@ -630,8 +630,8 @@ export function listRequests(dir: string): string[] {
  * @param id - the identifier of the request it answers.
  * @returns the answer, or `undefined` while the host broker has not replied.
  */
-export function readResult(dir: string, id: string): HostOpenResult | undefined {
-  const parsed = readJson(join(dir, `${id}.result.json`)) as Partial<HostOpenResult> | undefined;
+export function readResult(dir: string, id: string): HostResult | undefined {
+  const parsed = readJson(join(dir, `${id}.result.json`)) as Partial<HostResult> | undefined;
   return parsed ?? undefined;
 }
 
@@ -642,7 +642,7 @@ export function readResult(dir: string, id: string): HostOpenResult | undefined 
  * @param id - the identifier of the request it answers.
  * @param result - what happened.
  */
-export function writeResult(dir: string, id: string, result: HostOpenResult): void {
+export function writeResult(dir: string, id: string, result: HostResult): void {
   writeJsonAtomic(join(dir, `${id}.result.json`), { v: 1, id, ...result });
 }
 
@@ -754,7 +754,7 @@ export async function waitForResult(
   id: string,
   timeoutMs: number = ANSWER_TIMEOUT_MS,
   pollMs = 500,
-): Promise<HostOpenResult | undefined> {
+): Promise<HostResult | undefined> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const result = readResult(dir, id);
