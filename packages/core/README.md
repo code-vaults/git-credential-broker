@@ -1,6 +1,6 @@
 # gcb-core
 
-Shared runtime for [`gcb-client`](../client) and [`gcb-host`](../host).
+Shared runtime for [`gcb-client`](https://www.npmjs.com/package/gcb-client) and [`gcb-host`](https://www.npmjs.com/package/gcb-host).
 
 This package is not a CLI. It provides the pieces both sides must agree on:
 

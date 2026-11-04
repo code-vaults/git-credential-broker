@@ -58,6 +58,7 @@ Common
   --host <host>            Host as configured, e.g. github.com (default: github.com)
   --socket <path>          Broker socket (default: GIT_BROKER_SOCKET)
   --proxy <url>            Use this proxy for this action
+  --body-file <path>       Read a body from a file for actions that accept --body
   --no-proxy               Reach GitHub directly for this action
   -h, --help               Show this help
 
@@ -221,6 +222,9 @@ export async function runGh(
 
   const values: Record<string, string | boolean | string[]> = {};
   const bodyFile = args.value('body-file');
+  if (bodyFile !== undefined && args.value('body') !== undefined) {
+    fail('--body and --body-file are mutually exclusive');
+  }
   if (bodyFile !== undefined) {
     try {
       values['body'] = readFileSync(bodyFile, 'utf8');

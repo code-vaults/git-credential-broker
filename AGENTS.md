@@ -327,6 +327,7 @@ Full detail and the measurements behind them:
 |---|---|
 | `packages/core/src/` | shared parser, help/version, protocol, types, platform, paths and the gh action catalog |
 | `packages/client/src/helper.ts` | the container-side credential helper |
+| `packages/client/src/primary.ts` | the catalogued-action primary adapter (default `gh`) |
 | `packages/client/src/commands/` | setup, probe, logs, pr, issue, repo, gh, remotes and the shared host-submit helper |
 | `packages/host/src/broker.ts` | unix socket server, refusal codes, audit records |
 | `packages/host/src/config.ts` | YAML configuration |

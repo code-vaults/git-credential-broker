@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import { runClient } from '../../packages/client/src/index.ts';
-import type { Primary } from '../../packages/client/src/primary.ts';
+import { primaryFromEnv, type Primary } from '../../packages/client/src/primary.ts';
 import { tryRunAsync } from '../common/run.ts';
 
 const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));
@@ -51,6 +51,25 @@ describe('the primary dispatch seam', () => {
     );
     assert.deepEqual(issue.calls[0]?.argv, ['issue', 'comment', '7', '--body', 'note', '--repo', 'acme/widget']);
     assert.equal(issue.calls[0]?.identity, 'user');
+  });
+
+  it('selects the configured primary from a registry', () => {
+    const fake = recorder().primary;
+    assert.equal(primaryFromEnv({ GCB_PRIMARY: 'fake' }, { gh: fake, fake }), fake);
+  });
+
+  it('leaves built-in routes independent of the primary', async () => {
+    for (const args of [
+      ['pr', '--help'],
+      ['run', '--help'],
+    ]) {
+      const result = await tryRunAsync(
+        process.execPath,
+        ['--conditions=development', CLIENT_BIN, ...args],
+        { env: { ...process.env, GCB_PRIMARY: 'glab' }, timeoutMs: 5_000 },
+      );
+      assert.equal(result.status, 0, args.join(' '));
+    }
   });
 
   it('fails closed for an unsupported configured primary', async () => {

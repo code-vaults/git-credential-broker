@@ -2,8 +2,9 @@
 
 Container-side `gcb`: the git credential helper and the client for a host-side `gcb-host` broker.
 
-The container holds no GitHub credential. `git push` asks this client, which asks the broker over a
-unix socket; the broker mints a short-lived installation token and performs the operation.
+The container holds no long-lived GitHub credential. `git push` asks this client, which asks the
+broker over a unix socket; the broker returns a short-lived installation token, and the helper hands
+it to Git for that push. The token expires; it is not stored in the container.
 
 ```sh
 npm install --global gcb-client

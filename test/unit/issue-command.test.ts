@@ -324,6 +324,14 @@ describe('gcb issue create --as-user', () => {
       assert.equal(view.status, 0);
       assert.match(view.stdout, /Usage: gcb gh/u);
 
+      const bogus = await runClient(['issue', '--bogus'], host.root);
+      assert.equal(bogus.status, 1);
+      assert.match(bogus.stderr, /unknown option --bogus for gcb issue/u);
+
+      const missingTitle = await runClient(['issue', '--title'], host.root);
+      assert.equal(missingTitle.status, 1);
+      assert.match(missingTitle.stderr, /--title needs a value/u);
+
       const bareHelp = await runClient(['issue', '--as-user', '--help'], host.root);
       assert.equal(bareHelp.status, 0);
       assert.match(bareHelp.stdout, /Usage: gcb issue/u);
@@ -481,6 +489,13 @@ describe('gcb issue create --as-user', () => {
       );
       assert.equal(emptyComment.status, 1);
       assert.match(emptyComment.stderr, /issue:comment needs a non-empty --body/u);
+
+      const bothBodies = await runClient(
+        ['issue', 'create', '--as-user', 'alice', '--repo', 'acme/widget', '--title', 't', '--body', 'x', '--body-file', 'x'],
+        host.root,
+      );
+      assert.equal(bothBodies.status, 1);
+      assert.match(bothBodies.stderr, /--body and --body-file are mutually exclusive/u);
 
       const noBodyValue = await runClient(
         ['issue', 'edit', '7', '--title', 'fixed', '--body', '--as-user', 'alice', '--repo', 'acme/widget'],

@@ -3,7 +3,7 @@
 Host-side `gcb`: the broker, configuration, providers and administration commands.
 
 The broker holds the GitHub App private key and mints short-lived, single-repository installation
-tokens. It runs outside the container; the container-side [`gcb-client`](../client) never receives a
+tokens. It runs outside the container; the container-side [`gcb-client`](https://www.npmjs.com/package/gcb-client) never receives a
 long-lived credential.
 
 ```sh
@@ -16,7 +16,7 @@ gcb daemon --config broker.config.yml
 ## Commands
 
 `gcb init`, `gcb config`, `gcb diagnose`, `gcb doctor`, `gcb authorize`, `gcb stage`,
-`gcb compose`, `gcb daemon`/`gcb host`, and the `gcb gh` executor.
+`gcb compose`, and `gcb daemon`/`gcb host`.
 
 The host broker also serves typed person requests from `gcb-client --as-user <login>` (create,
 review, reply and edit routes), using the `gh-<login>` configuration directory on this machine.

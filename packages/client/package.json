@@ -18,8 +18,7 @@
   },
   "files": [
     "lib",
-    "bin",
-    "README.md"
+    "bin"
   ],
   "exports": {
     ".": {

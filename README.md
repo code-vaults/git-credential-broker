@@ -130,7 +130,8 @@ gcb gh run view 123456 --log --repo owner/name
 
 `gcb pr <subcommand>`, `gcb run <subcommand>` and `gcb issue <subcommand>` are shorthands for the
 same actions when the catalog has one — `gcb pr view 12`, `gcb pr close 12`, `gcb run list`,
-`gcb issue create --repo owner/name --title "A title" --body "A body"`. The flag-only `gcb pr` form
+`gcb issue create --repo owner/name --title "A title" --body "A body"`. Catalogued actions dispatch
+through `GCB_PRIMARY` (default `gh`; an unsupported name fails closed). The flag-only `gcb pr` form
 described below is still what runs the lifecycle `gh` cannot express (opening as a person, review
 threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr close`.
 
@@ -252,7 +253,6 @@ directory and the audit log.
 ```sh
 export GIT_BROKER_SOCKET=/run/git-broker/broker.sock
 export GIT_BROKER_REQUIRE=1        # fail closed instead of falling back to another helper
-export GCB_PRIMARY=gh             # catalog adapter; only gh is implemented today
 gcb setup
 ```
 

@@ -87,32 +87,25 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
       // second list: a subcommand the catalog does not have stays with the flag-only lifecycle.
       // Bare `pr` asks the catalog too, where `run` needs no branch: the flag-only path would only
       // tell it that --repo is required.
-      const selected = await choose();
-      if (rest.length === 0) return selected.run(['pr']);
+      if (rest.length === 0) return (await choose()).run(['pr']);
       const sub = rest[0];
       if (sub === 'review' && rest.some((argument) => argument === '--id' || argument.startsWith('--id='))) {
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));
       }
-      if (
-        sub === 'create' &&
-        rest.some(
-          (argument) =>
-            argument === '--as-user' ||
-            argument.startsWith('--as-user=') ||
-            argument === '-as-user' ||
-            argument.startsWith('-as-user='),
-        )
-      ) {
+      if (sub === 'create' && hasAsUser(rest)) {
         // `pr create` is the catalogued action, but `--as-user` is the flag-only lifecycle's flag.
         // Accept the obvious spelling instead of making the caller discover that `create` must go.
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));
       }
       if (sub !== undefined && Object.hasOwn(GH_ACTIONS, `pr:${sub}`)) {
-        return selected.run(['pr', ...rest], { unreachableExitCode: 3 });
+        return (await choose()).run(['pr', ...rest], { unreachableExitCode: 3 });
       }
       return (await import('./commands/pr.ts')).runPr(rest);
     }
     case 'run':
+      if (rest.includes('--help') || rest.includes('-h')) {
+        return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
+      }
       return (await choose()).run(['run', ...rest]);
     case 'issue': {
       if (rest.length === 0) return (await import('./commands/issue.ts')).runIssue(rest);

@@ -76,6 +76,10 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     return runGh(['issue', command, '--help']);
   }
   if (command === undefined) {
+    if (validateArgs(args, argv, KNOWN_FLAGS, 'gcb issue')) {
+      say(ISSUE_USAGE);
+      return 0;
+    }
     if (args.has('as-user')) fail('--as-user without a login only creates, edits or comments on an issue');
     say(ISSUE_USAGE);
     return 0;
@@ -136,8 +140,12 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   }
   host ??= 'github.com';
 
-  let body = args.value('body');
+  const bodyArg = args.value('body');
   const bodyFile = args.value('body-file');
+  if (bodyArg !== undefined && bodyFile !== undefined) {
+    fail('--body and --body-file are mutually exclusive');
+  }
+  let body = bodyArg;
   if (bodyFile !== undefined) {
     try {
       body = readFileSync(bodyFile, 'utf8');

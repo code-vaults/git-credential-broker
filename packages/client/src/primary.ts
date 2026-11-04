@@ -37,10 +37,17 @@ export const GH_PRIMARY: Primary = {
  * @param env - the environment to read `GCB_PRIMARY` from.
  * @returns the selected primary.
  */
-export function primaryFromEnv(env: NodeJS.ProcessEnv = process.env): Primary {
-  const configured = env['GCB_PRIMARY'] ?? 'gh';
-  if (configured !== GH_PRIMARY.name) {
-    fail(`unsupported primary ${JSON.stringify(configured)}; only gh is implemented`);
+const DEFAULT_PRIMARIES: Readonly<Record<string, Primary>> = { [GH_PRIMARY.name]: GH_PRIMARY };
+
+export function primaryFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  primaries: Readonly<Record<string, Primary>> = DEFAULT_PRIMARIES,
+): Primary {
+  const configured = env['GCB_PRIMARY'] ?? GH_PRIMARY.name;
+  const selected = Object.hasOwn(primaries, configured) ? primaries[configured] : undefined;
+  if (selected === undefined) {
+    const available = Object.keys(primaries).join(', ');
+    fail(`unsupported primary ${JSON.stringify(configured)}; available: ${available}`);
   }
-  return GH_PRIMARY;
+  return selected;
 }
