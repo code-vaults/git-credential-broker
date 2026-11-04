@@ -156,14 +156,16 @@ Run a catalogued GitHub action through the broker.
 gcb pr <subcommand>, gcb run <subcommand> and gcb issue <subcommand> are shorthands for the same
 actions.
 
-Common
+Common (gcb gh does not accept --as-user; person routes are on gcb pr / gcb issue)
   -R, --repo <owner/name>  Repository the action belongs to (default: origin remote)
   --host <host>            Host as configured, e.g. github.com (default: github.com)
   --socket <path>          Broker socket (default: GIT_BROKER_SOCKET)
   --proxy <url>            Use this proxy for this action
   --body-file <path>       Read a body from a file, or '-' for stdin, for actions that accept --body
-  --as-user [login]        Person route for create/comment/review/reply/edit; see gcb pr/issue --help
   --no-proxy               Reach GitHub directly for this action
+
+Person routes (gcb pr / gcb issue only)
+  --as-user [login]        Authorized person or host gh account; see their --help
   -h, --help               Show this help
 
 Commands, from the action catalog

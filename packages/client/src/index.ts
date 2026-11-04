@@ -57,6 +57,14 @@ const isAsUser = (argument: string): boolean =>
 
 const hasAsUser = (argv: readonly string[]): boolean => argv.some(isAsUser);
 
+/** Split at `--`; options before it, operands after it unchanged. */
+function splitTerminator(argv: readonly string[]): { options: readonly string[]; operands: readonly string[] } {
+  const terminator = argv.indexOf('--');
+  return terminator === -1
+    ? { options: argv, operands: [] }
+    : { options: argv.slice(0, terminator), operands: argv.slice(terminator) };
+}
+
 /** A login is an --as-user with a value; a bare one selects the broker person instead. */
 function hasAsUserLogin(argv: readonly string[]): boolean {
   for (let index = 0; index < argv.length; index += 1) {
@@ -100,7 +108,7 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
       if (sub === 'review' && rest.some((argument) => argument === '--id' || argument.startsWith('--id='))) {
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));
       }
-      if (sub === 'create' && hasAsUser(rest)) {
+      if (sub === 'create' && hasAsUser(splitTerminator(rest).options)) {
         // `pr create` is the catalogued action, but `--as-user` is the flag-only lifecycle's flag.
         // Accept the obvious spelling instead of making the caller discover that `create` must go.
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));
@@ -133,14 +141,19 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
         }
         return (await choose()).run(['issue', ...rest]);
       }
-      if (hasAsUserLogin(rest)) return (await import('./commands/issue.ts')).runIssue(rest);
+      const { options, operands } = splitTerminator(rest);
+      if (hasAsUserLogin(options)) return (await import('./commands/issue.ts')).runIssue(rest);
       if (await actionAsksHelp('issue', sub, rest)) {
         return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
       }
-      const forwarded = hasAsUser(rest)
-        ? rest.filter((argument) => !isAsUser(argument))
-        : rest;
-      return (await choose()).run(['issue', ...forwarded], hasAsUser(rest) ? { identity: 'user' } : undefined);
+      const forwarded = [
+        ...options.filter((argument) => !isAsUser(argument)),
+        ...operands,
+      ];
+      return (await choose()).run(
+        ['issue', ...forwarded],
+        hasAsUser(options) ? { identity: 'user' } : undefined,
+      );
     }
     case 'repo':
       return (await import('./commands/repo.ts')).runRepo(rest);

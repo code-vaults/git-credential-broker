@@ -78,6 +78,19 @@ describe('the primary dispatch seam', () => {
     }
   });
 
+  it('does not read a post-terminator --as-user as identity', async () => {
+    const issue = recorder();
+    assert.equal(
+      await runClient(
+        ['issue', 'create', '--title', 't', '--body', 'b', '--repo', 'acme/widget', '--', '--as-user'],
+        issue.primary,
+      ),
+      7,
+    );
+    assert.equal(issue.calls[0]?.identity, undefined);
+    assert.deepEqual(issue.calls[0]?.argv.slice(-2), ['--', '--as-user']);
+  });
+
   it('does not treat --body --help as help', async () => {
     const result = await tryRunAsync(
       process.execPath,
