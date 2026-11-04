@@ -431,11 +431,12 @@ gcb issue comment 94 --as-user --body "a note"
 
 The host broker creates pull requests, submits reviews, replies to review comments, edits pull
 requests, runs catalogued actions and forks with the gh account named by the request; catalogued
-actions include issue create/edit/comment/close/reopen and pull request close/reopen. It has no merge action. For `repo fork`, review replies, reviews, pull request edit, issue edit/comment and any
+actions include issue create/edit/comment/close/reopen and pull request close/reopen. It has no
+merge action. For `repo fork`, review replies, reviews, pull request edit, issue edit/comment and any
 request that names `--repo` explicitly — every review always carries its repository, even when
-derived from origin —
-it checks the repository against the broker config's allowlist (pass `--config`). An explicit `--repo` needs no checkout of that repository; without it,
-the checkout decides.
+derived from origin — it checks the repository against the broker config's allowlist (pass
+`--config`). An explicit `--repo` needs no checkout of that repository; without it, the checkout
+decides.
 `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
 directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. The directory must
