@@ -111,15 +111,10 @@ export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {
  *
  * @param args - the parsed arguments.
  * @param argv - the raw arguments.
- * @param valueFlags - the flags whose separated `-h` means help.
  * @returns true when help should be printed.
  */
-export function helpRequested(
-  args: Args,
-  argv: readonly string[],
-  valueFlags: readonly string[] = ['--title', '--body-file'],
-): boolean {
-  return args.has('help') || args.has('h') || hasSeparatedValue(argv, valueFlags);
+export function helpRequested(args: Args, argv: readonly string[]): boolean {
+  return args.has('help') || args.has('h') || hasSeparatedValue(argv, ['--title', '--body-file']);
 }
 
 /**

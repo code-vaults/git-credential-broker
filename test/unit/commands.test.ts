@@ -110,7 +110,7 @@ describe('parseArgs', () => {
   it('decides help from raw values while leaving body data alone', () => {
     assert.equal(helpRequested(parseArgs(['--help']), ['--help']), true);
     assert.equal(helpRequested(parseArgs(['--title', '-h']), ['--title', '-h']), true);
-    assert.equal(helpRequested(parseArgs(['-title', '-h']), ['-title', '-h'], ['-title']), true);
+    assert.equal(helpRequested(parseArgs(['-title', '-h']), ['-title', '-h']), true);
     assert.equal(helpRequested(parseArgs(['--title=-h']), ['--title=-h']), false);
     assert.equal(helpRequested(parseArgs(['--body', '--help']), ['--body', '--help']), false);
   });
