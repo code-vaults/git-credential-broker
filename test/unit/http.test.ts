@@ -3,7 +3,7 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { describe, it } from 'node:test';
 
-import { fetcherFor, proxyCacheKey } from '../../packages/host/src/http.ts';
+import { fetcherFor, proxyCacheKey, proxyHasCredentials } from '../../packages/host/src/http.ts';
 
 describe('proxy fetch cache', () => {
   it('keys the environment snapshot separately from explicit choices', () => {
@@ -96,5 +96,14 @@ describe('startup proxy environment', () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     assert.equal(code, 0);
     assert.equal(output.trim(), '200 direct');
+  });
+});
+
+describe('proxy credentials', () => {
+  it('recognizes credentials and fails closed on unparseable values', () => {
+    assert.equal(proxyHasCredentials({}), false);
+    assert.equal(proxyHasCredentials({ HTTPS_PROXY: 'http://proxy.example:8080' }), false);
+    assert.equal(proxyHasCredentials({ HTTPS_PROXY: 'http://user:secret@proxy.example:8080' }), true);
+    assert.equal(proxyHasCredentials({ HTTPS_PROXY: 'not a url @ proxy' }), true);
   });
 });

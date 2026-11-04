@@ -672,6 +672,7 @@ function pullRequestNumber(value: unknown): number | undefined {
           proxy: request.proxy,
         });
       } catch (error) {
+        if (error instanceof ProviderConfigError) throw error;
         result = { ...NO_RUN, error: error instanceof Error ? error.message : String(error) };
       } finally {
         if (minted) {

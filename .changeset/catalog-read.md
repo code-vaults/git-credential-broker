@@ -10,4 +10,6 @@ and allowlist routes.
 
 `--jq` on a host action runs with a minimal environment (PATH/HOME/GH_CONFIG_DIR/proxy), so it
 cannot read the broker's inherited secrets; when a proxy URL contains credentials the action is
-refused, because gh evaluates jq inside the process that holds the proxy environment.
+refused, because gh evaluates jq inside the process that holds the proxy environment. A host
+deployment whose only login is `GH_TOKEN` needs a gh config/account for jq actions, because that
+token is deliberately not inherited by the minimal environment.

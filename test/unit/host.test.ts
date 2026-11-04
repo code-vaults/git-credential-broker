@@ -100,6 +100,19 @@ describe('bounded action output', () => {
   });
 });
 
+describe('bounded action output', () => {
+  it('omits the write caveat when writeCaveat is false', async () => {
+    const result = await runBounded(
+      process.execPath,
+      ['-e', 'setTimeout(() => {}, 5000);'],
+      { cwd: tmpdir(), env: process.env, timeoutMs: 500, writeCaveat: false },
+    );
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /timed out/u);
+    assert.doesNotMatch(result.stderr, /write may have completed/u);
+  });
+});
+
 describe('the host reply route', () => {
   it('runs gh api for a review reply and returns the comment URL', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-reply-'));
