@@ -88,8 +88,8 @@ export async function submitToHostBroker(
     fail(`the host broker does not advertise ${needed} support; restart it from this gcb-host version`);
   }
 
-  // writeRequest refuses what the host broker would refuse — a title past its limit, a body past its limit,
-  // a head equal to its base. It throws, and a stack trace tells the caller none of that.
+  // requestProblems above already checked the contract. Keep the catch as defence in case the two
+  // validators ever diverge; a stack trace would tell the caller none of it.
   let id: string;
   try {
     id = writeRequest(dir, request);
