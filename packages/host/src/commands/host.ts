@@ -439,25 +439,53 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
  * Minimal environment for a jq action.
  *
  * go-gh evaluates jq with the process environment, so a jq expression could read any inherited
- * secret. Keep gh's own config/proxy/PATH, but do not hand it the broker's environment.
+ * secret. Keep gh's own config/proxy/PATH, but do not hand it the broker's environment. When the
+ * only login is GH_TOKEN, copy it into a temporary gh config so authentication still works.
  */
-function jqEnv(proxy: ProxyChoice, account: string | undefined, host: string): NodeJS.ProcessEnv {
+function jqEnv(
+  proxy: ProxyChoice,
+  account: string | undefined,
+  host: string,
+): { env: NodeJS.ProcessEnv; cleanup: () => void } {
   const base = forkEnv(proxy, account, host);
   const env: NodeJS.ProcessEnv = {
     PATH: base['PATH'] ?? '',
-    HOME: base['HOME'] ?? '',
+    HOME: base['HOME'] ?? homedir(),
     GH_HOST: host,
     NO_COLOR: '1',
     GH_PROMPT_DISABLED: '1',
     GH_NO_UPDATE_NOTIFIER: '1',
     GIT_TERMINAL_PROMPT: '0',
   };
-  if (base['GH_CONFIG_DIR'] !== undefined) env['GH_CONFIG_DIR'] = base['GH_CONFIG_DIR'];
+  let configDir = base['GH_CONFIG_DIR'];
+  let cleanup = (): void => {};
+  const token =
+    base['GH_TOKEN'] ??
+    base['GITHUB_TOKEN'] ??
+    base['GH_ENTERPRISE_TOKEN'] ??
+    base['GITHUB_ENTERPRISE_TOKEN'];
+  if (account === undefined && token !== undefined && token !== '') {
+    const temp = mkdtempSync(join(tmpdir(), 'gcb-jq-gh-'));
+    try {
+      writeFileSync(join(temp, 'hosts.yml'), `${host}:\n    oauth_token: ${token}\n    user: gcb\n`, {
+        mode: 0o600,
+      });
+    } catch (error) {
+      rmSync(temp, { recursive: true, force: true });
+      throw error;
+    }
+    configDir = temp;
+    cleanup = () => rmSync(temp, { recursive: true, force: true });
+  } else if (configDir === undefined) {
+    const baseConfig = base['XDG_CONFIG_HOME'] ?? join(base['HOME'] ?? homedir(), '.config');
+    configDir = join(baseConfig, 'gh');
+  }
+  env['GH_CONFIG_DIR'] = configDir;
   for (const key of PROXY_ENV_KEYS) {
     const value = base[key];
     if (value !== undefined) env[key] = value;
   }
-  return env;
+  return { env, cleanup };
 }
 
 /**
@@ -559,10 +587,11 @@ async function openOne(
     const host = request.host ?? 'github.com';
     return personRun(host, request.repo, allowed, async (host) => {
       const action = getGhAction(request.action);
-      const actionEnv =
-        request.values['jq'] !== undefined
-          ? jqEnv(request.proxy, request.account, host)
-          : forkEnv(request.proxy, request.account, host);
+      const prepared = request.values['jq'] !== undefined
+        ? jqEnv(request.proxy, request.account, host)
+        : { env: forkEnv(request.proxy, request.account, host), cleanup: (): void => {} };
+      const actionEnv = prepared.env;
+      try {
       if (request.values['jq'] !== undefined && proxyHasCredentials(actionEnv)) {
         return { error: '--jq cannot run while the proxy URL contains credentials; use --json instead' };
       }
@@ -605,6 +634,9 @@ async function openOne(
         return result;
       };
       return body === undefined ? invoke() : withBodyFile(body, invoke);
+      } finally {
+        prepared.cleanup();
+      }
     });
   }
 

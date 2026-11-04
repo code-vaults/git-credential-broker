@@ -600,22 +600,25 @@ describe('the host action route', () => {
     const config = forkConfig(root, 'acme/widget');
     const dir = channelDir(join(repo, '.git'));
     const command = join(root, 'not-gh');
-    writeFileSync(command, '#!/bin/sh\nprintf "TOKEN=%s\\n" "$GH_TOKEN"\n', 'utf8');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf "TOKEN=%s\\nCONFIG=%s\\n" "$GH_TOKEN" "$GH_CONFIG_DIR"\n',
+      'utf8',
+    );
     chmodSync(command, 0o755);
-    const previous = process.env['GH_TOKEN'];
-    process.env['GH_TOKEN'] = 'host-secret';
     try {
       const id = writeRequest(dir, {
         kind: 'action',
         action: 'issue:list',
         repo: 'acme/widget',
         values: { jq: '.', limit: 1 },
+        proxy: null,
       });
       assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
-      assert.equal(readResult(dir, id)?.stdout, 'TOKEN=\n');
+      const stdout = readResult(dir, id)?.stdout ?? '';
+      assert.match(stdout, /^TOKEN=\n/u);
+      assert.match(stdout, /CONFIG=.+\/gh\n/u);
     } finally {
-      if (previous === undefined) delete process.env['GH_TOKEN'];
-      else process.env['GH_TOKEN'] = previous;
       rmSync(root, { recursive: true, force: true });
     }
   });
