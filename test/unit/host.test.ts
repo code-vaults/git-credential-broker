@@ -647,6 +647,59 @@ describe('the host action route', () => {
     }
   });
 
+  it('selects the enterprise token for a non-github host', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-jq-enterprise-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget', 'ghe.example');
+    const dir = channelDir(join(repo, '.git'));
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\ncat "$GH_CONFIG_DIR/hosts.yml"\n', 'utf8');
+    chmodSync(command, 0o755);
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      HOME: join(root, 'home'),
+      GH_TOKEN: 'github-token',
+      GH_ENTERPRISE_TOKEN: 'enterprise-token',
+    };
+    for (const key of ['GITHUB_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GH_CONFIG_DIR', 'GH_HOST']) {
+      delete env[key];
+    }
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'issue:list',
+        repo: 'acme/widget',
+        host: 'ghe.example',
+        values: { jq: '.', limit: 1 },
+        proxy: null,
+      });
+      const result = await tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          join(process.cwd(), 'packages/host/bin/gcb.js'),
+          'host',
+          '--repo',
+          repo,
+          '--command',
+          command,
+          '--config',
+          config,
+          '--once',
+        ],
+        { cwd: process.cwd(), env, timeoutMs: 10_000 },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      const stdout = readResult(dir, id)?.stdout ?? '';
+      assert.match(stdout, /oauth_token: enterprise-token/u);
+      assert.doesNotMatch(stdout, /github-token/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('refuses a request the client already stopped waiting for', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-expired-'));
     const repo = join(root, 'checkout');

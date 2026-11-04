@@ -435,6 +435,19 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
   return env;
 }
 
+/** gh's host split for token selection: github.com, github.localhost and tenancy hosts. */
+function isGithubHost(host: string): boolean {
+  const name = host.toLowerCase().replace(/:\d+$/u, '');
+  return name === 'github.com' || name === 'github.localhost' || name.endsWith('.ghe.com');
+}
+
+/** Mirror go-gh's tokenForHost: the public hosts use GH_TOKEN, every other host the enterprise pair. */
+function tokenForHost(host: string, env: NodeJS.ProcessEnv): string | undefined {
+  return isGithubHost(host)
+    ? env['GH_TOKEN'] ?? env['GITHUB_TOKEN']
+    : env['GH_ENTERPRISE_TOKEN'] ?? env['GITHUB_ENTERPRISE_TOKEN'];
+}
+
 /**
  * Minimal environment for a jq action.
  *
@@ -459,11 +472,7 @@ function jqEnv(
   };
   let configDir = base['GH_CONFIG_DIR'];
   let cleanup = (): void => {};
-  const token =
-    base['GH_TOKEN'] ??
-    base['GITHUB_TOKEN'] ??
-    base['GH_ENTERPRISE_TOKEN'] ??
-    base['GITHUB_ENTERPRISE_TOKEN'];
+  const token = tokenForHost(host, base);
   if (account === undefined && token !== undefined && token !== '') {
     const temp = mkdtempSync(join(tmpdir(), 'gcb-jq-gh-'));
     try {
