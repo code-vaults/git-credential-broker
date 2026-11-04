@@ -125,12 +125,14 @@ export function validateArgs(
   command?: string,
 ): boolean {
   if (helpRequested(args, argv)) return true;
+  // Without a flag set the caller's own layer owns both checks: it can tell a typo from a missing
+  // operand, which this helper cannot.
   if (known !== undefined) {
     for (const name of args.names) {
       if (!known.has(name)) fail(`unknown option --${name}${command === undefined ? '' : ` for ${command}`}`);
     }
+    requireNoMissing(args);
   }
-  requireNoMissing(args);
   return false;
 }
 

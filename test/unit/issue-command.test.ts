@@ -482,7 +482,7 @@ describe('gcb issue create --as-user', () => {
       assert.match(bareRepo.stderr, /--repo needs a value/u);
 
       const empty = await runClient(
-        ['issue', 'edit', '7', '--as-user', '--repo', 'acme/widget'],
+        ['issue', 'edit', '7', '--as-user', 'alice', '--repo', 'acme/widget'],
         host.root,
       );
       assert.equal(empty.status, 1);
@@ -567,6 +567,21 @@ describe('gcb issue create --as-user', () => {
       assert.equal(helpAsValue.status, 0);
       assert.match(helpAsValue.stdout, /Usage: gcb gh/u);
       assert.equal(requests(host.dir).length, before, '-h as a value still means help');
+    } finally {
+      host.cleanup();
+    }
+  });
+
+  it('lets the catalog report unknown and missing options without a login', async () => {
+    const host = fixture();
+    try {
+      const unknown = await runClient(['issue', 'edit', '7', '--bogus', '--repo', 'acme/widget'], host.root);
+      assert.equal(unknown.status, 1);
+      assert.match(unknown.stderr, /unknown option --bogus for gcb gh issue edit/u);
+
+      const missing = await runClient(['issue', 'edit', '7', '--title', '--repo', 'acme/widget'], host.root);
+      assert.equal(missing.status, 1);
+      assert.match(missing.stderr, /--title needs a value/u);
     } finally {
       host.cleanup();
     }

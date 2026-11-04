@@ -100,19 +100,19 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     return runGh(['issue', command, '--help']);
   }
   if (command !== 'create') {
-    if (
-      command === 'edit' &&
-      args.value('title') === undefined &&
-      args.value('body') === undefined &&
-      args.value('body-file') === undefined
-    ) {
-      fail('issue edit needs --title, --body or --body-file');
-    }
     if (account !== undefined) {
       if (command !== 'edit' && command !== 'comment') {
         fail('--as-user <login> only creates, edits or comments on an issue');
       }
       if (!LOGIN.test(account)) fail(`--as-user must be a GitHub login, got ${JSON.stringify(account)}`);
+      if (
+        command === 'edit' &&
+        args.value('title') === undefined &&
+        args.value('body') === undefined &&
+        args.value('body-file') === undefined
+      ) {
+        fail('issue edit needs --title, --body or --body-file');
+      }
       if (args.positionals.length > 2) {
         fail('unexpected argument ' + JSON.stringify(args.positionals[2]));
       }
