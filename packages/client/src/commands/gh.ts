@@ -54,6 +54,19 @@ interface ActionScan {
   readonly allowed: ReadonlySet<string>;
 }
 
+/** The flags that consume the following token, shared by the scan and identity extraction. */
+function actionValueFlags(action: GhAction): ReadonlySet<string> {
+  return new Set([
+    ...action.flags.filter((flag) => flag.type !== 'boolean').map((flag) => flag.name),
+    ...(action.flags.some((flag) => flag.name === 'body') ? ['body-file'] : []),
+    'repo',
+    'R',
+    'host',
+    'socket',
+    'proxy',
+  ]);
+}
+
 /**
  * Scan one action's raw argv the way runGh consumes it.
  *
@@ -63,15 +76,8 @@ interface ActionScan {
  */
 function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionScan {
   const hasBody = action.flags.some((flag) => flag.name === 'body');
-  const valueFlags = new Set([
-    ...action.flags.filter((flag) => flag.type !== 'boolean').map((flag) => flag.name),
-    ...(hasBody ? ['body-file'] : []),
-    'repo',
-    'R',
-    'host',
-    'socket',
-    'proxy',
-  ]);
+  const valueFlags = actionValueFlags(action);
+
   const allowed = new Set([
     ...action.flags.map((flag) => flag.name),
     ...(hasBody ? ['body-file'] : []),
@@ -157,15 +163,8 @@ function extractAsUser(
   const out: string[] = [];
   let asUser = false;
   let account: string | undefined;
-  const valueFlags = new Set([
-    ...action.flags.filter((flag) => flag.type !== 'boolean').map((flag) => flag.name),
-    ...(action.flags.some((flag) => flag.name === 'body') ? ['body-file'] : []),
-    'repo',
-    'R',
-    'host',
-    'socket',
-    'proxy',
-  ]);
+  const valueFlags = actionValueFlags(action);
+
   for (let index = 0; index < options.length; index += 1) {
     const argument = options[index];
     if (argument === undefined) continue;

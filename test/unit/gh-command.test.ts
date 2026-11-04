@@ -142,6 +142,10 @@ describe('gcb gh', () => {
     const result = await runClient(['gh', 'issue', 'comment', '7', '--body', '-as-user', '--help']);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /Usage: gcb gh/u);
+
+    const duplicate = await runClient(['gh', 'pr', 'view', '1', '--as-user', '--as-user', '--help']);
+    assert.equal(duplicate.status, 0);
+    assert.match(duplicate.stdout, /Usage: gcb gh/u);
   });
 
   it('rejects review conflicts before reading stdin', async () => {
