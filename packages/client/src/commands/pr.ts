@@ -130,7 +130,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     say(PR_USAGE);
     return 0;
   }
-  for (const name of ['title', 'body', 'body-file']) {
+  for (const name of ['title', 'body', 'body-file', 'base']) {
     if (args.missing(name)) fail(`--${name} needs a value`);
   }
   // Unknown options are refused rather than ignored: a typo must not silently fall through to an update.

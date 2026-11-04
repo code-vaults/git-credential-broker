@@ -543,6 +543,27 @@ describe('gcb pr identity flags', () => {
       );
       assert.equal(result.status, 1);
       assert.match(result.stderr, /--body needs a value/u);
+
+      const base = await tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'pr',
+          '--as-user',
+          'alice',
+          '--number',
+          '7',
+          '--title',
+          't',
+          '--base',
+          '--repo',
+          'acme/widget',
+        ],
+        { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
+      );
+      assert.equal(base.status, 1);
+      assert.match(base.stderr, /--base needs a value/u);
     } finally {
       repo.cleanup();
     }
