@@ -148,6 +148,23 @@ describe('gcb gh', () => {
     assert.match(duplicate.stdout, /Usage: gcb gh/u);
   });
 
+  it('rejects --socket on the login route before reading stdin', async () => {
+    const result = await runClientWithOpenStdin([
+      'gh',
+      'issue',
+      'comment',
+      '7',
+      '--body-file',
+      '-',
+      '--as-user',
+      'alice',
+      '--socket',
+      '/definitely/not/here.sock',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--socket is the app broker route/u);
+  });
+
   it('rejects review conflicts before reading stdin', async () => {
     const result = await runClientWithOpenStdin([
       'gh',

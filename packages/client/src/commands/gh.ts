@@ -361,6 +361,10 @@ export async function runGh(
     else values[flag.name] = entries[0] as string;
   }
 
+  if (account !== undefined && args.value('socket') !== undefined) {
+    fail('--socket is the app broker route; --as-user <login> uses the checkout channel');
+  }
+
   if (bodyFile) {
     // Validate selection constraints before a '-' body waits for stdin; the actual body is built again below.
     try {
@@ -378,9 +382,6 @@ export async function runGh(
   }
 
   if (account !== undefined) {
-    if (args.value('socket') !== undefined) {
-      fail('--socket is the app broker route; --as-user <login> uses the checkout channel');
-    }
     return submitActionToHostBroker({
       kind: 'action',
       action: actionName,
