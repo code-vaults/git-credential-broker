@@ -14,7 +14,8 @@
     "node": ">=24"
   },
   "files": [
-    "lib"
+    "lib",
+    "README.md"
   ],
   "exports": {
     ".": {
