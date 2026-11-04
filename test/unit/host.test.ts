@@ -524,6 +524,36 @@ describe('the host action route', () => {
     }
   });
 
+  it('refuses when the issue-target probe fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-issue-probe-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const marker = join(root, 'ran');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nif [ "$1" = "api" ]; then echo boom >&2; exit 1; fi\ntouch ' + marker + '\necho SHOULD_NOT_RUN\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'issue:close',
+        repo: 'acme/widget',
+        values: { number: 7 },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.match(readResult(dir, id)?.error ?? '', /boom/u);
+      assert.equal(existsSync(marker), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('refuses a request the client already stopped waiting for', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-expired-'));
     const repo = join(root, 'checkout');
