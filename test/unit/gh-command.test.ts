@@ -42,6 +42,25 @@ describe('gcb gh', () => {
     assert.match(result.stderr, /cannot read \/definitely\/not\/here/u);
   });
 
+  it('routes issue through the same catalog checks', async () => {
+    const unknown = await runClient(['issue', '--bogus']);
+    assert.equal(unknown.status, 1);
+    assert.match(unknown.stderr, /unknown gh action "issue:--bogus"/u);
+
+    const missing = await runClient(['issue', 'create', '--title']);
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /--title needs a value/u);
+
+    const action = await runClient(['issue', 'view', '7', '--repo', 'acme/widget']);
+    assert.equal(action.status, 1);
+    assert.match(action.stderr, /unknown gh action "issue:view"/u);
+
+    const unconfigured = await runClient(['issue', 'create', '--title', 't', '--body', 'b', '--repo', 'acme/widget']);
+    assert.equal(unconfigured.status, 1);
+    assert.match(unconfigured.stderr, /error: /u);
+    assert.doesNotMatch(unconfigured.stderr, /unknown gh action|needs --title/u);
+  });
+
   it('refuses --body together with --body-file', async () => {
     const result = await runGhCli(['pr', 'comment', '7', '--body', 'x', '--body-file', 'f', '--repo', 'acme/widget']);
     assert.equal(result.status, 1);

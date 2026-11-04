@@ -27,30 +27,10 @@ function recorder(): { primary: Primary; calls: { argv: readonly string[]; ident
 }
 
 describe('the primary dispatch seam', () => {
-  it('sends pr and issue catalogue actions through the selected primary', async () => {
+  it('sends pr catalogue actions through the selected primary', async () => {
     const pr = recorder();
     assert.equal(await runClient(['pr', 'view', '1', '--repo', 'acme/widget'], pr.primary), 7);
     assert.deepEqual(pr.calls[0]?.argv, ['pr', 'view', '1', '--repo', 'acme/widget']);
-
-    const issue = recorder();
-    assert.equal(
-      await runClient(['issue', 'edit', '7', '--title', 't', '--repo', 'acme/widget'], issue.primary),
-      7,
-    );
-    assert.deepEqual(issue.calls[0]?.argv, ['issue', 'edit', '7', '--title', 't', '--repo', 'acme/widget']);
-  });
-
-  it('strips a bare --as-user and selects the user identity', async () => {
-    const issue = recorder();
-    assert.equal(
-      await runClient(
-        ['issue', 'comment', '7', '--body', 'note', '--as-user', '--repo', 'acme/widget'],
-        issue.primary,
-      ),
-      7,
-    );
-    assert.deepEqual(issue.calls[0]?.argv, ['issue', 'comment', '7', '--body', 'note', '--repo', 'acme/widget']);
-    assert.equal(issue.calls[0]?.identity, 'user');
   });
 
   it('selects the configured primary from a registry', () => {
@@ -76,19 +56,6 @@ describe('the primary dispatch seam', () => {
       );
       assert.equal(result.status, 0, args.join(' '));
     }
-  });
-
-  it('does not read a post-terminator --as-user as identity', async () => {
-    const issue = recorder();
-    assert.equal(
-      await runClient(
-        ['issue', 'create', '--title', 't', '--body', 'b', '--repo', 'acme/widget', '--', '--as-user'],
-        issue.primary,
-      ),
-      7,
-    );
-    assert.equal(issue.calls[0]?.identity, undefined);
-    assert.deepEqual(issue.calls[0]?.argv.slice(-2), ['--', '--as-user']);
   });
 
   it('does not treat --body --help as help', async () => {

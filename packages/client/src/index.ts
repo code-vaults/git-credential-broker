@@ -65,21 +65,6 @@ function splitTerminator(argv: readonly string[]): { options: readonly string[];
     : { options: argv.slice(0, terminator), operands: argv.slice(terminator) };
 }
 
-/** A login is an --as-user with a value; a bare one selects the broker person instead. */
-function hasAsUserLogin(argv: readonly string[]): boolean {
-  for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index];
-    if (argument === '--as-user' || argument === '-as-user') {
-      const next = argv[index + 1];
-      return next !== undefined && !next.startsWith('-');
-    }
-    if (argument?.startsWith('--as-user=') || argument?.startsWith('-as-user=')) {
-      return (argument.split('=', 2)[1] ?? '') !== '';
-    }
-  }
-  return false;
-}
-
 /** Ask the selected action's own scan, rather than a second interpretation of its argv. */
 async function actionAsksHelp(domain: string, sub: string | undefined, argv: readonly string[]): Promise<boolean> {
   if (sub === undefined || sub.startsWith('-')) {
@@ -126,35 +111,8 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
         return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
       }
       return (await choose()).run(['run', ...rest]);
-    case 'issue': {
-      if (rest.length === 0) return (await import('./commands/issue.ts')).runIssue(rest);
-      const sub = rest[0];
-      const catalogued = sub !== undefined && Object.hasOwn(GH_ACTIONS, `issue:${sub}`);
-      if (!catalogued) {
-        // The bare command and a person route still belong to the issue usage/host path; any other
-        // unknown issue action goes through the adapter, exactly as gcb gh would report it.
-        if (sub?.startsWith('-') || hasAsUser(rest)) {
-          return (await import('./commands/issue.ts')).runIssue(rest);
-        }
-        if (rest.includes('--help') || rest.includes('-h')) {
-          return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
-        }
-        return (await choose()).run(['issue', ...rest]);
-      }
-      const { options, operands } = splitTerminator(rest);
-      if (hasAsUserLogin(options)) return (await import('./commands/issue.ts')).runIssue(rest);
-      if (await actionAsksHelp('issue', sub, rest)) {
-        return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
-      }
-      const forwarded = [
-        ...options.filter((argument) => !isAsUser(argument)),
-        ...operands,
-      ];
-      return (await choose()).run(
-        ['issue', ...forwarded],
-        hasAsUser(options) ? { identity: 'user' } : undefined,
-      );
-    }
+    case 'issue':
+      return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
     case 'repo':
       return (await import('./commands/repo.ts')).runRepo(rest);
     case 'gh':

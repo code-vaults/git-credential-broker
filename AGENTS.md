@@ -84,8 +84,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   rebuilds a canonical argv from validated values and never forwards the caller’s argv. Add an
   action only with that command’s GitHub endpoint documentation and a test. Catalogued client
   subcommands dispatch through one primary adapter (`GCB_PRIMARY`, default `gh`); an unsupported
-  primary fails closed, and `gcb issue` keeps only its host-login route rather than a second
-  forwarding layer. `gcb gh` accepts bare `--as-user` for `appUser` actions and `--as-user <login>`
+  primary fails closed, and `gcb issue` is a catalog shell through the same adapter rather than a
+  second forwarding layer. `gcb gh` accepts bare `--as-user` for `appUser` actions and `--as-user <login>`
   for a catalogued host action; the latter stays a typed, allowlisted request, never raw argv.
 - **Dependencies belong to the package that uses them.** `gcb-client` has no runtime dependencies;
   `gcb-host` owns `yaml`. npm installs them; there is no esbuild/bundle step. `stage` is export-only
@@ -329,7 +329,7 @@ Full detail and the measurements behind them:
 | `packages/core/src/` | shared parser, help/version, protocol, types, platform, paths and the gh action catalog |
 | `packages/client/src/helper.ts` | the container-side credential helper |
 | `packages/client/src/primary.ts` | the catalogued-action primary adapter (default `gh`) |
-| `packages/client/src/commands/` | setup, probe, logs, pr, issue, repo, gh, remotes and the shared host-submit helper |
+| `packages/client/src/commands/` | setup, probe, logs, pr, repo, gh, remotes and the shared host-submit helper |
 | `packages/host/src/broker.ts` | unix socket server, refusal codes, audit records |
 | `packages/host/src/config.ts` | YAML configuration |
 | `packages/host/src/gh.ts` | the isolated gh action executor |
