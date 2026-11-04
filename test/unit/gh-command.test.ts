@@ -69,6 +69,22 @@ describe('gcb gh', () => {
     }
   });
 
+  it('does not read -R as a repository option when it is body data', async () => {
+    const result = await runClient([
+      'gh',
+      'issue',
+      'comment',
+      '7',
+      '--body',
+      '-R',
+      '--repo',
+      'acme/widget',
+      '--socket',
+      '/definitely/not/here.sock',
+    ]);
+    assert.doesNotMatch(result.stderr, /--repo needs a value/u);
+  });
+
   it('refuses --body together with --body-file', async () => {
     const result = await runGhCli(['pr', 'comment', '7', '--body', 'x', '--body-file', 'f', '--repo', 'acme/widget']);
     assert.equal(result.status, 1);

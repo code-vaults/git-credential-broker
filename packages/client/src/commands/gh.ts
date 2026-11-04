@@ -279,7 +279,7 @@ export async function runGh(
   const proxy = args.has('no-proxy') ? null : args.value('proxy');
   const host = args.value('host') ?? 'github.com';
   let repo = args.value('repo') ?? args.value('R');
-  if (repo === undefined && hasRepoOption(rawRest)) {
+  if (repo === undefined && hasRepoOption(rest)) {
     fail('--repo needs a value; refusing to fall back to the checkout');
   }
   if (repo === undefined) {
