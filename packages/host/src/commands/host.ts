@@ -52,7 +52,7 @@ const CREATE_TIMEOUT_MS = 120_000;
 const HOST_ACTION_OUTPUT_BYTES = 48_000;
 
 /** What one bounded action process produced. */
-interface BoundedResult {
+export interface BoundedResult {
   readonly stdout: string;
   readonly stderr: string;
   readonly code: number;
@@ -65,7 +65,7 @@ interface BoundedResult {
  * reported as a gh failure even though only the excess output is unusable. Read both streams to the
  * end, keep the first bytes of each, and tell the caller where the cut is.
  */
-function runBounded(
+export function runBounded(
   command: string,
   args: readonly string[],
   options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number },
