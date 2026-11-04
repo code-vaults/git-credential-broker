@@ -145,8 +145,7 @@ function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionSca
 /**
  * Pull a bare --as-user out of an action's argv.
  *
- * `gcb gh` supports the person identity the app broker can execute. The login form belongs to the
- * typed host routes in `gcb pr`/`gcb issue`, not to a generic gh action.
+ * `gcb gh` supports both person forms: bare for the app broker, a login for the host action route.
  */
 function extractAsUser(rawRest: readonly string[]): { rest: string[]; asUser: boolean; account?: string } {
   const terminator = rawRest.indexOf('--');
@@ -158,6 +157,7 @@ function extractAsUser(rawRest: readonly string[]): { rest: string[]; asUser: bo
   for (let index = 0; index < options.length; index += 1) {
     const argument = options[index];
     if (argument === '--as-user' || argument === '-as-user') {
+      if (asUser || account !== undefined) fail('--as-user may be given once');
       const next = options[index + 1];
       if (next !== undefined && !next.startsWith('-')) {
         account = next;
@@ -168,6 +168,7 @@ function extractAsUser(rawRest: readonly string[]): { rest: string[]; asUser: bo
       continue;
     }
     if (argument?.startsWith('--as-user=') || argument?.startsWith('-as-user=')) {
+      if (asUser || account !== undefined) fail('--as-user may be given once');
       const value = argument.split('=', 2)[1] ?? '';
       if (value === '') asUser = true;
       else account = value;
@@ -201,11 +202,11 @@ Common
   --proxy <url>            Use this proxy for this action
   --body-file <path>       Read a body from a file, or '-' for stdin, for actions that accept --body
   --no-proxy               Reach GitHub directly for this action
+  -h, --help               Show this help
 
 Person route
   --as-user                App-broker person identity, for appUser actions
   --as-user <login>        Host gh account; runs the catalogued action through gcb host
-  -h, --help               Show this help
 
 Commands, from the action catalog
 ${ACTION_LINES}`;
@@ -331,6 +332,9 @@ export async function runGh(
   }
 
   if (account !== undefined) {
+    if (args.value('socket') !== undefined) {
+      fail('--socket is the app broker route; --as-user <login> uses the checkout channel');
+    }
     return submitActionToHostBroker({
       kind: 'action',
       action: actionName,

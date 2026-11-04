@@ -33,6 +33,15 @@ describe('the primary dispatch seam', () => {
     assert.deepEqual(pr.calls[0]?.argv, ['pr', 'view', '1', '--repo', 'acme/widget']);
   });
 
+  it('sends issue catalogue actions through the selected primary', async () => {
+    const issue = recorder();
+    assert.equal(
+      await runClient(['issue', 'edit', '7', '--title', 't', '--repo', 'acme/widget'], issue.primary),
+      7,
+    );
+    assert.deepEqual(issue.calls[0]?.argv, ['issue', 'edit', '7', '--title', 't', '--repo', 'acme/widget']);
+  });
+
   it('selects the configured primary from a registry', () => {
     const fake = recorder().primary;
     assert.equal(primaryFromEnv({ GCB_PRIMARY: 'fake' }, { gh: fake, fake }), fake);
@@ -44,6 +53,7 @@ describe('the primary dispatch seam', () => {
       ['pr', 'view', '--help'],
       ['pr', 'review', '--comment', '-h'],
       ['pr', 'list', '--label', '-h'],
+      ['issue', '--help'],
       ['issue', 'create', '--label', '-h', '--title', 't', '--body', 'b'],
       ['issue', 'edit', '--help'],
       ['issue', 'view', '--help'],
@@ -108,6 +118,27 @@ describe('the primary dispatch seam', () => {
     );
     assert.equal(help.status, 0);
     assert.match(help.stdout, /Usage: gcb gh/u);
+  });
+
+  it('applies the primary to executable issue actions', async () => {
+    const result = await tryRunAsync(
+      process.execPath,
+      [
+        '--conditions=development',
+        CLIENT_BIN,
+        'issue',
+        'create',
+        '--title',
+        't',
+        '--body',
+        'b',
+        '--repo',
+        'acme/widget',
+      ],
+      { env: { ...process.env, GCB_PRIMARY: 'glab' }, timeoutMs: 5_000 },
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /unsupported primary "glab"/u);
   });
 
   it('fails closed for an unsupported configured primary', async () => {

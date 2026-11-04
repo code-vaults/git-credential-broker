@@ -112,7 +112,10 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
       }
       return (await choose()).run(['run', ...rest]);
     case 'issue':
-      return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
+      if (await actionAsksHelp('issue', rest[0], rest)) {
+        return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
+      }
+      return (await choose()).run(['issue', ...rest]);
     case 'repo':
       return (await import('./commands/repo.ts')).runRepo(rest);
     case 'gh':
