@@ -180,6 +180,16 @@ function extractAsUser(rawRest: readonly string[]): { rest: string[]; asUser: bo
   return { rest: [...out, ...operands], asUser, ...(account === undefined ? {} : { account }) };
 }
 
+/** Whether argv names a repository option before the terminator. */
+function hasRepoOption(argv: readonly string[]): boolean {
+  for (const argument of argv) {
+    if (argument === '--') return false;
+    if (argument === '--repo' || argument === '-repo' || argument === '-R') return true;
+    if (/^--?repo=/.test(argument) || /^-R=/.test(argument)) return true;
+  }
+  return false;
+}
+
 /** Whether a catalogued action's argv asks for help, using the same scan. */
 export function actionHelpRequested(actionName: string, rawRest: readonly string[]): boolean {
   try {
@@ -267,6 +277,9 @@ export async function runGh(
   const proxy = args.has('no-proxy') ? null : args.value('proxy');
   const host = args.value('host') ?? 'github.com';
   let repo = args.value('repo') ?? args.value('R');
+  if (repo === undefined && hasRepoOption(rawRest)) {
+    fail('--repo needs a value; refusing to fall back to the checkout');
+  }
   if (repo === undefined) {
     const found = repoFromCheckout(process.cwd());
     if (found === undefined) fail('--repo is required when the checkout has no usable origin remote');

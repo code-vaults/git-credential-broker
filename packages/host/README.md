@@ -8,7 +8,12 @@ long-lived credential.
 
 ```sh
 npm install --global gcb-host
-gcb init --mode host        # writes broker.config.yml and validates the deployment
+# writes broker.config.yml and validates the deployment
+gcb init --mode host \
+  --cert /path/to/app.private-key.pem \
+  --allow owner/repo \
+  --client-id <client-id> \
+  --app-id <app-id>
 gcb doctor --config broker.config.yml
 gcb daemon --config broker.config.yml
 ```
