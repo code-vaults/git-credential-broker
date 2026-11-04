@@ -147,15 +147,36 @@ function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionSca
  *
  * `gcb gh` supports both person forms: bare for the app broker, a login for the host action route.
  */
-function extractAsUser(rawRest: readonly string[]): { rest: string[]; asUser: boolean; account?: string } {
+function extractAsUser(
+  rawRest: readonly string[],
+  action: GhAction,
+): { rest: string[]; asUser: boolean; account?: string } {
   const terminator = rawRest.indexOf('--');
   const options = terminator === -1 ? rawRest : rawRest.slice(0, terminator);
   const operands = terminator === -1 ? [] : rawRest.slice(terminator);
   const out: string[] = [];
   let asUser = false;
   let account: string | undefined;
+  const valueFlags = new Set([
+    ...action.flags.filter((flag) => flag.type !== 'boolean').map((flag) => flag.name),
+    ...(action.flags.some((flag) => flag.name === 'body') ? ['body-file'] : []),
+    'repo',
+    'R',
+    'host',
+    'socket',
+    'proxy',
+  ]);
   for (let index = 0; index < options.length; index += 1) {
     const argument = options[index];
+    if (argument === undefined) continue;
+    const normalized = argument.replace(/^-(?=[A-Za-z])/, '--');
+    const name = normalized.startsWith('--') && !normalized.includes('=') ? normalized.slice(2) : undefined;
+    const next = options[index + 1];
+    if (name !== undefined && valueFlags.has(name) && next !== undefined) {
+      out.push(argument, next);
+      index += 1;
+      continue;
+    }
     if (argument === '--as-user' || argument === '-as-user') {
       if (asUser || account !== undefined) fail('--as-user may be given once');
       const next = options[index + 1];
@@ -266,7 +287,7 @@ export async function runGh(
     say(GH_USAGE);
     return 0;
   }
-  const { rest: actionArgs, asUser, account } = extractAsUser(rawRest);
+  const { rest: actionArgs, asUser, account } = extractAsUser(rawRest, action);
   const identity = options.identity ?? (asUser ? 'user' : 'app');
   const { rest, missingValue, help, allowed } = scanActionArgs(action, actionArgs);
   if (help) {

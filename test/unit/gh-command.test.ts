@@ -100,6 +100,23 @@ describe('gcb gh', () => {
     }
   });
 
+  it('does not read -as-user as identity when it is a value', async () => {
+    const result = await runClient([
+      'gh',
+      'pr',
+      'edit',
+      '1',
+      '--title',
+      '-as-user',
+      '--repo',
+      'acme/widget',
+      '--socket',
+      '/definitely/not/here.sock',
+    ]);
+    assert.doesNotMatch(result.stderr, /--as-user/u);
+    assert.match(result.stderr, /unreachable|cannot reach/u);
+  });
+
   it('does not read -R as a repository option when it is body data', async () => {
     const result = await runClient([
       'gh',
