@@ -117,6 +117,12 @@ describe('gcb gh', () => {
     assert.match(result.stderr, /too many positional/u);
   });
 
+  it('rejects a missing title before --as-user', async () => {
+    const result = await runClient(['gh', 'pr', 'edit', '1', '--title', '--as-user', '--repo', 'acme/widget']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /at least one of/u);
+  });
+
   it('does not read -as-user as identity when it is a value', async () => {
     const result = await runClient([
       'gh',
