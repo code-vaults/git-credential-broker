@@ -185,6 +185,18 @@ describe('the host request channel', () => {
     removeRequest(dir, id);
   });
 
+  it('refuses unsafe request numbers', () => {
+    const unsafe = Number.MAX_SAFE_INTEGER + 1;
+    assert.match(
+      requestProblems({ kind: 'review', repo: 'acme/widget', number: unsafe, event: 'approve', body: '' }).join(' '),
+      /number is not positive/u,
+    );
+    assert.match(
+      requestProblems({ kind: 'issue-comment', repo: 'acme/widget', number: unsafe, body: 'x' }).join(' '),
+      /number is not positive/u,
+    );
+  });
+
   it('refuses an edit with nothing to change', () => {
     assert.throws(
       () => writeRequest(dir, { kind: 'edit', repo: 'acme/widget', number: 7 }),

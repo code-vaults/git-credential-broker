@@ -362,6 +362,11 @@ export function newId(now: Date = new Date()): string {
   return `${stamp}-${noise}`;
 }
 
+/** A number that can name a real issue, pull request or comment. */
+function isPositiveNumber(value: number): boolean {
+  return Number.isSafeInteger(value) && value > 0;
+}
+
 /**
  * What is wrong with a request, if anything.
  *
@@ -373,8 +378,8 @@ export function requestProblems(request: HostRequest): string[] {
   if (request.kind === 'reply') {
     if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
     if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
-    if (!Number.isInteger(request.number) || request.number <= 0) problems.push('the pull request number is not positive');
-    if (!Number.isInteger(request.commentId) || request.commentId <= 0) {
+    if (!isPositiveNumber(request.number)) problems.push('the pull request number is not positive');
+    if (!isPositiveNumber(request.commentId)) {
       problems.push('the comment id is not positive');
     }
     if (request.body.trim() === '') problems.push('a reply needs a body');
@@ -387,7 +392,7 @@ export function requestProblems(request: HostRequest): string[] {
   if (request.kind === 'review') {
     if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
     if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
-    if (!Number.isInteger(request.number) || request.number <= 0) problems.push('the pull request number is not positive');
+    if (!isPositiveNumber(request.number)) problems.push('the pull request number is not positive');
     if (request.event !== 'approve' && request.event !== 'request-changes' && request.event !== 'comment') {
       problems.push('the review event is not approve, request-changes or comment');
     }
@@ -401,7 +406,7 @@ export function requestProblems(request: HostRequest): string[] {
   if (request.kind === 'issue-edit') {
     if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
     if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
-    if (!Number.isInteger(request.number) || request.number <= 0) problems.push('the issue number is not positive');
+    if (!isPositiveNumber(request.number)) problems.push('the issue number is not positive');
     if (request.title !== undefined && (request.title.trim() === '' || request.title.length > MAX_TITLE_CHARS)) {
       problems.push(`the title must be 1 to ${MAX_TITLE_CHARS} characters`);
     }
@@ -419,7 +424,7 @@ export function requestProblems(request: HostRequest): string[] {
   if (request.kind === 'issue-comment') {
     if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
     if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
-    if (!Number.isInteger(request.number) || request.number <= 0) problems.push('the issue number is not positive');
+    if (!isPositiveNumber(request.number)) problems.push('the issue number is not positive');
     if (request.body.trim() === '') problems.push('a comment needs a body');
     if (request.body.length > MAX_BODY_CHARS) problems.push(`the body must be at most ${MAX_BODY_CHARS} characters`);
     if (request.account !== undefined && !LOGIN.test(request.account)) {
@@ -430,7 +435,7 @@ export function requestProblems(request: HostRequest): string[] {
   if (request.kind === 'edit') {
     if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
     if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
-    if (!Number.isInteger(request.number) || request.number <= 0) problems.push('the pull request number is not positive');
+    if (!isPositiveNumber(request.number)) problems.push('the pull request number is not positive');
     if (request.title !== undefined && (request.title.trim() === '' || request.title.length > MAX_TITLE_CHARS)) {
       problems.push(`the title must be 1 to ${MAX_TITLE_CHARS} characters`);
     }
