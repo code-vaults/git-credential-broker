@@ -201,6 +201,22 @@ describe('gcb gh', () => {
     assert.match(result.stderr, /--socket is the app broker route/u);
   });
 
+  it('rejects built-in pr review conflicts before reading stdin', async () => {
+    const result = await runClientWithOpenStdin([
+      'pr',
+      '--approve',
+      '--request-changes',
+      '--body-file',
+      '-',
+      '--number',
+      '7',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /exactly one of/u);
+  });
+
   it('rejects review conflicts before reading stdin', async () => {
     const result = await runClientWithOpenStdin([
       'gh',

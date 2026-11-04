@@ -635,6 +635,34 @@ export function readResult(dir: string, id: string): HostResult | undefined {
   return parsed ?? undefined;
 }
 
+/** Per-stream JSON-escaped budget; two streams plus the envelope stay under the reader's cap. */
+const MAX_STREAM_JSON_BYTES = 60_000;
+
+/** Bytes one string contributes after JSON escaping. */
+function jsonStringBytes(text: string): number {
+  return Buffer.byteLength(JSON.stringify(text)) - 2;
+}
+
+/** Trim a result stream until its JSON-escaped form fits the result envelope. */
+function clampJsonStream(text: string): string {
+  if (jsonStringBytes(text) <= MAX_STREAM_JSON_BYTES) return text;
+  const suffix = '\n[output truncated]\n';
+  let low = 0;
+  let high = text.length;
+  let best = suffix;
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = text.slice(0, middle) + suffix;
+    if (jsonStringBytes(candidate) <= MAX_STREAM_JSON_BYTES) {
+      best = candidate;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return best;
+}
+
 /**
  * Write an answer.
  *
@@ -643,7 +671,12 @@ export function readResult(dir: string, id: string): HostResult | undefined {
  * @param result - what happened.
  */
 export function writeResult(dir: string, id: string, result: HostResult): void {
-  writeJsonAtomic(join(dir, `${id}.result.json`), { v: 1, id, ...result });
+  const bounded: HostResult = {
+    ...result,
+    ...(typeof result.stdout === 'string' ? { stdout: clampJsonStream(result.stdout) } : {}),
+    ...(typeof result.stderr === 'string' ? { stderr: clampJsonStream(result.stderr) } : {}),
+  };
+  writeJsonAtomic(join(dir, `${id}.result.json`), { v: 1, id, ...bounded });
 }
 
 /**

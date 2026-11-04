@@ -123,6 +123,16 @@ describe('the host request channel', () => {
     assert.equal(readResult(dir, id), undefined, 'and nothing is left behind');
   });
 
+  it('keeps a large control-character answer readable', () => {
+    const id = writeRequest(dir, GOOD);
+    writeResult(dir, id, { stdout: '\u0000'.repeat(200_000), stderr: '', code: 0 });
+    const answer = readResult(dir, id);
+    assert.ok(answer, 'the answer is readable');
+    assert.match(answer.stdout ?? '', /\[output truncated\]/u);
+    removeRequest(dir, id);
+    removeResult(dir, id);
+  });
+
   it('keeps the marker and the answers out of the list of work to do', () => {
     writeHostBroker(dir, { pid: 1 });
     writeResult(dir, '20261001T000000-0000', { error: 'nope' });

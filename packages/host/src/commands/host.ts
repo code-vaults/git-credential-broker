@@ -31,6 +31,7 @@ import {
   writeResult,
   HOST,
   REPOSITORY,
+  ANSWER_TIMEOUT_MS,
   type HostRequest,
   type HostResult,
   buildGhArgv,
@@ -314,11 +315,23 @@ async function sweep(
   for (const id of listRequests(dir)) {
     // Claimed, not read: two host brokers — a service and a hand-run --once — would otherwise both act on the
     // same request and each create it, under the person's name.
+    let requestAge = 0;
+    try {
+      requestAge = Date.now() - statSync(join(dir, `${id}.json`)).mtimeMs;
+    } catch {
+      // The claim below reports a vanished request; age is only used after a successful claim.
+    }
     const request = claimRequest(dir, id);
     if (!request) {
       // Either unreadable or already claimed, and the two are not worth telling apart here: removing
         // anything now would delete another host broker's claim, which is the claim's whole purpose.
         warn(`skipped ${id}: unreadable, or another host broker has it`);
+      continue;
+    }
+    if (requestAge > ANSWER_TIMEOUT_MS) {
+      writeResult(dir, id, { error: `request ${id} expired before the host claimed it` });
+      removeRequest(dir, id);
+      warn(`refused ${id}: it expired before the host claimed it`);
       continue;
     }
 

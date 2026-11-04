@@ -289,11 +289,23 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     fail(`--resolve needs the id of the thread being resolved, got ${JSON.stringify(resolveId)}`);
   }
 
-  const body = bodyFromArgs(args);
-  if (action === 'update' && title === undefined && body === undefined && base === undefined) {
+  const hasBody = args.value('body') !== undefined || args.value('body-file') !== undefined;
+  let bodyValue: string | undefined;
+  let bodyRead = false;
+  const readBody = (): string | undefined => {
+    if (!bodyRead) {
+      bodyValue = bodyFromArgs(args);
+      bodyRead = true;
+    }
+    return bodyValue;
+  };
+  if (action === 'update' && title === undefined && !hasBody && base === undefined) {
     fail('an update has to change something: pass --title, --body/--body-file or --base');
   }
-  if ((action === 'comment' || action === 'reply' || action === 'edit') && (body === undefined || body.trim() === '')) {
+  if ((action === 'comment' || action === 'reply' || action === 'edit') && !hasBody) {
+    fail('a comment has to say something: pass --body or --body-file');
+  }
+  if ((action === 'comment' || action === 'reply' || action === 'edit') && readBody()?.trim() === '') {
     fail('a comment has to say something: pass --body or --body-file');
   }
 
@@ -308,6 +320,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   }
 
   if (action === 'update') {
+    const body = hasBody ? readBody() : undefined;
     if (account !== undefined) {
       return submitToHostBroker(
         {
@@ -353,7 +366,11 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     ].filter((event): event is 'approve' | 'request-changes' | 'comment' => event !== undefined);
     if (events.length !== 1) fail('choose exactly one of --approve, --request-changes or --review-comment');
     const event = events[0] as 'approve' | 'request-changes' | 'comment';
-    if (event !== 'approve' && (body === undefined || body.trim() === '')) {
+    if (event !== 'approve' && !hasBody) {
+      fail(`--${event === 'comment' ? 'review-comment' : 'request-changes'} needs --body or --body-file`);
+    }
+    const body = event === 'approve' && !hasBody ? undefined : readBody();
+    if (event !== 'approve' && body?.trim() === '') {
       fail(`--${event === 'comment' ? 'review-comment' : 'request-changes'} needs --body or --body-file`);
     }
     if (account !== undefined) {
@@ -387,6 +404,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
 
   if (account !== undefined && action === 'reply') {
     if (number === undefined || replyTo === undefined) fail('--as-user <login> needs --number and --reply-to');
+    const body = readBody();
     return submitToHostBroker(
       {
         kind: 'reply',
@@ -406,6 +424,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
 
   if (account !== undefined) {
     if (head === undefined || title === undefined) fail('--as-user needs --head and --title');
+    const body = hasBody ? readBody() : undefined;
     if (args.value('repo') !== undefined && host.toLowerCase() !== 'github.com') {
       fail('--as-user <login> with --repo only targets github.com; --host is not supported for create');
     }
@@ -429,6 +448,8 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (socketPath === undefined) {
     fail('no broker socket: pass --socket, set GIT_BROKER_SOCKET, or run `gcb setup`');
   }
+
+  const body = ['open', 'comment', 'reply', 'edit'].includes(action) && hasBody ? readBody() : undefined;
 
   let response;
   try {
