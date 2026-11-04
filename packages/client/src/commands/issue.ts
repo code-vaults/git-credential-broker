@@ -8,7 +8,7 @@
 import { readFileSync } from 'node:fs';
 
 import { LOGIN } from 'gcb-core';
-import { fail, helpRequested, parseArgs, requireNoMissing, say } from 'gcb-core';
+import { fail, parseArgs, say, validateArgs } from 'gcb-core';
 
 import { runGh } from './gh.ts';
 import { remoteRepo } from './remotes.ts';
@@ -85,13 +85,16 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   if (args.has('no-proxy') && (args.has('proxy') || args.values('proxy').length > 0)) {
     fail('--proxy and --no-proxy are mutually exclusive');
   }
-  if (!helpRequested(args, argv)) requireNoMissing(args);
   const account = args.values('as-user')[0];
   const command = args.positionals[0];
-  if (command !== 'create') {
-    if (command !== undefined && helpRequested(args, argv)) {
-      return runGh(['issue', command, '--help']);
+  if (validateArgs(args, argv, account === undefined ? undefined : KNOWN_FLAGS)) {
+    if (command === undefined || command === 'create') {
+      say(ISSUE_USAGE);
+      return 0;
     }
+    return runGh(['issue', command, '--help']);
+  }
+  if (command !== 'create') {
     if (
       command === 'edit' &&
       args.value('title') === undefined &&
@@ -105,9 +108,6 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
         fail('--as-user <login> only creates, edits or comments on an issue');
       }
       if (!LOGIN.test(account)) fail(`--as-user must be a GitHub login, got ${JSON.stringify(account)}`);
-      for (const name of args.names) {
-        if (!KNOWN_FLAGS.has(name)) fail('unknown option --' + name + ' for gcb issue ' + command + ' --as-user');
-      }
       if (args.positionals.length > 2) {
         fail('unexpected argument ' + JSON.stringify(args.positionals[2]));
       }
@@ -174,18 +174,10 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     if (args.has('as-user') && command !== 'edit' && command !== 'comment') {
       fail('--as-user without a login only creates, edits or comments on an issue');
     }
-    if (command === undefined && (args.has('help') || args.has('h'))) {
-      say(ISSUE_USAGE);
-      return 0;
-    }
     let rest = args.has('as-user') ? argv.filter((argument) => argument !== '--as-user' && argument !== '-as-user') : [...argv];
     const bodyFile = args.value('body-file');
     if (bodyFile !== undefined) rest = forwardBodyFile(rest, bodyFile);
     return runGh(['issue', ...rest], args.has('as-user') ? { identity: 'user' } : {});
-  }
-  if (helpRequested(args, argv)) {
-    say(ISSUE_USAGE);
-    return 0;
   }
   if (args.has('as-user')) {
     // Bare --as-user is the broker's authorized person; the action decides which token to use.
@@ -201,9 +193,6 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   if (!LOGIN.test(account)) fail(`--as-user must be a GitHub login, got ${JSON.stringify(account)}`);
   if (args.has('host') || args.value('host') !== undefined) {
     fail('--host is not supported for issue create; use the checkout remote');
-  }
-  for (const name of args.names) {
-    if (!KNOWN_FLAGS.has(name)) fail('unknown option --' + name + ' for gcb issue create --as-user');
   }
   if (args.positionals.length > 1) fail('unexpected argument ' + JSON.stringify(args.positionals[1]));
   const repo = args.value('repo');

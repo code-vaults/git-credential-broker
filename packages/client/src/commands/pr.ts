@@ -18,7 +18,7 @@ import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { baseBranchFor, qualifiedBranch, remoteRepo } from './remotes.ts';
 import { runGh } from './gh.ts';
 import { submitToHostBroker } from './host-submit.ts';
-import { fail, helpRequested, parseArgs, requireNoMissing, say } from 'gcb-core';
+import { fail, parseArgs, say, validateArgs } from 'gcb-core';
 
 /** Every flag the flag-only lifecycle understands. */
 const KNOWN_FLAGS = new Set([
@@ -126,15 +126,10 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     booleans: ['help', 'draft', 'status', 'comment', 'threads', 'no-proxy', 'approve', 'request-changes', 'review-comment'],
     optionalValues: ['as-user', 'close'],
   });
-  if (helpRequested(args, argv)) {
+  if (validateArgs(args, argv, KNOWN_FLAGS)) {
     say(PR_USAGE);
     return 0;
   }
-  // Unknown options are refused rather than ignored: a typo must not silently fall through to an update.
-  for (const name of args.names) {
-    if (!KNOWN_FLAGS.has(name)) fail('unknown option --' + name + ' for gcb pr');
-  }
-  requireNoMissing(args);
   if (args.positionals.length > 0) fail('unexpected argument ' + JSON.stringify(args.positionals[0]) + ' for gcb pr');
 
   // Before --repo: the point of the message is to name the command that does it now.

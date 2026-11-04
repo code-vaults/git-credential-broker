@@ -107,6 +107,31 @@ export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {
 }
 
 /**
+ * Resolve the checks every command shares, in one order: help, then unknown flags, then missing
+ * operands. Help must win over a missing value, and a typo must be named as unknown rather than as a
+ * missing operand.
+ *
+ * @param args - the parsed arguments.
+ * @param argv - the raw arguments, for the help scan.
+ * @param known - the flags this command knows; omit when another layer validates them.
+ * @returns true when help should be printed.
+ */
+export function validateArgs(
+  args: Args,
+  argv: readonly string[],
+  known?: ReadonlySet<string>,
+): boolean {
+  if (helpRequested(args, argv)) return true;
+  if (known !== undefined) {
+    for (const name of args.names) {
+      if (!known.has(name)) fail(`unknown option --${name}`);
+    }
+  }
+  requireNoMissing(args);
+  return false;
+}
+
+/**
  * Refuse the command line when any value-taking flag is missing its operand.
  *
  * The parser records every such flag, so a command does not have to keep a list of names and cannot
