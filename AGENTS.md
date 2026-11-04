@@ -218,7 +218,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   opens with `--head/--title`, and covers review, reply, PR edit, review-comment edit/comment and
   resolve. Bare `issue create/edit/comment --as-user` uses the broker's person action token; the login
   form uses the host broker. It runs no shell, its program is configuration, and it cannot push or merge. The
-  generic `gcb gh --as-user <login>` route adds every catalogued action, including close.
+  generic `gcb gh --as-user <login>` route adds every catalogued action, including pull request close.
 
   The host broker is started once per machine, not once per repository: it discovers the checkouts under
   its `--root`s (default `$HOME`) within `--depth` levels of each (4 by default), so anything added
@@ -264,12 +264,12 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 
   **Which actions are left is the operational half.** The host broker creates pull requests, submits
   reviews, replies to review comments, edits pull requests, runs catalogued actions (with
-  `--as-user <login>`) — including issue create/edit/comment and close —
+  `--as-user <login>`) — including issue create/edit/comment and pull request close —
   while bare `--as-user` through the broker also handles review, reply, resolve, edit and comment. Every other action still
   goes through the installation token.
   On a repository the app is not installed on, a pull request can be opened, edited, reviewed, and its
   review comments replied to, edited or resolved with bare `--as-user`; merge has no route. The host
-  action route can close as a person; neither route pushes. Acting as a person, from a
+  action route can close a pull request as a person; neither route pushes. Acting as a person, from a
   checkout on the host that holds the person's own credentials or an allowlisted explicit repository,
   is the design.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**

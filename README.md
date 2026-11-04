@@ -431,7 +431,7 @@ gcb issue comment 94 --as-user --body "a note"
 
 The host broker creates pull requests, submits reviews, replies to review comments, edits pull
 requests, runs catalogued actions and forks with the gh account named by the request; catalogued
-actions include issue create/edit/comment and close. It has no merge action. For `repo fork`, review replies, reviews, pull request edit, issue edit/comment and any
+actions include issue create/edit/comment and pull request close. It has no merge action. For `repo fork`, review replies, reviews, pull request edit, issue edit/comment and any
 request that names `--repo` explicitly — every review always carries its repository, even when
 derived from origin —
 it checks the repository against the broker config's allowlist (pass `--config`). An explicit `--repo` needs no checkout of that repository; without it,
@@ -444,8 +444,8 @@ for that request. Any existing account directory can be named, so this is a sele
 gate. A request with no `--as-user` uses the broker route and does not select the host broker's login.
 The host broker never runs a shell, and
 the program it calls is configuration rather than a hard-coded `gh`: `--command /path/to/gh`, or
-`$GIT_BROKER_PR_COMMAND`. It cannot push or merge; catalogued actions
-such as close run through `gcb gh --as-user <login>` under the same allowlist. `GCB_HOST_TIMEOUT_MS` changes only the client's wait for the host broker; the request stays in the
+`$GIT_BROKER_PR_COMMAND`. It cannot push or merge; catalogued actions such as pull request close
+run through `gcb gh --as-user <login>` under the same allowlist. `GCB_HOST_TIMEOUT_MS` changes only the client's wait for the host broker; the request stays in the
 channel and the host broker may still answer. It exists for tests and debugging, not as a policy knob.
 
 `--root` may be repeated and defaults to `$HOME`; checkouts within `--depth` levels of a root
