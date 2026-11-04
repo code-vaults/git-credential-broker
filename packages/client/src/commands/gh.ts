@@ -83,11 +83,16 @@ function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionSca
   ]);
   const knownFlags = new Set([...allowed, 'help']);
 
+  // A known value-taking flag consumes the next token only when that token is a value. A following
+  // known flag is not taken as a value (so a missing value fails as missing), except a literal
+  // --help/-h: a body that is exactly one of those is data, not a help request.
   const rest: string[] = [];
   let missingValue: string | undefined;
   let help = false;
   for (let index = 0; index < rawRest.length; index += 1) {
     const raw = rawRest[index];
+    // Match parseArgs: -h is help everywhere; any other single-dash letter is its long flag. A
+    // single-dash operand belongs to a preceding value flag and was consumed before this point.
     const argument = raw?.replace(/^-h$/, '--help').replace(/^-(?=[A-Za-z])/, '--');
     if (argument === undefined) continue;
     if (argument === '--') {
@@ -125,6 +130,8 @@ function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionSca
       if (nextName !== undefined && knownFlags.has(nextName)) {
         missingValue ??= `${raw} needs a value`;
       }
+      // Leave both tokens alone: a known flag is a missing value, an unknown one must reach the
+      // unknown-option check rather than becoming a value.
       rest.push(argument);
       continue;
     }
@@ -136,7 +143,11 @@ function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionSca
 
 /** Whether a catalogued action's argv asks for help, using the same scan. */
 export function actionHelpRequested(actionName: string, rawRest: readonly string[]): boolean {
-  return scanActionArgs(getGhAction(actionName), rawRest).help;
+  try {
+    return scanActionArgs(getGhAction(actionName), rawRest).help;
+  } catch {
+    return rawRest.includes('--help') || rawRest.includes('-h');
+  }
 }
 
 export const GH_USAGE = `Usage: gcb gh <domain> <command> [options]
@@ -151,6 +162,7 @@ Common
   --socket <path>          Broker socket (default: GIT_BROKER_SOCKET)
   --proxy <url>            Use this proxy for this action
   --body-file <path>       Read a body from a file, or '-' for stdin, for actions that accept --body
+  --as-user [login]        Person route for create/reply/review/edit; see gcb pr/issue --help
   --no-proxy               Reach GitHub directly for this action
   -h, --help               Show this help
 
@@ -201,7 +213,6 @@ export async function runGh(
     return 0;
   }
   if (missingValue !== undefined) fail(missingValue);
-
 
   const booleans = action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
   const args = parseArgs(rest, { booleans: [...booleans, 'no-proxy'] });

@@ -111,6 +111,25 @@ describe('the primary dispatch seam', () => {
     }
   });
 
+  it('reports an unknown run action without a stack', async () => {
+    const unknown = await tryRunAsync(
+      process.execPath,
+      ['--conditions=development', CLIENT_BIN, 'run', 'foo'],
+      { env: { ...process.env, GCB_PRIMARY: 'gh' }, timeoutMs: 5_000 },
+    );
+    assert.equal(unknown.status, 1);
+    assert.match(unknown.stderr, /unknown gh action "run:foo"/u);
+    assert.doesNotMatch(unknown.stderr, /ActionError/u);
+
+    const help = await tryRunAsync(
+      process.execPath,
+      ['--conditions=development', CLIENT_BIN, 'run', 'foo', '--help'],
+      { env: { ...process.env, GCB_PRIMARY: 'gh' }, timeoutMs: 5_000 },
+    );
+    assert.equal(help.status, 0);
+    assert.match(help.stdout, /Usage: gcb gh/u);
+  });
+
   it('fails closed for an unsupported configured primary', async () => {
     const result = await tryRunAsync(
       process.execPath,
