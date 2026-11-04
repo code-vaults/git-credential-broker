@@ -164,6 +164,29 @@ export function helpRequested(args: Args, argv: readonly string[]): boolean {
 }
 
 /**
+ * Resolve the body from `--body` or `--body-file`.
+ *
+ * The two are alternatives everywhere a body is accepted; checking that here keeps the rule from
+ * drifting between the pr lifecycle and the catalog adapter.
+ *
+ * @param args - the parsed arguments.
+ * @returns the body, or undefined when neither flag was given.
+ */
+export function bodyFromArgs(args: Args): string | undefined {
+  const inline = args.value('body');
+  const file = args.value('body-file');
+  if (inline !== undefined && file !== undefined) {
+    fail('--body and --body-file are mutually exclusive');
+  }
+  if (file === undefined) return inline;
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    fail(`cannot read ${file}: ${(error as Error).message}`);
+  }
+}
+
+/**
  * Whether a flag appears with a separated value somewhere in the raw argv.
  *
  * Used for the one place where a value of `-h` means help: `--title -h` and `--body-file -h`.

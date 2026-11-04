@@ -27,6 +27,12 @@ function runGhCli(args: readonly string[], cwd?: string): Promise<RunResult> {
 }
 
 describe('gcb gh', () => {
+  it('refuses --body together with --body-file', async () => {
+    const result = await runGhCli(['pr', 'comment', '7', '--body', 'x', '--body-file', 'f', '--repo', 'acme/widget']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--body and --body-file are mutually exclusive/u);
+  });
+
   it('reports truncation and timed-out writes', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-output-'));
     const socketPath = path.join(root, 'broker.sock');

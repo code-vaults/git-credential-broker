@@ -61,6 +61,8 @@ describe('the primary dispatch seam', () => {
   it('leaves built-in routes independent of the primary', async () => {
     for (const args of [
       ['pr', '--help'],
+      ['pr', 'view', '--help'],
+      ['issue', 'edit', '--help'],
       ['run', '--help'],
     ]) {
       const result = await tryRunAsync(
@@ -69,6 +71,20 @@ describe('the primary dispatch seam', () => {
         { env: { ...process.env, GCB_PRIMARY: 'glab' }, timeoutMs: 5_000 },
       );
       assert.equal(result.status, 0, args.join(' '));
+    }
+  });
+
+  it('does not let a bad primary block person or host routes', async () => {
+    for (const args of [
+      ['pr', '--number', '1', '--approve', '--repo', 'acme/widget'],
+      ['pr', 'create', '--as-user', 'alice', '--head', 'h', '--title', 't', '--body', 'b', '--repo', 'acme/widget'],
+    ]) {
+      const result = await tryRunAsync(
+        process.execPath,
+        ['--conditions=development', CLIENT_BIN, ...args],
+        { env: { ...process.env, GCB_PRIMARY: 'glab' }, timeoutMs: 5_000 },
+      );
+      assert.doesNotMatch(result.stderr, /unsupported primary/u, args.join(' '));
     }
   });
 

@@ -28,6 +28,9 @@ export const GH_PRIMARY: Primary = {
   run: (argv, options) => runGh(argv, options),
 };
 
+/** The adapters available in production. */
+const DEFAULT_PRIMARIES: Readonly<Record<string, Primary>> = { [GH_PRIMARY.name]: GH_PRIMARY };
+
 /**
  * Resolve the configured primary.
  *
@@ -35,9 +38,9 @@ export const GH_PRIMARY: Primary = {
  * CLI that would interpret the argv differently.
  *
  * @param env - the environment to read `GCB_PRIMARY` from.
+ * @param primaries - the available adapters, keyed by name.
  * @returns the selected primary.
  */
-const DEFAULT_PRIMARIES: Readonly<Record<string, Primary>> = { [GH_PRIMARY.name]: GH_PRIMARY };
 
 export function primaryFromEnv(
   env: NodeJS.ProcessEnv = process.env,

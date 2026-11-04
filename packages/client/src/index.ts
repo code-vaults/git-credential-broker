@@ -98,6 +98,9 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));
       }
       if (sub !== undefined && Object.hasOwn(GH_ACTIONS, `pr:${sub}`)) {
+        if (rest.includes('--help') || rest.includes('-h')) {
+          return (await import('./commands/gh.ts')).runGh(['pr', ...rest], { unreachableExitCode: 3 });
+        }
         return (await choose()).run(['pr', ...rest], { unreachableExitCode: 3 });
       }
       return (await import('./commands/pr.ts')).runPr(rest);
@@ -122,6 +125,9 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
       if (hasAsUserLogin(rest)) return (await import('./commands/issue.ts')).runIssue(rest);
       if (sub === 'create' && (rest.includes('--help') || rest.includes('-h'))) {
         return (await import('./commands/issue.ts')).runIssue(rest);
+      }
+      if (rest.includes('--help') || rest.includes('-h')) {
+        return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
       }
       const forwarded = hasAsUser(rest)
         ? rest.filter((argument) => !isAsUser(argument))

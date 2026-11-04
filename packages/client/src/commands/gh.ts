@@ -4,9 +4,7 @@
  * The action catalog defines the command, flags, positionals and permissions. The client only
  * parses names and values; the broker rebuilds the canonical argv and runs gh with its own token.
  */
-import { readFileSync } from 'node:fs';
-
-import { GH_ACTIONS, buildGhArgv, getGhAction, parseArgs, say, fail, type ActionValues } from 'gcb-core';
+import { GH_ACTIONS, bodyFromArgs, buildGhArgv, getGhAction, parseArgs, say, fail, type ActionValues } from 'gcb-core';
 
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { remoteRepo } from './remotes.ts';
@@ -221,17 +219,9 @@ export async function runGh(
   }
 
   const values: Record<string, string | boolean | string[]> = {};
-  const bodyFile = args.value('body-file');
-  if (bodyFile !== undefined && args.value('body') !== undefined) {
-    fail('--body and --body-file are mutually exclusive');
-  }
-  if (bodyFile !== undefined) {
-    try {
-      values['body'] = readFileSync(bodyFile, 'utf8');
-    } catch (error) {
-      fail(`cannot read ${bodyFile}: ${(error as Error).message}`);
-    }
-  }
+  const bodyFile = args.value('body-file') !== undefined;
+  const body = bodyFromArgs(args);
+  if (body !== undefined) values['body'] = body;
   for (const [index, positional] of action.positionals.entries()) {
     const value = args.positionals[index];
     if (value === undefined) {
@@ -244,7 +234,7 @@ export async function runGh(
     fail(`gcb gh ${domain} ${command} has too many positional arguments`);
   }
   for (const flag of action.flags) {
-    if (flag.name === 'body' && bodyFile !== undefined) continue;
+    if (flag.name === 'body' && bodyFile) continue;
     if (flag.type === 'boolean') {
       if (args.has(flag.name)) values[flag.name] = true;
       continue;

@@ -5,10 +5,8 @@
  * identity. `--as-user <login>` writes a typed request for the host broker, which is also the route for
  * a repository the app is not installed on.
  */
-import { readFileSync } from 'node:fs';
-
 import { LOGIN } from 'gcb-core';
-import { fail, parseArgs, say, validateArgs } from 'gcb-core';
+import { bodyFromArgs, fail, parseArgs, say, validateArgs } from 'gcb-core';
 
 import { runGh } from './gh.ts';
 import { remoteRepo } from './remotes.ts';
@@ -76,10 +74,7 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     return runGh(['issue', command, '--help']);
   }
   if (command === undefined) {
-    if (validateArgs(args, argv, KNOWN_FLAGS, 'gcb issue')) {
-      say(ISSUE_USAGE);
-      return 0;
-    }
+    validateArgs(args, argv, KNOWN_FLAGS, 'gcb issue');
     if (args.has('as-user')) fail('--as-user without a login only creates, edits or comments on an issue');
     say(ISSUE_USAGE);
     return 0;
@@ -140,19 +135,7 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   }
   host ??= 'github.com';
 
-  const bodyArg = args.value('body');
-  const bodyFile = args.value('body-file');
-  if (bodyArg !== undefined && bodyFile !== undefined) {
-    fail('--body and --body-file are mutually exclusive');
-  }
-  let body = bodyArg;
-  if (bodyFile !== undefined) {
-    try {
-      body = readFileSync(bodyFile, 'utf8');
-    } catch (error) {
-      fail(`cannot read ${bodyFile}: ${(error as Error).message}`);
-    }
-  }
+  const body = bodyFromArgs(args);
 
   const common = {
     ...(repo === undefined ? {} : { repo }),

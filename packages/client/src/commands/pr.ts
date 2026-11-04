@@ -11,14 +11,12 @@
  *
  * Exit codes: 0 done, 1 refused, 3 broker unreachable.
  */
-import { readFileSync } from 'node:fs';
-
 import { LOGIN } from 'gcb-core';
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { baseBranchFor, qualifiedBranch, remoteRepo } from './remotes.ts';
 import { runGh } from './gh.ts';
 import { submitToHostBroker } from './host-submit.ts';
-import { fail, parseArgs, say, validateArgs } from 'gcb-core';
+import { bodyFromArgs, fail, parseArgs, say, validateArgs } from 'gcb-core';
 
 /** Every flag the flag-only lifecycle understands. */
 const KNOWN_FLAGS = new Set([
@@ -239,15 +237,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const head = qualified(args.value('head'));
   const base = baseBranch();
   const title = args.value('title');
-  const bodyFile = args.value('body-file');
-  let body = args.value('body');
-  if (bodyFile !== undefined) {
-    try {
-      body = readFileSync(bodyFile, 'utf8');
-    } catch (error) {
-      fail(`cannot read ${bodyFile}: ${(error as Error).message}`);
-    }
-  }
+  const body = bodyFromArgs(args);
 
   if (action === 'open') {
     if (!head) fail('--head is required to open a pull request');
