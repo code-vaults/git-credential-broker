@@ -140,6 +140,9 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
           fail(`cannot read ${bodyFile}: ${(error as Error).message}`);
         }
       }
+      if (command === 'comment' && args.value('title') !== undefined) {
+        fail('--title is only supported for issue edit');
+      }
       if (command === 'comment' && (body === undefined || body.trim() === '')) {
         fail('issue comment needs --body or --body-file');
       }

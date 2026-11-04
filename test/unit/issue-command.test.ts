@@ -324,6 +324,10 @@ describe('gcb issue create --as-user', () => {
       assert.equal(view.status, 0);
       assert.match(view.stdout, /Usage: gcb gh/u);
 
+      const bareHelp = await runClient(['issue', '--as-user', '--help'], host.root);
+      assert.equal(bareHelp.status, 0);
+      assert.match(bareHelp.stdout, /Usage: gcb issue/u);
+
       const edit = await runClient(['issue', 'edit', '--help'], host.root);
       assert.equal(edit.status, 0);
       assert.match(edit.stdout, /Usage: gcb gh/u);
@@ -455,6 +459,13 @@ describe('gcb issue create --as-user', () => {
       );
       assert.equal(extra.status, 1);
       assert.match(extra.stderr, /unexpected argument "8"/u);
+
+      const commentTitle = await runClient(
+        ['issue', 'comment', '7', '--title', 't', '--body', 'b', '--as-user', 'alice', '--repo', 'acme/widget'],
+        host.root,
+      );
+      assert.equal(commentTitle.status, 1);
+      assert.match(commentTitle.stderr, /--title is only supported for issue edit/u);
 
       const noBodyValue = await runClient(
         ['issue', 'edit', '7', '--title', 'fixed', '--body', '--as-user', 'alice', '--repo', 'acme/widget'],
