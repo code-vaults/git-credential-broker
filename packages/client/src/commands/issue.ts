@@ -100,18 +100,6 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     return runGh(['issue', command, '--help']);
   }
   if (command !== 'create') {
-    if (command === 'comment') {
-      const bodyFile = args.value('body-file');
-      let body = args.value('body');
-      if (bodyFile !== undefined) {
-        try {
-          body = readFileSync(bodyFile, 'utf8');
-        } catch (error) {
-          fail(`cannot read ${bodyFile}: ${(error as Error).message}`);
-        }
-      }
-      if (body === undefined || body.trim() === '') fail('issue comment needs --body or --body-file');
-    }
     if (account !== undefined) {
       if (command !== 'edit' && command !== 'comment') {
         fail('--as-user <login> only creates, edits or comments on an issue');
@@ -159,9 +147,6 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
       }
       if (command === 'comment' && args.value('title') !== undefined) {
         fail('--title is only supported for issue edit');
-      }
-      if (command === 'comment' && (body === undefined || body.trim() === '')) {
-        fail('issue comment needs --body or --body-file');
       }
       if (command === 'edit' && body === undefined && args.value('title') === undefined) {
         fail('issue edit needs --title, --body or --body-file');

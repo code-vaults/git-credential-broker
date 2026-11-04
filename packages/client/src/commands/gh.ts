@@ -4,7 +4,7 @@
  * The action catalog defines the command, flags, positionals and permissions. The client only
  * parses names and values; the broker rebuilds the canonical argv and runs gh with its own token.
  */
-import { GH_ACTIONS, getGhAction, parseArgs, say, fail, type ActionValues } from 'gcb-core';
+import { GH_ACTIONS, buildGhArgv, getGhAction, parseArgs, say, fail, type ActionValues } from 'gcb-core';
 
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { remoteRepo } from './remotes.ts';
@@ -238,6 +238,12 @@ export async function runGh(
     }
     if (flag.repeatable === true) values[flag.name] = entries;
     else values[flag.name] = entries[0] as string;
+  }
+
+  try {
+    buildGhArgv(actionName, values as ActionValues, repo);
+  } catch (error) {
+    fail((error as Error).message);
   }
 
   const socketPath = resolveSocketPath(args.value('socket'), process.env);

@@ -38,6 +38,8 @@ export interface FlagSpec {
   readonly repeatable?: boolean;
   /** The flag must be present. */
   readonly required?: boolean;
+  /** The value must not be empty or whitespace-only. */
+  readonly nonEmpty?: boolean;
 }
 
 /** A fixed `gh api` request, with only typed values substituted. */
@@ -175,7 +177,7 @@ const PR_COMMENT: GhAction = {
   name: 'pr:comment',
   command: ['pr', 'comment'],
   positionals: [{ name: 'number', type: 'number', required: true }],
-  flags: [{ name: 'body', type: 'string', required: true }],
+  flags: [{ name: 'body', type: 'string', required: true, nonEmpty: true }],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
   hostUser: true,
@@ -267,7 +269,7 @@ const ISSUE_COMMENT: GhAction = {
   name: 'issue:comment',
   command: ['issue', 'comment'],
   positionals: [{ name: 'number', type: 'number', required: true }],
-  flags: [{ name: 'body', type: 'string', required: true }],
+  flags: [{ name: 'body', type: 'string', required: true, nonEmpty: true }],
   permissions: { issues: 'write' },
   timeoutSeconds: 120,
   hostUser: true,
@@ -448,7 +450,10 @@ export function buildGhArgv(
     }
 
     if (flag.name === 'body' && bodyFile !== undefined) {
-      asString(value, flag.name);
+      const text = asString(value, flag.name);
+      if (flag.nonEmpty === true && text.trim() === '') {
+        throw new ActionError(`${name} needs a non-empty --${flag.name}`);
+      }
       argv.push('--body-file', bodyFile);
       present.add(flag.name);
       continue;
@@ -460,7 +465,11 @@ export function buildGhArgv(
     } else if (flag.type === 'number') {
       argv.push(`--${flag.name}`, String(asNumber(value, flag.name)));
     } else {
-      argv.push(`--${flag.name}`, asString(value, flag.name));
+      const text = asString(value, flag.name);
+      if (flag.nonEmpty === true && text.trim() === '') {
+        throw new ActionError(`${name} needs a non-empty --${flag.name}`);
+      }
+      argv.push(`--${flag.name}`, text);
     }
     present.add(flag.name);
   }

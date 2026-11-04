@@ -472,7 +472,7 @@ describe('gcb issue create --as-user', () => {
         host.root,
       );
       assert.equal(emptyComment.status, 1);
-      assert.match(emptyComment.stderr, /issue comment needs --body or --body-file/u);
+      assert.match(emptyComment.stderr, /issue:comment needs a non-empty --body/u);
 
       const noBodyValue = await runClient(
         ['issue', 'edit', '7', '--title', 'fixed', '--body', '--as-user', 'alice', '--repo', 'acme/widget'],
