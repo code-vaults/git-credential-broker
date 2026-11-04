@@ -217,8 +217,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   an App-authored PR; automated reviewers may skip those. The flag-only `gcb pr --as-user` form also
   opens with `--head/--title`, and covers review, reply, PR edit, review-comment edit/comment and
   resolve. Bare `issue create/edit/comment --as-user` uses the broker's person action token; the login
-  form uses the host broker. It runs no shell, its program is configuration, and it cannot push,
-  merge, close or read.
+  form uses the host broker. It runs no shell, its program is configuration, and it cannot push or merge. The
+  generic `gcb gh --as-user <login>` route adds every catalogued action, including close.
 
   The host broker is started once per machine, not once per repository: it discovers the checkouts under
   its `--root`s (default `$HOME`) within `--depth` levels of each (4 by default), so anything added
@@ -268,8 +268,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   while bare `--as-user` through the broker also handles review, reply, resolve, edit and comment. Every other action still
   goes through the installation token.
   On a repository the app is not installed on, a pull request can be opened, edited, reviewed, and its
-  review comments replied to, edited or resolved with bare `--as-user`; close and merge still have no
-  route, and neither the container nor the host broker can do them. Acting as a person, from a
+  review comments replied to, edited or resolved with bare `--as-user`; merge still has no route, and
+  close is available as a catalogued action on the host route. Neither route pushes. Acting as a person, from a
   checkout on the host that holds the person's own credentials or an allowlisted explicit repository,
   is the design.
 - **The configuration is found by convention and its paths belong to the broker, not to you.**

@@ -444,8 +444,8 @@ for that request. Any existing account directory can be named, so this is a sele
 gate. A request with no `--as-user` uses the broker route and does not select the host broker's login.
 The host broker never runs a shell, and
 the program it calls is configuration rather than a hard-coded `gh`: `--command /path/to/gh`, or
-`$GIT_BROKER_PR_COMMAND`. It cannot push, merge, close or read
-anything. `GCB_OPENER_TIMEOUT_MS` changes only the client's wait for the host broker; the request stays in the
+`$GIT_BROKER_PR_COMMAND`. It cannot push or merge; catalogued actions
+such as close run through `gcb gh --as-user <login>` under the same allowlist. `GCB_OPENER_TIMEOUT_MS` changes only the client's wait for the host broker; the request stays in the
 channel and the host broker may still answer. It exists for tests and debugging, not as a policy knob.
 
 `--root` may be repeated and defaults to `$HOME`; checkouts within `--depth` levels of a root
