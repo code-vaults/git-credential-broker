@@ -25,8 +25,9 @@ gcb setup
 `GCB_PRIMARY` selects the CLI adapter for catalogued actions. The default is `gh`; an unsupported
 name fails closed. The host broker still performs the action.
 
-`gcb gh` accepts bare `--as-user` for actions the app broker can run with the person identity.
-The login form (`--as-user <login>`) is a typed host route on `gcb pr` / `gcb issue`.
+`gcb gh` accepts both person forms: bare `--as-user` for actions the app broker can run with the
+person identity, and `--as-user <login>` to run the catalogued action through the host broker with
+that gh account.
 
 ## Requirements
 

@@ -1,6 +1,6 @@
 /**
- * `host` — the host broker for typed person actions: create, review, reply, edit issues and pull
- * requests, and fork with the gh account each request names.
+ * `host` — the host broker for typed person actions: create, review, reply, edit, run catalogued
+ * actions, and fork with the gh account each request names.
  *
  * This runs on the host, beside the checkout the container also sees, and it does exactly one thing:
  * it turns a request file into a pull request, issue, review, reply, issue edit/comment, pull
@@ -32,6 +32,7 @@ import {
   REPOSITORY,
   type HostRequest,
   type HostOpenResult,
+  buildGhArgv,
   type BrokerConfig,
 } from 'gcb-core';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
@@ -160,7 +161,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         pid: process.pid,
         command,
         startedAt: new Date().toISOString(),
-        kinds: ['pull-request', 'issue', 'issue-edit', 'issue-comment', 'review', 'reply', 'edit', 'fork'],
+        kinds: ['pull-request', 'issue', 'issue-edit', 'issue-comment', 'review', 'reply', 'edit', 'action', 'fork'],
       });
     }
   };
@@ -264,7 +265,9 @@ async function sweep(
                     ? `edit on #${request.number}`
                     : request.kind === 'issue-edit' || request.kind === 'issue-comment'
                       ? `issue #${request.number}`
-                      : request.head
+                      : request.kind === 'action'
+                        ? request.action
+                        : request.head
         }: ${result.error}`,
       );
     } else {
@@ -281,7 +284,9 @@ async function sweep(
                   ? `edited issue #${result.number} as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
                   : request.kind === 'issue-comment'
                     ? `commented on issue #${result.number} as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
-                    : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
+                    : request.kind === 'action'
+                      ? `ran ${request.action} as ${request.account ?? 'this user'}`
+                      : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
       );
     }
     answered += 1;
@@ -410,6 +415,29 @@ async function openOne(
       const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim();
       return { error: reason.slice(0, 300) || 'the command failed' };
     }
+  }
+
+  if (request.kind === 'action') {
+    const host = request.host ?? 'github.com';
+    return personRun(host, request.repo, allowed, async (host) => {
+      const argv = buildGhArgv(request.action, request.values, request.repo);
+      try {
+        const { stdout, stderr } = await run(command, [...extra, ...argv], {
+          cwd: repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env: forkEnv(request.proxy, request.account, host),
+        });
+        return { stdout: stdout.slice(0, 200_000), stderr: stderr.slice(0, 200_000), code: 0 };
+      } catch (error) {
+        const failure = error as { stdout?: string; stderr?: string; code?: number | string };
+        return {
+          stdout: (failure.stdout ?? '').slice(0, 200_000),
+          stderr: (failure.stderr ?? '').slice(0, 200_000),
+          code: typeof failure.code === 'number' ? failure.code : 1,
+        };
+      }
+    });
   }
 
   if (request.kind === 'reply') {

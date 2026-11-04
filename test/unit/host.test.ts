@@ -449,6 +449,44 @@ describe('edit routes outside the allowlist', () => {
   }
 });
 
+describe('the host action route', () => {
+  it('runs a catalogued action and returns its output', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-action-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const argvFile = join(root, 'argv');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "action output"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'issue:comment',
+        repo: 'acme/widget',
+        values: { number: 7, body: 'x' },
+      });
+      const code = await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']);
+      assert.equal(code, 0);
+      const result = readResult(dir, id);
+      assert.equal(result?.stdout, 'action output\n');
+      assert.equal(result?.code, 0);
+      const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
+      assert.deepEqual(argv.slice(0, 3), ['issue', 'comment', '7']);
+      assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
+      assert.equal(argv[argv.indexOf('--body') + 1], 'x');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('the host issue edit and comment routes', () => {
   for (const entry of [
     { kind: 'issue-edit' as const, argv: ['issue', 'edit'], flags: ['--title=fixed', '--body-file'], body: 'updated' },

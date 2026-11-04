@@ -19,7 +19,9 @@ gcb daemon --config broker.config.yml
 `gcb compose`, and `gcb daemon`/`gcb host`.
 
 The host broker also serves typed person requests from `gcb-client --as-user <login>` (create,
-review, reply and edit routes), using the `gh-<login>` configuration directory on this machine.
+review, reply, edit and catalogued-action routes), using the `gh-<login>` configuration directory on
+this machine. The catalogued-action route is what `gcb gh <action> --as-user <login>` uses; it is
+validated against the same action catalog and allowlist, never raw argv.
 
 See the [repository README](https://github.com/code-vaults/git-credential-broker#readme) for the
 configuration reference, allowlist rules and deployment shapes.

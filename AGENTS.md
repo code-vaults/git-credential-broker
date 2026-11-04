@@ -85,8 +85,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   action only with that command’s GitHub endpoint documentation and a test. Catalogued client
   subcommands dispatch through one primary adapter (`GCB_PRIMARY`, default `gh`); an unsupported
   primary fails closed, and `gcb issue` keeps only its host-login route rather than a second
-  forwarding layer. `gcb gh` accepts bare `--as-user` for `appUser` actions; the login form stays on
-  the typed `gcb pr` / `gcb issue` host routes.
+  forwarding layer. `gcb gh` accepts bare `--as-user` for `appUser` actions and `--as-user <login>`
+  for a catalogued host action; the latter stays a typed, allowlisted request, never raw argv.
 - **Dependencies belong to the package that uses them.** `gcb-client` has no runtime dependencies;
   `gcb-host` owns `yaml`. npm installs them; there is no esbuild/bundle step. `stage` is export-only
   and does not install or build, so a commit deployment must install its production dependencies in
@@ -263,8 +263,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   repository the app *is* installed on is the control that needs no such command.
 
   **Which actions are left is the operational half.** The host broker creates pull requests/issues,
-  submits reviews, replies to review comments, edits pull requests and edits or comments on issues
-  (with `--as-user <login>`),
+  submits reviews, replies to review comments, edits pull requests, edits or comments on issues and
+  runs catalogued actions (with `--as-user <login>`),
   while bare `--as-user` through the broker also handles review, reply, resolve, edit and comment. Every other action still
   goes through the installation token.
   On a repository the app is not installed on, a pull request can be opened, edited, reviewed, and its

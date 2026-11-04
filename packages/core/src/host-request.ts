@@ -155,6 +155,19 @@ export interface HostIssueCommentRequest {
   readonly pid?: number;
 }
 
+/** One catalogued action to run as the host account. */
+export interface HostActionRequest {
+  readonly kind: 'action';
+  readonly action: string;
+  readonly repo: string;
+  readonly host?: string;
+  readonly values: Readonly<Record<string, string | number | boolean | readonly string[]>>;
+  readonly proxy?: string | null;
+  readonly account?: string;
+  readonly session?: string;
+  readonly pid?: number;
+}
+
 /** One request to fork a repository. */
 export interface HostForkRequest {
   readonly kind: 'fork';
@@ -175,12 +188,16 @@ export type HostRequest =
   | HostEditRequest
   | HostIssueEditRequest
   | HostIssueCommentRequest
+  | HostActionRequest
   | HostForkRequest;
 
 /** What the opener answered. */
 export interface HostOpenResult {
   readonly number?: number;
   readonly url?: string;
+  readonly stdout?: string;
+  readonly stderr?: string;
+  readonly code?: number | null;
   readonly error?: string;
 }
 
@@ -453,6 +470,18 @@ export function requestProblems(request: HostRequest): string[] {
     }
     return problems;
   }
+  if (request.kind === 'action') {
+    if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
+    if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
+    if (!/^[a-z]+:[a-z0-9-]+$/.test(request.action)) problems.push('the action name is not usable');
+    if (request.values === null || typeof request.values !== 'object' || Array.isArray(request.values)) {
+      problems.push('the action values are not an object');
+    }
+    if (request.account !== undefined && !LOGIN.test(request.account)) {
+      problems.push('the account is not a usable GitHub login');
+    }
+    return problems;
+  }
   if (request.kind === 'fork') {
     if (!REPOSITORY.test(request.repo)) problems.push('the repository is not owner/name');
     if (request.host !== undefined && !HOST.test(request.host)) problems.push('the host is not a usable host');
@@ -511,7 +540,12 @@ export function writeRequest(dir: string, request: HostRequest): string {
  */
 export function readRequest(dir: string, id: string): HostRequest | undefined {
   const parsed = readJson(join(dir, `${id}.json`)) as
-    | (Partial<HostOpenRequest> & Partial<HostIssueRequest> & Partial<HostReplyRequest> & Partial<HostReviewRequest> & Partial<HostForkRequest>)
+    | (Partial<HostOpenRequest> &
+        Partial<HostIssueRequest> &
+        Partial<HostReplyRequest> &
+        Partial<HostReviewRequest> &
+        Partial<HostActionRequest> &
+        Partial<HostForkRequest>)
     | undefined;
   if (!parsed) return undefined;
   if (parsed.kind === 'reply') {
@@ -629,6 +663,29 @@ export function readRequest(dir: string, id: string): HostRequest | undefined {
       pid: parsed.pid,
     };
   }
+  if (parsed.kind === 'action') {
+    if (
+      typeof parsed.repo !== 'string' ||
+      !REPOSITORY.test(parsed.repo) ||
+      typeof parsed.action !== 'string' ||
+      parsed.values === null ||
+      typeof parsed.values !== 'object' ||
+      Array.isArray(parsed.values)
+    ) {
+      return undefined;
+    }
+    return {
+      kind: 'action',
+      action: parsed.action,
+      repo: parsed.repo,
+      values: parsed.values as HostActionRequest['values'],
+      ...(typeof parsed.host === 'string' ? { host: parsed.host } : {}),
+      ...(typeof parsed.proxy === 'string' || parsed.proxy === null ? { proxy: parsed.proxy } : {}),
+      ...(typeof parsed.account === 'string' ? { account: parsed.account } : {}),
+      session: parsed.session,
+      pid: parsed.pid,
+    };
+  }
   if (parsed.kind === 'fork') {
     if (typeof parsed.repo !== 'string' || !REPOSITORY.test(parsed.repo)) return undefined;
     return {
@@ -726,7 +783,14 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
     request !== undefined &&
     // Untyped JSON: the file can spell account as an array or a number even though the type cannot.
     (request.account === undefined || typeof request.account === 'string') &&
-    (request.kind === 'issue-edit'
+    (request.kind === 'action'
+      ? typeof request.repo === 'string' &&
+        REPOSITORY.test(request.repo) &&
+        typeof request.action === 'string' &&
+        request.values !== null &&
+        typeof request.values === 'object' &&
+        !Array.isArray(request.values)
+      : request.kind === 'issue-edit'
       ? typeof request.repo === 'string' &&
         REPOSITORY.test(request.repo) &&
         Number.isInteger(request.number) &&

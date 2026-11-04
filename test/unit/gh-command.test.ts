@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import { startBroker } from '../../packages/host/src/broker.ts';
+import { channelDir, listRequests, readRequest, writeOpener, writeResult } from '../../packages/core/src/host-request.ts';
 import { tryRunAsync, type RunResult } from '../common/run.ts';
 import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../packages/core/src/types.ts';
 
@@ -90,10 +91,41 @@ describe('gcb gh', () => {
     }
   });
 
+  it('runs a login action through the host broker', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-host-action-'));
+    fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(path.join(root, '.git'));
+    writeOpener(dir, { pid: process.pid, kinds: ['action'] });
+    try {
+      const pending = runGhCli(
+        ['issue', 'comment', '7', '--body', 'x', '--as-user', 'alice', '--repo', 'acme/widget'],
+        root,
+      );
+      let id: string | undefined;
+      let request;
+      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+        [id] = listRequests(dir);
+        request = id === undefined ? undefined : readRequest(dir, id);
+        if (request === undefined) await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.ok(request, 'the action reached the host broker');
+      assert.equal(request?.kind, 'action');
+      assert.equal(request?.kind === 'action' ? request.action : undefined, 'issue:comment');
+      assert.equal(request?.account, 'alice');
+      writeResult(dir, id as string, { stdout: 'ok\n', stderr: '', code: 0 });
+      const result = await pending;
+      assert.equal(result.status, 0);
+      assert.equal(result.stdout, 'ok\n');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('refuses the login form and appUser-less actions', async () => {
     const login = await runGhCli(['issue', 'comment', '7', '--body', 'x', '--as-user', 'alice', '--repo', 'acme/widget']);
     assert.equal(login.status, 1);
-    assert.match(login.stderr, /gcb pr\/gcb issue host route/u);
+    assert.match(login.stderr, /no host broker is watching|does not advertise action/u);
 
     const unsupported = await runGhCli(['pr', 'create', '--head', 'h', '--title', 't', '--body', 'b', '--as-user', '--repo', 'acme/widget']);
     assert.equal(unsupported.status, 1);

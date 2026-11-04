@@ -17,7 +17,7 @@ import {
   waitForResult,
   writeRequest,
 } from 'gcb-core';
-import type { HostOpenResult, HostRequest } from 'gcb-core';
+import type { HostActionRequest, HostOpenResult, HostRequest } from 'gcb-core';
 import { fail, say } from 'gcb-core';
 
 /**
@@ -57,19 +57,11 @@ const KINDS: Readonly<Record<RequestKind, { noun: string; needed?: string }>> = 
   'issue-edit': { noun: 'issue edit', needed: 'issue-edit' },
   'issue-comment': { noun: 'issue comment', needed: 'issue-comment' },
   review: { noun: 'review', needed: 'review' },
+  action: { noun: 'action', needed: 'action' },
 };
 
-/**
- * Write, wait for and report one host-broker request.
- *
- * @param request - the validated request.
- * @param success - formats the success line from the answer.
- * @returns 0 after the answer is reported.
- */
-export async function submitToHostBroker(
-  request: HostRequest,
-  success: (answer: HostOpenResult) => string,
-): Promise<number> {
+/** Write, wait for and return one host-broker answer. */
+async function exchange(request: HostRequest): Promise<HostOpenResult> {
   const problems = requestProblems(request);
   if (problems.length > 0) fail(problems.join('; '));
   const { noun, needed } = KINDS[request.kind ?? 'pull-request'];
@@ -88,25 +80,48 @@ export async function submitToHostBroker(
     fail(`the host broker does not advertise ${needed} support; restart it from this gcb-host version`);
   }
 
-  // requestProblems above already checked the contract. Keep the catch as defence in case the two
-  // validators ever diverge; a stack trace would tell the caller none of it.
   let id: string;
   try {
     id = writeRequest(dir, request);
   } catch (error) {
     fail((error as Error).message);
   }
-  // A short override makes the timeout path testable without a 180-second test; absent means the
-  // contract value.
   const configured = Number(process.env['GCB_OPENER_TIMEOUT_MS']);
   const timeoutMs = Number.isInteger(configured) && configured > 0 ? configured : ANSWER_TIMEOUT_MS;
   let answer = await waitForResult(dir, id, timeoutMs, 50);
-  // A result can land between the deadline and the cleanup. Re-read before claiming the request
-  // disappeared; deleting it first would turn a successful, late answer into a false "dropped".
   if (answer === undefined) answer = await waitForResult(dir, id, 300, 50);
   if (answer === undefined) fail(noAnswerMessage(dir, id, noun, timeoutMs));
   removeResult(dir, id);
+  return answer;
+}
+
+/**
+ * Write, wait for and report one host-broker request.
+ *
+ * @param request - the validated request.
+ * @param success - formats the success line from the answer.
+ * @returns 0 after the answer is reported.
+ */
+export async function submitToHostBroker(
+  request: HostRequest,
+  success: (answer: HostOpenResult) => string,
+): Promise<number> {
+  const answer = await exchange(request);
   if (answer.error !== undefined) fail(`the host broker could not do it: ${answer.error}`);
   say(success(answer));
   return 0;
+}
+
+/**
+ * Run one catalogued action through the host broker and forward its output.
+ *
+ * @param request - the validated action request.
+ * @returns the child's exit status as 0 or 1.
+ */
+export async function submitActionToHostBroker(request: HostActionRequest): Promise<number> {
+  const answer = await exchange(request);
+  if (answer.error !== undefined) fail(`the host broker could not do it: ${answer.error}`);
+  if (answer.stdout !== undefined && answer.stdout !== '') process.stdout.write(answer.stdout);
+  if (answer.stderr !== undefined && answer.stderr !== '') process.stderr.write(answer.stderr);
+  return answer.code === 0 ? 0 : 1;
 }
