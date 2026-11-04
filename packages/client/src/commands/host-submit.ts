@@ -12,6 +12,7 @@ import {
   channelDir,
   findGitDir,
   readOpener,
+  readResult,
   removeResult,
   requestProblems,
   waitForResult,
@@ -64,6 +65,7 @@ const KINDS: Readonly<Record<RequestKind, { noun: string; needed?: string }>> = 
 async function exchange(
   request: HostRequest,
   timeoutMs: number = ANSWER_TIMEOUT_MS,
+  claimedTimeoutMs?: number,
 ): Promise<HostOpenResult> {
   const problems = requestProblems(request);
   if (problems.length > 0) fail(problems.join('; '));
@@ -91,11 +93,39 @@ async function exchange(
   }
   const configured = Number(process.env['GCB_OPENER_TIMEOUT_MS']);
   if (Number.isInteger(configured) && configured > 0) timeoutMs = configured;
-  let answer = await waitForResult(dir, id, timeoutMs, 50);
+  let answer = await waitForAnswer(dir, id, timeoutMs, claimedTimeoutMs);
   if (answer === undefined) answer = await waitForResult(dir, id, 300, 50);
   if (answer === undefined) fail(noAnswerMessage(dir, id, noun, timeoutMs));
   removeResult(dir, id);
   return answer;
+}
+
+/**
+ * Wait for an answer, giving a claimed request its own deadline after queue time.
+ *
+ * Without this the action timeout would start when the request was written, so a request claimed
+ * late could still be running when the client reported it lost.
+ */
+async function waitForAnswer(
+  dir: string,
+  id: string,
+  queueTimeoutMs: number,
+  claimedTimeoutMs: number | undefined,
+): Promise<HostOpenResult | undefined> {
+  const queueDeadline = Date.now() + queueTimeoutMs;
+  let claimedDeadline: number | undefined;
+  for (;;) {
+    const answer = readResult(dir, id);
+    if (answer !== undefined) return answer;
+    const now = Date.now();
+    if (claimedTimeoutMs !== undefined && existsSync(join(dir, `${id}.json.working`))) {
+      claimedDeadline ??= now + claimedTimeoutMs;
+      if (now >= claimedDeadline) return undefined;
+    } else if (now >= queueDeadline) {
+      return undefined;
+    }
+    await new Promise((done) => setTimeout(done, 50));
+  }
 }
 
 /**
@@ -123,7 +153,11 @@ export async function submitToHostBroker(
  */
 export async function submitActionToHostBroker(request: HostActionRequest): Promise<number> {
   const action = getGhAction(request.action);
-  const answer = await exchange(request, action.timeoutSeconds * 1_000 + 30_000);
+  const answer = await exchange(
+    request,
+    ANSWER_TIMEOUT_MS,
+    action.timeoutSeconds * 1_000 + 30_000,
+  );
   if (answer.error !== undefined) fail(`the host broker could not do it: ${answer.error}`);
   if (answer.stdout !== undefined && answer.stdout !== '') process.stdout.write(answer.stdout);
   if (answer.stderr !== undefined && answer.stderr !== '') process.stderr.write(answer.stderr);

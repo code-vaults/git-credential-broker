@@ -445,10 +445,11 @@ async function openOne(
           });
           return { stdout: clampOutput(stdout), stderr: clampOutput(stderr), code: 0 };
         } catch (error) {
-          const failure = error as { stdout?: string; stderr?: string; code?: number | string };
+          const failure = error as { stdout?: string; stderr?: string; message?: string; code?: number | string };
+          const stderr = failure.stderr?.trim() ? failure.stderr : (failure.message ?? '');
           return {
             stdout: clampOutput(failure.stdout ?? ''),
-            stderr: clampOutput(failure.stderr ?? ''),
+            stderr: clampOutput(stderr),
             code: typeof failure.code === 'number' ? failure.code : 1,
           };
         }
