@@ -41,37 +41,11 @@ The broker route (no --as-user or bare) takes --body/--body-file and catalogued 
 --label/--assignee; the host route takes --body/--body-file, plus --title for edit.
 `;
 
-/** Drop one value-taking flag and its value, in either spelling. */
-function dropFlag(argv: readonly string[], name: string): string[] {
-  const out: string[] = [];
-  for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index];
-    if (argument === `--${name}` || argument === `-${name}`) {
-      const next = argv[index + 1];
-      if (next !== undefined && !next.startsWith('--')) index += 1;
-      continue;
-    }
-    if (argument?.startsWith(`--${name}=`) || argument?.startsWith(`-${name}=`)) continue;
-    if (argument !== undefined) out.push(argument);
-  }
-  return out;
-}
-
-/** Translate --body-file into the catalogued --body value. */
-function forwardBodyFile(argv: readonly string[], bodyFile: string): string[] {
-  let body: string;
-  try {
-    body = readFileSync(bodyFile, 'utf8');
-  } catch (error) {
-    fail(`cannot read ${bodyFile}: ${(error as Error).message}`);
-  }
-  const rest = dropFlag(dropFlag(argv, 'body-file'), 'body');
-  rest.push(`--body=${body}`);
-  return rest;
-}
-
 /**
  * Run one `issue` command.
+ *
+ * The catalogue paths are dispatched by `index.ts`; this module only owns the host-login route and
+ * the issue usage. That keeps one forwarding layer, not two.
  *
  * @param argv - arguments after `issue`.
  * @returns the process exit code.
@@ -87,128 +61,83 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
   }
   const account = args.values('as-user')[0];
   const command = args.positionals[0];
-  if (validateArgs(
-    args,
-    argv,
-    account === undefined ? undefined : KNOWN_FLAGS,
-    account === undefined || command === undefined ? undefined : `gcb issue ${command} --as-user`,
-  )) {
+  if (
+    validateArgs(
+      args,
+      argv,
+      account === undefined ? undefined : KNOWN_FLAGS,
+      account === undefined || command === undefined ? undefined : `gcb issue ${command} --as-user`,
+    )
+  ) {
     if (command === undefined || command === 'create') {
       say(ISSUE_USAGE);
       return 0;
     }
     return runGh(['issue', command, '--help']);
   }
-  if (command !== 'create') {
-    if (account !== undefined) {
-      if (command !== 'edit' && command !== 'comment') {
-        fail('--as-user <login> only creates, edits or comments on an issue');
-      }
-      if (!LOGIN.test(account)) fail(`--as-user must be a GitHub login, got ${JSON.stringify(account)}`);
-      if (
-        command === 'edit' &&
-        args.value('title') === undefined &&
-        args.value('body') === undefined &&
-        args.value('body-file') === undefined
-      ) {
-        fail('issue edit needs --title, --body or --body-file');
-      }
-      if (args.positionals.length > 2) {
-        fail('unexpected argument ' + JSON.stringify(args.positionals[2]));
-      }
-      const number = args.positionals[1];
-      if (number === undefined || !/^[1-9][0-9]*$/.test(number) || !Number.isSafeInteger(Number(number))) {
-        fail('gcb issue ' + command + ' needs a safe positive issue number');
-      }
-      let repo = args.value('repo');
-      const host = args.value('host');
-      let requestHost = host;
-      if ((args.has('repo') || args.values('repo').length > 0) && (repo === undefined || repo.trim() === '')) {
-        fail('--repo needs a value');
-      }
-      if (repo === undefined) {
-        const found = remoteRepo('origin', process.cwd());
-        if (found === undefined) fail('--as-user <login> needs --repo for issue edit or comment');
-        if (host !== undefined && found.host !== host.toLowerCase()) {
-          fail(`the checkout's remote is on ${found.host}, but --host is ${host}; pass --repo or --host`);
-        }
-        repo = `${found.owner}/${found.repo}`;
-        requestHost = host ?? found.host;
-      }
-      requestHost ??= 'github.com';
-      let body = args.value('body');
-      const bodyFile = args.value('body-file');
-      if (bodyFile !== undefined) {
-        try {
-          body = readFileSync(bodyFile, 'utf8');
-        } catch (error) {
-          fail(`cannot read ${bodyFile}: ${(error as Error).message}`);
-        }
-      }
-      if (command === 'comment' && args.value('title') !== undefined) {
-        fail('--title is only supported for issue edit');
-      }
-      if (command === 'edit' && body === undefined && args.value('title') === undefined) {
-        fail('issue edit needs --title, --body or --body-file');
-      }
-      const common = {
-        repo,
-        host: requestHost,
-        number: Number(number),
-        account,
-        proxy: args.has('no-proxy') ? null : args.value('proxy'),
-        session: 'issue',
-        pid: process.pid,
-      };
-      const success = (answer: { number?: number; url?: string }): string =>
-        (command === 'edit' ? 'edited issue #' : 'commented on issue #') +
-        `${answer.number ?? '?'} as ${account}${answer.url === undefined ? '' : `: ${answer.url}`}`;
-      if (command === 'edit') {
-        return submitToHostBroker(
-          {
-            kind: 'issue-edit',
-            ...common,
-            ...(args.value('title') === undefined ? {} : { title: args.value('title') as string }),
-            ...(body === undefined ? {} : { body }),
-          },
-          success,
-        );
-      }
-      return submitToHostBroker({ kind: 'issue-comment', ...common, body: body ?? '' }, success);
-    }
-    if (args.has('as-user') && command !== 'edit' && command !== 'comment') {
-      fail('--as-user without a login only creates, edits or comments on an issue');
-    }
-    let rest = args.has('as-user') ? argv.filter((argument) => argument !== '--as-user' && argument !== '-as-user') : [...argv];
-    const bodyFile = args.value('body-file');
-    if (bodyFile !== undefined) rest = forwardBodyFile(rest, bodyFile);
-    return runGh(['issue', ...rest], args.has('as-user') ? { identity: 'user' } : {});
-  }
-  if (args.has('as-user')) {
-    // Bare --as-user is the broker's authorized person; the action decides which token to use.
-    let rest = argv.filter((argument) => argument !== '--as-user' && argument !== '-as-user');
-    const bodyFile = args.value('body-file');
-    if (bodyFile !== undefined) rest = forwardBodyFile(rest, bodyFile);
-    return runGh(['issue', ...rest], { identity: 'user' });
+  if (command === undefined) {
+    if (args.has('as-user')) fail('--as-user without a login only creates, edits or comments on an issue');
+    say(ISSUE_USAGE);
+    return 0;
   }
   if (account === undefined) {
-    const bodyFile = args.value('body-file');
-    return runGh(['issue', ...(bodyFile === undefined ? argv : forwardBodyFile(argv, bodyFile))]);
+    fail('--as-user <login> is required for the host broker route');
   }
   if (!LOGIN.test(account)) fail(`--as-user must be a GitHub login, got ${JSON.stringify(account)}`);
-  if (args.has('host') || args.value('host') !== undefined) {
+  if (command !== 'create' && command !== 'edit' && command !== 'comment') {
+    fail('--as-user <login> only creates, edits or comments on an issue');
+  }
+  if (args.positionals.length > 2) fail('unexpected argument ' + JSON.stringify(args.positionals[2]));
+
+  let number: number | undefined;
+  if (command !== 'create') {
+    const rawNumber = args.positionals[1];
+    if (
+      rawNumber === undefined ||
+      !/^[1-9][0-9]*$/.test(rawNumber) ||
+      !Number.isSafeInteger(Number(rawNumber))
+    ) {
+      fail('gcb issue ' + command + ' needs a safe positive issue number');
+    }
+    number = Number(rawNumber);
+  } else if (args.positionals.length > 1) {
+    fail('unexpected argument ' + JSON.stringify(args.positionals[1]));
+  }
+  if (
+    command === 'edit' &&
+    args.value('title') === undefined &&
+    args.value('body') === undefined &&
+    args.value('body-file') === undefined
+  ) {
+    fail('issue edit needs --title, --body or --body-file');
+  }
+  if (command === 'comment' && args.value('title') !== undefined) {
+    fail('--title is only supported for issue edit');
+  }
+  if (command === 'create' && (args.has('host') || args.value('host') !== undefined)) {
     fail('--host is not supported for issue create; use the checkout remote');
   }
-  if (args.positionals.length > 1) fail('unexpected argument ' + JSON.stringify(args.positionals[1]));
-  const repo = args.value('repo');
-  if ((args.has('repo') || args.values('repo').length > 0) && (repo === undefined || repo.trim() === '')) {
-    fail('--repo needs a value (e.g. owner/name)');
-  }
 
-  const title = args.value('title');
-  if (title === undefined) fail('--title is required to create an issue');
+  const repoArg = args.value('repo');
+  if ((args.has('repo') || args.values('repo').length > 0) && (repoArg === undefined || repoArg.trim() === '')) {
+    fail('--repo needs a value');
+  }
+  const hostArg = args.value('host');
+  let repo = repoArg;
+  let host = hostArg;
+  if (command !== 'create' && repo === undefined) {
+    const found = remoteRepo('origin', process.cwd());
+    if (found === undefined) fail('--as-user <login> needs --repo for issue edit or comment');
+    if (host !== undefined && found.host !== host.toLowerCase()) {
+      fail(`the checkout's remote is on ${found.host}, but --host is ${host}; pass --repo or --host`);
+    }
+    repo = `${found.owner}/${found.repo}`;
+    host = host ?? found.host;
+  }
+  host ??= 'github.com';
+
+  let body = args.value('body');
   const bodyFile = args.value('body-file');
-  let body = args.value('body') ?? '';
   if (bodyFile !== undefined) {
     try {
       body = readFileSync(bodyFile, 'utf8');
@@ -217,17 +146,41 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     }
   }
 
+  const common = {
+    ...(repo === undefined ? {} : { repo }),
+    host,
+    account,
+    proxy: args.has('no-proxy') ? null : args.value('proxy'),
+    session: 'issue',
+    pid: process.pid,
+  };
+  const success = (answer: { number?: number; url?: string }): string =>
+    (command === 'create' ? 'opened issue #' : command === 'edit' ? 'edited issue #' : 'commented on issue #') +
+    `${answer.number ?? '?'} as ${account}${answer.url === undefined ? '' : `: ${answer.url}`}`;
+
+  if (command === 'create') {
+    const title = args.value('title');
+    if (title === undefined) fail('--title is required to create an issue');
+    return submitToHostBroker(
+      { kind: 'issue', ...common, title, body: body ?? '' },
+      success,
+    );
+  }
+  if (command === 'edit') {
+    return submitToHostBroker(
+      {
+        kind: 'issue-edit',
+        ...common,
+        repo: repo as string,
+        number: number as number,
+        ...(args.value('title') === undefined ? {} : { title: args.value('title') as string }),
+        ...(body === undefined ? {} : { body }),
+      },
+      success,
+    );
+  }
   return submitToHostBroker(
-    {
-      kind: 'issue',
-      ...(repo === undefined ? {} : { repo }),
-      title,
-      body,
-      account,
-      proxy: args.has('no-proxy') ? null : args.value('proxy'),
-      session: 'issue',
-      pid: process.pid,
-    },
-    (answer) => `opened issue #${answer.number ?? '?'} as ${account}: ${answer.url ?? '(no url)'}`,
+    { kind: 'issue-comment', ...common, repo: repo as string, number: number as number, body: body ?? '' },
+    success,
   );
 }

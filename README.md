@@ -252,6 +252,7 @@ directory and the audit log.
 ```sh
 export GIT_BROKER_SOCKET=/run/git-broker/broker.sock
 export GIT_BROKER_REQUIRE=1        # fail closed instead of falling back to another helper
+export GCB_PRIMARY=gh             # catalog adapter; only gh is implemented today
 gcb setup
 ```
 

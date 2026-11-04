@@ -5,6 +5,7 @@
  */
 import { CLIENT_COMMANDS, GH_ACTIONS } from 'gcb-core';
 import type { CommandBackend } from 'gcb-core';
+import type { Primary } from './primary.ts';
 
 export { runHelper } from './helper.ts';
 
@@ -47,10 +48,32 @@ Environment
   GIT_BROKER_REQUIRE=1    Fail closed instead of behaving as if not installed when unconfigured
   GIT_BROKER_SOCKET_FILE  Where to read the socket path from when no variable is set
   GCB_PROXY               Per-push broker proxy: a URL, or empty for direct
+  GCB_PRIMARY             CLI that runs catalogued actions (default: gh)
 
 Host commands such as init/stage/compose/diagnose are in gcb-host.`;
 
-async function run(argv: readonly string[]): Promise<number> {
+const isAsUser = (argument: string): boolean =>
+  argument === '--as-user' || argument === '-as-user' || argument.startsWith('--as-user=') || argument.startsWith('-as-user=');
+
+const hasAsUser = (argv: readonly string[]): boolean => argv.some(isAsUser);
+
+/** A login is an --as-user with a value; a bare one selects the broker person instead. */
+function hasAsUserLogin(argv: readonly string[]): boolean {
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === '--as-user' || argument === '-as-user') {
+      const next = argv[index + 1];
+      return next !== undefined && !next.startsWith('-');
+    }
+    if (argument?.startsWith('--as-user=') || argument?.startsWith('-as-user=')) {
+      return (argument.split('=', 2)[1] ?? '') !== '';
+    }
+  }
+  return false;
+}
+
+export async function runClient(argv: readonly string[], primary?: Primary): Promise<number> {
+  const choose = async (): Promise<Primary> => primary ?? (await import('./primary.ts')).primaryFromEnv();
   const [command, ...rest] = argv;
   switch (command) {
     case 'setup':
@@ -64,7 +87,8 @@ async function run(argv: readonly string[]): Promise<number> {
       // second list: a subcommand the catalog does not have stays with the flag-only lifecycle.
       // Bare `pr` asks the catalog too, where `run` needs no branch: the flag-only path would only
       // tell it that --repo is required.
-      if (rest.length === 0) return (await import('./commands/gh.ts')).runGh(['pr']);
+      const selected = await choose();
+      if (rest.length === 0) return selected.run(['pr']);
       const sub = rest[0];
       if (sub === 'review' && rest.some((argument) => argument === '--id' || argument.startsWith('--id='))) {
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));
@@ -84,14 +108,33 @@ async function run(argv: readonly string[]): Promise<number> {
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));
       }
       if (sub !== undefined && Object.hasOwn(GH_ACTIONS, `pr:${sub}`)) {
-        return (await import('./commands/gh.ts')).runGh(['pr', ...rest], { unreachableExitCode: 3 });
+        return selected.run(['pr', ...rest], { unreachableExitCode: 3 });
       }
       return (await import('./commands/pr.ts')).runPr(rest);
     }
     case 'run':
-      return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
-    case 'issue':
-      return (await import('./commands/issue.ts')).runIssue(rest);
+      return (await choose()).run(['run', ...rest]);
+    case 'issue': {
+      if (rest.length === 0) return (await import('./commands/issue.ts')).runIssue(rest);
+      const sub = rest[0];
+      const catalogued = sub !== undefined && Object.hasOwn(GH_ACTIONS, `issue:${sub}`);
+      if (!catalogued) {
+        // The bare command and a person route still belong to the issue usage/host path; any other
+        // unknown issue action goes through the adapter, exactly as gcb gh would report it.
+        if (sub?.startsWith('-') || hasAsUser(rest)) {
+          return (await import('./commands/issue.ts')).runIssue(rest);
+        }
+        return (await choose()).run(['issue', ...rest]);
+      }
+      if (hasAsUserLogin(rest)) return (await import('./commands/issue.ts')).runIssue(rest);
+      if (sub === 'create' && (rest.includes('--help') || rest.includes('-h'))) {
+        return (await import('./commands/issue.ts')).runIssue(rest);
+      }
+      const forwarded = hasAsUser(rest)
+        ? rest.filter((argument) => !isAsUser(argument))
+        : rest;
+      return (await choose()).run(['issue', ...forwarded], hasAsUser(rest) ? { identity: 'user' } : undefined);
+    }
     case 'repo':
       return (await import('./commands/repo.ts')).runRepo(rest);
     case 'gh':
@@ -106,5 +149,5 @@ export const clientBackend: CommandBackend = {
   role: 'client',
   commands: CLIENT_COMMANDS,
   help: CLIENT_HELP,
-  run,
+  run: runClient,
 };
