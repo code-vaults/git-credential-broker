@@ -24,7 +24,7 @@ import { fail, helpRequested, parseArgs, say } from 'gcb-core';
 const KNOWN_FLAGS = new Set([
   'help', 'h', 'draft', 'close', 'comment', 'file', 'line', 'side', 'threads',
   'reply-to', 'edit', 'resolve', 'id', 'jq', 'proxy', 'no-proxy', 'socket', 'host', 'repo',
-  'head', 'base', 'title', 'body', 'body-file', 'number', 'as-user', 'via-host', 'status',
+  'head', 'base', 'title', 'body', 'body-file', 'number', 'as-user', 'status',
   'approve', 'request-changes', 'review-comment',
 ]);
 
@@ -124,7 +124,7 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
 export async function runPr(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, {
     booleans: ['help', 'draft', 'status', 'comment', 'threads', 'no-proxy', 'approve', 'request-changes', 'review-comment'],
-    optionalValues: ['as-user', 'close', 'via-host'],
+    optionalValues: ['as-user', 'close'],
   });
   if (helpRequested(args, argv)) {
     say(PR_USAGE);
@@ -132,9 +132,6 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   }
   for (const name of ['title', 'body', 'body-file']) {
     if (args.missing(name)) fail(`--${name} needs a value`);
-  }
-  if (args.has('via-host') || args.value('via-host') !== undefined) {
-    fail('--via-host was replaced by --as-user <login>');
   }
   // Unknown options are refused rather than ignored: a typo must not silently fall through to an update.
   for (const name of args.names) {
