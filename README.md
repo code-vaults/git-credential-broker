@@ -431,11 +431,12 @@ gcb issue comment 94 --as-user --body "a note"
 
 The host broker creates pull requests, submits reviews, replies to review comments, edits pull
 requests, runs catalogued actions and forks with the gh account named by the request; catalogued
-actions include issue create/edit/comment and pull request close. It has no merge action. For `repo fork`, review replies, reviews, pull request edit, issue edit/comment and any
+actions include issue create/edit/comment/close/reopen and pull request close/reopen. It has no
+merge action. For `repo fork`, review replies, reviews, pull request edit, issue edit/comment and any
 request that names `--repo` explicitly — every review always carries its repository, even when
-derived from origin —
-it checks the repository against the broker config's allowlist (pass `--config`). An explicit `--repo` needs no checkout of that repository; without it,
-the checkout decides.
+derived from origin — it checks the repository against the broker config's allowlist (pass
+`--config`). An explicit `--repo` needs no checkout of that repository; without it, the checkout
+decides.
 `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
 directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. The directory must
@@ -764,12 +765,15 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr create` | `pull_requests: write`, `contents: read` |
 | `pr edit` | `pull_requests: write` |
 | `pr close` | `pull_requests: write` |
+| `pr reopen` | `pull_requests: write` |
 | `pr comment` | `pull_requests: write` |
 | `pr review` | `pull_requests: write` |
 | `pr review --id` (`pr:review-by-id`) | `pull_requests: read` |
 | `issue create` | `issues: write` |
 | `issue edit` | `issues: write` |
 | `issue comment` | `issues: write` |
+| `issue close` | `issues: write` |
+| `issue reopen` | `issues: write` |
 | `run view` | `actions: read` |
 | `run list` | `actions: read` |
 

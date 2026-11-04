@@ -39,6 +39,52 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.doesNotMatch(result.stdout, /host-token/);
   });
 
+  it('refuses an issue-only action on a pull request', async () => {
+    const gh = shim('if [ "$1" = "api" ]; then echo true; exit 0; fi; echo SHOULD_NOT_RUN');
+    await assert.rejects(
+      runGhAction({
+        action: 'issue:close',
+        values: { number: 7 },
+        repo: 'acme/widget',
+        token: 'app-token',
+        ghPath: gh,
+        env: { PATH: process.env.PATH },
+      }),
+      /pull request, not an issue/u,
+    );
+  });
+
+  it('charges the issue-target probe to the action deadline', async () => {
+    const gh = shim('sleep 2; if [ "$1" = "api" ]; then echo false; fi');
+    const started = Date.now();
+    const result = await runGhAction({
+      action: 'issue:close',
+      values: { number: 7 },
+      repo: 'acme/widget',
+      token: 'app-token',
+      ghPath: gh,
+      timeoutMs: 3_000,
+      env: { PATH: process.env.PATH },
+    });
+    assert.equal(result.timedOut, true);
+    assert.ok(Date.now() - started < 4_500, 'the probe and action share one deadline');
+  });
+
+  it('refuses when the issue-target probe fails', async () => {
+    const gh = shim('if [ "$1" = "api" ]; then echo boom >&2; exit 1; fi; echo SHOULD_NOT_RUN');
+    await assert.rejects(
+      runGhAction({
+        action: 'issue:close',
+        values: { number: 7 },
+        repo: 'acme/widget',
+        token: 'app-token',
+        ghPath: gh,
+        env: { PATH: process.env.PATH },
+      }),
+      /could not verify that #7 is an issue: boom/u,
+    );
+  });
+
   it('keeps bodies out of the process arguments', async () => {
     const gh = shim(
       'printf "ARGS=%s\n" "$*"; while [ "$#" -gt 0 ]; do if [ "$1" = "--body-file" ]; then printf "BODY="; cat "$2"; fi; shift; done',

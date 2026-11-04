@@ -19,18 +19,36 @@ describe('gh action catalog', () => {
       'pr:create',
       'pr:edit',
       'pr:close',
+      'pr:reopen',
       'pr:comment',
       'pr:review',
       'pr:review-by-id',
       'issue:create',
       'issue:edit',
       'issue:comment',
+      'issue:close',
+      'issue:reopen',
       'run:view',
       'run:list',
     ]);
     assert.equal('pr:merge' in GH_ACTIONS, false);
     assert.equal(getGhAction('pr:create').command.join(' '), 'pr create');
     assert.equal(getGhAction('pr:close').command.join(' '), 'pr close');
+  });
+
+  it('declares the close/reopen identity and timeout policy', () => {
+    for (const name of ['pr:reopen', 'issue:close', 'issue:reopen']) {
+      assert.equal(getGhAction(name).timeoutSeconds, 60, name);
+      assert.equal(getGhAction(name).hostUser, true, name);
+    }
+    assert.equal(getGhAction('pr:reopen').appUser, undefined);
+    assert.equal(getGhAction('issue:close').appUser, true);
+    assert.equal(getGhAction('issue:reopen').appUser, true);
+    assert.equal(getGhAction('issue:close').target, 'issue');
+    assert.equal(getGhAction('issue:reopen').target, 'issue');
+    assert.deepEqual(getGhAction('pr:reopen').permissions, { pull_requests: 'write' });
+    assert.deepEqual(getGhAction('issue:close').permissions, { issues: 'write' });
+    assert.deepEqual(getGhAction('issue:reopen').permissions, { issues: 'write' });
   });
 
   it('keeps creation token permissions narrow', () => {
@@ -117,6 +135,32 @@ describe('buildGhArgv', () => {
       buildGhArgv('pr:edit', { number: 7, title: 't', base: 'main' }, 'acme/widget'),
       ['pr', 'edit', '7', '--title', 't', '--base', 'main', '--repo', 'acme/widget'],
     );
+  });
+
+  it('builds the reopen and issue close argv', () => {
+    assert.deepEqual(buildGhArgv('pr:reopen', { number: 7 }, 'acme/widget'), [
+      'pr',
+      'reopen',
+      '7',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('issue:close', { number: 7, reason: 'duplicate' }, 'acme/widget'), [
+      'issue',
+      'close',
+      '7',
+      '--reason',
+      'duplicate',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('issue:reopen', { number: 7 }, 'acme/widget'), [
+      'issue',
+      'reopen',
+      '7',
+      '--repo',
+      'acme/widget',
+    ]);
   });
 
   it('builds issue edit and comment argv', () => {

@@ -54,6 +54,88 @@ export interface GhRunOptions {
  * @param options - action, values, repository and token.
  * @returns the bounded process result.
  */
+/** Run the issue-target probe with a process-group deadline. */
+function probeIssueTarget(
+  command: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+  repo: string,
+  issueNumber: number,
+  timeoutMs: number,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      command,
+      ['api', `repos/${repo}/issues/${String(issueNumber)}`, '--jq', '.pull_request != null'],
+      { cwd, env, shell: false, detached: true, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let timedOut = false;
+
+    const killGroup = (signal: NodeJS.Signals): void => {
+      if (child.pid === undefined) return;
+      try {
+        process.kill(-child.pid, signal);
+      } catch {
+        child.kill(signal);
+      }
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup('SIGTERM');
+      setTimeout(() => killGroup('SIGKILL'), 200).unref();
+    }, timeoutMs);
+
+    child.stdout?.on('data', (chunk: Buffer) => {
+      if (stdout.length < 64_000) stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      if (stderr.length < 64_000) stderr += chunk.toString();
+    });
+    child.on('error', (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (timedOut) reject(new Error('issue-target probe timed out'));
+      else if (code === 0) resolve(stdout);
+      else reject(new Error(stderr.trim() || `gh api exited ${String(code)}`));
+    });
+  });
+}
+
+/** Refuse an issue-only action when the number names a pull request. */
+async function assertIssueTarget(
+  command: string,
+  env: NodeJS.ProcessEnv,
+  cwd: string,
+  repo: string,
+  number: string | number,
+  timeoutMs: number,
+): Promise<void> {
+  const issueNumber = Number(number);
+  if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error(`${String(number)} is not an issue number`);
+  }
+  try {
+    const stdout = await probeIssueTarget(command, env, cwd, repo, issueNumber, timeoutMs);
+    if (stdout.trim() === 'true') {
+      throw new Error(`#${String(issueNumber)} is a pull request, not an issue`);
+    }
+  } catch (error) {
+    const message = (error as Error).message;
+    if (message.includes('is a pull request')) throw error;
+    throw new Error(`could not verify that #${String(issueNumber)} is an issue: ${message}`);
+  }
+}
+
 export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   const maxBytes = options.maxOutputBytes ?? DEFAULT_GH_OUTPUT_BYTES;
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
@@ -96,9 +178,24 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   if (!usesJq) env.GH_TOKEN = options.token;
   applyProxyChoice(env, options.proxy);
 
-  const timeoutMs = options.timeoutMs ?? getGhAction(options.action).timeoutSeconds * 1000;
-
+  const action = getGhAction(options.action);
+  const timeoutMs = options.timeoutMs ?? action.timeoutSeconds * 1000;
+  const deadline = Date.now() + timeoutMs;
   try {
+    if (action.target === 'issue') {
+      const number = options.values['number'];
+      if (typeof number !== 'string' && typeof number !== 'number') {
+        throw new Error(`${options.action} needs an issue number`);
+      }
+      await assertIssueTarget(
+        options.ghPath ?? 'gh',
+        env,
+        home,
+        options.repo,
+        number,
+        Math.max(1, deadline - Date.now()),
+      );
+    }
     // A body stays out of the process table; only its path reaches argv. A title still travels in
     // argv, so this is about the free-form body rather than everything the person wrote.
     let bodyFile: string | undefined;
@@ -106,7 +203,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
       bodyFile = path.join(home, 'body.md');
       writeFileSync(bodyFile, options.values['body'], { mode: 0o600 });
     }
-    const argv = buildGhArgv(options.action, options.values, options.repo, bodyFile);
+    const argv = buildGhArgv(action.name, options.values, options.repo, bodyFile);
     return await new Promise<GhRunResult>((resolve) => {
       let stdout = '';
       let stderr = '';
@@ -208,7 +305,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
         // Ask politely first; a gh process that ignores SIGTERM is killed on the grace deadline.
         if (!signalGroup('SIGTERM')) return;
         setTimeout(() => chase(), KILL_GRACE_MS).unref();
-      }, timeoutMs);
+      }, Math.max(1, deadline - Date.now()));
 
       child.stdout?.on('data', (chunk: Buffer) => take('stdout', chunk));
       child.stderr?.on('data', (chunk: Buffer) => take('stderr', chunk));
