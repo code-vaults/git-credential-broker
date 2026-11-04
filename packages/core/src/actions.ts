@@ -444,6 +444,7 @@ export function buildGhArgv(
     }
 
     if (flag.name === 'body' && bodyFile !== undefined) {
+      asString(value, flag.name);
       argv.push('--body-file', bodyFile);
       present.add(flag.name);
       continue;

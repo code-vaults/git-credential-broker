@@ -19,6 +19,8 @@ export interface Args {
   value(name: string): string | undefined;
   /** Whether a boolean flag was present. */
   has(name: string): boolean;
+  /** Whether a value-taking flag was present without its operand. */
+  missing(name: string): boolean;
   /** Every option name seen, after the parser's normalization. */
   readonly names: readonly string[];
   /** Arguments that were not flags. */
@@ -29,6 +31,8 @@ export interface Args {
 export interface ParseArgsOptions {
   /** Flags that take no value. */
   readonly booleans?: readonly string[];
+  /** Flags whose value is optional, so a bare occurrence is not a missing operand. */
+  readonly optionalValues?: readonly string[];
 }
 
 /**
@@ -43,6 +47,8 @@ export interface ParseArgsOptions {
  */
 export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {}): Args {
   const booleans = new Set(options.booleans ?? []);
+  const optionalValues = new Set(options.optionalValues ?? []);
+  const missing = new Set<string>();
   const collected = new Map<string, string[]>();
   const flags = new Set<string>();
   const positionals: string[] = [];
@@ -83,6 +89,7 @@ export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {
       index += 1;
     } else {
       flags.add(name);
+      if (!optionalValues.has(name)) missing.add(name);
     }
   }
 
@@ -90,9 +97,29 @@ export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {
     values: (name) => collected.get(name) ?? [],
     value: (name) => collected.get(name)?.[0],
     has: (name) => flags.has(name),
+    missing: (name) => missing.has(name),
     names: [...new Set([...collected.keys(), ...flags])],
     positionals,
   };
+}
+
+/**
+ * Whether this command line asks for help.
+ *
+ * A separated `-h` used as a title or body-file value means help; `--title=-h` stays data, and
+ * `--body -h` is handled by parseArgs as body data.
+ *
+ * @param args - the parsed arguments.
+ * @param argv - the raw arguments.
+ * @param valueFlags - the flags whose separated `-h` means help.
+ * @returns true when help should be printed.
+ */
+export function helpRequested(
+  args: Args,
+  argv: readonly string[],
+  valueFlags: readonly string[] = ['--title', '--body-file'],
+): boolean {
+  return args.has('help') || args.has('h') || hasSeparatedValue(argv, valueFlags);
 }
 
 /**

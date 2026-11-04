@@ -19,7 +19,7 @@ import { renderCompose, runCompose } from '../../packages/host/src/commands/comp
 import { runDiagnose } from '../../packages/host/src/commands/diagnose.ts';
 import { SIDECAR, loadConfig, resolveConfigPath, deploymentDir } from '../../packages/host/src/config.ts';
 import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit, resolveInitSelection } from '../../packages/host/src/commands/init.ts';
-import { parseArgs, listFlag, insideMountedPath, mountedPaths } from '../../packages/core/src/support.ts';
+import { parseArgs, listFlag, insideMountedPath, mountedPaths, helpRequested } from '../../packages/core/src/support.ts';
 import { performSetup } from '../../packages/client/src/commands/setup.ts';
 import type { BrokerConfig, GithubAppHostConfig } from '../../packages/core/src/types.ts';
 import { runProbe } from '../../packages/client/src/commands/probe.ts';
@@ -91,6 +91,27 @@ describe('parseArgs', () => {
   it('splits comma-separated list flags', () => {
     const args = parseArgs(['--allow', 'a/b,c/d', '--allow', 'e/f']);
     assert.deepEqual(listFlag(args, 'allow'), ['a/b', 'c/d', 'e/f']);
+  });
+
+  it('distinguishes a missing operand from an optional value', () => {
+    const missing = parseArgs(['--body']);
+    assert.equal(missing.has('body'), true);
+    assert.equal(missing.missing('body'), true);
+
+    const bare = parseArgs(['--as-user'], { optionalValues: ['as-user'] });
+    assert.equal(bare.has('as-user'), true);
+    assert.equal(bare.missing('as-user'), false);
+
+    const valued = parseArgs(['--as-user', 'alice'], { optionalValues: ['as-user'] });
+    assert.equal(valued.value('as-user'), 'alice');
+    assert.equal(valued.missing('as-user'), false);
+  });
+
+  it('decides help from raw values while leaving body data alone', () => {
+    assert.equal(helpRequested(parseArgs(['--help']), ['--help']), true);
+    assert.equal(helpRequested(parseArgs(['--title', '-h']), ['--title', '-h']), true);
+    assert.equal(helpRequested(parseArgs(['--title=-h']), ['--title=-h']), false);
+    assert.equal(helpRequested(parseArgs(['--body', '--help']), ['--body', '--help']), false);
   });
 
   it('treats a flag followed by another flag as a boolean, not a value', () => {

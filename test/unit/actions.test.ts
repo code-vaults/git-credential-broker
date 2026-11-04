@@ -140,6 +140,13 @@ describe('buildGhArgv', () => {
     ]);
   });
 
+  it('validates a body before substituting the body file', () => {
+    assert.throws(
+      () => buildGhArgv('issue:comment', { number: 7, body: false }, 'acme/widget', '/tmp/body'),
+      /body must be a string/u,
+    );
+  });
+
   it('accepts numeric flag values without stringifying them first', () => {
     assert.deepEqual(buildGhArgv('pr:list', { limit: 10 }, 'acme/widget'), [
       'pr',

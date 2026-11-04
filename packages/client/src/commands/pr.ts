@@ -18,7 +18,7 @@ import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { baseBranchFor, qualifiedBranch, remoteRepo } from './remotes.ts';
 import { runGh } from './gh.ts';
 import { submitToHostBroker } from './host-submit.ts';
-import { fail, hasSeparatedValue, parseArgs, say } from 'gcb-core';
+import { fail, helpRequested, parseArgs, say } from 'gcb-core';
 
 /** Every flag the flag-only lifecycle understands. */
 const KNOWN_FLAGS = new Set([
@@ -124,13 +124,14 @@ function actionOf(args: { has(name: string): boolean; value(name: string): strin
 export async function runPr(argv: readonly string[]): Promise<number> {
   const args = parseArgs(argv, {
     booleans: ['help', 'draft', 'status', 'comment', 'threads', 'no-proxy', 'approve', 'request-changes', 'review-comment'],
+    optionalValues: ['as-user', 'close', 'via-host'],
   });
-  if (args.has('help') || args.has('h') || hasSeparatedValue(argv, ['--title', '--body-file'])) {
+  if (helpRequested(args, argv)) {
     say(PR_USAGE);
     return 0;
   }
   for (const name of ['title', 'body', 'body-file']) {
-    if (args.has(name) && args.value(name) === undefined) fail(`--${name} needs a value`);
+    if (args.missing(name)) fail(`--${name} needs a value`);
   }
   if (args.has('via-host') || args.value('via-host') !== undefined) {
     fail('--via-host was replaced by --as-user <login>');
@@ -161,7 +162,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (args.has('no-proxy') && args.value('proxy') !== undefined) {
     fail('--proxy and --no-proxy are mutually exclusive');
   }
-  if (args.has('proxy') && args.value('proxy') === undefined) fail('--proxy needs a value');
+  if (args.missing('proxy')) fail('--proxy needs a value');
   const proxy = args.has('no-proxy') ? null : args.value('proxy');
   const socketPath = resolveSocketPath(args.value('socket'), process.env);
   const looksLikeOption = (value: string): boolean =>
