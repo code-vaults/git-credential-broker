@@ -263,6 +263,65 @@ describe('gcb gh', () => {
     assert.match(result.stderr, /--body and --body-file are mutually exclusive/u);
   });
 
+  it('pins app-user eligibility for issue close/reopen and pr reopen', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-catalog-identity-'));
+    const socketPath = path.join(root, 'broker.sock');
+    const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] };
+    const config: BrokerConfig = {
+      socketPath,
+      socketMode: 0o600,
+      auditPath: null,
+      tokenCacheSkewSeconds: 300,
+      hosts: { 'github.com': block },
+    };
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() };
+    const seen: { action: string; identity: string | undefined }[] = [];
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async (request) => {
+        seen.push({ action: request.action, identity: request.identity });
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
+    try {
+      for (const action of ['close', 'reopen']) {
+        const result = await runGhCli([
+          'issue',
+          action,
+          '7',
+          '--as-user',
+          '--repo',
+          'acme/widget',
+          '--socket',
+          socketPath,
+        ]);
+        assert.equal(result.status, 0, action);
+      }
+      assert.deepEqual(seen, [
+        { action: 'issue:close', identity: 'user' },
+        { action: 'issue:reopen', identity: 'user' },
+      ]);
+
+      const prReopen = await runGhCli([
+        'pr',
+        'reopen',
+        '7',
+        '--as-user',
+        '--repo',
+        'acme/widget',
+        '--socket',
+        socketPath,
+      ]);
+      assert.equal(prReopen.status, 1);
+      assert.match(prReopen.stderr, /pr:reopen does not support --as-user/u);
+    } finally {
+      await broker.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('accepts bare --as-user for an appUser action', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-as-user-'));
     const socketPath = path.join(root, 'broker.sock');

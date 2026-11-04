@@ -36,6 +36,19 @@ describe('gh action catalog', () => {
     assert.equal(getGhAction('pr:close').command.join(' '), 'pr close');
   });
 
+  it('declares the close/reopen identity and timeout policy', () => {
+    for (const name of ['pr:reopen', 'issue:close', 'issue:reopen']) {
+      assert.equal(getGhAction(name).timeoutSeconds, 60, name);
+      assert.equal(getGhAction(name).hostUser, true, name);
+    }
+    assert.equal(getGhAction('pr:reopen').appUser, undefined);
+    assert.equal(getGhAction('issue:close').appUser, true);
+    assert.equal(getGhAction('issue:reopen').appUser, true);
+    assert.deepEqual(getGhAction('pr:reopen').permissions, { pull_requests: 'write' });
+    assert.deepEqual(getGhAction('issue:close').permissions, { issues: 'write' });
+    assert.deepEqual(getGhAction('issue:reopen').permissions, { issues: 'write' });
+  });
+
   it('keeps creation token permissions narrow', () => {
     assert.deepEqual(getGhAction('pr:create').permissions, {
       pull_requests: 'write',
@@ -123,12 +136,10 @@ describe('buildGhArgv', () => {
   });
 
   it('builds the reopen and issue close argv', () => {
-    assert.deepEqual(buildGhArgv('pr:reopen', { number: 7, comment: 'back' }, 'acme/widget'), [
+    assert.deepEqual(buildGhArgv('pr:reopen', { number: 7 }, 'acme/widget'), [
       'pr',
       'reopen',
       '7',
-      '--comment',
-      'back',
       '--repo',
       'acme/widget',
     ]);
