@@ -101,8 +101,13 @@ function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionSca
   let identityError: string | undefined;
   let repoOption = false;
 
+  // A known value-taking flag consumes the next token only when that token is a value. A following
+  // known flag is not taken as a value (so a missing value fails as missing), except a literal
+  // --help/-h: a body that is exactly one of those is data, not a help request.
   for (let index = 0; index < rawRest.length; index += 1) {
     const raw = rawRest[index];
+    // Match parseArgs: -h is help everywhere; any other single-dash letter is its long flag. A
+    // single-dash operand belongs to a preceding value flag and was consumed before this point.
     const argument = raw?.replace(/^-h$/, '--help').replace(/^-(?=[A-Za-z])/, '--');
     if (argument === undefined) continue;
     if (argument === '--') {
@@ -160,6 +165,8 @@ function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionSca
       if (nextName !== undefined && knownFlags.has(nextName)) {
         missingValue ??= `${raw} needs a value`;
       }
+      // Leave both tokens alone: a known flag is a missing value, an unknown one must reach the
+      // unknown-option check rather than becoming a value.
       rest.push(argument);
       continue;
     }

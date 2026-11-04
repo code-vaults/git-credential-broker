@@ -100,6 +100,23 @@ describe('gcb gh', () => {
     }
   });
 
+  it('does not read a post-terminator --as-user as identity', async () => {
+    const result = await runClient([
+      'gh',
+      'pr',
+      'close',
+      '7',
+      '--repo',
+      'acme/widget',
+      '--socket',
+      '/definitely/not/here.sock',
+      '--',
+      '--as-user',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /too many positional/u);
+  });
+
   it('does not read -as-user as identity when it is a value', async () => {
     const result = await runClient([
       'gh',
