@@ -85,6 +85,35 @@ describe('gcb gh', () => {
     assert.doesNotMatch(result.stderr, /--repo needs a value/u);
   });
 
+  it('shows help before refusing an unsupported identity', async () => {
+    const result = await runClient(['gh', 'pr', 'view', '--as-user', '--help']);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /Usage: gcb gh/u);
+  });
+
+  it('rejects review conflicts before reading stdin', async () => {
+    const result = await runClient([
+      'gh',
+      'pr',
+      'review',
+      '1',
+      '--approve',
+      '--request-changes',
+      '--body-file',
+      '-',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /exactly one of/u);
+  });
+
+  it('rejects an empty resolve id before reading stdin', async () => {
+    const result = await runClient(['pr', '--resolve=', '--body-file', '-', '--repo', 'acme/widget']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--resolve needs/u);
+  });
+
   it('refuses --body together with --body-file', async () => {
     const result = await runGhCli(['pr', 'comment', '7', '--body', 'x', '--body-file', 'f', '--repo', 'acme/widget']);
     assert.equal(result.status, 1);

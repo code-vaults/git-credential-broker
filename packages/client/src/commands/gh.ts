@@ -249,29 +249,34 @@ export async function runGh(
     say(GH_USAGE);
     return 1;
   }
-  const { rest: actionArgs, asUser, account } = extractAsUser(rawRest);
   const actionName = `${domain}:${command}`;
   let action;
   try {
     action = getGhAction(actionName);
   } catch {
-    if (actionArgs.includes('--help') || actionArgs.includes('-h')) {
+    if (rawRest.includes('--help') || rawRest.includes('-h')) {
       say(GH_USAGE);
       return 0;
     }
     fail(`unknown gh action ${JSON.stringify(actionName)}`);
   }
 
-  const identity = options.identity ?? (asUser ? 'user' : 'app');
-  if (account === undefined && identity === 'user' && action.appUser !== true) {
-    fail(`${actionName} does not support --as-user`);
+  // Help wins over identity extraction: --body -as-user --help is a help request, not a body write.
+  if (scanActionArgs(action, rawRest).help) {
+    say(GH_USAGE);
+    return 0;
   }
+  const { rest: actionArgs, asUser, account } = extractAsUser(rawRest);
+  const identity = options.identity ?? (asUser ? 'user' : 'app');
   const { rest, missingValue, help, allowed } = scanActionArgs(action, actionArgs);
   if (help) {
     say(GH_USAGE);
     return 0;
   }
   if (missingValue !== undefined) fail(missingValue);
+  if (account === undefined && identity === 'user' && action.appUser !== true) {
+    fail(`${actionName} does not support --as-user`);
+  }
 
   const booleans = action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
   const args = parseArgs(rest, { booleans: [...booleans, 'no-proxy'] });
@@ -337,6 +342,12 @@ export async function runGh(
   }
 
   if (bodyFile) {
+    // Validate selection constraints before a '-' body waits for stdin; the actual body is built again below.
+    try {
+      buildGhArgv(actionName, { ...values, body: 'x' } as ActionValues, repo);
+    } catch (error) {
+      fail((error as Error).message);
+    }
     const body = bodyFromArgs(args);
     if (body !== undefined) values['body'] = body;
   }

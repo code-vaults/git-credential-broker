@@ -257,14 +257,6 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (jq !== undefined && action !== 'review') {
     fail('--jq only goes with --id');
   }
-  const body = bodyFromArgs(args);
-  if (action === 'update' && title === undefined && body === undefined && base === undefined) {
-    fail('an update has to change something: pass --title, --body/--body-file or --base');
-  }
-  if ((action === 'comment' || action === 'reply' || action === 'edit') && (body === undefined || body.trim() === '')) {
-    fail('a comment has to say something: pass --body or --body-file');
-  }
-
   const filePath = args.value('file');
   const lineArg = args.value('line');
   const side = (args.value('side') ?? 'right').toLowerCase();
@@ -295,6 +287,14 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const resolveId = args.value('resolve');
   if (action === 'resolve' && (resolveId === undefined || resolveId.trim() === '')) {
     fail(`--resolve needs the id of the thread being resolved, got ${JSON.stringify(resolveId)}`);
+  }
+
+  const body = bodyFromArgs(args);
+  if (action === 'update' && title === undefined && body === undefined && base === undefined) {
+    fail('an update has to change something: pass --title, --body/--body-file or --base');
+  }
+  if ((action === 'comment' || action === 'reply' || action === 'edit') && (body === undefined || body.trim() === '')) {
+    fail('a comment has to say something: pass --body or --body-file');
   }
 
   if (action === 'review') {
