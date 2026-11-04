@@ -205,7 +205,7 @@ Common
   -h, --help               Show this help
 
 Person route
-  --as-user                App-broker person identity, for appUser actions
+  --as-user                App-broker person identity, for actions it can run as a person
   --as-user <login>        Host gh account; runs the catalogued action through gcb host
 
 Commands, from the action catalog
