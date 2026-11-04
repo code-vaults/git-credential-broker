@@ -158,6 +158,8 @@ describe('gcb gh', () => {
       '-',
       '--as-user',
       'alice',
+      '--repo',
+      'acme/widget',
       '--socket',
       '/definitely/not/here.sock',
     ]);
