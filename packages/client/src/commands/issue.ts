@@ -134,6 +134,8 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     host = host ?? found.host;
   }
   host ??= 'github.com';
+  const title = command === 'create' ? args.value('title') : undefined;
+  if (command === 'create' && title === undefined) fail('--title is required to create an issue');
 
   const body = bodyFromArgs(args);
 
@@ -150,10 +152,8 @@ export async function runIssue(argv: readonly string[]): Promise<number> {
     `${answer.number ?? '?'} as ${account}${answer.url === undefined ? '' : `: ${answer.url}`}`;
 
   if (command === 'create') {
-    const title = args.value('title');
-    if (title === undefined) fail('--title is required to create an issue');
     return submitToHostBroker(
-      { kind: 'issue', ...common, title, body: body ?? '' },
+      { kind: 'issue', ...common, title: title as string, body: body ?? '' },
       success,
     );
   }

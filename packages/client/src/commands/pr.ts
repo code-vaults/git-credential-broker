@@ -237,7 +237,6 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   const head = qualified(args.value('head'));
   const base = baseBranch();
   const title = args.value('title');
-  const body = bodyFromArgs(args);
 
   if (action === 'open') {
     if (!head) fail('--head is required to open a pull request');
@@ -258,6 +257,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
   if (jq !== undefined && action !== 'review') {
     fail('--jq only goes with --id');
   }
+  const body = bodyFromArgs(args);
   if (action === 'update' && title === undefined && body === undefined && base === undefined) {
     fail('an update has to change something: pass --title, --body/--body-file or --base');
   }

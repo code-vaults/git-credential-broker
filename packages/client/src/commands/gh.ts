@@ -248,8 +248,6 @@ export async function runGh(
 
   const values: Record<string, string | boolean | string[]> = {};
   const bodyFile = args.value('body-file') !== undefined;
-  const body = bodyFromArgs(args);
-  if (body !== undefined) values['body'] = body;
   for (const [index, positional] of action.positionals.entries()) {
     const value = args.positionals[index];
     if (value === undefined) {
@@ -262,7 +260,16 @@ export async function runGh(
     fail(`gcb gh ${domain} ${command} has too many positional arguments`);
   }
   for (const flag of action.flags) {
-    if (flag.name === 'body' && bodyFile) continue;
+    if (flag.name === 'body') {
+      if (bodyFile) continue;
+      const inline = args.value('body');
+      if (inline === undefined) {
+        if (flag.required === true) fail(`gcb gh ${domain} ${command} needs --body`);
+        continue;
+      }
+      values['body'] = inline;
+      continue;
+    }
     if (flag.type === 'boolean') {
       if (args.has(flag.name)) values[flag.name] = true;
       continue;
@@ -276,6 +283,10 @@ export async function runGh(
     else values[flag.name] = entries[0] as string;
   }
 
+  if (bodyFile) {
+    const body = bodyFromArgs(args);
+    if (body !== undefined) values['body'] = body;
+  }
   try {
     buildGhArgv(actionName, values as ActionValues, repo);
   } catch (error) {
