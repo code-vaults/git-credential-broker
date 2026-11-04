@@ -216,7 +216,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   A plain `gcb pr create` (app identity) is the exception, only when the operator explicitly asks for
   an App-authored PR; automated reviewers may skip those. The flag-only `gcb pr --as-user` form also
   opens with `--head/--title`, and covers review, reply, PR edit, review-comment edit/comment and
-  resolve. Bare `issue create/edit/comment --as-user` uses the broker's person action token; the login
+  resolve. Bare `issue create/edit/comment/close/reopen --as-user` uses the broker's person action token; the login
   form uses the host broker. It runs no shell, its program is configuration, and it cannot push or merge. The
   generic `gcb gh --as-user <login>` route adds every catalogued action, including pull request close.
 
@@ -264,7 +264,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 
   **Which actions are left is the operational half.** The host broker creates pull requests, submits
   reviews, replies to review comments, edits pull requests, runs catalogued actions (with
-  `--as-user <login>`) — including issue create/edit/comment and pull request close —
+  `--as-user <login>`) — including issue create/edit/comment/close/reopen and pull request close/reopen —
   while bare `--as-user` through the broker also handles review, reply, resolve, edit and comment. Every other action still
   goes through the installation token.
   On a repository the app is not installed on, a pull request can be opened, edited, reviewed, and its
