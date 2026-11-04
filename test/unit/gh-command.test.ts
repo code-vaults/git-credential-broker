@@ -27,6 +27,20 @@ function runGhCli(args: readonly string[], cwd?: string): Promise<RunResult> {
 }
 
 describe('gcb gh', () => {
+  it('reports an unreadable body file', async () => {
+    const result = await runGhCli([
+      'issue',
+      'comment',
+      '7',
+      '--body-file',
+      '/definitely/not/here',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /cannot read \/definitely\/not\/here/u);
+  });
+
   it('refuses --body together with --body-file', async () => {
     const result = await runGhCli(['pr', 'comment', '7', '--body', 'x', '--body-file', 'f', '--repo', 'acme/widget']);
     assert.equal(result.status, 1);

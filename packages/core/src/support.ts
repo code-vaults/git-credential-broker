@@ -179,6 +179,7 @@ export function bodyFromArgs(args: Args): string | undefined {
     fail('--body and --body-file are mutually exclusive');
   }
   if (file === undefined) return inline;
+  if (file === '-') return fs.readFileSync(0, 'utf8');
   try {
     return fs.readFileSync(file, 'utf8');
   } catch (error) {

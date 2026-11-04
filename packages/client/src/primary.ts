@@ -41,7 +41,6 @@ const DEFAULT_PRIMARIES: Readonly<Record<string, Primary>> = { [GH_PRIMARY.name]
  * @param primaries - the available adapters, keyed by name.
  * @returns the selected primary.
  */
-
 export function primaryFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   primaries: Readonly<Record<string, Primary>> = DEFAULT_PRIMARIES,

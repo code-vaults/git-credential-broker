@@ -63,6 +63,7 @@ describe('the primary dispatch seam', () => {
       ['pr', '--help'],
       ['pr', 'view', '--help'],
       ['issue', 'edit', '--help'],
+      ['issue', 'view', '--help'],
       ['run', '--help'],
     ]) {
       const result = await tryRunAsync(
@@ -72,6 +73,25 @@ describe('the primary dispatch seam', () => {
       );
       assert.equal(result.status, 0, args.join(' '));
     }
+  });
+
+  it('does not treat --body --help as help', async () => {
+    const result = await tryRunAsync(
+      process.execPath,
+      [
+        '--conditions=development',
+        CLIENT_BIN,
+        'pr',
+        'comment',
+        '7',
+        '--body',
+        '--help',
+        '--repo',
+        'acme/widget',
+      ],
+      { env: { ...process.env, GCB_PRIMARY: 'glab' }, timeoutMs: 5_000 },
+    );
+    assert.match(result.stderr, /unsupported primary/u);
   });
 
   it('does not let a bad primary block person or host routes', async () => {

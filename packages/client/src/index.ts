@@ -3,7 +3,7 @@
  *
  * The host commands are not imported here; installing `gcb-client` never pulls `yaml`.
  */
-import { CLIENT_COMMANDS, GH_ACTIONS } from 'gcb-core';
+import { CLIENT_COMMANDS, GH_ACTIONS, helpRequested, parseArgs } from 'gcb-core';
 import type { CommandBackend } from 'gcb-core';
 import type { Primary } from './primary.ts';
 
@@ -72,6 +72,11 @@ function hasAsUserLogin(argv: readonly string[]): boolean {
   return false;
 }
 
+/** Help wins over primary selection, but only when the token is not a flag value. */
+function asksHelp(argv: readonly string[]): boolean {
+  return helpRequested(parseArgs(argv, { booleans: ['help'] }), argv);
+}
+
 export async function runClient(argv: readonly string[], primary?: Primary): Promise<number> {
   const choose = async (): Promise<Primary> => primary ?? (await import('./primary.ts')).primaryFromEnv();
   const [command, ...rest] = argv;
@@ -98,7 +103,7 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));
       }
       if (sub !== undefined && Object.hasOwn(GH_ACTIONS, `pr:${sub}`)) {
-        if (rest.includes('--help') || rest.includes('-h')) {
+        if (asksHelp(rest)) {
           return (await import('./commands/gh.ts')).runGh(['pr', ...rest], { unreachableExitCode: 3 });
         }
         return (await choose()).run(['pr', ...rest], { unreachableExitCode: 3 });
@@ -106,7 +111,7 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
       return (await import('./commands/pr.ts')).runPr(rest);
     }
     case 'run':
-      if (rest.includes('--help') || rest.includes('-h')) {
+      if (asksHelp(rest)) {
         return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
       }
       return (await choose()).run(['run', ...rest]);
@@ -120,13 +125,14 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
         if (sub?.startsWith('-') || hasAsUser(rest)) {
           return (await import('./commands/issue.ts')).runIssue(rest);
         }
+        if (asksHelp(rest)) return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
         return (await choose()).run(['issue', ...rest]);
       }
       if (hasAsUserLogin(rest)) return (await import('./commands/issue.ts')).runIssue(rest);
-      if (sub === 'create' && (rest.includes('--help') || rest.includes('-h'))) {
+      if (sub === 'create' && asksHelp(rest)) {
         return (await import('./commands/issue.ts')).runIssue(rest);
       }
-      if (rest.includes('--help') || rest.includes('-h')) {
+      if (asksHelp(rest)) {
         return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
       }
       const forwarded = hasAsUser(rest)
