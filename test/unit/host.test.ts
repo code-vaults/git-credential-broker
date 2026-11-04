@@ -437,7 +437,7 @@ describe('the host action route', () => {
 
       const unknownId = writeRequest(dir, {
         kind: 'action',
-        action: 'issue:view',
+        action: 'issue:delete',
         repo: 'acme/widget',
         values: { number: 7 },
       });

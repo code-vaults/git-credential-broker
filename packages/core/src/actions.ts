@@ -207,6 +207,42 @@ const PR_REOPEN: GhAction = {
   hostUser: true,
 };
 
+// GitHub: GET /repos/{owner}/{repo}/commits/{ref}/check-runs and commit statuses
+const PR_CHECKS: GhAction = {
+  name: 'pr:checks',
+  command: ['pr', 'checks'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [
+    { name: 'fail-fast', type: 'boolean' },
+    { name: 'interval', type: 'number' },
+    { name: 'jq', type: 'string' },
+    { name: 'json', type: 'string' },
+    { name: 'required', type: 'boolean' },
+    { name: 'template', type: 'string' },
+    { name: 'watch', type: 'boolean' },
+    { name: 'web', type: 'boolean' },
+  ],
+  permissions: { checks: 'read', statuses: 'read' },
+  timeoutSeconds: 300,
+  hostUser: false,
+};
+
+// GitHub: GET /repos/{owner}/{repo}/pulls and checks for the current branch
+const PR_STATUS: GhAction = {
+  name: 'pr:status',
+  command: ['pr', 'status'],
+  positionals: [],
+  flags: [
+    { name: 'conflict-status', type: 'boolean' },
+    { name: 'jq', type: 'string' },
+    { name: 'json', type: 'string' },
+    { name: 'template', type: 'string' },
+  ],
+  permissions: { pull_requests: 'read', checks: 'read', statuses: 'read' },
+  timeoutSeconds: 120,
+  hostUser: false,
+};
+
 // GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
 const PR_REVIEW_BY_ID: GhAction = {
   name: 'pr:review-by-id',
@@ -315,6 +351,49 @@ const ISSUE_REOPEN: GhAction = {
   target: 'issue',
 };
 
+// GitHub: GET /repos/{owner}/{repo}/issues/{issue_number}
+const ISSUE_VIEW: GhAction = {
+  name: 'issue:view',
+  command: ['issue', 'view'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [
+    { name: 'comments', type: 'boolean' },
+    { name: 'jq', type: 'string' },
+    { name: 'json', type: 'string' },
+    { name: 'template', type: 'string' },
+    { name: 'web', type: 'boolean' },
+  ],
+  permissions: { issues: 'read' },
+  timeoutSeconds: 120,
+  hostUser: false,
+};
+
+// GitHub: GET /repos/{owner}/{repo}/issues
+const ISSUE_LIST: GhAction = {
+  name: 'issue:list',
+  command: ['issue', 'list'],
+  positionals: [],
+  flags: [
+    { name: 'app', type: 'string' },
+    { name: 'assignee', type: 'string' },
+    { name: 'author', type: 'string' },
+    { name: 'jq', type: 'string' },
+    { name: 'json', type: 'string' },
+    { name: 'label', type: 'string', repeatable: true },
+    { name: 'limit', type: 'number' },
+    { name: 'mention', type: 'string' },
+    { name: 'milestone', type: 'string' },
+    { name: 'search', type: 'string' },
+    { name: 'state', type: 'string' },
+    { name: 'template', type: 'string' },
+    { name: 'type', type: 'string' },
+    { name: 'web', type: 'boolean' },
+  ],
+  permissions: { issues: 'read' },
+  timeoutSeconds: 120,
+  hostUser: false,
+};
+
 // GitHub: GET /repos/{owner}/{repo}/actions/runs/{run_id}
 const RUN_VIEW: GhAction = {
   name: 'run:view',
@@ -358,6 +437,8 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:edit': PR_EDIT,
   'pr:close': PR_CLOSE,
   'pr:reopen': PR_REOPEN,
+  'pr:checks': PR_CHECKS,
+  'pr:status': PR_STATUS,
   'pr:comment': PR_COMMENT,
   'pr:review': PR_REVIEW,
   'pr:review-by-id': PR_REVIEW_BY_ID,
@@ -366,6 +447,8 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'issue:comment': ISSUE_COMMENT,
   'issue:close': ISSUE_CLOSE,
   'issue:reopen': ISSUE_REOPEN,
+  'issue:view': ISSUE_VIEW,
+  'issue:list': ISSUE_LIST,
   'run:view': RUN_VIEW,
   'run:list': RUN_LIST,
 });

@@ -82,9 +82,9 @@ describe('gcb gh', () => {
     assert.equal(missing.status, 1);
     assert.match(missing.stderr, /--title needs a value/u);
 
-    const action = await runClient(['issue', 'view', '7', '--repo', 'acme/widget']);
+    const action = await runClient(['issue', 'merge', '7', '--repo', 'acme/widget']);
     assert.equal(action.status, 1);
-    assert.match(action.stderr, /unknown gh action "issue:view"/u);
+    assert.match(action.stderr, /unknown gh action "issue:merge"/u);
 
     const unconfigured = await runClient(['issue', 'create', '--title', 't', '--body', 'b', '--repo', 'acme/widget']);
     assert.equal(unconfigured.status, 1);
