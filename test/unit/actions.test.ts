@@ -19,12 +19,15 @@ describe('gh action catalog', () => {
       'pr:create',
       'pr:edit',
       'pr:close',
+      'pr:reopen',
       'pr:comment',
       'pr:review',
       'pr:review-by-id',
       'issue:create',
       'issue:edit',
       'issue:comment',
+      'issue:close',
+      'issue:reopen',
       'run:view',
       'run:list',
     ]);
@@ -117,6 +120,34 @@ describe('buildGhArgv', () => {
       buildGhArgv('pr:edit', { number: 7, title: 't', base: 'main' }, 'acme/widget'),
       ['pr', 'edit', '7', '--title', 't', '--base', 'main', '--repo', 'acme/widget'],
     );
+  });
+
+  it('builds the reopen and issue close argv', () => {
+    assert.deepEqual(buildGhArgv('pr:reopen', { number: 7, comment: 'back' }, 'acme/widget'), [
+      'pr',
+      'reopen',
+      '7',
+      '--comment',
+      'back',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('issue:close', { number: 7, reason: 'duplicate' }, 'acme/widget'), [
+      'issue',
+      'close',
+      '7',
+      '--reason',
+      'duplicate',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('issue:reopen', { number: 7 }, 'acme/widget'), [
+      'issue',
+      'reopen',
+      '7',
+      '--repo',
+      'acme/widget',
+    ]);
   });
 
   it('builds issue edit and comment argv', () => {

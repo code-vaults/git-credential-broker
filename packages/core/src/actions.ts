@@ -194,6 +194,17 @@ const PR_CLOSE: GhAction = {
   hostUser: true,
 };
 
+// GitHub: PATCH /repos/{owner}/{repo}/pulls/{pull_number}
+const PR_REOPEN: GhAction = {
+  name: 'pr:reopen',
+  command: ['pr', 'reopen'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [{ name: 'comment', type: 'string' }],
+  permissions: { pull_requests: 'write' },
+  timeoutSeconds: 60,
+  hostUser: true,
+};
+
 // GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
 const PR_REVIEW_BY_ID: GhAction = {
   name: 'pr:review-by-id',
@@ -276,6 +287,33 @@ const ISSUE_COMMENT: GhAction = {
   appUser: true,
 };
 
+// GitHub: PATCH /repos/{owner}/{repo}/issues/{issue_number}
+const ISSUE_CLOSE: GhAction = {
+  name: 'issue:close',
+  command: ['issue', 'close'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [
+    { name: 'comment', type: 'string' },
+    { name: 'reason', type: 'string' },
+  ],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 60,
+  hostUser: true,
+  appUser: true,
+};
+
+// GitHub: PATCH /repos/{owner}/{repo}/issues/{issue_number}
+const ISSUE_REOPEN: GhAction = {
+  name: 'issue:reopen',
+  command: ['issue', 'reopen'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [{ name: 'comment', type: 'string' }],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 60,
+  hostUser: true,
+  appUser: true,
+};
+
 // GitHub: GET /repos/{owner}/{repo}/actions/runs/{run_id}
 const RUN_VIEW: GhAction = {
   name: 'run:view',
@@ -318,12 +356,15 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:create': PR_CREATE,
   'pr:edit': PR_EDIT,
   'pr:close': PR_CLOSE,
+  'pr:reopen': PR_REOPEN,
   'pr:comment': PR_COMMENT,
   'pr:review': PR_REVIEW,
   'pr:review-by-id': PR_REVIEW_BY_ID,
   'issue:create': ISSUE_CREATE,
   'issue:edit': ISSUE_EDIT,
   'issue:comment': ISSUE_COMMENT,
+  'issue:close': ISSUE_CLOSE,
+  'issue:reopen': ISSUE_REOPEN,
   'run:view': RUN_VIEW,
   'run:list': RUN_LIST,
 });
