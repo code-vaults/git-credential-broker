@@ -71,6 +71,7 @@ export function parseArgs(argv: readonly string[], options: ParseArgsOptions = {
     const equals = argument.indexOf('=');
     if (equals >= 0) {
       const name = argument.slice(2, equals);
+      if (booleans.has(name)) fail(`--${name} does not take a value`);
       collected.set(name, [...(collected.get(name) ?? []), argument.slice(equals + 1)]);
       continue;
     }

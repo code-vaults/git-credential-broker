@@ -1531,6 +1531,14 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(result.stdout, /Usage: gcb gh/);
   });
 
+  it('refuses an equals value on a boolean flag', () => {
+    for (const flag of ['--request-changes=true', '--approve=yes', '--review-comment=1']) {
+      const result = cli(['--number', '7', flag, '--body', 'review text', '--repo', 'acme/widget']);
+      assert.equal(result.status, 1, flag);
+      assert.match(result.stderr, /does not take a value/u);
+    }
+  });
+
   it('refuses unknown options, including removed merge flags', () => {
     for (const flag of [['--merge'], ['-merge'], ['--merge-xxx'], ['--method', 'squash'], ['--method-xxx', 'squash'], ['--xafajbsfbafabsjkf']]) {
       const result = cli([...base, ...flag, '--title', 'a title']);
