@@ -61,6 +61,14 @@ describe('gcb gh', () => {
     assert.doesNotMatch(unconfigured.stderr, /unknown gh action|needs --title/u);
   });
 
+  it('refuses a repository option with no parsed value', async () => {
+    for (const flag of ['--repo', '--R']) {
+      const result = await runClient(['gh', 'pr', 'close', '7', flag, '--']);
+      assert.equal(result.status, 1, flag);
+      assert.match(result.stderr, /--repo needs a value; refusing to fall back to the checkout/u);
+    }
+  });
+
   it('refuses --body together with --body-file', async () => {
     const result = await runGhCli(['pr', 'comment', '7', '--body', 'x', '--body-file', 'f', '--repo', 'acme/widget']);
     assert.equal(result.status, 1);

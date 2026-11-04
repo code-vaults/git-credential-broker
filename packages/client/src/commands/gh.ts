@@ -184,8 +184,10 @@ function extractAsUser(rawRest: readonly string[]): { rest: string[]; asUser: bo
 function hasRepoOption(argv: readonly string[]): boolean {
   for (const argument of argv) {
     if (argument === '--') return false;
-    if (argument === '--repo' || argument === '-repo' || argument === '-R') return true;
-    if (/^--?repo=/.test(argument) || /^-R=/.test(argument)) return true;
+    const normalized = argument.replace(/^-(?=[A-Za-z])/, '--');
+    if (!normalized.startsWith('--')) continue;
+    const name = normalized.slice(2).split('=')[0];
+    if (name === 'repo' || name === 'R') return true;
   }
   return false;
 }
