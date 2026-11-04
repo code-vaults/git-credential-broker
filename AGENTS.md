@@ -212,7 +212,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   author instead — through the broker's authorized user token, or through the host broker.**
   Opening a pull request is a person action: use `gcb pr create --as-user` (broker's authorized
   person) by default, or `pr create --as-user <login>` for a specific host account; the latter writes
-  a request under `<git dir>/gcb/pr-requests` (shared with the host, untracked) for `gcb host`.
+  a request under `<git dir>/gcb/host-broker` (shared with the host, untracked) for `gcb host`.
   A plain `gcb pr create` (app identity) is the exception, only when the operator explicitly asks for
   an App-authored PR; automated reviewers may skip those. The flag-only `gcb pr --as-user` form also
   opens with `--head/--title`, and covers review, reply, PR edit, review-comment edit/comment and

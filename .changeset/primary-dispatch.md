@@ -10,4 +10,4 @@ body from standard input, matching `gh`. `gcb gh` accepts both `--as-user` forms
 actions, and a login for the catalogued action through the host broker. The host request carries the action
 name and typed values; the broker rebuilds argv from the catalog.
 
-The host-broker channel is named consistently now: `GCB_HOST_TIMEOUT_MS` replaces `GCB_OPENER_TIMEOUT_MS`, the marker file is `host-broker.json`, and the core helpers are `readHostBroker`/`writeHostBroker`/`clearHostBroker`. Client and host must be upgraded together.
+The host-broker channel is named consistently now: `GCB_HOST_TIMEOUT_MS` replaces `GCB_OPENER_TIMEOUT_MS`, the marker file is `host-broker.json`, the channel directory is `gcb/host-broker`, and the core helpers are `readHostBroker`/`writeHostBroker`/`clearHostBroker`. Client and host must be upgraded together.

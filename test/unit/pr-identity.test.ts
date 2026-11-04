@@ -73,7 +73,7 @@ describe('gcb pr identity flags', () => {
         assert.equal(result.status, 1, spelling.join(' '));
         assert.match(result.stderr, /cannot be both bare and given a login/u);
         assert.equal(
-          fs.existsSync(path.join(repo.root, '.git', 'gcb', 'pr-requests')),
+          fs.existsSync(path.join(repo.root, '.git', 'gcb', 'host-broker')),
           false,
           spelling.join(' '),
         );

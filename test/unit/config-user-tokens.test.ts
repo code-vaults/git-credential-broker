@@ -139,4 +139,4 @@ describe('the configured user tokens', () => {
 // file has no directory for the provider to derive `user.refresh` from, so the broker silently finds no
 // authorized token and falls back to the app. `authorize` writes beside the configuration in that case,
 // which is a different place. Until the provider is told where to look, such a deployment must use
-// `userTokens` or the host host broker.
+// `userTokens` or the host broker.

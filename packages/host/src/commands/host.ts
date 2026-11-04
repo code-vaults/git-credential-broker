@@ -171,7 +171,7 @@ fork, with the gh account each request names. The result is authored by a person
   -h, --help            Show this help
 
 The container asks for this by passing --as-user to \`pr\`. Requests are files under
-<git dir>/gcb/pr-requests, which is shared with the container and untracked by git
+<git dir>/gcb/host-broker, which is shared with the container and untracked by git
 — so the paths on the two sides never have to match: each writes and reads its own view of the same
 directory, and only the roots this process scans are host-side paths.
 `;

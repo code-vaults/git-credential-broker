@@ -29,7 +29,7 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { canonicalPath } from './paths.ts';
 
 /** The directory under the git directory that carries requests and answers. */
-export const CHANNEL_PATH = 'gcb/pr-requests';
+export const CHANNEL_PATH = 'gcb/host-broker';
 
 /** The file naming the running host broker. */
 export const HOST_BROKER_FILE = 'host-broker.json';
