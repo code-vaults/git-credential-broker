@@ -459,6 +459,27 @@ describe('createGithubAppProvider', () => {
       stub.calls.some((call) => call.method === 'DELETE' && call.url.endsWith('/installation/token')),
       'the minted token is revoked',
     );
+
+    // A failed revoke must ride on the refusal: the minted token outlives the error it caused.
+    const unlucky = createStubFetch({
+      installations: [{ id: 42, account: { login: 'Acme' } }],
+      nowMs,
+      appPermissions: permissions,
+      installationPermissions: permissions,
+      revokeStatus: 500,
+    });
+    await assert.rejects(
+      providerFor(unlucky, { permissions }).runAction!({
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        full: 'acme/widget',
+        action: 'issue:list',
+        values: { jq: '.' },
+        proxy: 'http://user:secret@proxy.example:8080',
+      }),
+      /could not be revoked/u,
+    );
   });
 
   it('runs an action with an action token and revokes it', async () => {

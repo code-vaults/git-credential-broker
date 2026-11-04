@@ -658,7 +658,8 @@ function pullRequestNumber(value: unknown): number | undefined {
         token = mintedToken;
         minted = true;
       }
-      let result: ActionRunResult;
+      let result: ActionRunResult = NO_RUN;
+      let refused: unknown;
       let warning: string | undefined;
       try {
         result = await runGhAction({
@@ -672,8 +673,8 @@ function pullRequestNumber(value: unknown): number | undefined {
           proxy: request.proxy,
         });
       } catch (error) {
-        if (error instanceof ProviderConfigError) throw error;
-        result = { ...NO_RUN, error: error instanceof Error ? error.message : String(error) };
+        if (error instanceof ProviderConfigError) refused = error;
+        else result = { ...NO_RUN, error: error instanceof Error ? error.message : String(error) };
       } finally {
         if (minted) {
           try {
@@ -701,6 +702,12 @@ function pullRequestNumber(value: unknown): number | undefined {
             warning = REVOKE_WARNING;
           }
         }
+      }
+      // A refusal leaves after the finally, so the revoke failure rides on it instead of vanishing:
+      // the caller has to know a minted token outlives the error it is reading.
+      if (refused instanceof ProviderConfigError) {
+        if (warning !== undefined) refused.message = `${refused.message} (${warning})`;
+        throw refused;
       }
       return { ...result, tokenFingerprint: tokenFingerprint(token), ...(warning === undefined ? {} : { warning }) };
     },
