@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { runBounded, runHostBroker } from '../../packages/host/src/commands/host.ts';
+import { tryRunAsync } from '../common/run.ts';
 import { channelDir, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 
 describe('the host broker, once', () => {
@@ -592,8 +593,8 @@ describe('the host action route', () => {
     }
   });
 
-  it('runs jq actions without the broker environment', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-broker-jq-env-'));
+  it('keeps a GH_TOKEN login in a temp config for the action, then removes it', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-jq-token-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -602,10 +603,14 @@ describe('the host action route', () => {
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\nprintf "TOKEN=%s\\nCONFIG=%s\\n" "$GH_TOKEN" "$GH_CONFIG_DIR"\n',
+      '#!/bin/sh\nprintf "TOKEN=%s\\nCONFIG=%s\\n" "$GH_TOKEN" "$GH_CONFIG_DIR"\ncat "$GH_CONFIG_DIR/hosts.yml"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
+    const env: NodeJS.ProcessEnv = { ...process.env, HOME: join(root, 'home'), GH_TOKEN: 'host-secret' };
+    for (const key of ['GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GH_CONFIG_DIR', 'GH_HOST']) {
+      delete env[key];
+    }
     try {
       const id = writeRequest(dir, {
         kind: 'action',
@@ -614,10 +619,29 @@ describe('the host action route', () => {
         values: { jq: '.', limit: 1 },
         proxy: null,
       });
-      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      const result = await tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          join(process.cwd(), 'packages/host/bin/gcb.js'),
+          'host',
+          '--repo',
+          repo,
+          '--command',
+          command,
+          '--config',
+          config,
+          '--once',
+        ],
+        { cwd: process.cwd(), env, timeoutMs: 10_000 },
+      );
+      assert.equal(result.status, 0, result.stderr);
       const stdout = readResult(dir, id)?.stdout ?? '';
       assert.match(stdout, /^TOKEN=\n/u);
-      assert.match(stdout, /CONFIG=.+\/gh\n/u);
+      const match = /^CONFIG=(.+)$/mu.exec(stdout);
+      assert.ok(match?.[1], stdout);
+      assert.match(stdout, /oauth_token: host-secret/u);
+      assert.equal(existsSync(match[1]), false, 'the temporary config is removed after the action');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

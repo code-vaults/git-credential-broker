@@ -592,48 +592,48 @@ async function openOne(
         : { env: forkEnv(request.proxy, request.account, host), cleanup: (): void => {} };
       const actionEnv = prepared.env;
       try {
-      if (request.values['jq'] !== undefined && proxyHasCredentials(actionEnv)) {
-        return { error: '--jq cannot run while the proxy URL contains credentials; use --json instead' };
-      }
-      const deadline = Date.now() + action.timeoutSeconds * 1_000;
-      if (action.target === 'issue') {
-        try {
-          buildGhArgv(request.action, request.values, request.repo);
-        } catch (error) {
-          return { error: (error as Error).message };
+        if (request.values['jq'] !== undefined && proxyHasCredentials(actionEnv)) {
+          return { error: '--jq cannot run while the proxy URL contains credentials; use --json instead' };
         }
-        const number = Number(request.values['number']);
-        if (!Number.isSafeInteger(number) || number <= 0) {
-          return { error: `${String(number)} is not an issue number` };
+        const deadline = Date.now() + action.timeoutSeconds * 1_000;
+        if (action.target === 'issue') {
+          try {
+            buildGhArgv(request.action, request.values, request.repo);
+          } catch (error) {
+            return { error: (error as Error).message };
+          }
+          const number = Number(request.values['number']);
+          if (!Number.isSafeInteger(number) || number <= 0) {
+            return { error: `${String(number)} is not an issue number` };
+          }
+          const probe = await runBounded(
+            command,
+            [...extra, 'api', `repos/${request.repo}/issues/${String(number)}`, '--jq', '.pull_request != null'],
+            {
+              cwd: repo,
+              env: actionEnv,
+              timeoutMs: Math.max(1, deadline - Date.now()),
+            },
+          );
+          if (probe.code !== 0) {
+            return { error: probe.stderr.trim() || 'could not verify the issue target' };
+          }
+          if (probe.stdout.trim() === 'true') {
+            return { error: `#${String(number)} is a pull request, not an issue` };
+          }
         }
-        const probe = await runBounded(
-          command,
-          [...extra, 'api', `repos/${request.repo}/issues/${String(number)}`, '--jq', '.pull_request != null'],
-          {
+        const body = typeof request.values['body'] === 'string' ? request.values['body'] : undefined;
+        const invoke = async (bodyFile?: string): Promise<HostResult> => {
+          const argv = buildGhArgv(request.action, request.values, request.repo, bodyFile);
+          const result = await runBounded(command, [...extra, ...argv], {
             cwd: repo,
             env: actionEnv,
             timeoutMs: Math.max(1, deadline - Date.now()),
-          },
-        );
-        if (probe.code !== 0) {
-          return { error: probe.stderr.trim() || 'could not verify the issue target' };
-        }
-        if (probe.stdout.trim() === 'true') {
-          return { error: `#${String(number)} is a pull request, not an issue` };
-        }
-      }
-      const body = typeof request.values['body'] === 'string' ? request.values['body'] : undefined;
-      const invoke = async (bodyFile?: string): Promise<HostResult> => {
-        const argv = buildGhArgv(request.action, request.values, request.repo, bodyFile);
-        const result = await runBounded(command, [...extra, ...argv], {
-          cwd: repo,
-          env: actionEnv,
-          timeoutMs: Math.max(1, deadline - Date.now()),
-          writeCaveat: Object.values(action.permissions).some((permission) => permission === 'write'),
-        });
-        return result;
-      };
-      return body === undefined ? invoke() : withBodyFile(body, invoke);
+            writeCaveat: Object.values(action.permissions).some((permission) => permission === 'write'),
+          });
+          return result;
+        };
+        return await (body === undefined ? invoke() : withBodyFile(body, invoke));
       } finally {
         prepared.cleanup();
       }
