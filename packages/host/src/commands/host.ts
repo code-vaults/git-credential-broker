@@ -10,9 +10,10 @@
  * It has no other power. It cannot push, merge, close or read anything, and it never runs a shell: the
  * program it calls is configuration, and it is called with an argument list built here.
  */
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
+import { StringDecoder } from 'node:string_decoder';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -49,12 +50,97 @@ const CREATE_TIMEOUT_MS = 120_000;
 /** Per-stream byte budget for a host action, small enough that JSON escaping stays under readResult's cap. */
 const HOST_ACTION_OUTPUT_BYTES = 48_000;
 
-/** Keep one output stream within its byte budget, marking the cut. */
-function clampOutput(text: string): string {
-  if (Buffer.byteLength(text) <= HOST_ACTION_OUTPUT_BYTES) return text;
-  const suffix = '\n[output truncated]\n';
-  const keep = HOST_ACTION_OUTPUT_BYTES - Buffer.byteLength(suffix);
-  return Buffer.from(text).subarray(0, keep).toString('utf8') + suffix;
+/** What one bounded action process produced. */
+interface BoundedResult {
+  readonly stdout: string;
+  readonly stderr: string;
+  readonly code: number;
+}
+
+/**
+ * Run an action with streaming output caps.
+ *
+ * execFile's maxBuffer kills the child once a fixed buffer fills; a large diff or log would then be
+ * reported as a gh failure even though only the excess output is unusable. Read both streams to the
+ * end, keep the first bytes of each, and tell the caller where the cut is.
+ */
+function runBounded(
+  command: string,
+  args: readonly string[],
+  options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number },
+): Promise<BoundedResult> {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(command, [...args], {
+        cwd: options.cwd,
+        env: options.env,
+        shell: false,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      resolve({ stdout: '', stderr: (error as Error).message, code: 1 });
+      return;
+    }
+
+    const suffix = '\n[output truncated]\n';
+    const keep = HOST_ACTION_OUTPUT_BYTES - Buffer.byteLength(suffix);
+    const stdout = new StringDecoder('utf8');
+    const stderr = new StringDecoder('utf8');
+    let out = '';
+    let err = '';
+    let outBytes = 0;
+    let errBytes = 0;
+    let outCut = false;
+    let errCut = false;
+    let timedOut = false;
+    let settled = false;
+
+    const append = (decoder: StringDecoder, chunk: Buffer, stream: 'out' | 'err'): void => {
+      const used = stream === 'out' ? outBytes : errBytes;
+      if (used >= keep) {
+        if (stream === 'out') outCut = true;
+        else errCut = true;
+        return;
+      }
+      const piece = chunk.subarray(0, keep - used);
+      const text = decoder.write(piece);
+      if (stream === 'out') {
+        out += text;
+        outBytes += piece.length;
+        if (piece.length < chunk.length) outCut = true;
+      } else {
+        err += text;
+        errBytes += piece.length;
+        if (piece.length < chunk.length) errCut = true;
+      }
+    };
+
+    child.stdout?.on('data', (chunk: Buffer) => append(stdout, chunk, 'out'));
+    child.stderr?.on('data', (chunk: Buffer) => append(stderr, chunk, 'err'));
+    child.on('error', (error) => finish({ stdout: out, stderr: err || error.message, code: 1 }));
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, options.timeoutMs);
+
+    function finish(result: BoundedResult): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      out += stdout.end();
+      err += stderr.end();
+      if (outCut) out += suffix;
+      if (errCut) err += suffix;
+      if (timedOut && err === '') err = 'the action timed out';
+      resolve({ ...result, stdout: out, stderr: err });
+    }
+
+    child.on('close', (code, signal) => {
+      finish({ stdout: out, stderr: err, code: timedOut || signal !== null ? 1 : (code ?? 1) });
+    });
+  });
 }
 
 /** Usage text for `host`. */
@@ -436,23 +522,12 @@ async function openOne(
       const body = typeof request.values['body'] === 'string' ? request.values['body'] : undefined;
       const invoke = async (bodyFile?: string): Promise<HostOpenResult> => {
         const argv = buildGhArgv(request.action, request.values, request.repo, bodyFile);
-        try {
-          const { stdout, stderr } = await run(command, [...extra, ...argv], {
-            cwd: repo,
-            timeout: action.timeoutSeconds * 1_000,
-            maxBuffer: 1 << 20,
-            env: forkEnv(request.proxy, request.account, host),
-          });
-          return { stdout: clampOutput(stdout), stderr: clampOutput(stderr), code: 0 };
-        } catch (error) {
-          const failure = error as { stdout?: string; stderr?: string; message?: string; code?: number | string };
-          const stderr = failure.stderr?.trim() ? failure.stderr : (failure.message ?? '');
-          return {
-            stdout: clampOutput(failure.stdout ?? ''),
-            stderr: clampOutput(stderr),
-            code: typeof failure.code === 'number' ? failure.code : 1,
-          };
-        }
+        const result = await runBounded(command, [...extra, ...argv], {
+          cwd: repo,
+          env: forkEnv(request.proxy, request.account, host),
+          timeoutMs: action.timeoutSeconds * 1_000,
+        });
+        return result;
       };
       return body === undefined ? invoke() : withBodyFile(body, invoke);
     });

@@ -92,10 +92,19 @@ async function exchange(
     fail((error as Error).message);
   }
   const configured = Number(process.env['GCB_OPENER_TIMEOUT_MS']);
-  if (Number.isInteger(configured) && configured > 0) timeoutMs = configured;
+  if (Number.isInteger(configured) && configured > 0) {
+    timeoutMs = configured;
+    if (claimedTimeoutMs !== undefined) claimedTimeoutMs = Math.min(claimedTimeoutMs, configured);
+  }
   let answer = await waitForAnswer(dir, id, timeoutMs, claimedTimeoutMs);
   if (answer === undefined) answer = await waitForResult(dir, id, 300, 50);
-  if (answer === undefined) fail(noAnswerMessage(dir, id, noun, timeoutMs));
+  if (answer === undefined) {
+    const waited =
+      claimedTimeoutMs !== undefined && existsSync(join(dir, `${id}.json.working`))
+        ? claimedTimeoutMs
+        : timeoutMs;
+    fail(noAnswerMessage(dir, id, noun, waited));
+  }
   removeResult(dir, id);
   return answer;
 }

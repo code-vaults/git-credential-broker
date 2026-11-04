@@ -482,6 +482,36 @@ describe('the host action route', () => {
       assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
       assert.ok(argv.includes('--body-file'));
       assert.ok(argv[argv.indexOf('--body-file') + 1]?.endsWith('body.md'));
+
+      writeFileSync(command, '#!/bin/sh\nyes a | head -c 60000\n', 'utf8');
+      const largeId = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'acme/widget',
+        values: { number: 7 },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      const large = readResult(dir, largeId);
+      assert.match(large?.stdout ?? '', /\[output truncated\]/u);
+      assert.ok(Buffer.byteLength(large?.stdout ?? '') <= 48_000);
+
+      const deniedId = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'other/repo',
+        values: { number: 7 },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.match(readResult(dir, deniedId)?.error ?? '', /allowlist/u);
+
+      const unknownId = writeRequest(dir, {
+        kind: 'action',
+        action: 'issue:view',
+        repo: 'acme/widget',
+        values: { number: 7 },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.match(readResult(dir, unknownId)?.error ?? '', /unknown gh action/u);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
