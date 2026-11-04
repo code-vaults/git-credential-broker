@@ -1,5 +1,5 @@
 /**
- * The opener's own command path, driven end to end with a program that is not gh.
+ * The host broker's own command path, driven end to end with a program that is not gh.
  *
  * The channel helpers are tested elsewhere; what this covers is the part that had none: a request
  * arriving, the argument list built for the program, the answer written back, and the two properties the
@@ -15,7 +15,7 @@ import { after, before, describe, it } from 'node:test';
 import { runHostBroker } from '../../packages/host/src/commands/host.ts';
 import { channelDir, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 
-describe('the opener, once', () => {
+describe('the host broker, once', () => {
   let root = '';
   let repo = '';
   let dir = '';
@@ -128,7 +128,7 @@ describe('the host reply route', () => {
   });
 });
 
-describe('the opener explicit-repository route', () => {
+describe('the host broker explicit-repository route', () => {
   it('passes an explicit repository to gh for a pull request too', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-pr-repo-'));
     const repo = join(root, 'checkout');
@@ -180,7 +180,7 @@ function forkConfig(root: string, allow: string, host = 'github.com'): string {
   return path;
 }
 
-describe('the opener fork route', () => {
+describe('the host broker fork route', () => {
   it('runs gh repo fork with the repository and returns its URL', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-fork-'));
     const repo = join(root, 'checkout');
@@ -570,7 +570,7 @@ describe('a reply outside the allowlist', () => {
 
 describe('a claim that someone else holds', () => {
   it('does not act on the request, does not answer it, and does not remove the claim', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'opener-claim-'));
+    const root = mkdtempSync(join(tmpdir(), 'host broker-claim-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
@@ -594,7 +594,7 @@ describe('a claim that someone else holds', () => {
   });
 });
 
-describe('the opener account selection', () => {
+describe('the host broker account selection', () => {
   it('uses ~/.config/gh-<login> and clears inherited tokens', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-account-'));
     const repo = join(root, 'checkout');
@@ -703,7 +703,7 @@ describe('the opener account selection', () => {
   });
 });
 
-describe('the opener proxy choice', () => {
+describe('the host broker proxy choice', () => {
   it('applies, keeps or clears the proxy environment per request', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-proxy-'));
     const repo = join(root, 'checkout');

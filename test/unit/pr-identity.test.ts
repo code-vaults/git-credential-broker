@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import { sleep, tryRunAsync } from '../common/run.ts';
-import { channelDir, listRequests, readRequest, writeOpener, writeResult } from '../../packages/core/src/host-request.ts';
+import { channelDir, listRequests, readRequest, writeHostBroker, writeResult } from '../../packages/core/src/host-request.ts';
 
 const CLIENT_BIN = fileURLToPath(new URL('../../packages/client/bin/gcb.js', import.meta.url));
 
@@ -121,7 +121,7 @@ describe('gcb pr identity flags', () => {
     }
   });
 
-  it('routes pr create as-user=login spellings to the opener', async () => {
+  it('routes pr create as-user=login spellings to the host broker', async () => {
     const repo = checkout();
     try {
       for (const spelling of ['--as-user=alice', '-as-user=alice']) {
@@ -282,7 +282,7 @@ describe('gcb pr identity flags', () => {
     const repo = checkout();
     const dir = channelDir(path.join(repo.root, '.git'));
     try {
-      writeOpener(dir, { pid: process.pid, kinds: ['reply'] });
+      writeHostBroker(dir, { pid: process.pid, kinds: ['reply'] });
       const pending = tryRunAsync(
         process.execPath,
         [
@@ -332,7 +332,7 @@ describe('gcb pr identity flags', () => {
     const repo = checkout();
     const dir = channelDir(path.join(repo.root, '.git'));
     try {
-      writeOpener(dir, { pid: process.pid, kinds: ['pull-request'] });
+      writeHostBroker(dir, { pid: process.pid, kinds: ['pull-request'] });
       const pending = tryRunAsync(
         process.execPath,
         [
@@ -374,7 +374,7 @@ describe('gcb pr identity flags', () => {
     execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widget.git'], { cwd: repo.root });
     const dir = channelDir(path.join(repo.root, '.git'));
     try {
-      writeOpener(dir, { pid: process.pid, kinds: ['pull-request'] });
+      writeHostBroker(dir, { pid: process.pid, kinds: ['pull-request'] });
       const pending = tryRunAsync(
         process.execPath,
         [
@@ -412,7 +412,7 @@ describe('gcb pr identity flags', () => {
     const repo = checkout();
     const dir = channelDir(path.join(repo.root, '.git'));
     try {
-      writeOpener(dir, { pid: process.pid, kinds: ['review'] });
+      writeHostBroker(dir, { pid: process.pid, kinds: ['review'] });
       const pending = tryRunAsync(
         process.execPath,
         [
@@ -456,7 +456,7 @@ describe('gcb pr identity flags', () => {
     const repo = checkout();
     const dir = channelDir(path.join(repo.root, '.git'));
     try {
-      writeOpener(dir, { pid: process.pid, kinds: ['edit'] });
+      writeHostBroker(dir, { pid: process.pid, kinds: ['edit'] });
       const pending = tryRunAsync(
         process.execPath,
         [

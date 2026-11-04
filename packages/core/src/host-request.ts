@@ -1,5 +1,5 @@
 /**
- * The channel between this side and a host-side opener.
+ * The channel between this side and a host-side host broker.
  *
  * Creating a pull request or issue is the operation that has to happen as a person rather than as the
  * app: content authored by the app's bot is something automated reviewers are entitled to skip, and
@@ -31,11 +31,11 @@ import { canonicalPath } from './paths.ts';
 /** The directory under the git directory that carries requests and answers. */
 export const CHANNEL_PATH = 'gcb/pr-requests';
 
-/** The file naming the running opener. */
-export const OPENER_FILE = 'opener.json';
+/** The file naming the running host broker. */
+export const HOST_BROKER_FILE = 'host-broker.json';
 
 /** How long a caller waits for an answer. */
-// Longer than the opener's own program timeout (CREATE_TIMEOUT_MS, 120s) plus the interval at which it
+// Longer than the host broker's own program timeout (CREATE_TIMEOUT_MS, 120s) plus the interval at which it
 // notices a request, because the caller is waiting for an answer to work that has not started yet.
 export const ANSWER_TIMEOUT_MS = 180_000;
 
@@ -63,9 +63,9 @@ interface HostRequestFields {
   readonly repo?: string;
   readonly title: string;
   readonly body: string;
-  /** Egress for the opener's gh call: absent = its environment, null = direct, string = proxy URL. */
+  /** Egress for the host broker's gh call: absent = its environment, null = direct, string = proxy URL. */
   readonly proxy?: string | null;
-  /** GitHub login whose `~/.config/gh-<login>` the opener uses; absent = its own gh config. */
+  /** GitHub login whose `~/.config/gh-<login>` the host broker uses; absent = its own gh config. */
   readonly account?: string;
   readonly session?: string;
   readonly pid?: number;
@@ -156,7 +156,7 @@ export type HostRequest =
   | HostActionRequest
   | HostForkRequest;
 
-/** What the opener answered. */
+/** What the host broker answered. */
 export interface HostOpenResult {
   readonly number?: number;
   readonly url?: string;
@@ -166,8 +166,8 @@ export interface HostOpenResult {
   readonly error?: string;
 }
 
-/** The running opener, as it advertises itself. */
-export interface OpenerInfo {
+/** The running host broker, as it advertises itself. */
+export interface HostBrokerInfo {
   readonly pid?: number;
   readonly command?: string;
   readonly startedAt?: string;
@@ -245,7 +245,7 @@ const SKIP = new Set(['.git', 'node_modules', '@eaDir', '#recycle', '$RECYCLE.BI
 /**
  * Find the checkouts under a root.
  *
- * The opener is meant to be started once for a machine, so it is given roots rather than one
+ * The host broker is meant to be started once for a machine, so it is given roots rather than one
  * repository: every checkout below them is served, including ones created later. Dotted
  * directories are *not* skipped — a repository whose name begins with a dot is a checkout like any
  * other. A directory holding a checkout is not descended into, which keeps the walk cheap.
@@ -264,7 +264,7 @@ export function discoverCheckouts(root: string, maxDepth = 4): { repo: string; d
     const gitDir = gitDirAt(current);
     if (gitDir !== undefined) {
       // A `gitdir:` pointer is written by whoever has the checkout, which is the container. Serving a
-      // channel at a path it names would let it choose where the opener creates files, and running `gh`
+      // channel at a path it names would let it choose where the host broker creates files, and running `gh`
       // there would let it choose which repository that checkout means. A worktree's pointer stays under
       // the same root.
       if (canonicalPath(gitDir).startsWith(`${realRoot}${sep}`)) {
@@ -299,35 +299,35 @@ export function channelDir(gitDir: string): string {
 }
 
 /**
- * Read the opener's marker.
+ * Read the host broker's marker.
  *
  * @param dir - the channel directory.
- * @returns what the opener said about itself, or `undefined` when none is running.
+ * @returns what the host broker said about itself, or `undefined` when none is running.
  */
-export function readOpener(dir: string): OpenerInfo | undefined {
+export function readHostBroker(dir: string): HostBrokerInfo | undefined {
   // Through readJson, which takes lstat and a size: a FIFO here would block open(2) forever, and it would
-  // block synchronously, so one such file stops the opener serving every root with nothing in the log.
-  const parsed = readJson(join(dir, OPENER_FILE));
-  return typeof parsed === 'object' && parsed !== null ? (parsed as OpenerInfo) : undefined;
+  // block synchronously, so one such file stops the host broker serving every root with nothing in the log.
+  const parsed = readJson(join(dir, HOST_BROKER_FILE));
+  return typeof parsed === 'object' && parsed !== null ? (parsed as HostBrokerInfo) : undefined;
 }
 
 /**
- * Write the opener's marker.
+ * Write the host broker's marker.
  *
  * @param dir - the channel directory.
  * @param info - what to advertise.
  */
-export function writeOpener(dir: string, info: OpenerInfo): void {
-  writeJsonAtomic(join(dir, OPENER_FILE), info);
+export function writeHostBroker(dir: string, info: HostBrokerInfo): void {
+  writeJsonAtomic(join(dir, HOST_BROKER_FILE), info);
 }
 
 /**
- * Remove the opener's marker.
+ * Remove the host broker's marker.
  *
  * @param dir - the channel directory.
  */
-export function clearOpener(dir: string): void {
-  rmSync(join(dir, OPENER_FILE), { force: true });
+export function clearHostBroker(dir: string): void {
+  rmSync(join(dir, HOST_BROKER_FILE), { force: true });
 }
 
 /**
@@ -454,7 +454,7 @@ export function requestProblems(request: HostRequest): string[] {
  * @param dir - the channel directory.
  * @param request - what to ask for.
  * @returns the identifier the answer will carry.
- * @throws {Error} when the request is not one the opener would accept.
+ * @throws {Error} when the request is not one the host broker would accept.
  */
 export function writeRequest(dir: string, request: HostRequest): string {
   const problems = requestProblems(request);
@@ -611,13 +611,13 @@ export function listRequests(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { withFileTypes: true })
     // Only regular files. The container writes this directory, so anything else here — a directory, a FIFO,
-    // a symlink to a host file — is aimed at the opener rather than written by it.
+    // a symlink to a host file — is aimed at the host broker rather than written by it.
     .filter(
       (entry) =>
         entry.isFile() &&
         entry.name.endsWith('.json') &&
         !entry.name.endsWith('.result.json') &&
-        entry.name !== OPENER_FILE,
+        entry.name !== HOST_BROKER_FILE,
     )
     .map((entry) => entry.name.slice(0, -'.json'.length))
     .sort();
@@ -628,7 +628,7 @@ export function listRequests(dir: string): string[] {
  *
  * @param dir - the channel directory.
  * @param id - the identifier of the request it answers.
- * @returns the answer, or `undefined` while the opener has not replied.
+ * @returns the answer, or `undefined` while the host broker has not replied.
  */
 export function readResult(dir: string, id: string): HostOpenResult | undefined {
   const parsed = readJson(join(dir, `${id}.result.json`)) as Partial<HostOpenResult> | undefined;
@@ -665,7 +665,7 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
     return undefined;
   }
   const request = readJson(claimed) as HostRequest | undefined;
-  // The channel is written by the container, so the shape is not a given: the opener's own checks run on
+  // The channel is written by the container, so the shape is not a given: the host broker's own checks run on
   // this next, and a request missing a string field would make them index undefined and take it down.
   const shaped =
     request !== undefined &&
@@ -723,7 +723,7 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
  */
 export function removeRequest(dir: string, id: string): void {
   // Recursive: a directory here is not a request, and it must not be able to make this throw. The claimed
-  // copy goes too: only the opener holding it reaches a removal, and only after answering or refusing, so
+  // copy goes too: only the host broker holding it reaches a removal, and only after answering or refusing, so
   // this is the release — without it every request left a copy of itself, body and all, in the git
   // directory, and nothing ever removed it.
   rmSync(join(dir, `${id}.json`), { force: true, recursive: true });
@@ -795,14 +795,14 @@ function writeJsonAtomic(file: string, value: unknown): void {
   const exclusive = (path: string) => writeFileSync(path, payload, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
   try {
     // wx is the whole protection: the name is predictable and the container can write this directory, so
-    // without O_EXCL a symlink here would choose which host file the opener — running as a person — writes.
+    // without O_EXCL a symlink here would choose which host file the host broker — running as a person — writes.
     exclusive(temp);
   } catch (error) {
     if ((error as { code?: string }).code !== 'EEXIST') throw error;
     rmSync(temp, { force: true, recursive: true });
     exclusive(temp);
   }
-  // A directory where the destination belongs would make the rename throw and take the opener with it.
+  // A directory where the destination belongs would make the rename throw and take the host broker with it.
   try {
     if (!lstatSync(file).isFile()) rmSync(file, { force: true, recursive: true });
   } catch {

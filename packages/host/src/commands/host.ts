@@ -19,15 +19,15 @@ import { promisify } from 'node:util';
 
 import {
   channelDir,
-  clearOpener,
+  clearHostBroker,
   discoverCheckouts,
   findGitDir,
   listRequests,
-  readOpener,
+  readHostBroker,
   claimRequest,
   removeRequest,
   requestProblems,
-  writeOpener,
+  writeHostBroker,
   writeResult,
   HOST,
   REPOSITORY,
@@ -76,6 +76,7 @@ function runBounded(
         cwd: options.cwd,
         env: options.env,
         shell: false,
+        detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
     } catch (error) {
@@ -122,7 +123,13 @@ function runBounded(
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGKILL');
+      if (child.pid !== undefined) {
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+        } catch {
+          child.kill('SIGKILL');
+        }
+      }
     }, options.timeoutMs);
 
     function finish(result: BoundedResult): void {
@@ -186,19 +193,6 @@ export function pullRequestUrl(output: string): { number: number; url: string } 
 }
 
 /**
- * Pull the issue number and URL out of the program's output.
- *
- * @param output - the program's standard output.
- * @returns the number and URL, or `undefined`.
- */
-export function issueUrl(output: string): { number: number; url: string } | undefined {
-  const match = /https:\/\/[^\s]+\/issues\/(\d+)/.exec(output);
-  const digits = match?.[1];
-  if (!match || digits === undefined) return undefined;
-  return { number: Number(digits), url: match[0] };
-}
-
-/**
  * Run the `host` command.
  *
  * @param argv - arguments after the command name.
@@ -254,8 +248,8 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   /** Advertise a channel, without rewriting the marker on every sweep. */
   const advertise = (dir: string): void => {
     advertised.add(dir);
-    if (readOpener(dir)?.pid !== process.pid) {
-      writeOpener(dir, {
+    if (readHostBroker(dir)?.pid !== process.pid) {
+      writeHostBroker(dir, {
         pid: process.pid,
         command,
         startedAt: new Date().toISOString(),
@@ -269,7 +263,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   process.on('exit', () => {
     for (const dir of advertised) {
       try {
-        if (readOpener(dir)?.pid === process.pid) clearOpener(dir);
+        if (readHostBroker(dir)?.pid === process.pid) clearHostBroker(dir);
       } catch {
         // Nothing useful is left to do while exiting.
       }

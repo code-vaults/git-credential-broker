@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, it } from 'node:test';
 
 import { startBroker } from '../../packages/host/src/broker.ts';
-import { channelDir, listRequests, readRequest, writeOpener, writeResult } from '../../packages/core/src/host-request.ts';
+import { channelDir, listRequests, readRequest, writeHostBroker, writeResult } from '../../packages/core/src/host-request.ts';
 import { tryRunAsync, type RunResult } from '../common/run.ts';
 import type { AuditSink, BrokerConfig, Provider, StaticHostConfig } from '../../packages/core/src/types.ts';
 
@@ -110,12 +110,60 @@ describe('gcb gh', () => {
     }
   });
 
+  it('times out a claimed action without reporting it lost', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-claim-'));
+    fs.mkdirSync(path.join(root, '.git'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(path.join(root, '.git'));
+    writeHostBroker(dir, { pid: process.pid, kinds: ['action'] });
+    try {
+      const pending = tryRunAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          CLIENT_BIN,
+          'issue',
+          'comment',
+          '7',
+          '--body',
+          'x',
+          '--as-user',
+          'alice',
+          '--repo',
+          'acme/widget',
+        ],
+        {
+          cwd: root,
+          env: { ...process.env, GCB_HOST_TIMEOUT_MS: '1000' },
+          timeoutMs: 5_000,
+        },
+      );
+      let claimed = false;
+      for (let attempt = 0; attempt < 200 && !claimed; attempt += 1) {
+        const [id] = listRequests(dir);
+        if (id !== undefined) {
+          fs.renameSync(path.join(dir, `${id}.json`), path.join(dir, `${id}.json.working`));
+          claimed = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      assert.equal(claimed, true);
+      const result = await pending;
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /did not answer/u);
+      assert.match(result.stderr, /within 1s/u);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('runs a login action through the host broker', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-host-action-'));
     fs.mkdirSync(path.join(root, '.git'), { recursive: true });
     fs.writeFileSync(path.join(root, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     const dir = channelDir(path.join(root, '.git'));
-    writeOpener(dir, { pid: process.pid, kinds: ['action'] });
+    writeHostBroker(dir, { pid: process.pid, kinds: ['action'] });
     try {
       const pending = runGhCli(
         ['issue', 'comment', '7', '--body', 'x', '--as-user', 'alice', '--repo', 'acme/widget'],

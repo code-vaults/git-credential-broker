@@ -11,7 +11,7 @@ import {
   ANSWER_TIMEOUT_MS,
   channelDir,
   findGitDir,
-  readOpener,
+  readHostBroker,
   readResult,
   removeResult,
   requestProblems,
@@ -70,15 +70,15 @@ async function exchange(
   const gitDir = findGitDir(process.cwd());
   if (gitDir === undefined) fail('--as-user needs a git repository: run it from the checkout');
   const dir = channelDir(gitDir);
-  const opener = readOpener(dir);
-  if (opener === undefined) {
+  const hostBroker = readHostBroker(dir);
+  if (hostBroker === undefined) {
     fail(
       `no host broker is watching ${dir}\n` +
         '  start one on the host: gcb host --repo <that checkout>\n' +
         '  or drop --as-user to do it as the app instead',
     );
   }
-  if (needed !== undefined && !(Array.isArray(opener.kinds) && opener.kinds.includes(needed))) {
+  if (needed !== undefined && !(Array.isArray(hostBroker.kinds) && hostBroker.kinds.includes(needed))) {
     fail(`the host broker does not advertise ${needed} support; restart it from this gcb-host version`);
   }
 
@@ -88,7 +88,7 @@ async function exchange(
   } catch (error) {
     fail((error as Error).message);
   }
-  const configured = Number(process.env['GCB_OPENER_TIMEOUT_MS']);
+  const configured = Number(process.env['GCB_HOST_TIMEOUT_MS']);
   if (Number.isInteger(configured) && configured > 0) {
     timeoutMs = configured;
     if (claimedTimeoutMs !== undefined) claimedTimeoutMs = Math.min(claimedTimeoutMs, configured);
