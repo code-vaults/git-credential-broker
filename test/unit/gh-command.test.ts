@@ -528,6 +528,19 @@ describe('gcb gh', () => {
       assert.ok(result.stdout.endsWith('partial output\n'));
       assert.match(result.stderr, /output was truncated/);
       assert.match(result.stderr, /may have completed/);
+
+      const read = await runGhCli([
+        'pr',
+        'checks',
+        '7',
+        '--repo',
+        'acme/widget',
+        '--socket',
+        socketPath,
+      ]);
+      assert.equal(read.status, 1);
+      assert.match(read.stderr, /timed out/u);
+      assert.doesNotMatch(read.stderr, /may have completed/u);
     } finally {
       await broker.close();
       fs.rmSync(root, { recursive: true, force: true });

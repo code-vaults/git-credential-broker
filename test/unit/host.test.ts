@@ -98,9 +98,7 @@ describe('bounded action output', () => {
     assert.match(result.stderr, /timed out; a write may have completed/u);
     assert.ok(Buffer.byteLength(result.stderr) <= 48_000);
   });
-});
 
-describe('bounded action output', () => {
   it('omits the write caveat when writeCaveat is false', async () => {
     const result = await runBounded(
       process.execPath,

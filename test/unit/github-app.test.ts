@@ -434,6 +434,33 @@ describe('createGithubAppProvider', () => {
     }
   });
 
+  it('refuses jq with a credentialed proxy and still revokes the token', async () => {
+    const permissions = { issues: 'read' };
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'Acme' } }],
+      nowMs,
+      appPermissions: permissions,
+      installationPermissions: permissions,
+    });
+    const provider = providerFor(stub, { permissions });
+    await assert.rejects(
+      provider.runAction!({
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        full: 'acme/widget',
+        action: 'issue:list',
+        values: { jq: '.' },
+        proxy: 'http://user:secret@proxy.example:8080',
+      }),
+      /--jq cannot run while the proxy URL contains credentials/u,
+    );
+    assert.ok(
+      stub.calls.some((call) => call.method === 'DELETE' && call.url.endsWith('/installation/token')),
+      'the minted token is revoked',
+    );
+  });
+
   it('runs an action with an action token and revokes it', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'gcb-action-'));
     const gh = join(dir, 'gh');
