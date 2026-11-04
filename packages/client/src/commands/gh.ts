@@ -91,7 +91,7 @@ function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionSca
     'proxy',
     'no-proxy',
   ]);
-  const knownFlags = new Set([...allowed, 'help']);
+  const knownFlags = new Set([...allowed, 'help', 'as-user']);
 
   const rest: string[] = [];
   let missingValue: string | undefined;

@@ -118,9 +118,20 @@ describe('gcb gh', () => {
   });
 
   it('rejects a missing title before --as-user', async () => {
-    const result = await runClient(['gh', 'pr', 'edit', '1', '--title', '--as-user', '--repo', 'acme/widget']);
+    const result = await runClient([
+      'gh',
+      'pr',
+      'edit',
+      '1',
+      '--title',
+      '--as-user',
+      '--body',
+      'b',
+      '--repo',
+      'acme/widget',
+    ]);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /at least one of/u);
+    assert.match(result.stderr, /--title needs a value/u);
   });
 
   it('does not read -as-user as identity when it is a value', async () => {
