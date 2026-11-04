@@ -467,6 +467,14 @@ describe('gcb issue create --as-user', () => {
       assert.equal(commentTitle.status, 1);
       assert.match(commentTitle.stderr, /--title is only supported for issue edit/u);
 
+      const emptyLogin = await runClient(
+        ['issue', 'comment', '7', '--body', '   ', '--as-user', 'alice', '--repo', 'acme/widget'],
+        host.root,
+      );
+      assert.equal(emptyLogin.status, 1);
+      assert.match(emptyLogin.stderr, /a comment needs a body/u);
+      assert.deepEqual(requests(host.dir), [], 'the invalid request is not written');
+
       const emptyComment = await runClient(
         ['issue', 'comment', '7', '--body', '   ', '--as-user', '--repo', 'acme/widget'],
         host.root,
