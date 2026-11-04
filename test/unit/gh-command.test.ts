@@ -217,6 +217,23 @@ describe('gcb gh', () => {
     assert.match(result.stderr, /exactly one of/u);
   });
 
+  it('rejects an invalid login before reading stdin', async () => {
+    const result = await runClientWithOpenStdin([
+      'gh',
+      'issue',
+      'comment',
+      '7',
+      '--body-file',
+      '-',
+      '--as-user',
+      'not a login',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--as-user must be a GitHub login/u);
+  });
+
   it('rejects review conflicts before reading stdin', async () => {
     const result = await runClientWithOpenStdin([
       'gh',

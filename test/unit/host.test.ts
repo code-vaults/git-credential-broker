@@ -433,6 +433,32 @@ describe('the host action route', () => {
     }
   });
 
+  it('keeps an asynchronous spawn error in the result', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-spawn-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'acme/widget',
+        values: { number: 7 },
+      });
+      assert.equal(
+        await runHostBroker(['--repo', repo, '--command', join(root, 'missing-gh'), '--config', config, '--once']),
+        0,
+      );
+      const result = readResult(dir, id);
+      assert.equal(result?.code, 1);
+      assert.match(result?.stderr ?? '', /ENOENT|spawn/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('refuses a request the client already stopped waiting for', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-expired-'));
     const repo = join(root, 'checkout');

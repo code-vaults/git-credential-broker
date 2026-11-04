@@ -52,19 +52,6 @@ Environment
 
 Host commands such as init/stage/compose/diagnose are in gcb-host.`;
 
-const isAsUser = (argument: string): boolean =>
-  argument === '--as-user' || argument === '-as-user' || argument.startsWith('--as-user=') || argument.startsWith('-as-user=');
-
-const hasAsUser = (argv: readonly string[]): boolean => argv.some(isAsUser);
-
-/** Split at `--`; options before it, operands after it unchanged. */
-function splitTerminator(argv: readonly string[]): { options: readonly string[]; operands: readonly string[] } {
-  const terminator = argv.indexOf('--');
-  return terminator === -1
-    ? { options: argv, operands: [] }
-    : { options: argv.slice(0, terminator), operands: argv.slice(terminator) };
-}
-
 /** Ask the selected action's own scan, rather than a second interpretation of its argv. */
 async function actionAsksHelp(domain: string, sub: string | undefined, argv: readonly string[]): Promise<boolean> {
   if (sub === undefined || sub.startsWith('-')) {
@@ -93,7 +80,7 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
       if (sub === 'review' && rest.some((argument) => argument === '--id' || argument.startsWith('--id='))) {
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));
       }
-      if (sub === 'create' && hasAsUser(splitTerminator(rest).options)) {
+      if (sub === 'create' && (await import('./commands/gh.ts')).actionHasAsUser('pr:create', rest)) {
         // `pr create` is the catalogued action, but `--as-user` is the flag-only lifecycle's flag.
         // Accept the obvious spelling instead of making the caller discover that `create` must go.
         return (await import('./commands/pr.ts')).runPr(rest.slice(1));

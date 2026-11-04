@@ -141,6 +141,29 @@ describe('the primary dispatch seam', () => {
     assert.match(result.stderr, /unsupported primary "glab"/u);
   });
 
+  it('does not treat an -as-user title as the create identity', async () => {
+    const result = await tryRunAsync(
+      process.execPath,
+      [
+        '--conditions=development',
+        CLIENT_BIN,
+        'pr',
+        'create',
+        '--title',
+        '-as-user',
+        '--body',
+        'b',
+        '--head',
+        'h',
+        '--repo',
+        'acme/widget',
+      ],
+      { env: { ...process.env, GCB_PRIMARY: 'glab' }, timeoutMs: 5_000 },
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /unsupported primary "glab"/u);
+  });
+
   it('fails closed for an unsupported configured primary', async () => {
     const result = await tryRunAsync(
       process.execPath,

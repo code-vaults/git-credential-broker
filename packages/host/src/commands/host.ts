@@ -86,7 +86,9 @@ function runBounded(
     }
 
     const suffix = '\n[output truncated]\n';
-    const keep = HOST_ACTION_OUTPUT_BYTES - Buffer.byteLength(suffix);
+    const timeoutNote = 'the action timed out; a write may have completed before it was killed\n';
+    const outKeep = HOST_ACTION_OUTPUT_BYTES - Buffer.byteLength(suffix);
+    const errKeep = outKeep - Buffer.byteLength(timeoutNote);
     const stdout = new StringDecoder('utf8');
     const stderr = new StringDecoder('utf8');
     let out = '';
@@ -99,13 +101,14 @@ function runBounded(
     let settled = false;
 
     const append = (decoder: StringDecoder, chunk: Buffer, stream: 'out' | 'err'): void => {
+      const limit = stream === 'out' ? outKeep : errKeep;
       const used = stream === 'out' ? outBytes : errBytes;
-      if (used >= keep) {
+      if (used >= limit) {
         if (stream === 'out') outCut = true;
         else errCut = true;
         return;
       }
-      const piece = chunk.subarray(0, keep - used);
+      const piece = chunk.subarray(0, limit - used);
       const text = decoder.write(piece);
       if (stream === 'out') {
         out += text;
@@ -141,7 +144,11 @@ function runBounded(
       err += stderr.end();
       if (outCut) out += suffix;
       if (errCut) err += suffix;
-      if (timedOut && err === '') err = 'the action timed out';
+      if (err === '' && result.stderr !== '') err = result.stderr;
+      if (timedOut) {
+        if (err !== '' && !err.endsWith('\n')) err += '\n';
+        err += timeoutNote;
+      }
       resolve({ ...result, stdout: out, stderr: err });
     }
 

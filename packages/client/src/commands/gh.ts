@@ -4,7 +4,7 @@
  * The action catalog defines the command, flags, positionals and permissions. The client only
  * parses names and values; the broker rebuilds the canonical argv and runs gh with its own token.
  */
-import { GH_ACTIONS, bodyFromArgs, buildGhArgv, getGhAction, parseArgs, say, fail, type ActionValues, type GhAction } from 'gcb-core';
+import { GH_ACTIONS, LOGIN, bodyFromArgs, buildGhArgv, getGhAction, parseArgs, say, fail, type ActionValues, type GhAction } from 'gcb-core';
 
 import { requestOverSocket, resolveSocketPath } from '../helper.ts';
 import { submitActionToHostBroker } from './host-submit.ts';
@@ -176,6 +176,12 @@ function scanActionArgs(action: GhAction, rawRest: readonly string[]): ActionSca
   return { rest, missingValue, help, allowed, asUser, account, identityError, repoOption };
 }
 
+/** Whether a catalogued action's argv carries either --as-user form, in option position. */
+export function actionHasAsUser(actionName: string, rawRest: readonly string[]): boolean {
+  const scan = scanActionArgs(getGhAction(actionName), rawRest);
+  return scan.asUser || scan.account !== undefined;
+}
+
 /** Whether a catalogued action's argv asks for help, using the same scan. */
 export function actionHelpRequested(actionName: string, rawRest: readonly string[]): boolean {
   try {
@@ -256,6 +262,9 @@ export async function runGh(
   const identity = options.identity ?? (asUser ? 'user' : 'app');
   if (account === undefined && identity === 'user' && action.appUser !== true) {
     fail(`${actionName} does not support --as-user`);
+  }
+  if (account !== undefined && !LOGIN.test(account)) {
+    fail(`--as-user must be a GitHub login, got ${JSON.stringify(account)}`);
   }
 
   const booleans = action.flags.filter((flag) => flag.type === 'boolean').map((flag) => flag.name);
