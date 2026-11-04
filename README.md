@@ -781,6 +781,9 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `run view` | `actions: read` |
 | `run list` | `actions: read` |
 
+`pr status` with `--repo` reports the app identity's relevant pull requests and review requests
+with their checks; gh's current-branch section is absent because the broker has no branch.
+
 A missing `checks` or `statuses` grant is why `gcb pr view 72` can fail while `pr diff` works:
 `pr view` reads the checks and statuses endpoints as well. Raising a permission on the App is not
 enough by itself — the installation must approve the updated grant.
