@@ -480,7 +480,8 @@ describe('the host action route', () => {
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
       assert.deepEqual(argv.slice(0, 3), ['issue', 'comment', '7']);
       assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');
-      assert.equal(argv[argv.indexOf('--body') + 1], 'x');
+      assert.ok(argv.includes('--body-file'));
+      assert.ok(argv[argv.indexOf('--body-file') + 1]?.endsWith('body.md'));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -18,7 +18,7 @@ import {
   writeRequest,
 } from 'gcb-core';
 import type { HostActionRequest, HostOpenResult, HostRequest } from 'gcb-core';
-import { fail, say } from 'gcb-core';
+import { fail, getGhAction, say } from 'gcb-core';
 
 /**
  * Explain why a host-broker request produced no answer.
@@ -61,7 +61,10 @@ const KINDS: Readonly<Record<RequestKind, { noun: string; needed?: string }>> = 
 };
 
 /** Write, wait for and return one host-broker answer. */
-async function exchange(request: HostRequest): Promise<HostOpenResult> {
+async function exchange(
+  request: HostRequest,
+  timeoutMs: number = ANSWER_TIMEOUT_MS,
+): Promise<HostOpenResult> {
   const problems = requestProblems(request);
   if (problems.length > 0) fail(problems.join('; '));
   const { noun, needed } = KINDS[request.kind ?? 'pull-request'];
@@ -87,7 +90,7 @@ async function exchange(request: HostRequest): Promise<HostOpenResult> {
     fail((error as Error).message);
   }
   const configured = Number(process.env['GCB_OPENER_TIMEOUT_MS']);
-  const timeoutMs = Number.isInteger(configured) && configured > 0 ? configured : ANSWER_TIMEOUT_MS;
+  if (Number.isInteger(configured) && configured > 0) timeoutMs = configured;
   let answer = await waitForResult(dir, id, timeoutMs, 50);
   if (answer === undefined) answer = await waitForResult(dir, id, 300, 50);
   if (answer === undefined) fail(noAnswerMessage(dir, id, noun, timeoutMs));
@@ -119,7 +122,8 @@ export async function submitToHostBroker(
  * @returns the child's exit status as 0 or 1.
  */
 export async function submitActionToHostBroker(request: HostActionRequest): Promise<number> {
-  const answer = await exchange(request);
+  const action = getGhAction(request.action);
+  const answer = await exchange(request, action.timeoutSeconds * 1_000 + 30_000);
   if (answer.error !== undefined) fail(`the host broker could not do it: ${answer.error}`);
   if (answer.stdout !== undefined && answer.stdout !== '') process.stdout.write(answer.stdout);
   if (answer.stderr !== undefined && answer.stderr !== '') process.stderr.write(answer.stderr);

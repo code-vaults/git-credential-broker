@@ -33,6 +33,7 @@ import {
   type HostRequest,
   type HostOpenResult,
   buildGhArgv,
+  getGhAction,
   type BrokerConfig,
 } from 'gcb-core';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
@@ -44,6 +45,17 @@ const run = promisify(execFile);
 
 /** How long one create, review, reply, edit or fork program may take. */
 const CREATE_TIMEOUT_MS = 120_000;
+
+/** Per-stream byte budget for a host action, small enough that JSON escaping stays under readResult's cap. */
+const HOST_ACTION_OUTPUT_BYTES = 48_000;
+
+/** Keep one output stream within its byte budget, marking the cut. */
+function clampOutput(text: string): string {
+  if (Buffer.byteLength(text) <= HOST_ACTION_OUTPUT_BYTES) return text;
+  const suffix = '\n[output truncated]\n';
+  const keep = HOST_ACTION_OUTPUT_BYTES - Buffer.byteLength(suffix);
+  return Buffer.from(text).subarray(0, keep).toString('utf8') + suffix;
+}
 
 /** Usage text for `host`. */
 export const HOST_BROKER_USAGE = `Usage: gcb host [options]
@@ -420,23 +432,28 @@ async function openOne(
   if (request.kind === 'action') {
     const host = request.host ?? 'github.com';
     return personRun(host, request.repo, allowed, async (host) => {
-      const argv = buildGhArgv(request.action, request.values, request.repo);
-      try {
-        const { stdout, stderr } = await run(command, [...extra, ...argv], {
-          cwd: repo,
-          timeout: CREATE_TIMEOUT_MS,
-          maxBuffer: 1 << 20,
-          env: forkEnv(request.proxy, request.account, host),
-        });
-        return { stdout: stdout.slice(0, 200_000), stderr: stderr.slice(0, 200_000), code: 0 };
-      } catch (error) {
-        const failure = error as { stdout?: string; stderr?: string; code?: number | string };
-        return {
-          stdout: (failure.stdout ?? '').slice(0, 200_000),
-          stderr: (failure.stderr ?? '').slice(0, 200_000),
-          code: typeof failure.code === 'number' ? failure.code : 1,
-        };
-      }
+      const action = getGhAction(request.action);
+      const body = typeof request.values['body'] === 'string' ? request.values['body'] : undefined;
+      const invoke = async (bodyFile?: string): Promise<HostOpenResult> => {
+        const argv = buildGhArgv(request.action, request.values, request.repo, bodyFile);
+        try {
+          const { stdout, stderr } = await run(command, [...extra, ...argv], {
+            cwd: repo,
+            timeout: action.timeoutSeconds * 1_000,
+            maxBuffer: 1 << 20,
+            env: forkEnv(request.proxy, request.account, host),
+          });
+          return { stdout: clampOutput(stdout), stderr: clampOutput(stderr), code: 0 };
+        } catch (error) {
+          const failure = error as { stdout?: string; stderr?: string; code?: number | string };
+          return {
+            stdout: clampOutput(failure.stdout ?? ''),
+            stderr: clampOutput(failure.stderr ?? ''),
+            code: typeof failure.code === 'number' ? failure.code : 1,
+          };
+        }
+      };
+      return body === undefined ? invoke() : withBodyFile(body, invoke);
     });
   }
 
