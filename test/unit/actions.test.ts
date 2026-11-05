@@ -20,6 +20,7 @@ describe('gh action catalog', () => {
       'pr:edit',
       'pr:close',
       'pr:reopen',
+      'pr:ready',
       'pr:checks',
       'pr:status',
       'pr:comment',
@@ -84,9 +85,12 @@ describe('gh action catalog', () => {
     for (const name of ['run:cancel', 'run:rerun']) {
       assert.equal(getGhAction(name).appUser, true, name);
     }
+    assert.equal(getGhAction('pr:ready').appUser, undefined);
+    assert.deepEqual(getGhAction('pr:ready').permissions, { pull_requests: 'write' });
     assert.deepEqual(getGhAction('run:cancel').permissions, { actions: 'write' });
     assert.deepEqual(getGhAction('run:rerun').permissions, { actions: 'write' });
     for (const [name, seconds] of [
+      ['pr:ready', 60],
       ['run:cancel', 60],
       ['run:rerun', 120],
     ] as const) {
@@ -174,6 +178,14 @@ describe('buildGhArgv', () => {
   });
 
   it('builds the lifecycle argv', () => {
+    assert.deepEqual(buildGhArgv('pr:ready', { number: 7, undo: true }, 'acme/widget'), [
+      'pr',
+      'ready',
+      '7',
+      '--undo',
+      '--repo',
+      'acme/widget',
+    ]);
     assert.deepEqual(buildGhArgv('run:cancel', { runId: 42, force: true }, 'acme/widget'), [
       'run',
       'cancel',

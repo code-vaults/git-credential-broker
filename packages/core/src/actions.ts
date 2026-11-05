@@ -199,6 +199,16 @@ const PR_REOPEN: GhAction = {
   timeoutSeconds: 60,
 };
 
+// GitHub GraphQL: markPullRequestReadyForReview and convertPullRequestToDraft
+const PR_READY: GhAction = {
+  name: 'pr:ready',
+  command: ['pr', 'ready'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [{ name: 'undo', type: 'boolean' }],
+  permissions: { pull_requests: 'write' },
+  timeoutSeconds: 60,
+};
+
 // GitHub: GET /repos/{owner}/{repo}/pulls/{number} then its check-runs and commit statuses
 const PR_CHECKS: GhAction = {
   name: 'pr:checks',
@@ -443,6 +453,7 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:edit': PR_EDIT,
   'pr:close': PR_CLOSE,
   'pr:reopen': PR_REOPEN,
+  'pr:ready': PR_READY,
   'pr:checks': PR_CHECKS,
   'pr:status': PR_STATUS,
   'pr:comment': PR_COMMENT,
