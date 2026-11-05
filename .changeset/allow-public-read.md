@@ -13,10 +13,11 @@ authentication. Visibility is checked freshly for each request, not cached. The 
 exemption: its `gh` commands also need a token, so it keeps the normal allowlist. Neither path
 uses a person token or the action's normal write permissions.
 
-`allowPublicRead` runs for the app, bare `--as-user` and `--as-user <login>` identities on the app
-route, without changing the existing identity policy; the host route keeps the allowlist.
+`allowPublicRead` runs for the app identity and bare `--as-user` on the app route, without changing
+the existing identity policy. `--as-user <login>` goes through the host broker and keeps the normal
+allowlist.
 
-`allowForkPush` lets a git credential request through for a repository whose GitHub parent/source is
-allowlisted, still limited to the credential path; catalog actions keep the normal allowlist. It
-needs the App installed on the fork owner, because the credential still comes from an installation
-token; a plain contributor fork without that installation cannot mint one.
+`allowForkPush` lets a git credential request through for a **public** fork whose GitHub
+parent/source is allowlisted, still limited to the credential path; catalog actions keep the normal
+allowlist. It needs the App installed on the fork owner, because the credential still comes from an
+installation token; a plain contributor fork without that installation cannot mint one.

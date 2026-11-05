@@ -48,10 +48,10 @@ hosts:
     allow:
       - code-vaults/example-repo
       - code-vaults/*
-    # Read-only actions may run anonymously when the repo is verified public.
-    allowPublicRead: true
-    # Git credentials for a fork of an allowlisted repo; the App must be installed on the fork.
-    allowForkPush: true
+    # Opt in only after reviewing the app-route metadata-token path.
+    allowPublicRead: false
+    # Public forks of an allowlisted repo; the App must be installed on the fork.
+    allowForkPush: false
 
   # A host:port key must be quoted so YAML does not read the colon as a mapping separator.
   "git.example.internal:8443":

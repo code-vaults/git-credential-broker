@@ -469,6 +469,36 @@ describe('createGithubAppProvider', () => {
     }
   });
 
+  it('classifies public and fork lookups without credentials', async () => {
+    const response = (status: number, body: unknown) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      text: async () => JSON.stringify(body),
+    });
+    const provider = (status: number, body: unknown) =>
+      providerFor(
+        { calls: [], fetchImpl: async () => response(status, body) },
+        {},
+        undefined,
+      );
+    assert.equal(await provider(200, { private: false }).isPublicRepository!('acme', 'widget'), true);
+    assert.equal(await provider(200, { private: true }).isPublicRepository!('acme', 'widget'), false);
+    assert.equal(await provider(404, {}).isPublicRepository!('acme', 'widget'), false);
+    await assert.rejects(provider(429, {}).isPublicRepository!('acme', 'widget'), ProviderConfigError);
+    assert.equal(
+      await provider(200, { fork: true, parent: { full_name: 'acme/widget' } }).isForkOf!('alice', 'widget', ['acme/widget']),
+      true,
+    );
+    assert.equal(
+      await provider(200, { fork: true, source: { full_name: 'acme/widget' } }).isForkOf!('alice', 'widget', ['acme/widget']),
+      true,
+    );
+    assert.equal(await provider(200, { fork: false }).isForkOf!('alice', 'widget', ['acme/widget']), false);
+    assert.equal(await provider(404, {}).isForkOf!('alice', 'widget', ['acme/widget']), false);
+    await assert.rejects(provider(429, {}).isForkOf!('alice', 'widget', ['acme/widget']), ProviderConfigError);
+  });
+
   it('mints a metadata-only token for a verified public read', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'gcb-public-read-'));
     const gh = join(dir, 'gh');

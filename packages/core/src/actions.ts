@@ -63,7 +63,7 @@ export interface GhAction {
   readonly bodyRequiredWith?: readonly string[];
   /** Flag pairs that may not be present together. */
   readonly conflicts?: readonly (readonly [string, string])[];
-  /** This action only reads; publicRead may run it anonymously on a verified public repository. */
+  /** This action only reads; publicRead may run it on a verified public repository with a metadata-only app token. */
   readonly readOnly?: boolean;
   readonly permissions: Readonly<Partial<Record<GhPermission, PermissionLevel>>>;
   /** The default per-action timeout, in seconds. */

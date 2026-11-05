@@ -224,7 +224,8 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const command = args.value('command') ?? process.env['GCB_HOST_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
   let config: BrokerConfig | undefined;
-  const blockFor = (host: string) => {
+  /** Whether the broker config allowlist permits this host/repository for a fork, reply or explicit repository. */
+  const allowed = (host: string, repo: string): boolean => {
     if (config === undefined) {
       try {
         config = loadConfig(resolveConfigPath(configPath));
@@ -234,11 +235,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         );
       }
     }
-    return hostConfig(config, host);
-  };
-  /** Whether the broker config allowlist permits this host/repository for a fork, reply or explicit repository. */
-  const allowed = (host: string, repo: string): boolean => {
-    const block = blockFor(host);
+    const block = hostConfig(config, host);
     return block !== null && repoAllowed(block.allow, repo);
   };
   const extra = listFlag(args, 'arg');
@@ -529,13 +526,9 @@ async function openOne(
 
   if (request.kind === 'action') {
     const host = request.host ?? 'github.com';
-    let action: ReturnType<typeof getGhAction>;
-    try {
-      action = getGhAction(request.action);
-    } catch (error) {
-      return { error: (error as Error).message };
-    }
-    const execute = async (env: NodeJS.ProcessEnv): Promise<HostResult> => {
+    return personRun(host, request.repo, allowed, async (host) => {
+      const action = getGhAction(request.action);
+      const env = forkEnv(request.proxy, request.account, host);
       const deadline = Date.now() + action.timeoutSeconds * 1_000;
       if (action.target === 'issue') {
         try {
@@ -575,11 +568,7 @@ async function openOne(
         return result;
       };
       return body === undefined ? invoke() : withBodyFile(body, invoke);
-    };
-
-    return personRun(host, request.repo, allowed, async (host) =>
-      execute(forkEnv(request.proxy, request.account, host)),
-    );
+    });
   }
 
   if (request.kind === 'reply') {

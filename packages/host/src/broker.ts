@@ -282,10 +282,14 @@ export function createRequestHandler(
     if (!allowedRepo && !publicAction) {
       if (message['op'] === 'credential' && block.allowForkPush === true && provider.isForkOf !== undefined) {
         let fork = false;
+        let forkError: unknown;
         try {
           fork = await provider.isForkOf(repo.owner, repo.repo, block.allow);
-        } catch {
-          fork = false;
+        } catch (error) {
+          forkError = error;
+        }
+        if (forkError instanceof ProviderConfigError) {
+          return deny(context, CODES.PROVIDER_ERROR, forkError.message, forkError.message, undefined, auditEvent);
         }
         if (!fork) {
           return deny(
@@ -343,7 +347,7 @@ export function createRequestHandler(
           "this host's provider cannot run GitHub actions",
         );
       }
-      let anonymous = false;
+      let publicRead = false;
       if (!allowedRepo) {
         if (provider.isPublicRepository === undefined) {
           return denyAction(CODES.REPO_NOT_ALLOWED, 'provider cannot verify public repositories', 'repository is not allowlisted');
@@ -361,7 +365,7 @@ export function createRequestHandler(
         if (!publicRepo) {
           return denyAction(CODES.REPO_NOT_ALLOWED, 'repository is not public', 'repository is not allowlisted');
         }
-        anonymous = true;
+        publicRead = true;
       }
       const startedAt = Date.now();
       try {
@@ -373,7 +377,7 @@ export function createRequestHandler(
           action: ghAction,
           values: actionValues,
           ...(identity === undefined ? {} : { identity: identity as 'app' | 'user' }),
-          ...(anonymous ? { publicRead: true } : {}),
+          ...(publicRead ? { publicRead: true } : {}),
           proxy,
         });
         if (result.error !== undefined) {
@@ -388,7 +392,7 @@ export function createRequestHandler(
           command: spec.command.join(' '),
           permissions: spec.permissions,
           identity: identity ?? 'app',
-          public_read: anonymous,
+          public_read: publicRead,
           duration_ms: Date.now() - startedAt,
           token_fingerprint: result.tokenFingerprint,
           exit_code: result.code,

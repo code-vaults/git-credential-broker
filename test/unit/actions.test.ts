@@ -117,6 +117,14 @@ describe('gh action catalog', () => {
     for (const name of ['pr:create', 'pr:edit', 'pr:close', 'issue:create', 'run:cancel']) {
       assert.equal(getGhAction(name).readOnly, undefined, name);
     }
+    for (const name of Object.keys(GH_ACTIONS)) {
+      if (getGhAction(name).readOnly === true) {
+        assert.ok(
+          !Object.values(getGhAction(name).permissions).includes('write'),
+          `${name} is readOnly but declares a write permission`,
+        );
+      }
+    }
   });
 
   it('declares the lifecycle write policy', () => {

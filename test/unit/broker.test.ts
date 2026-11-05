@@ -735,7 +735,53 @@ describe('broker actions', () => {
     assert.doesNotMatch(String(response.reason), /not public/u);
   });
 
-  it('keeps writes and private repositories on the allowlist', async () => {
+  it('keeps writes on the allowlist even when the repository is public', async () => {
+    let calls = 0;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      isPublicRepository: async () => true,
+      runAction: async () => {
+        calls += 1;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true });
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/public',
+      ghAction: 'pr:create',
+      values: { head: 'x', title: 'x', body: 'x' },
+    });
+    assert.equal(response.ok, false);
+    assert.equal(calls, 0);
+  });
+
+  it('requires the public-read opt-in for an unlisted read', async () => {
+    let calls = 0;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      isPublicRepository: async () => true,
+      runAction: async () => {
+        calls += 1;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(['acme/widget'], provider);
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/public',
+      ghAction: 'pr:view',
+      values: { number: 7 },
+    });
+    assert.equal(response.ok, false);
+    assert.equal(calls, 0);
+  });
+
+  it('keeps a private read on the allowlist', async () => {
     let calls = 0;
     const provider: Provider = {
       name: 'static',
@@ -747,23 +793,37 @@ describe('broker actions', () => {
       },
     };
     const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true });
-    const write = await harness.handle({
-      op: 'action',
-      host: HOST,
-      path: 'acme/public',
-      ghAction: 'pr:create',
-      values: { head: 'x', title: 'x', body: 'x' },
-    });
-    assert.equal(write.ok, false);
-    assert.equal(calls, 0);
-    const privateRead = await harness.handle({
+    const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/private',
       ghAction: 'pr:view',
       values: { number: 7 },
     });
-    assert.equal(privateRead.ok, false);
+    assert.equal(response.ok, false);
+    assert.equal(calls, 0);
+  });
+
+  it('does not let a fork credential opt-in authorize catalog actions', async () => {
+    let calls = 0;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      isForkOf: async () => true,
+      runAction: async () => {
+        calls += 1;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(['acme/widget'], provider, false, null, { allowForkPush: true });
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'alice/widget',
+      ghAction: 'pr:view',
+      values: { number: 7 },
+    });
+    assert.equal(response.ok, false);
     assert.equal(calls, 0);
   });
 

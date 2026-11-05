@@ -752,17 +752,7 @@ function pullRequestNumber(value: unknown): number | undefined {
       tokens.set(request.full, credential);
       return { ...credential, cached: false };
     },
-    /**
-     * Read one workflow job's log.
-     *
-     * One call, to the repository-scoped route: the repository is part of the URL, so the allowlist
-     * binds the job id by construction. The global route is keyed by job id alone — an allowlisted
-     * repository could name any job this app can see — and it is the one that answers "Must have
-     * admin rights", which is a permission this broker should never want.
-     *
-     * @param request - the job to read.
-     * @returns the log text, bounded.
-     */
+    /** Check a public fork with no credential; only confirmed fork relationships pass. */
     async isForkOf(owner: string, repo: string, bases: readonly string[]): Promise<boolean> {
       const response = await fetchImpl(`${api}/repos/${owner}/${repo}`, {
         method: 'GET',
@@ -772,6 +762,11 @@ function pullRequestNumber(value: unknown): number | undefined {
           'user-agent': 'gcb',
         },
       });
+      if (response.status === 403 || response.status === 429) {
+        throw new ProviderConfigError(
+          'GitHub rate-limited the unauthenticated fork check; retry later or allowlist the repository',
+        );
+      }
       if (!response.ok) return false;
       const body = JSON.parse(await response.text()) as {
         fork?: unknown;
@@ -785,6 +780,7 @@ function pullRequestNumber(value: unknown): number | undefined {
       return false;
     },
 
+    /** Verify a public repository with no credential; a 403/429 is a provider error. */
     async isPublicRepository(owner: string, repo: string): Promise<boolean> {
       const response = await fetchImpl(`${api}/repos/${owner}/${repo}`, {
         method: 'GET',
@@ -804,6 +800,17 @@ function pullRequestNumber(value: unknown): number | undefined {
       return body?.private === false;
     },
 
+    /**
+     * Read one workflow job's log.
+     *
+     * One call, to the repository-scoped route: the repository is part of the URL, so the allowlist
+     * binds the job id by construction. The global route is keyed by job id alone — an allowlisted
+     * repository could name any job this app can see — and it is the one that answers "Must have
+     * admin rights", which is a permission this broker should never want.
+     *
+     * @param request - the job to read.
+     * @returns the log text, bounded.
+     */
     async getJobLog(request: JobLogRequest): Promise<JobLog> {
       await ensurePermissions(request.owner, LOG_PERMISSIONS);
       const installationId = await resolveInstallationId(request.owner);
