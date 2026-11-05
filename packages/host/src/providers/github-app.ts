@@ -200,8 +200,6 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
   const installations = new Map<string, CachedInstallation>();
   /** owner/repo -> minted credential */
   const tokens = new Map<string, Credential>();
-  /** owner/repo -> public-check expiry; only confirmed public results are cached. */
-  const publicRepos = new Map<string, number>();
   /** Cached pre-flight result, per owner: installations differ, so the answer does too. */
   const permissionsChecked = new Map<string, Promise<void>>();
 
@@ -788,9 +786,6 @@ function pullRequestNumber(value: unknown): number | undefined {
     },
 
     async isPublicRepository(owner: string, repo: string): Promise<boolean> {
-      const key = `${owner}/${repo}`.toLowerCase();
-      const cached = publicRepos.get(key);
-      if (cached !== undefined && cached > now()) return true;
       const response = await fetchImpl(`${api}/repos/${owner}/${repo}`, {
         method: 'GET',
         headers: {
@@ -801,13 +796,7 @@ function pullRequestNumber(value: unknown): number | undefined {
       });
       if (!response.ok) return false;
       const body = JSON.parse(await response.text()) as { private?: unknown } | null;
-      if (body?.private !== false) return false;
-      if (publicRepos.size >= 100) {
-        const oldest = publicRepos.keys().next().value;
-        if (oldest !== undefined) publicRepos.delete(oldest);
-      }
-      publicRepos.set(key, now() + 60_000);
-      return true;
+      return body?.private === false;
     },
 
     async getJobLog(request: JobLogRequest): Promise<JobLog> {

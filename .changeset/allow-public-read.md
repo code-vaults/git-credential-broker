@@ -6,8 +6,9 @@ Add the `allowPublicRead` and `allowForkPush` host opt-ins. Catalog entries can 
 `readOnly: true`; with `allowPublicRead`, such an action on a repository verified public without a
 credential runs without an allowlist entry.
 
-The app route mints a metadata-only installation token; without an installation it refuses rather
-than falling back to anonymous, because `gh` needs authentication. The host route does not use this
+The app route mints a metadata-only installation token; the App must be installed on the repository,
+and the request is refused rather than falling back to anonymous when it is not, because `gh` needs
+authentication. Visibility is checked freshly for each request, not cached. The host route does not use this
 exemption: its `gh` commands also need a token, so it keeps the normal allowlist. Neither path
 uses a person token or the action's normal write permissions.
 

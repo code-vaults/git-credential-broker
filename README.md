@@ -629,7 +629,7 @@ Per host, keyed exactly as git reports it (`github.com`, or `host:port` for othe
 | `provider` | `github-app` or `static`. |
 | `allow` | Default-deny list: `owner/repo`, or a whole-segment wildcard `owner/*`. Malformed entries (no slash, three segments, a partial wildcard like `wid*`) are rejected at load time rather than silently matching nothing. |
 | `allowInsecureHttp` | Default `false`. Permit a plaintext `http` remote for this host. |
-| `allowPublicRead` | Default `false`. Let explicit `readOnly` actions run on a repository verified public without an allowlist entry on the app route, using a metadata-only token. The host route still needs the allowlist: unauthenticated `gh` commands return 401. |
+| `allowPublicRead` | Default `false`. Let explicit `readOnly` actions run on a repository verified public without an allowlist entry on the app route, using a metadata-only token. The App must be installed on that repository with metadata read; otherwise the request is refused. The host route still needs the allowlist: unauthenticated `gh` commands return 401. |
 | `allowForkPush` | Default `false`. Mint a credential for a fork whose parent/source is an allowlisted repository. The App must be installed on the fork owner. |
 
 `github-app`: `clientId` (preferred `iss`), `appId` (fallback), `privateKeyPath` or `privateKeyPem`,
