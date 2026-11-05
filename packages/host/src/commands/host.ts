@@ -39,7 +39,7 @@ import {
   type BrokerConfig,
 } from 'gcb-core';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
-import { applyProxyChoice, parseProxy, type ProxyChoice } from '../http.ts';
+import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts';
 import { loadConfig, resolveConfigPath } from '../config.ts';
 import { hostConfig, repoAllowed } from '../policy.ts';
 
@@ -224,8 +224,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const command = args.value('command') ?? process.env['GCB_HOST_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
   let config: BrokerConfig | undefined;
-  /** Whether the broker config allowlist permits this host/repository for a fork, reply or explicit repository. */
-  const allowed = (host: string, repo: string): boolean => {
+  const blockFor = (host: string) => {
     if (config === undefined) {
       try {
         config = loadConfig(resolveConfigPath(configPath));
@@ -235,9 +234,14 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         );
       }
     }
-    const block = hostConfig(config, host);
+    return hostConfig(config, host);
+  };
+  /** Whether the broker config allowlist permits this host/repository for a fork, reply or explicit repository. */
+  const allowed = (host: string, repo: string): boolean => {
+    const block = blockFor(host);
     return block !== null && repoAllowed(block.allow, repo);
   };
+  const publicRead = (host: string): boolean => blockFor(host)?.allowPublicRead === true;
   const extra = listFlag(args, 'arg');
   const interval = Number(args.value('interval') ?? '5');
   if (!Number.isFinite(interval) || interval < 1) {
@@ -295,7 +299,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
       // must not stop the host broker serving every other root, under Restart=always least of all.
       try {
         advertise(dir);
-        await sweep(dir, repo, command, extra, allowed);
+        await sweep(dir, repo, command, extra, allowed, publicRead);
       } catch (error) {
         warn(`could not serve ${repo}: ${(error as Error).message}`);
       }
@@ -320,6 +324,7 @@ async function sweep(
   command: string,
   extra: readonly string[],
   allowed: (host: string, repo: string) => boolean,
+  publicRead: (host: string) => boolean,
 ): Promise<number> {
   let answered = 0;
   for (const id of listRequests(dir)) {
@@ -362,7 +367,7 @@ async function sweep(
       answered += 1;
       continue;
     }
-    const result = await openOne(repo, command, extra, { ...request, proxy }, allowed);
+    const result = await openOne(repo, command, extra, { ...request, proxy }, allowed, publicRead);
     writeResult(dir, id, result);
     removeRequest(dir, id);
     if (result.error !== undefined) {
@@ -429,6 +434,22 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
   return env;
 }
 
+/** Unauthenticated public-repository check for the host route. */
+async function repoIsPublic(host: string, repository: string, proxy: ProxyChoice): Promise<boolean> {
+  const base = host.toLowerCase() === 'github.com' ? 'https://api.github.com' : `https://${host}/api/v3`;
+  try {
+    const response = await fetcherFor(proxy)(`${base}/repos/${repository}`, {
+      method: 'GET',
+      headers: { accept: 'application/vnd.github+json', 'user-agent': 'gcb' },
+    });
+    if (!response.ok) return false;
+    const body = JSON.parse(await response.text()) as { private?: unknown } | null;
+    return body?.private === false;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Run one person operation: check the allowlist, then call the program and turn its failure into a result.
  *
@@ -488,6 +509,7 @@ async function openOne(
   extra: readonly string[],
   request: HostRequest,
   allowed: (host: string, repo: string) => boolean,
+  publicRead: (host: string) => boolean,
 ): Promise<HostResult> {
   if (request.kind === 'fork') {
     if (request.host !== undefined && !HOST.test(request.host)) {
@@ -526,9 +548,14 @@ async function openOne(
 
   if (request.kind === 'action') {
     const host = request.host ?? 'github.com';
-    return personRun(host, request.repo, allowed, async (host) => {
-      const action = getGhAction(request.action);
-      const env = forkEnv(request.proxy, request.account, host);
+    let action: ReturnType<typeof getGhAction>;
+    try {
+      action = getGhAction(request.action);
+    } catch (error) {
+      return { error: (error as Error).message };
+    }
+
+    const runAction = async (env: NodeJS.ProcessEnv): Promise<HostResult> => {
       const deadline = Date.now() + action.timeoutSeconds * 1_000;
       if (action.target === 'issue') {
         try {
@@ -568,7 +595,27 @@ async function openOne(
         return result;
       };
       return body === undefined ? invoke() : withBodyFile(body, invoke);
-    });
+    };
+
+    if (!allowed(host, request.repo)) {
+      let allowedPublic = false;
+      try {
+        allowedPublic = action.readOnly === true && publicRead(host);
+      } catch (error) {
+        return { error: (error as Error).message };
+      }
+      if (!allowedPublic) {
+        return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
+      }
+      if (!(await repoIsPublic(host, request.repo, request.proxy))) {
+        return { error: `repository ${request.repo} is not public` };
+      }
+      return runAction(forkEnv(request.proxy, request.account, host));
+    }
+
+    return personRun(host, request.repo, allowed, async (host) =>
+      runAction(forkEnv(request.proxy, request.account, host)),
+    );
   }
 
   if (request.kind === 'reply') {

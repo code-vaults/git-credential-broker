@@ -629,7 +629,7 @@ Per host, keyed exactly as git reports it (`github.com`, or `host:port` for othe
 | `provider` | `github-app` or `static`. |
 | `allow` | Default-deny list: `owner/repo`, or a whole-segment wildcard `owner/*`. Malformed entries (no slash, three segments, a partial wildcard like `wid*`) are rejected at load time rather than silently matching nothing. |
 | `allowInsecureHttp` | Default `false`. Permit a plaintext `http` remote for this host. |
-| `allowPublicRead` | Default `false`. Let explicit `readOnly` actions run on a repository verified public without an allowlist entry on the app route. The app identity uses a metadata-only token and requires the App to be installed with metadata read. Bare `--as-user` uses the authorized person token (which may have private access); `--as-user <login>` stays on the host route and needs the allowlist. An exhausted 403/429 is reported as a rate limit, a plain 403 as a refusal, never as a private repository. |
+| `allowPublicRead` | Default `false`. Let explicit `readOnly` actions run on a repository verified public without an allowlist entry, on both the app and host routes. The app identity uses a metadata-only token and requires the App to be installed with metadata read. Bare `--as-user` uses the authorized person token; `--as-user <login>` uses the host account token. Both may have private access; an exhausted 403/429 is reported as a rate limit, a plain 403 as a refusal, never as a private repository. |
 | `allowForkPush` | Default `false`. Mint a credential for a **public** fork whose parent/source is an allowlisted repository. The App must be installed on the fork owner. |
 
 `github-app`: `clientId` (preferred `iss`), `appId` (fallback), `privateKeyPath` or `privateKeyPem`,
