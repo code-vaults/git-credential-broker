@@ -37,12 +37,12 @@ import {
   buildGhArgv,
   getGhAction,
   type BrokerConfig,
-  type FetchResponseLike,
 } from 'gcb-core';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
 import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts';
 import { loadConfig, resolveConfigPath } from '../config.ts';
 import { hostConfig, repoAllowed } from '../policy.ts';
+import { isPublicRepository } from '../public-repo.ts';
 
 const run = promisify(execFile);
 
@@ -444,37 +444,7 @@ async function repoIsPublic(
 ): Promise<boolean> {
   const base =
     apiBaseUrl ?? (host.toLowerCase() === 'github.com' ? 'https://api.github.com' : `https://${host}/api/v3`);
-  let response: FetchResponseLike;
-  try {
-    response = await fetcherFor(proxy)(`${base}/repos/${repository}`, {
-      method: 'GET',
-      headers: {
-        accept: 'application/vnd.github+json',
-        'x-github-api-version': apiVersion,
-        'user-agent': 'gcb',
-      },
-    });
-  } catch {
-    return false;
-  }
-  if (response.status === 403 || response.status === 429) {
-    const exhausted =
-      response.status === 429 ||
-      response.headers.get('x-ratelimit-remaining') === '0' ||
-      response.headers.get('retry-after') !== null;
-    throw new Error(
-      exhausted
-        ? 'GitHub rate-limited the unauthenticated public-repository check; retry later'
-        : 'GitHub refused the unauthenticated public-repository check',
-    );
-  }
-  if (!response.ok) return false;
-  try {
-    const body = JSON.parse(await response.text()) as { private?: unknown } | null;
-    return body?.private === false;
-  } catch {
-    return false;
-  }
+  return isPublicRepository(fetcherFor(proxy), base, repository, apiVersion);
 }
 
 /**
@@ -653,7 +623,7 @@ async function openOne(
         return { error: (error as Error).message };
       }
       try {
-        return runAction(forkEnv(request.proxy, request.account, host));
+        return await runAction(forkEnv(request.proxy, request.account, host));
       } catch (error) {
         return { error: (error as Error).message };
       }

@@ -23,6 +23,7 @@ import { currentProxyKey, proxyFetch } from '../http.ts';
 import { createSign } from 'node:crypto';
 import { getGhAction, ProviderConfigError, tokenFingerprint, type ActionRunResult } from 'gcb-core';
 import { runGhAction } from '../gh.ts';
+import { isPublicRepository as checkPublicRepository } from '../public-repo.ts';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { refreshUserToken } from '../device-flow.ts';
@@ -796,41 +797,9 @@ function pullRequestNumber(value: unknown): number | undefined {
 
     /** Verify a public repository with no credential; a 403/429 is a provider error. */
     async isPublicRepository(owner: string, repo: string): Promise<boolean> {
-      const response = await fetchImpl(`${api}/repos/${owner}/${repo}`, {
-        method: 'GET',
-        headers: {
-          accept: 'application/vnd.github+json',
-          'x-github-api-version': apiVersion,
-          'user-agent': 'gcb',
-        },
-      });
-      if (response.status === 403 || response.status === 429) {
-        const exhausted =
-          response.status === 429 ||
-          response.headers.get('x-ratelimit-remaining') === '0' ||
-          response.headers.get('retry-after') !== null;
-        throw new ProviderConfigError(
-          exhausted
-            ? 'GitHub rate-limited the unauthenticated public-repository check; retry later or allowlist the repository'
-            : 'GitHub refused the unauthenticated public-repository check; check the access policy or allowlist the repository',
-        );
-      }
-      if (!response.ok) return false;
-      const body = JSON.parse(await response.text()) as { private?: unknown } | null;
-      return body?.private === false;
+      return checkPublicRepository(fetchImpl, api, `${owner}/${repo}`, apiVersion);
     },
 
-    /**
-     * Read one workflow job's log.
-     *
-     * One call, to the repository-scoped route: the repository is part of the URL, so the allowlist
-     * binds the job id by construction. The global route is keyed by job id alone — an allowlisted
-     * repository could name any job this app can see — and it is the one that answers "Must have
-     * admin rights", which is a permission this broker should never want.
-     *
-     * @param request - the job to read.
-     * @returns the log text, bounded.
-     */
     async getJobLog(request: JobLogRequest): Promise<JobLog> {
       await ensurePermissions(request.owner, LOG_PERMISSIONS);
       const installationId = await resolveInstallationId(request.owner);

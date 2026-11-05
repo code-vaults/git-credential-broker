@@ -601,6 +601,48 @@ describe('the host action route', () => {
       });
       assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
       assert.match(readResult(dir, privateId)?.error ?? '', /not public/u);
+
+      publicRepo = true;
+      const writeId = writeRequest(dir, {
+        kind: 'action',
+        action: 'issue:comment',
+        repo: 'cli/public',
+        values: { number: 7, body: 'x' },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.match(readResult(dir, writeId)?.error ?? '', /allowlist/u);
+    } finally {
+      globalThis.fetch = originalFetch;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes the forkEnv failure for a public read with a missing account', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-public-account-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget', 'github.com', true);
+    const dir = channelDir(join(repo, '.git'));
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\necho SHOULD_NOT_RUN\n', 'utf8');
+    chmodSync(command, 0o755);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ private: false }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as typeof fetch;
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'cli/public',
+        account: 'no-such-account-xyz',
+        values: { number: 7 },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.match(readResult(dir, id)?.error ?? '', /no gh config for account/u);
     } finally {
       globalThis.fetch = originalFetch;
       rmSync(root, { recursive: true, force: true });
