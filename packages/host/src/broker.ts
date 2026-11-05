@@ -369,7 +369,7 @@ export function createRequestHandler(
           action: ghAction,
           values: actionValues,
           ...(identity === undefined ? {} : { identity: identity as 'app' | 'user' }),
-          ...(anonymous ? { anonymous: true } : {}),
+          ...(anonymous ? { publicRead: true } : {}),
           proxy,
         });
         if (result.error !== undefined) {

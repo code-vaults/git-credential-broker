@@ -29,8 +29,8 @@ export interface ActionRequest {
   readonly identity?: 'app' | 'user';
   /** Per-command proxy override: absent = host env, null = direct, string = proxy URL. */
   readonly proxy?: string | null;
-  /** Run without a token after the repository was verified public. */
-  readonly anonymous?: boolean;
+  /** Use a metadata-only token after the repository was verified public. */
+  readonly publicRead?: boolean;
 }
 
 /** The bounded result of one action. */

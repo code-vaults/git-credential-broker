@@ -633,21 +633,26 @@ function pullRequestNumber(value: unknown): number | undefined {
 
     async runAction(request) {
       const spec = getGhAction(request.action);
-      if (request.anonymous === true) {
-        return runGhAction({
-          action: request.action,
-          values: request.values,
-          repo: request.full,
-          host: request.host,
-          ghPath,
-          env: process.env,
-          proxy: request.proxy,
-        });
-      }
       const identity = request.identity ?? 'app';
-      let token: string;
+      let token: string | undefined;
       let minted = false;
-      if (identity === 'user') {
+      if (request.publicRead === true) {
+        try {
+          const installationId = await resolveInstallationId(request.owner);
+          const { json } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
+            repositories: [request.repo],
+            permissions: { metadata: 'read' },
+          });
+          const publicToken = (json as { token?: unknown } | null)?.token;
+          if (typeof publicToken === 'string' && publicToken !== '') {
+            token = publicToken;
+            minted = true;
+          }
+        } catch {
+          // A public repository without an installation still works anonymously.
+          token = undefined;
+        }
+      } else if (identity === 'user') {
         const person = await personTokenFor(request.owner);
         if (person === undefined) {
           throw new ProviderConfigError(
@@ -713,7 +718,11 @@ function pullRequestNumber(value: unknown): number | undefined {
           }
         }
       }
-      return { ...result, tokenFingerprint: tokenFingerprint(token), ...(warning === undefined ? {} : { warning }) };
+      return {
+        ...result,
+        ...(token === undefined ? {} : { tokenFingerprint: tokenFingerprint(token) }),
+        ...(warning === undefined ? {} : { warning }),
+      };
     },
 
     async getCredential(request): Promise<Credential> {

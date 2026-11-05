@@ -4,7 +4,9 @@
 
 Add the `allowPublicRead` and `allowForkPush` host opt-ins. Catalog entries can now declare
 `readOnly: true`; with `allowPublicRead`, such an action on a repository verified public without a
-credential runs anonymously, with no allowlist entry and no person/App token. `allowForkPush` lets a
+credential runs without an allowlist entry. The App route mints a metadata-only installation token
+(anonymous fallback when the App is not installed); the host route runs anonymously. Neither uses a
+person token or the action's normal write permissions. `allowForkPush` lets a
 git credential request through for a repository whose GitHub parent/source is allowlisted, still
 limited to the credential path; catalog actions keep the normal allowlist.
 

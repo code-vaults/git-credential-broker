@@ -681,7 +681,7 @@ describe('broker actions', () => {
     assert.equal(called, true);
   });
 
-  it('runs a readOnly action anonymously on a verified public repository', async () => {
+  it('runs a readOnly action with a metadata token on a verified public repository', async () => {
     let seen: unknown;
     const provider: Provider = {
       name: 'static',
@@ -701,7 +701,7 @@ describe('broker actions', () => {
       values: { number: 7 },
     });
     assert.equal(response.ok, true);
-    assert.equal((seen as { anonymous?: boolean } | undefined)?.anonymous, true);
+    assert.equal((seen as { publicRead?: boolean } | undefined)?.publicRead, true);
     assert.equal(harness.events.at(-1)?.['public_read'], true);
   });
 

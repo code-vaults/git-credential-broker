@@ -469,6 +469,39 @@ describe('createGithubAppProvider', () => {
     }
   });
 
+  it('mints a metadata-only token for a verified public read', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-public-read-'));
+    const gh = join(dir, 'gh');
+    writeFileSync(gh, '#!/bin/sh\nprintf "TOKEN=%s\\n" "$GH_TOKEN"\n');
+    chmodSync(gh, 0o755);
+    const permissions = { metadata: 'read' };
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'Acme' } }],
+      nowMs,
+      appPermissions: permissions,
+      installationPermissions: permissions,
+    });
+    const provider = providerFor(stub, { permissions }, gh);
+    try {
+      const result = await provider.runAction?.({
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        full: 'acme/widget',
+        action: 'pr:view',
+        values: { number: 7 },
+        publicRead: true,
+      });
+      assert.equal(result?.code, 0);
+      assert.match(result?.stdout ?? '', /TOKEN=ghs_stub_token_value/u);
+      const mint = stub.calls.find((call) => call.method === 'POST' && call.url.includes('/access_tokens'));
+      assert.deepEqual(mint?.body, { repositories: ['widget'], permissions: { metadata: 'read' } });
+      assert.ok(stub.calls.some((call) => call.method === 'DELETE' && call.url.endsWith('/installation/token')));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('resolves the installation by account login and scopes the token to one named repository', async () => {
     const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'Acme' } }], nowMs });
     const provider = providerFor(stub);
