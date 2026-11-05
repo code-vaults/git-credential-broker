@@ -64,11 +64,9 @@ export interface GhAction {
   readonly permissions: Readonly<Partial<Record<GhPermission, PermissionLevel>>>;
   /** The default per-action timeout, in seconds. */
   readonly timeoutSeconds: number;
-  /** Whether the host broker may run this as a person with `--as-user`. */
-  readonly hostUser: boolean;
   /** The object kind this action may target, when the CLI command also accepts the other kind. */
   readonly target?: 'issue' | 'pr';
-  /** Whether the app broker may run this with `identity: 'user'`; narrower than `hostUser`. */
+  /** Whether the app broker may run this with `identity: 'user'`. */
   readonly appUser?: boolean;
   /** When set, the executor runs `gh api` for this fixed request instead of the command above. */
   readonly api?: ApiSpec;
@@ -97,7 +95,6 @@ const PR_VIEW: GhAction = {
   ],
   permissions: { pull_requests: 'read', contents: 'read', checks: 'read', statuses: 'read' },
   timeoutSeconds: 120,
-  hostUser: false,
 };
 
 // GitHub: GraphQL repository.pullRequests (gh pr list uses GraphQL)
@@ -119,7 +116,6 @@ const PR_LIST: GhAction = {
   ],
   permissions: { pull_requests: 'read' },
   timeoutSeconds: 120,
-  hostUser: false,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number} (diff media type)
@@ -134,7 +130,6 @@ const PR_DIFF: GhAction = {
   ],
   permissions: { pull_requests: 'read', contents: 'read' },
   timeoutSeconds: 120,
-  hostUser: false,
 };
 
 // GitHub: POST /repos/{owner}/{repo}/pulls
@@ -154,7 +149,6 @@ const PR_CREATE: GhAction = {
   ],
   permissions: { pull_requests: 'write', contents: 'read' },
   timeoutSeconds: 180,
-  hostUser: true,
 };
 
 // GitHub: PATCH /repos/{owner}/{repo}/pulls/{pull_number}
@@ -170,7 +164,6 @@ const PR_EDIT: GhAction = {
   atLeastOneOf: ['title', 'body', 'base'],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
-  hostUser: true,
   appUser: true,
 };
 
@@ -182,7 +175,6 @@ const PR_COMMENT: GhAction = {
   flags: [{ name: 'body', type: 'string', required: true, nonEmpty: true }],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
-  hostUser: true,
 };
 
 // GitHub GraphQL: closePullRequest
@@ -193,7 +185,6 @@ const PR_CLOSE: GhAction = {
   flags: [],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 60,
-  hostUser: true,
 };
 
 // GitHub: PATCH /repos/{owner}/{repo}/pulls/{pull_number}
@@ -204,7 +195,6 @@ const PR_REOPEN: GhAction = {
   flags: [],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 60,
-  hostUser: true,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/pulls/{number} then its check-runs and commit statuses
@@ -223,7 +213,6 @@ const PR_CHECKS: GhAction = {
   ],
   permissions: { pull_requests: 'read', checks: 'read', statuses: 'read' },
   timeoutSeconds: 300,
-  hostUser: false,
 };
 
 // GitHub: the app's authored pull requests and review requests, with checks. A --repo override
@@ -240,7 +229,6 @@ const PR_STATUS: GhAction = {
   ],
   permissions: { pull_requests: 'read', checks: 'read', statuses: 'read' },
   timeoutSeconds: 120,
-  hostUser: false,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
@@ -254,7 +242,6 @@ const PR_REVIEW_BY_ID: GhAction = {
   flags: [{ name: 'jq', type: 'string' }],
   permissions: { pull_requests: 'read' },
   timeoutSeconds: 120,
-  hostUser: false,
   api: {
     method: 'GET',
     endpoint: 'repos/{owner}/{repo}/pulls/{number}/reviews/{id}',
@@ -276,7 +263,6 @@ const PR_REVIEW: GhAction = {
   bodyRequiredWith: ['comment', 'request-changes'],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
-  hostUser: true,
   appUser: true,
 };
 
@@ -293,7 +279,6 @@ const ISSUE_CREATE: GhAction = {
   ],
   permissions: { issues: 'write' },
   timeoutSeconds: 120,
-  hostUser: true,
   appUser: true,
 };
 
@@ -309,7 +294,6 @@ const ISSUE_EDIT: GhAction = {
   atLeastOneOf: ['title', 'body'],
   permissions: { issues: 'write' },
   timeoutSeconds: 120,
-  hostUser: true,
   appUser: true,
 };
 
@@ -321,7 +305,6 @@ const ISSUE_COMMENT: GhAction = {
   flags: [{ name: 'body', type: 'string', required: true, nonEmpty: true }],
   permissions: { issues: 'write' },
   timeoutSeconds: 120,
-  hostUser: true,
   appUser: true,
 };
 
@@ -333,7 +316,6 @@ const ISSUE_CLOSE: GhAction = {
   flags: [{ name: 'reason', type: 'string' }],
   permissions: { issues: 'write' },
   timeoutSeconds: 60,
-  hostUser: true,
   appUser: true,
   target: 'issue',
 };
@@ -346,7 +328,6 @@ const ISSUE_REOPEN: GhAction = {
   flags: [],
   permissions: { issues: 'write' },
   timeoutSeconds: 60,
-  hostUser: true,
   appUser: true,
   target: 'issue',
 };
@@ -364,7 +345,6 @@ const ISSUE_VIEW: GhAction = {
   ],
   permissions: { issues: 'read' },
   timeoutSeconds: 120,
-  hostUser: false,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/issues
@@ -389,7 +369,6 @@ const ISSUE_LIST: GhAction = {
   ],
   permissions: { issues: 'read' },
   timeoutSeconds: 120,
-  hostUser: false,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/actions/runs/{run_id}
@@ -406,7 +385,6 @@ const RUN_VIEW: GhAction = {
   ],
   permissions: { actions: 'read' },
   timeoutSeconds: 300,
-  hostUser: false,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/actions/runs
@@ -423,7 +401,6 @@ const RUN_LIST: GhAction = {
   ],
   permissions: { actions: 'read' },
   timeoutSeconds: 120,
-  hostUser: false,
 };
 
 /** Every built-in action, keyed by its action name. */

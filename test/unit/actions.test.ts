@@ -43,7 +43,6 @@ describe('gh action catalog', () => {
   it('declares the close/reopen identity and timeout policy', () => {
     for (const name of ['pr:reopen', 'issue:close', 'issue:reopen']) {
       assert.equal(getGhAction(name).timeoutSeconds, 60, name);
-      assert.equal(getGhAction(name).hostUser, true, name);
     }
     assert.equal(getGhAction('pr:reopen').appUser, undefined);
     assert.equal(getGhAction('issue:close').appUser, true);
@@ -64,9 +63,6 @@ describe('gh action catalog', () => {
   });
 
   it('declares the read-side policy', () => {
-    for (const name of ['pr:checks', 'pr:status', 'issue:view', 'issue:list']) {
-      assert.equal(getGhAction(name).hostUser, false, name);
-    }
     assert.deepEqual(getGhAction('pr:checks').permissions, {
       pull_requests: 'read',
       checks: 'read',
