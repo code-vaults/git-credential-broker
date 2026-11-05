@@ -268,6 +268,8 @@ describe('buildGhArgv', () => {
       '--repo',
       'acme/widget',
     ]);
+    assert.throws(() => buildGhArgv('pr:lock', {}, 'acme/widget'), /needs number/u);
+    assert.throws(() => buildGhArgv('pr:unlock', {}, 'acme/widget'), /needs number/u);
     assert.deepEqual(buildGhArgv('run:cancel', { runId: 42, force: true }, 'acme/widget'), [
       'run',
       'cancel',

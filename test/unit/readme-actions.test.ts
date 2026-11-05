@@ -16,12 +16,17 @@ describe('README action permissions', () => {
       const label = name === 'pr:review-by-id' ? 'pr review --id' : action.command.join(' ');
       const row = README.split('\n').find((line) => line.startsWith(`| \`${label}\``));
       assert.ok(row, `${name} is missing from the README table`);
-      for (const [permission, level] of Object.entries(action.permissions)) {
-        assert.ok(
-          row.includes(`\`${permission}: ${level}\``),
-          `${name} is missing ${permission}: ${level} in the README table`,
-        );
-      }
+      const documented = [...row.matchAll(/`([a-z_]+): (read|write)`/gu)].map(
+        (match) => `${match[1]}: ${match[2]}`,
+      );
+      const declared = Object.entries(action.permissions).map(
+        ([permission, level]) => `${permission}: ${level}`,
+      );
+      assert.deepEqual(
+        documented.sort(),
+        declared.sort(),
+        `${name} documents a different permission set than the catalog`,
+      );
     }
   });
 });
