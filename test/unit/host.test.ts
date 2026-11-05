@@ -196,11 +196,11 @@ describe('the host broker explicit-repository route', () => {
 
 });
 
-function forkConfig(root: string, allow: string, host = 'github.com'): string {
+function forkConfig(root: string, allow: string, host = 'github.com', publicRead = false): string {
   const path = join(root, 'broker.config.yml');
   writeFileSync(
     path,
-    `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  ${host}:\n    provider: static\n    username: x\n    password: y\n    allow:\n      - ${allow}\n`,
+    `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  ${host}:\n    provider: static\n    username: x\n    password: y\n${publicRead ? '    allowPublicRead: true\n' : ''}    allow:\n      - ${allow}\n`,
     'utf8',
   );
   return path;
@@ -561,6 +561,48 @@ describe('the host action route', () => {
       assert.match(readResult(dir, id)?.error ?? '', /boom/u);
       assert.equal(existsSync(marker), false);
     } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('runs a readOnly action on a verified public repository', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-public-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget', 'github.com', true);
+    const dir = channelDir(join(repo, '.git'));
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\necho "public action"\n', 'utf8');
+    chmodSync(command, 0o755);
+    const originalFetch = globalThis.fetch;
+    let publicRepo = true;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ private: !publicRepo }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as typeof fetch;
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'cli/cli',
+        values: { number: 7 },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.equal(readResult(dir, id)?.stdout, 'public action\n');
+
+      publicRepo = false;
+      const privateId = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'cli/private',
+        values: { number: 7 },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.match(readResult(dir, privateId)?.error ?? '', /not public/u);
+    } finally {
+      globalThis.fetch = originalFetch;
       rmSync(root, { recursive: true, force: true });
     }
   });

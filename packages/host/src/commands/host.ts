@@ -242,7 +242,6 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     const block = blockFor(host);
     return block !== null && repoAllowed(block.allow, repo);
   };
-  const publicRead = (host: string): boolean => blockFor(host)?.allowPublicRead === true;
   const extra = listFlag(args, 'arg');
   const interval = Number(args.value('interval') ?? '5');
   if (!Number.isFinite(interval) || interval < 1) {
@@ -300,7 +299,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
       // must not stop the host broker serving every other root, under Restart=always least of all.
       try {
         advertise(dir);
-        await sweep(dir, repo, command, extra, allowed, publicRead);
+        await sweep(dir, repo, command, extra, allowed, blockFor);
       } catch (error) {
         warn(`could not serve ${repo}: ${(error as Error).message}`);
       }
@@ -325,7 +324,7 @@ async function sweep(
   command: string,
   extra: readonly string[],
   allowed: (host: string, repo: string) => boolean,
-  publicRead: (host: string) => boolean,
+  blockFor: (host: string) => ReturnType<typeof hostConfig>,
 ): Promise<number> {
   let answered = 0;
   for (const id of listRequests(dir)) {
@@ -368,7 +367,7 @@ async function sweep(
       answered += 1;
       continue;
     }
-    const result = await openOne(repo, command, extra, { ...request, proxy }, allowed, publicRead);
+    const result = await openOne(repo, command, extra, { ...request, proxy }, allowed, blockFor);
     writeResult(dir, id, result);
     removeRequest(dir, id);
     if (result.error !== undefined) {
@@ -436,13 +435,24 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
 }
 
 /** Unauthenticated public-repository check for the host route. */
-async function repoIsPublic(host: string, repository: string, proxy: ProxyChoice): Promise<boolean> {
-  const base = host.toLowerCase() === 'github.com' ? 'https://api.github.com' : `https://${host}/api/v3`;
+async function repoIsPublic(
+  host: string,
+  repository: string,
+  proxy: ProxyChoice,
+  apiBaseUrl?: string,
+  apiVersion = '2022-11-28',
+): Promise<boolean> {
+  const base =
+    apiBaseUrl ?? (host.toLowerCase() === 'github.com' ? 'https://api.github.com' : `https://${host}/api/v3`);
   let response: FetchResponseLike;
   try {
     response = await fetcherFor(proxy)(`${base}/repos/${repository}`, {
       method: 'GET',
-      headers: { accept: 'application/vnd.github+json', 'user-agent': 'gcb' },
+      headers: {
+        accept: 'application/vnd.github+json',
+        'x-github-api-version': apiVersion,
+        'user-agent': 'gcb',
+      },
     });
   } catch {
     return false;
@@ -526,7 +536,7 @@ async function openOne(
   extra: readonly string[],
   request: HostRequest,
   allowed: (host: string, repo: string) => boolean,
-  publicRead: (host: string) => boolean,
+  blockFor: (host: string) => ReturnType<typeof hostConfig>,
 ): Promise<HostResult> {
   if (request.kind === 'fork') {
     if (request.host !== undefined && !HOST.test(request.host)) {
@@ -614,10 +624,19 @@ async function openOne(
       return body === undefined ? invoke() : withBodyFile(body, invoke);
     };
 
-    if (!allowed(host, request.repo)) {
+    let hostBlock: ReturnType<typeof blockFor>;
+    try {
+      hostBlock = blockFor(host);
+    } catch (error) {
+      return { error: (error as Error).message };
+    }
+    if (hostBlock === null) {
+      return { error: `no configuration for ${host}` };
+    }
+    if (!repoAllowed(hostBlock.allow, request.repo)) {
       let allowedPublic = false;
       try {
-        allowedPublic = action.readOnly === true && publicRead(host);
+        allowedPublic = action.readOnly === true && hostBlock.allowPublicRead === true;
       } catch (error) {
         return { error: (error as Error).message };
       }
@@ -625,13 +644,19 @@ async function openOne(
         return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
       }
       try {
-        if (!(await repoIsPublic(host, request.repo, request.proxy))) {
+        const apiBaseUrl = 'apiBaseUrl' in hostBlock ? hostBlock.apiBaseUrl : undefined;
+        const apiVersion = 'apiVersion' in hostBlock ? hostBlock.apiVersion : undefined;
+        if (!(await repoIsPublic(host, request.repo, request.proxy, apiBaseUrl, apiVersion))) {
           return { error: `repository ${request.repo} is not public` };
         }
       } catch (error) {
         return { error: (error as Error).message };
       }
-      return runAction(forkEnv(request.proxy, request.account, host));
+      try {
+        return runAction(forkEnv(request.proxy, request.account, host));
+      } catch (error) {
+        return { error: (error as Error).message };
+      }
     }
 
     return personRun(host, request.repo, allowed, async (host) =>

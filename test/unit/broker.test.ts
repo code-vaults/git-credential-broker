@@ -779,7 +779,8 @@ describe('broker actions', () => {
       identity: 'user',
     });
     assert.equal(response.ok, true);
-    assert.equal((seen as { publicRead?: boolean } | undefined)?.publicRead, true);
+    assert.equal((seen as { publicRead?: boolean; identity?: string } | undefined)?.publicRead, true);
+    assert.equal((seen as { identity?: string } | undefined)?.identity, 'user');
     assert.equal(harness.events.at(-1)?.['identity'], 'user');
   });
 
@@ -835,6 +836,7 @@ describe('broker actions', () => {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       isForkOf: async () => true,
+      isPublicRepository: async () => true,
       runAction: async () => {
         calls += 1;
         return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };

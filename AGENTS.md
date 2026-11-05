@@ -246,7 +246,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   somewhere else and leaves a refresh token beside the key, which the broker renews by itself. The user
   token is used where the person's identity is required or preferred: authoring or editing a pull
   request, submitting a review, resolving a review thread (GraphQL refuses that for an app), replying,
-  editing or commenting on a review, and creating an issue through the action path. It needs the client id
+  editing or commenting on a review, reading a public repository through `allowPublicRead`, and
+  creating an issue through the action path. It needs the client id
   in the configuration and **Enable Device Flow** in the app settings, and no client secret at all. The
   refresh token is rotated on every exchange and written back; not writing it back would work once.
 
