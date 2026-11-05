@@ -758,6 +758,32 @@ describe('broker actions', () => {
     assert.equal(calls, 0);
   });
 
+  it('refuses bare --as-user on a public read outside the allowlist', async () => {
+    let calls = 0;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      isPublicRepository: async () => true,
+      runAction: async () => {
+        calls += 1;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true });
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/public',
+      ghAction: 'run:watch',
+      values: { runId: 42 },
+      identity: 'user',
+    });
+    assert.equal(response.ok, false);
+    assert.equal(response.code, CODES.BAD_REQUEST);
+    assert.match(String(response.reason), /--as-user/u);
+    assert.equal(calls, 0);
+  });
+
   it('requires the public-read opt-in for an unlisted read', async () => {
     let calls = 0;
     const provider: Provider = {

@@ -14,9 +14,9 @@ neither as a private repository. The host route does not use this
 exemption: its `gh` commands also need a token, so it keeps the normal allowlist. Neither path
 uses a person token or the action's normal write permissions.
 
-`allowPublicRead` runs for the app identity and bare `--as-user` on the app route, without changing
-the existing identity policy. `--as-user <login>` goes through the host broker and keeps the normal
-allowlist.
+`allowPublicRead` uses the app identity; bare `--as-user` is refused on that path because the read
+uses an App metadata token, not a person token. `--as-user <login>` goes through the host broker and
+keeps the normal allowlist.
 
 `allowForkPush` lets a git credential request through for a **public** fork whose GitHub
 parent/source is allowlisted, still limited to the credential path; catalog actions keep the normal
