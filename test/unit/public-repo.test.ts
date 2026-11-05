@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import { isPublicRepository } from '../../packages/host/src/public-repo.ts';
 import { ProviderConfigError } from '../../packages/core/src/errors.ts';
 
+/** Build the small response shape the check consumes. */
 function response(status: number, body: unknown) {
   return {
     ok: status >= 200 && status < 300,
@@ -59,8 +60,12 @@ describe('the unauthenticated public repository check', () => {
     await assert.rejects(
       isPublicRepository(
         async (_url, init) => {
-          await new Promise((_resolve, reject) => {
-            init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+          await new Promise((resolve, reject) => {
+            const slow = setTimeout(resolve, 60);
+            init.signal?.addEventListener('abort', () => {
+              clearTimeout(slow);
+              reject(new Error('aborted'));
+            });
           });
           return response(200, { private: false });
         },

@@ -23,7 +23,7 @@ import { currentProxyKey, proxyFetch } from '../http.ts';
 import { createSign } from 'node:crypto';
 import { getGhAction, ProviderConfigError, tokenFingerprint, type ActionRunResult } from 'gcb-core';
 import { runGhAction } from '../gh.ts';
-import { isPublicRepository as checkPublicRepository } from '../public-repo.ts';
+import { isPublicRepository as checkPublicRepository, withRepositoryResponse } from '../public-repo.ts';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { refreshUserToken } from '../device-flow.ts';
@@ -763,41 +763,41 @@ function pullRequestNumber(value: unknown): number | undefined {
     },
     /** Check a public fork with no credential; only confirmed fork relationships pass. */
     async isForkOf(owner: string, repo: string, bases: readonly string[]): Promise<boolean> {
-      const response = await fetchImpl(`${api}/repos/${owner}/${repo}`, {
-        method: 'GET',
-        headers: {
-          accept: 'application/vnd.github+json',
-          'x-github-api-version': apiVersion,
-          'user-agent': 'gcb',
+      return withRepositoryResponse(
+        fetchImpl,
+        api,
+        `${owner}/${repo}`,
+        { apiVersion, label: 'fork' },
+        async (response) => {
+          if (response.status === 403 || response.status === 429) {
+            const exhausted =
+              response.status === 429 ||
+              response.headers.get('x-ratelimit-remaining') === '0' ||
+              response.headers.get('retry-after') !== null;
+            throw new ProviderConfigError(
+              exhausted
+                ? 'GitHub rate-limited the unauthenticated fork check; retry later or allowlist the repository'
+                : 'GitHub refused the unauthenticated fork check; check the access policy or allowlist the repository',
+            );
+          }
+          if (!response.ok) return false;
+          let body: {
+            fork?: unknown;
+            parent?: { full_name?: unknown } | null;
+            source?: { full_name?: unknown } | null;
+          } | null;
+          try {
+            body = JSON.parse(await response.text()) as typeof body;
+          } catch {
+            return false;
+          }
+          if (body?.fork !== true) return false;
+          for (const candidate of [body.parent?.full_name, body.source?.full_name]) {
+            if (typeof candidate === 'string' && repoAllowed(bases, candidate)) return true;
+          }
+          return false;
         },
-      });
-      if (response.status === 403 || response.status === 429) {
-        const exhausted =
-          response.status === 429 ||
-          response.headers.get('x-ratelimit-remaining') === '0' ||
-          response.headers.get('retry-after') !== null;
-        throw new ProviderConfigError(
-          exhausted
-            ? 'GitHub rate-limited the unauthenticated fork check; retry later or allowlist the repository'
-            : 'GitHub refused the unauthenticated fork check; check the access policy or allowlist the repository',
-        );
-      }
-      if (!response.ok) return false;
-      let body: {
-        fork?: unknown;
-        parent?: { full_name?: unknown } | null;
-        source?: { full_name?: unknown } | null;
-      } | null;
-      try {
-        body = JSON.parse(await response.text()) as typeof body;
-      } catch {
-        return false;
-      }
-      if (body?.fork !== true) return false;
-      for (const candidate of [body.parent?.full_name, body.source?.full_name]) {
-        if (typeof candidate === 'string' && repoAllowed(bases, candidate)) return true;
-      }
-      return false;
+      );
     },
 
     /** Verify a public repository with no credential; a 403/429 is a provider error. */
