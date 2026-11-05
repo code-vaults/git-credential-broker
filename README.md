@@ -635,7 +635,7 @@ Per host, keyed exactly as git reports it (`github.com`, or `host:port` for othe
 | `allowForkPush` | Default `false`. Mint a credential for a **public** fork whose parent/source is an allowlisted repository. The App must be installed on the fork owner. |
 
 `github-app`: `clientId` (preferred `iss`), `appId` (fallback), `privateKeyPath` or `privateKeyPem`,
-`permissions`, `apiBaseUrl` (GitHub Enterprise), `apiVersion`, `installationCacheSeconds`,
+`permissions`, `apiBaseUrl` (GitHub Enterprise, must be HTTPS), `apiVersion`, `installationCacheSeconds`,
 `verifyAppPermissions` (default `true`). `permissions` must be a subset of what the app was actually
 granted; the broker checks once per process and names any missing permission.
 

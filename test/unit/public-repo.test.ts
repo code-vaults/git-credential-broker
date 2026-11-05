@@ -44,6 +44,35 @@ describe('the unauthenticated public repository check', () => {
     );
   });
 
+  it('refuses redirects and bounds the whole check', async () => {
+    let redirect = '';
+    await isPublicRepository(
+      async (_url, init) => {
+        redirect = init.redirect ?? '';
+        return response(200, { private: false });
+      },
+      'https://api.github.com',
+      'acme/widget',
+    );
+    assert.equal(redirect, 'error');
+
+    await assert.rejects(
+      isPublicRepository(
+        async (_url, init) => {
+          await new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+          });
+          return response(200, { private: false });
+        },
+        'https://api.github.com',
+        'acme/widget',
+        '2022-11-28',
+        5,
+      ),
+      /timed out/u,
+    );
+  });
+
   it('treats an unparseable body as not public', async () => {
     const responseWithHtml = {
       ok: true,

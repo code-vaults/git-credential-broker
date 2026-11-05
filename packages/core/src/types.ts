@@ -329,6 +329,7 @@ export interface FetchInitLike {
   readonly headers: Record<string, string>;
   readonly body?: string;
   readonly signal?: AbortSignal;
+  readonly redirect?: 'error' | 'follow' | 'manual';
 }
 
 /** A minimal fetch implementation. */

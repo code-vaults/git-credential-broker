@@ -12,8 +12,8 @@ repository, and the request is refused rather than falling back to anonymous whe
 `--as-user <login>` uses the host account token. The host route performs the same fresh public check
 before running the action.
 
-Visibility is checked freshly for each request, not cached. The check shares GitHub's 60/hour IP
-quota; an exhausted 403/429 is reported as a rate limit, a plain 403 as a refusal, and neither as a
+Visibility is checked freshly for each request, not cached, bounded at 10 seconds and refused on a
+redirect. The check shares GitHub's 60/hour IP quota; an exhausted 403/429 is reported as a rate limit, a plain 403 as a refusal, and neither as a
 private repository. Person tokens may themselves have private access; those forms rely on the
 visibility check rather than a token scope.
 

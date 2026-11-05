@@ -225,6 +225,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const command = args.value('command') ?? process.env['GCB_HOST_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
   let config: BrokerConfig | undefined;
+  /** Resolve one host block, loading the configuration on first use. */
   const blockFor = (host: string) => {
     if (config === undefined) {
       try {

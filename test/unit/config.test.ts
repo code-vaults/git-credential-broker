@@ -170,6 +170,34 @@ describe('validateConfig', () => {
     );
   });
 
+  it('requires apiBaseUrl to be an https URL', () => {
+    assert.throws(
+      () =>
+        validateConfig(
+          withHost({
+            provider: 'github-app',
+            allow: ['a/b'],
+            privateKeyPem: 'k',
+            apiBaseUrl: 'http://ghe.example/api/v3',
+          }),
+        ),
+      /apiBaseUrl must be an https URL/u,
+    );
+    const config = validateConfig(
+      withHost({
+        provider: 'github-app',
+        allow: ['a/b'],
+        privateKeyPem: 'k',
+        apiBaseUrl: 'https://ghe.example/api/v3',
+      }),
+    );
+    const host = config.hosts['github.com'];
+    assert.equal(host?.provider, 'github-app');
+    if (host?.provider === 'github-app') {
+      assert.equal(host.apiBaseUrl, 'https://ghe.example/api/v3');
+    }
+  });
+
   it('accepts the github-app identity fields and requires neither at this layer', () => {
     const config = validateConfig(
       withHost({ provider: 'github-app', allow: ['a/b'], privateKeyPem: 'k', clientId: 'Iv1.x', appId: 42 }),
