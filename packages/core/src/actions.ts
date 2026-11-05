@@ -210,8 +210,8 @@ const PR_READY: GhAction = {
 };
 
 // GitHub GraphQL:
-// https://docs.github.com/en/graphql/reference/mutations#locklockable
-// https://docs.github.com/en/graphql/reference/mutations#unlocklockable
+// https://docs.github.com/en/graphql/reference/issues#mutation-locklockable
+// https://docs.github.com/en/graphql/reference/issues#mutation-unlocklockable
 const PR_LOCK: GhAction = {
   name: 'pr:lock',
   command: ['pr', 'lock'],
@@ -405,8 +405,8 @@ const ISSUE_LIST: GhAction = {
 };
 
 // GitHub GraphQL:
-// https://docs.github.com/en/graphql/reference/mutations#locklockable
-// https://docs.github.com/en/graphql/reference/mutations#unlocklockable
+// https://docs.github.com/en/graphql/reference/issues#mutation-locklockable
+// https://docs.github.com/en/graphql/reference/issues#mutation-unlocklockable
 const ISSUE_LOCK: GhAction = {
   name: 'issue:lock',
   command: ['issue', 'lock'],
@@ -428,8 +428,8 @@ const ISSUE_UNLOCK: GhAction = {
 };
 
 // GitHub GraphQL:
-// https://docs.github.com/en/graphql/reference/mutations#pinissue
-// https://docs.github.com/en/graphql/reference/mutations#unpinissue
+// https://docs.github.com/en/graphql/reference/issues#mutation-pinissue
+// https://docs.github.com/en/graphql/reference/issues#mutation-unpinissue
 const ISSUE_PIN: GhAction = {
   name: 'issue:pin',
   command: ['issue', 'pin'],
