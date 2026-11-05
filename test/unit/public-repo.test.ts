@@ -86,8 +86,12 @@ describe('the unauthenticated public repository check', () => {
           status: 200,
           headers: { get: () => null },
           text: () =>
-            new Promise<string>((_resolve, reject) => {
-              init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+            new Promise<string>((resolve, reject) => {
+              const slow = setTimeout(() => resolve(JSON.stringify({ private: false })), 60);
+              init.signal?.addEventListener('abort', () => {
+                clearTimeout(slow);
+                reject(new Error('aborted'));
+              });
             }),
         }),
         'https://api.github.com',
