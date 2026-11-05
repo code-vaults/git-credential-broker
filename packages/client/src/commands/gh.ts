@@ -27,7 +27,10 @@ const ACTION_LINES = Object.values(GH_ACTIONS)
     const body = action.bodyRequiredWith === undefined
       ? ''
       : ` (--body required with ${action.bodyRequiredWith.map((flag) => `--${flag}`).join(', ')})`;
-    return `  ${action.command.join(' ')}${positionals ? ` ${positionals}` : ''}${flags ? ` ${flags}` : ''}${modes}${body}`;
+    const conflicts = action.conflicts === undefined
+      ? ''
+      : ` (not both ${action.conflicts.map(([left, right]) => `--${left}/--${right}`).join(', ')})`;
+    return `  ${action.command.join(' ')}${positionals ? ` ${positionals}` : ''}${flags ? ` ${flags}` : ''}${modes}${body}${conflicts}`;
   })
   .join('\n');
 
