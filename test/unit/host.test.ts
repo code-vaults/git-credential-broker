@@ -98,6 +98,17 @@ describe('bounded action output', () => {
     assert.match(result.stderr, /timed out; a write may have completed/u);
     assert.ok(Buffer.byteLength(result.stderr) <= 48_000);
   });
+
+  it('omits the write caveat when writeCaveat is false', async () => {
+    const result = await runBounded(
+      process.execPath,
+      ['-e', 'setTimeout(() => {}, 5000);'],
+      { cwd: tmpdir(), env: process.env, timeoutMs: 500, writeCaveat: false },
+    );
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /timed out/u);
+    assert.doesNotMatch(result.stderr, /write may have completed/u);
+  });
 });
 
 describe('the host reply route', () => {
@@ -437,7 +448,7 @@ describe('the host action route', () => {
 
       const unknownId = writeRequest(dir, {
         kind: 'action',
-        action: 'issue:view',
+        action: 'issue:delete',
         repo: 'acme/widget',
         values: { number: 7 },
       });

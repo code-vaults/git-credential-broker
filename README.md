@@ -552,7 +552,7 @@ Every broker command also accepts a per-command choice:
 
 ```sh
 gcb gh pr view 7 --no-proxy
-gcb pr status --number 7 --proxy http://proxy.example:7890
+gcb pr checks 7 --proxy http://proxy.example:7890
 ```
 
 For `git push`, the credential helper has no per-command argument, so it reads
@@ -766,6 +766,8 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr edit` | `pull_requests: write` |
 | `pr close` | `pull_requests: write` |
 | `pr reopen` | `pull_requests: write` |
+| `pr checks` | `pull_requests: read`, `checks: read`, `statuses: read` |
+| `pr status` | `pull_requests: read`, `checks: read`, `statuses: read` |
 | `pr comment` | `pull_requests: write` |
 | `pr review` | `pull_requests: write` |
 | `pr review --id` (`pr:review-by-id`) | `pull_requests: read` |
@@ -774,8 +776,13 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `issue comment` | `issues: write` |
 | `issue close` | `issues: write` |
 | `issue reopen` | `issues: write` |
+| `issue view` | `issues: read` |
+| `issue list` | `issues: read` |
 | `run view` | `actions: read` |
 | `run list` | `actions: read` |
+
+`pr status` with `--repo` reports the app identity's relevant pull requests and review requests
+with their checks; gh's current-branch section is absent because the broker has no branch.
 
 A missing `checks` or `statuses` grant is why `gcb pr view 72` can fail while `pr diff` works:
 `pr view` reads the checks and statuses endpoints as well. Raising a permission on the App is not

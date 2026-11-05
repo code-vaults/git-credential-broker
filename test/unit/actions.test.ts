@@ -20,6 +20,8 @@ describe('gh action catalog', () => {
       'pr:edit',
       'pr:close',
       'pr:reopen',
+      'pr:checks',
+      'pr:status',
       'pr:comment',
       'pr:review',
       'pr:review-by-id',
@@ -28,6 +30,8 @@ describe('gh action catalog', () => {
       'issue:comment',
       'issue:close',
       'issue:reopen',
+      'issue:view',
+      'issue:list',
       'run:view',
       'run:list',
     ]);
@@ -39,7 +43,6 @@ describe('gh action catalog', () => {
   it('declares the close/reopen identity and timeout policy', () => {
     for (const name of ['pr:reopen', 'issue:close', 'issue:reopen']) {
       assert.equal(getGhAction(name).timeoutSeconds, 60, name);
-      assert.equal(getGhAction(name).hostUser, true, name);
     }
     assert.equal(getGhAction('pr:reopen').appUser, undefined);
     assert.equal(getGhAction('issue:close').appUser, true);
@@ -57,6 +60,22 @@ describe('gh action catalog', () => {
       contents: 'read',
     });
     assert.deepEqual(getGhAction('issue:create').permissions, { issues: 'write' });
+  });
+
+  it('declares the read-side policy', () => {
+    assert.deepEqual(getGhAction('pr:checks').permissions, {
+      pull_requests: 'read',
+      checks: 'read',
+      statuses: 'read',
+    });
+    assert.deepEqual(getGhAction('pr:status').permissions, {
+      pull_requests: 'read',
+      checks: 'read',
+      statuses: 'read',
+    });
+    assert.deepEqual(getGhAction('issue:view').permissions, { issues: 'read' });
+    assert.deepEqual(getGhAction('issue:list').permissions, { issues: 'read' });
+    assert.equal(getGhAction('pr:checks').timeoutSeconds, 300);
   });
 });
 
@@ -135,6 +154,48 @@ describe('buildGhArgv', () => {
       buildGhArgv('pr:edit', { number: 7, title: 't', base: 'main' }, 'acme/widget'),
       ['pr', 'edit', '7', '--title', 't', '--base', 'main', '--repo', 'acme/widget'],
     );
+  });
+
+  it('builds the read action argv', () => {
+    assert.deepEqual(buildGhArgv('issue:view', { number: 7, comments: true }, 'acme/widget'), [
+      'issue',
+      'view',
+      '7',
+      '--comments',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(
+      buildGhArgv('issue:list', { state: 'closed', label: ['bug', 'p1'], limit: 5 }, 'acme/widget'),
+      [
+        'issue',
+        'list',
+        '--label',
+        'bug',
+        '--label',
+        'p1',
+        '--limit',
+        '5',
+        '--state',
+        'closed',
+        '--repo',
+        'acme/widget',
+      ],
+    );
+    assert.deepEqual(buildGhArgv('pr:checks', { number: 7, required: true }, 'acme/widget'), [
+      'pr',
+      'checks',
+      '7',
+      '--required',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('pr:status', {}, 'acme/widget'), [
+      'pr',
+      'status',
+      '--repo',
+      'acme/widget',
+    ]);
   });
 
   it('builds the reopen and issue close argv', () => {

@@ -68,7 +68,7 @@ export interface BoundedResult {
 export function runBounded(
   command: string,
   args: readonly string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number },
+  options: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number; writeCaveat?: boolean },
 ): Promise<BoundedResult> {
   return new Promise((resolve) => {
     let child;
@@ -86,7 +86,10 @@ export function runBounded(
     }
 
     const suffix = '\n[output truncated]\n';
-    const timeoutNote = 'the action timed out; a write may have completed before it was killed\n';
+    const timeoutNote =
+      options.writeCaveat === false
+        ? 'the action timed out\n'
+        : 'the action timed out; a write may have completed before it was killed\n';
     const outKeep = HOST_ACTION_OUTPUT_BYTES - Buffer.byteLength(suffix);
     const errKeep = outKeep - Buffer.byteLength(timeoutNote);
     const stdout = new StringDecoder('utf8');
@@ -559,6 +562,7 @@ async function openOne(
           cwd: repo,
           env: forkEnv(request.proxy, request.account, host),
           timeoutMs: Math.max(1, deadline - Date.now()),
+          writeCaveat: Object.values(action.permissions).some((permission) => permission === 'write'),
         });
         return result;
       };

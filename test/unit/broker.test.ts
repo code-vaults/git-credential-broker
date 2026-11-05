@@ -703,7 +703,7 @@ describe('broker actions', () => {
     assert.equal(called, false);
   });
 
-  it('refuses the user identity for a hostUser action the app broker does not allow', async () => {
+  it('refuses the user identity for an action the app broker does not allow', async () => {
     let called = false;
     const provider: Provider = {
       name: 'static',
