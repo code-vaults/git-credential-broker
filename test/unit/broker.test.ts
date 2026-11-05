@@ -852,6 +852,27 @@ describe('broker actions', () => {
     assert.equal(calls, 0);
   });
 
+  it('reports a fork-check rate limit as a provider error', async () => {
+    const provider: Provider = {
+      name: 'static',
+      isForkOf: async () => {
+        throw new ProviderConfigError('GitHub rate-limited the fork check');
+      },
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+    };
+    const harness = makeHarness(['acme/widget'], provider, false, null, { allowForkPush: true });
+    const response = await harness.handle({
+      op: 'credential',
+      host: HOST,
+      protocol: 'https',
+      path: 'alice/widget',
+    });
+    assert.equal(response.ok, false);
+    assert.equal(response.code, CODES.PROVIDER_ERROR);
+    assert.match(String(response.reason), /rate-limited/u);
+    assert.doesNotMatch(String(response.reason), /not a fork/u);
+  });
+
   it('allows a credential for a verified fork of an allowlisted repository', async () => {
     const provider: Provider = {
       name: 'static',
