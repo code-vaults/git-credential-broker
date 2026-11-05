@@ -493,6 +493,21 @@ const RUN_RERUN: GhAction = {
   appUser: true,
 };
 
+// GitHub: poll GET /repos/{owner}/{repo}/actions/runs/{run_id} until it finishes
+const RUN_WATCH: GhAction = {
+  name: 'run:watch',
+  command: ['run', 'watch'],
+  positionals: [{ name: 'runId', type: 'number', required: true }],
+  flags: [
+    { name: 'compact', type: 'boolean' },
+    { name: 'exit-status', type: 'boolean' },
+    { name: 'interval', type: 'number' },
+  ],
+  permissions: { actions: 'read' },
+  timeoutSeconds: 3600,
+  appUser: true,
+};
+
 // GitHub: GET /repos/{owner}/{repo}/actions/runs/{run_id}
 const RUN_VIEW: GhAction = {
   name: 'run:view',
@@ -556,6 +571,7 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'issue:list': ISSUE_LIST,
   'run:view': RUN_VIEW,
   'run:list': RUN_LIST,
+  'run:watch': RUN_WATCH,
   'run:cancel': RUN_CANCEL,
   'run:rerun': RUN_RERUN,
 });
