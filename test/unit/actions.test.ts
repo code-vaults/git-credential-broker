@@ -31,6 +31,10 @@ describe('gh action catalog', () => {
       'issue:comment',
       'issue:close',
       'issue:reopen',
+      'issue:lock',
+      'issue:unlock',
+      'issue:pin',
+      'issue:unpin',
       'issue:view',
       'issue:list',
       'run:view',
@@ -97,6 +101,16 @@ describe('gh action catalog', () => {
       assert.equal(getGhAction(name).timeoutSeconds, seconds, name);
     }
     assert.equal(getGhAction('run:rerun').positionals[0]?.required, undefined);
+  });
+
+  it('declares the issue-admin policy', () => {
+    for (const name of ['issue:lock', 'issue:unlock', 'issue:pin', 'issue:unpin']) {
+      assert.equal(getGhAction(name).appUser, true, name);
+      assert.deepEqual(getGhAction(name).permissions, { issues: 'write' }, name);
+      assert.equal(getGhAction(name).timeoutSeconds, 60, name);
+    }
+    assert.equal(getGhAction('issue:pin').target, 'issue');
+    assert.equal(getGhAction('issue:unpin').target, 'issue');
   });
 });
 
@@ -175,6 +189,50 @@ describe('buildGhArgv', () => {
       buildGhArgv('pr:edit', { number: 7, title: 't', base: 'main' }, 'acme/widget'),
       ['pr', 'edit', '7', '--title', 't', '--base', 'main', '--repo', 'acme/widget'],
     );
+  });
+
+  it('builds the issue-admin argv', () => {
+    assert.deepEqual(buildGhArgv('issue:lock', { number: 7 }, 'acme/widget'), [
+      'issue',
+      'lock',
+      '7',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.throws(
+      () => buildGhArgv('issue:lock', {}, 'acme/widget'),
+      /needs number/u,
+    );
+    assert.deepEqual(buildGhArgv('issue:lock', { number: 7, reason: 'spam' }, 'acme/widget'), [
+      'issue',
+      'lock',
+      '7',
+      '--reason',
+      'spam',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('issue:unlock', { number: 7 }, 'acme/widget'), [
+      'issue',
+      'unlock',
+      '7',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('issue:pin', { number: 7 }, 'acme/widget'), [
+      'issue',
+      'pin',
+      '7',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('issue:unpin', { number: 7 }, 'acme/widget'), [
+      'issue',
+      'unpin',
+      '7',
+      '--repo',
+      'acme/widget',
+    ]);
   });
 
   it('builds the lifecycle argv', () => {
