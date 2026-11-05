@@ -492,8 +492,9 @@ than promised here. `userTokens` is consulted for opening, replying, editing or 
 and for an issue creation or resolve when no `user.refresh` exists. Resolving a review thread needs **Contents: Read and write**
 (`resolveReviewThread` is refused without it), which would also let that token push and merge; if
 that trade is not acceptable, resolve through `authorize`, whose token is the person's own.
-`user.refresh` wins over `userTokens` when it exists. A plain `gcb pr` stays on the app's
-installation token. Dropping the field does not change the default; it only makes bare `--as-user`
+`pr:update-branch --as-user` also needs **Contents: Read and write** for the same reason; without it,
+use the default app route or `--as-user <login>`. `user.refresh` wins over `userTokens` when it
+exists. A plain `gcb pr` stays on the app's installation token. Dropping the field does not change the default; it only makes bare `--as-user`
 fail with `no authorized user token`.
 
 #### Authorizing as a person instead
