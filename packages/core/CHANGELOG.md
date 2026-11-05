@@ -1,5 +1,37 @@
 # gcb-core
 
+## 0.5.0
+
+### Minor Changes
+
+- [#95](https://github.com/code-vaults/git-credential-broker/pull/95) [`51f0a65`](https://github.com/code-vaults/git-credential-broker/commit/51f0a65babcb9585a9ef56a5eeb754c9adc54bf0) Thanks [@JounQin](https://github.com/JounQin)! - Add `issue:lock`, `issue:unlock`, `issue:pin` and `issue:unpin` to the action catalog. Lock takes an
+  optional `--reason`; all four use `issues: write` and set `appUser`, so bare `--as-user` works through
+  the app broker. `issue:pin` and `issue:unpin` declare `target: issue` so a pull request number is refused by the
+  preflight instead of reaching the GraphQL mutation or returning an unpin no-op.
+
+- [#91](https://github.com/code-vaults/git-credential-broker/pull/91) [`5dedb25`](https://github.com/code-vaults/git-credential-broker/commit/5dedb25dbb47fd61f85bed444f1744214addcc22) Thanks [@JounQin](https://github.com/JounQin)! - Add `pr:ready`, `run:cancel` and `run:rerun` to the action catalog. `pr:ready` toggles draft state
+  with `--undo`; `run:cancel` supports `--force`; `run:rerun` accepts exactly one of a run id or
+  `--job`, and rejects `--failed` with `--job` because gh ignores the failed flag in job mode.
+  `run:cancel` and `run:rerun` set `appUser`, so bare `--as-user` works through the app broker;
+  `pr:ready` stays host-account only for that form, like `pr:close`/`pr:reopen`.
+
+- [#97](https://github.com/code-vaults/git-credential-broker/pull/97) [`705c139`](https://github.com/code-vaults/git-credential-broker/commit/705c13916643a4951476240b84f732feb236b964) Thanks [@JounQin](https://github.com/JounQin)! - Add `pr:lock` and `pr:unlock` to the action catalog. Lock takes an optional `--reason`; both use
+  `pull_requests: write`. The permission was verified with a token limited to `pull_requests: write`,
+  and an `issues: write` token was refused.
+
+- [#89](https://github.com/code-vaults/git-credential-broker/pull/89) [`e5bd34e`](https://github.com/code-vaults/git-credential-broker/commit/e5bd34ecabda5510763eef6e8689f6c3c14b0316) Thanks [@JounQin](https://github.com/JounQin)! - Add the read-side actions `pr:checks`, `pr:status`, `issue:view` and `issue:list` to the action
+  catalog. They use read-only permissions and are available through the ordinary client, host action
+  and allowlist routes. The unused `hostUser` catalog field is removed; the named-account host route
+  accepts any catalogued action.
+
+- [#88](https://github.com/code-vaults/git-credential-broker/pull/88) [`914535b`](https://github.com/code-vaults/git-credential-broker/commit/914535be1fb6223a0f055c2730fcaf304d976991) Thanks [@JounQin](https://github.com/JounQin)! - Add `pr:reopen`, `issue:close` and `issue:reopen` to the action catalog. All three use a 60-second
+  timeout. `pr:reopen` is host-account only, like `pr:close`; `issue:close`/`issue:reopen` also set
+  `appUser`, so bare `--as-user` works through the app broker. The two issue actions also verify that
+  the number is an issue, not a pull request, before executing; gh's issue close would otherwise close
+  a PR. The comment flags for close and reopen were left out: a closing comment is prose like an
+  action body, and gh has no `--comment-file`, so callers use the existing issue/pull-request comment
+  actions instead.
+
 ## 0.4.0
 
 ### Minor Changes

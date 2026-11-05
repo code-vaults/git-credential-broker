@@ -1,5 +1,24 @@
 # gcb-client
 
+## 0.5.0
+
+### Minor Changes
+
+- [#81](https://github.com/code-vaults/git-credential-broker/pull/81) [`93889a4`](https://github.com/code-vaults/git-credential-broker/commit/93889a430f5b906fec6d57b2bcbe1251ce8e9791) Thanks [@JounQin](https://github.com/JounQin)! - Dispatch catalogued `pr` and `issue` subcommands through one primary adapter. `gh` remains the
+  default; `GCB_PRIMARY` selects the adapter and an unsupported name fails closed.
+  `gcb issue` is now the same catalog shell as `gcb gh issue`, so its separate host-submit module is
+  gone; the host login form is `gcb gh issue ... --as-user <login>`. `--body-file -` reads the
+  body from standard input, matching `gh`. `gcb gh` accepts both `--as-user` forms: bare for actions the app broker
+  can run as a person, and a login for the catalogued action through the host broker. The host request carries the action
+  name and typed values; the broker rebuilds argv from the catalog.
+  
+  The host-broker channel is named consistently now: `GCB_HOST_TIMEOUT_MS` replaces `GCB_OPENER_TIMEOUT_MS`, the marker file is `host-broker.json`, the channel directory is `gcb/host-broker`, and the core helpers are `readHostBroker`/`writeHostBroker`/`clearHostBroker`; the `gcb-core` result type is now `HostResult`, not `HostOpenResult`. Client and host must be upgraded together; the host program override is `GCB_HOST_COMMAND`.
+
+### Patch Changes
+
+- Updated dependencies [[`51f0a65`](https://github.com/code-vaults/git-credential-broker/commit/51f0a65babcb9585a9ef56a5eeb754c9adc54bf0), [`5dedb25`](https://github.com/code-vaults/git-credential-broker/commit/5dedb25dbb47fd61f85bed444f1744214addcc22), [`705c139`](https://github.com/code-vaults/git-credential-broker/commit/705c13916643a4951476240b84f732feb236b964), [`e5bd34e`](https://github.com/code-vaults/git-credential-broker/commit/e5bd34ecabda5510763eef6e8689f6c3c14b0316), [`914535b`](https://github.com/code-vaults/git-credential-broker/commit/914535be1fb6223a0f055c2730fcaf304d976991)]:
+  - gcb-core@0.5.0
+
 ## 0.4.0
 
 ### Minor Changes
