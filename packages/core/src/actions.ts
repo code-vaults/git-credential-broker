@@ -412,6 +412,48 @@ const RUN_RERUN: GhAction = {
   appUser: true,
 };
 
+// GitHub GraphQL: lockLockable and unlockLockable
+const ISSUE_LOCK: GhAction = {
+  name: 'issue:lock',
+  command: ['issue', 'lock'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [{ name: 'reason', type: 'string' }],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 60,
+  appUser: true,
+};
+
+const ISSUE_UNLOCK: GhAction = {
+  name: 'issue:unlock',
+  command: ['issue', 'unlock'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 60,
+  appUser: true,
+};
+
+// GitHub GraphQL: pinIssue and unpinIssue
+const ISSUE_PIN: GhAction = {
+  name: 'issue:pin',
+  command: ['issue', 'pin'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 60,
+  appUser: true,
+};
+
+const ISSUE_UNPIN: GhAction = {
+  name: 'issue:unpin',
+  command: ['issue', 'unpin'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 60,
+  appUser: true,
+};
+
 // GitHub: GET /repos/{owner}/{repo}/actions/runs/{run_id}
 const RUN_VIEW: GhAction = {
   name: 'run:view',
@@ -464,6 +506,10 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'issue:comment': ISSUE_COMMENT,
   'issue:close': ISSUE_CLOSE,
   'issue:reopen': ISSUE_REOPEN,
+  'issue:lock': ISSUE_LOCK,
+  'issue:unlock': ISSUE_UNLOCK,
+  'issue:pin': ISSUE_PIN,
+  'issue:unpin': ISSUE_UNPIN,
   'issue:view': ISSUE_VIEW,
   'issue:list': ISSUE_LIST,
   'run:view': RUN_VIEW,

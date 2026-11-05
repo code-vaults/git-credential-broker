@@ -777,6 +777,10 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `issue comment` | `issues: write` |
 | `issue close` | `issues: write` |
 | `issue reopen` | `issues: write` |
+| `issue lock` | `issues: write` |
+| `issue unlock` | `issues: write` |
+| `issue pin` | `issues: write` |
+| `issue unpin` | `issues: write` |
 | `issue view` | `issues: read` |
 | `issue list` | `issues: read` |
 | `run view` | `actions: read` |
