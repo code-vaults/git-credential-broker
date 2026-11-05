@@ -226,6 +226,10 @@ describe('buildGhArgv', () => {
       () => buildGhArgv('run:rerun', { runId: 42, failed: true, job: '99' }, 'acme/widget'),
       /exactly one of runId, --job/u,
     );
+    assert.throws(
+      () => buildGhArgv('run:rerun', { failed: true, job: '99' }, 'acme/widget'),
+      /does not allow --failed with --job/u,
+    );
   });
 
   it('builds the read action argv', () => {
