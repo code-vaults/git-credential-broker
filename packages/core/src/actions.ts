@@ -210,6 +210,18 @@ const PR_READY: GhAction = {
 };
 
 // GitHub GraphQL:
+// https://docs.github.com/en/graphql/reference/pulls#mutation-updatepullrequestbranch
+const PR_UPDATE_BRANCH: GhAction = {
+  name: 'pr:update-branch',
+  command: ['pr', 'update-branch'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [{ name: 'rebase', type: 'boolean' }],
+  permissions: { pull_requests: 'write', contents: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+};
+
+// GitHub GraphQL:
 // https://docs.github.com/en/graphql/reference/issues#mutation-locklockable
 // https://docs.github.com/en/graphql/reference/issues#mutation-unlocklockable
 const PR_LOCK: GhAction = {
@@ -525,6 +537,7 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:ready': PR_READY,
   'pr:lock': PR_LOCK,
   'pr:unlock': PR_UNLOCK,
+  'pr:update-branch': PR_UPDATE_BRANCH,
   'pr:checks': PR_CHECKS,
   'pr:status': PR_STATUS,
   'pr:comment': PR_COMMENT,
