@@ -109,9 +109,9 @@ describe('gh action catalog', () => {
       assert.deepEqual(getGhAction(name).permissions, { issues: 'write' }, name);
       assert.equal(getGhAction(name).timeoutSeconds, 60, name);
     }
+    assert.equal(getGhAction('issue:pin').target, 'issue');
     assert.equal(getGhAction('issue:unpin').target, 'issue');
   });
-
 });
 
 describe('buildGhArgv', () => {

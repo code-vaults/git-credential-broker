@@ -413,6 +413,7 @@ const ISSUE_PIN: GhAction = {
   permissions: { issues: 'write' },
   timeoutSeconds: 60,
   appUser: true,
+  target: 'issue',
 };
 
 const ISSUE_UNPIN: GhAction = {
