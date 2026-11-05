@@ -82,6 +82,26 @@ describe('gh action catalog', () => {
   });
 });
 
+  it('declares the lifecycle write policy', () => {
+    for (const name of ['run:cancel', 'run:rerun']) {
+      assert.equal(getGhAction(name).appUser, true, name);
+    }
+    assert.equal(getGhAction('pr:ready').appUser, undefined);
+    assert.deepEqual(getGhAction('pr:ready').permissions, { pull_requests: 'write' });
+    assert.deepEqual(getGhAction('run:cancel').permissions, { actions: 'write' });
+    assert.deepEqual(getGhAction('run:rerun').permissions, { actions: 'write' });
+    for (const [name, seconds] of [
+      ['pr:ready', 60],
+      ['run:cancel', 60],
+      ['run:rerun', 120],
+    ] as const) {
+      assert.equal(getGhAction(name).timeoutSeconds, seconds, name);
+    }
+    assert.equal(getGhAction('run:rerun').positionals[0]?.required, undefined);
+  });
+
+
+
 describe('buildGhArgv', () => {
   it('rebuilds the canonical argv and injects the repository', () => {
     assert.deepEqual(
@@ -159,17 +179,6 @@ describe('buildGhArgv', () => {
     );
   });
 
-  it('declares the lifecycle write policy', () => {
-    for (const name of ['pr:ready', 'run:cancel', 'run:rerun']) {
-      assert.equal(getGhAction(name).appUser, true, name);
-    }
-    assert.deepEqual(getGhAction('pr:ready').permissions, { pull_requests: 'write' });
-    assert.deepEqual(getGhAction('run:cancel').permissions, { actions: 'write' });
-    assert.deepEqual(getGhAction('run:rerun').permissions, { actions: 'write' });
-    assert.equal(getGhAction('pr:ready').timeoutSeconds, 60);
-    assert.equal(getGhAction('run:rerun').timeoutSeconds, 120);
-  });
-
   it('builds the lifecycle argv', () => {
     assert.deepEqual(buildGhArgv('pr:ready', { number: 7, undo: true }, 'acme/widget'), [
       'pr',
@@ -187,16 +196,26 @@ describe('buildGhArgv', () => {
       '--repo',
       'acme/widget',
     ]);
-    assert.deepEqual(buildGhArgv('run:rerun', { runId: 42, failed: true, job: '99' }, 'acme/widget'), [
+    assert.deepEqual(buildGhArgv('run:rerun', { runId: 42, failed: true }, 'acme/widget'), [
       'run',
       'rerun',
       '42',
       '--failed',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('run:rerun', { job: '99' }, 'acme/widget'), [
+      'run',
+      'rerun',
       '--job',
       '99',
       '--repo',
       'acme/widget',
     ]);
+    assert.throws(
+      () => buildGhArgv('run:rerun', { job: '' }, 'acme/widget'),
+      /non-empty/u,
+    );
   });
 
   it('builds the read action argv', () => {

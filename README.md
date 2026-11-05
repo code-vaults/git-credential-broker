@@ -455,10 +455,10 @@ picks up. The bound exists because the walk repeats every `--interval` seconds; 
 deeper layouts. To start it once and keep it,
 `examples/gcb-host.service` is a systemd user unit; on a system without user services,
 `examples/gcb-host-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
-instance at a time, and its output in a log file. Without `--as-user`, `pr` and `issue` actions use
-the broker route as the app; bare `--as-user` selects the broker's authorized person for a pull
-request or issue action; `--as-user <login>` writes a request for this host broker. With a login and no host broker
-running they fail; they do not fall back to the broker route.
+instance at a time, and its output in a log file. Without `--as-user`, catalogued actions use the
+broker route as the app; bare `--as-user` selects the broker's authorized person for actions that
+declare `appUser`; `--as-user <login>` writes a request for this host broker. With a login and no
+host broker running they fail; they do not fall back to the broker route.
 
 ```sh
 # in the container: the broker's authorized person

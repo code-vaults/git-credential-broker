@@ -205,7 +205,6 @@ const PR_READY: GhAction = {
   flags: [{ name: 'undo', type: 'boolean' }],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 60,
-  appUser: true,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/pulls/{number} then its check-runs and commit statuses
@@ -382,7 +381,7 @@ const ISSUE_LIST: GhAction = {
   timeoutSeconds: 120,
 };
 
-// GitHub: POST /repos/{owner}/{repo}/actions/runs/{run_id}/cancel
+// GitHub: POST /repos/{owner}/{repo}/actions/runs/{run_id}/cancel, or .../force-cancel with --force
 const RUN_CANCEL: GhAction = {
   name: 'run:cancel',
   command: ['run', 'cancel'],
@@ -393,15 +392,16 @@ const RUN_CANCEL: GhAction = {
   appUser: true,
 };
 
-// GitHub: POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun
+// GitHub: POST .../actions/runs/{run_id}/rerun; --failed selects rerun-failed-jobs, and --job
+// selects .../actions/jobs/{job_id}/rerun. gh ignores a run id and --failed when --job is present.
 const RUN_RERUN: GhAction = {
   name: 'run:rerun',
   command: ['run', 'rerun'],
-  positionals: [{ name: 'runId', type: 'number', required: true }],
+  positionals: [{ name: 'runId', type: 'number' }],
   flags: [
     { name: 'debug', type: 'boolean' },
     { name: 'failed', type: 'boolean' },
-    { name: 'job', type: 'string' },
+    { name: 'job', type: 'string', nonEmpty: true },
   ],
   permissions: { actions: 'write' },
   timeoutSeconds: 120,
