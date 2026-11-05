@@ -55,7 +55,7 @@ export interface GhAction {
   readonly command: readonly string[];
   readonly positionals: readonly PositionalSpec[];
   readonly flags: readonly FlagSpec[];
-  /** Exactly one of these flags must be present, when set. */
+  /** Exactly one of these values (positional or flag) must be present, when set. */
   readonly exactlyOneOf?: readonly string[];
   /** At least one of these flags must be present. */
   readonly atLeastOneOf?: readonly string[];
@@ -195,16 +195,6 @@ const PR_REOPEN: GhAction = {
   command: ['pr', 'reopen'],
   positionals: [{ name: 'number', type: 'number', required: true }],
   flags: [],
-  permissions: { pull_requests: 'write' },
-  timeoutSeconds: 60,
-};
-
-// GitHub GraphQL: markPullRequestReadyForReview and convertPullRequestToDraft
-const PR_READY: GhAction = {
-  name: 'pr:ready',
-  command: ['pr', 'ready'],
-  positionals: [{ name: 'number', type: 'number', required: true }],
-  flags: [{ name: 'undo', type: 'boolean' }],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 60,
 };
@@ -405,6 +395,7 @@ const RUN_RERUN: GhAction = {
     { name: 'failed', type: 'boolean' },
     { name: 'job', type: 'string', nonEmpty: true },
   ],
+  exactlyOneOf: ['runId', 'job'],
   conflicts: [['failed', 'job']],
   permissions: { actions: 'write' },
   timeoutSeconds: 120,
@@ -452,7 +443,6 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:edit': PR_EDIT,
   'pr:close': PR_CLOSE,
   'pr:reopen': PR_REOPEN,
-  'pr:ready': PR_READY,
   'pr:checks': PR_CHECKS,
   'pr:status': PR_STATUS,
   'pr:comment': PR_COMMENT,
@@ -577,6 +567,10 @@ export function buildGhArgv(
   }
 
   const present = new Set<string>();
+  const provided = new Set<string>();
+  for (const positional of action.positionals) {
+    if (values[positional.name] !== undefined) provided.add(positional.name);
+  }
   for (const flag of action.flags) {
     const value = values[flag.name];
     if (value === undefined) {
@@ -588,6 +582,7 @@ export function buildGhArgv(
       if (value) {
         argv.push(`--${flag.name}`);
         present.add(flag.name);
+        provided.add(flag.name);
       }
       continue;
     }
@@ -615,6 +610,7 @@ export function buildGhArgv(
       argv.push(`--${flag.name}`, text);
     }
     present.add(flag.name);
+    provided.add(flag.name);
   }
 
   if (action.atLeastOneOf !== undefined && !action.atLeastOneOf.some((flag) => present.has(flag))) {
@@ -623,9 +619,13 @@ export function buildGhArgv(
     );
   }
   if (action.exactlyOneOf !== undefined) {
-    const chosen = action.exactlyOneOf.filter((flag) => present.has(flag));
+    const chosen = action.exactlyOneOf.filter((field) => provided.has(field));
     if (chosen.length !== 1) {
-      throw new ActionError(`${name} needs exactly one of ${action.exactlyOneOf.map((flag) => `--${flag}`).join(', ')}`);
+      const spell = (field: string): string =>
+        action.positionals.some((positional) => positional.name === field) ? field : `--${field}`;
+      throw new ActionError(
+        `${name} needs exactly one of ${action.exactlyOneOf.map(spell).join(', ')}`,
+      );
     }
   }
   for (const flag of action.bodyRequiredWith ?? []) {

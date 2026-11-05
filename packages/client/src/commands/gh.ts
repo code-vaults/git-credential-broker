@@ -23,7 +23,9 @@ const ACTION_LINES = Object.values(GH_ACTIONS)
       .join(' ');
     const modes = action.exactlyOneOf === undefined
       ? ''
-      : ` (one of ${action.exactlyOneOf.map((flag) => `--${flag}`).join(', ')})`;
+      : ` (one of ${action.exactlyOneOf
+          .map((field) => (action.positionals.some((positional) => positional.name === field) ? field : `--${field}`))
+          .join(', ')})`;
     const body = action.bodyRequiredWith === undefined
       ? ''
       : ` (--body required with ${action.bodyRequiredWith.map((flag) => `--${flag}`).join(', ')})`;
