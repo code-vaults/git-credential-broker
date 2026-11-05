@@ -136,8 +136,9 @@ described below is still what runs the lifecycle `gh` cannot express (opening as
 threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr close`.
 
 For that flag-only form, creation uses the app's installation token by default; `--as-user` without
-a value uses the broker's authorized user token for open, review, reply, resolve, edit and comment,
-and `--as-user <login>` uses the host broker for creation, review, reply and edit. Resolving a review
+a value uses the broker's authorized user token for open, review, reply, resolve, edit, comment and
+catalogued reads, and `--as-user <login>` uses the host broker for creation, review, reply and
+edit. Resolving a review
 thread defaults to the user identity because the pull-request token this broker mints is narrowed to
 `pull_requests: write` and `contents: read`, while `resolveReviewThread` needs
 `contents: write` — a grant the broker gives only to the credential git pushes with, never to a
@@ -435,8 +436,8 @@ actions include issue create/edit/comment/close/reopen and pull request close/re
 merge action. For `repo fork`, review replies, reviews, pull request edit, issue edit/comment and any
 request that names `--repo` explicitly — every review always carries its repository, even when
 derived from origin — it checks the repository against the broker config's allowlist (pass
-`--config`). An explicit `--repo` needs no checkout of that repository; without it, the checkout
-decides.
+`--config`), except a `readOnly` action with `allowPublicRead` on a verified public repository. An
+explicit `--repo` needs no checkout of that repository; without it, the checkout decides.
 `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
 directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. The directory must
@@ -488,8 +489,9 @@ belongs to one user or organization and cannot span two, so two owners need two 
 with **Pull requests: Read and write**, **Contents: Read** and **Metadata: Read**, and give it access
 to **only the repositories the allowlist already names**. With Contents: Read, GitHub itself refuses
 to let that token push or merge, so "it may only open pull requests" is enforced by GitHub rather
-than promised here. `userTokens` is consulted for opening, replying, editing or commenting when `--as-user` is passed,
-and for an issue creation or resolve when no `user.refresh` exists. Resolving a review thread needs **Contents: Read and write**
+than promised here. `userTokens` is consulted for opening, replying, editing, commenting or
+catalogued reads when `--as-user` is passed, and for an issue creation or resolve when no
+`user.refresh` exists. Resolving a review thread needs **Contents: Read and write**
 (`resolveReviewThread` is refused without it), which would also let that token push and merge; if
 that trade is not acceptable, resolve through `authorize`, whose token is the person's own.
 `pr:update-branch --as-user` also needs **Contents: Read and write** for the same reason; without it,
@@ -629,9 +631,11 @@ Per host, keyed exactly as git reports it (`github.com`, or `host:port` for othe
 | `provider` | `github-app` or `static`. |
 | `allow` | Default-deny list: `owner/repo`, or a whole-segment wildcard `owner/*`. Malformed entries (no slash, three segments, a partial wildcard like `wid*`) are rejected at load time rather than silently matching nothing. |
 | `allowInsecureHttp` | Default `false`. Permit a plaintext `http` remote for this host. |
+| `allowPublicRead` | Default `false`. Let explicit `readOnly` actions run on a repository verified public without an allowlist entry, on both the app and host routes. The app identity uses a metadata-only token and requires the App to be installed with metadata read. Bare `--as-user` uses the authorized person token; `--as-user <login>` uses the host account token. Both may have private access; an exhausted 403/429 is reported as a rate limit, a plain 403 as a refusal, never as a private repository. |
+| `allowForkPush` | Default `false`. Mint a credential for a **public** fork whose parent/source is an allowlisted repository. The App must be installed on the fork owner. |
 
 `github-app`: `clientId` (preferred `iss`), `appId` (fallback), `privateKeyPath` or `privateKeyPem`,
-`permissions`, `apiBaseUrl` (GitHub Enterprise), `apiVersion`, `installationCacheSeconds`,
+`permissions`, `apiBaseUrl` (GitHub Enterprise, must be HTTPS), `apiVersion`, `installationCacheSeconds`,
 `verifyAppPermissions` (default `true`). `permissions` must be a subset of what the app was actually
 granted; the broker checks once per process and names any missing permission.
 

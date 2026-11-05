@@ -196,11 +196,11 @@ describe('the host broker explicit-repository route', () => {
 
 });
 
-function forkConfig(root: string, allow: string, host = 'github.com'): string {
+function forkConfig(root: string, allow: string, host = 'github.com', publicRead = false): string {
   const path = join(root, 'broker.config.yml');
   writeFileSync(
     path,
-    `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  ${host}:\n    provider: static\n    username: x\n    password: y\n    allow:\n      - ${allow}\n`,
+    `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  ${host}:\n    provider: static\n    username: x\n    password: y\n${publicRead ? '    allowPublicRead: true\n' : ''}    allow:\n      - ${allow}\n`,
     'utf8',
   );
   return path;
@@ -560,6 +560,139 @@ describe('the host action route', () => {
       assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
       assert.match(readResult(dir, id)?.error ?? '', /boom/u);
       assert.equal(existsSync(marker), false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('runs a readOnly action on a verified public repository', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-public-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = join(root, 'broker.config.yml');
+    writeFileSync(
+      config,
+      `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  ghe.example:\n    provider: github-app\n    clientId: Iv1.clientid\n    privateKeyPem: x\n    apiBaseUrl: https://ghe.example/custom/v3\n    apiVersion: '2024-01-01'\n    allowPublicRead: true\n    allow:\n      - acme/widget\n`,
+      'utf8',
+    );
+    const dir = channelDir(join(repo, '.git'));
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\necho "public action"\n', 'utf8');
+    chmodSync(command, 0o755);
+    const originalFetch = globalThis.fetch;
+    let publicRepo = true;
+    let requested = '';
+    let version = '';
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      requested = String(input);
+      version = new Headers(init?.headers).get('x-github-api-version') ?? '';
+      return new Response(JSON.stringify({ private: !publicRepo }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'cli/cli',
+        host: 'ghe.example',
+        values: { number: 7 },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.equal(readResult(dir, id)?.stdout, 'public action\n');
+      assert.match(requested, /^https:\/\/ghe\.example\/custom\/v3\/repos\//u);
+      assert.equal(version, '2024-01-01');
+
+      publicRepo = false;
+      const privateId = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'cli/private',
+        host: 'ghe.example',
+        values: { number: 7 },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.match(readResult(dir, privateId)?.error ?? '', /not public/u);
+
+      publicRepo = true;
+      const writeId = writeRequest(dir, {
+        kind: 'action',
+        action: 'issue:comment',
+        repo: 'cli/public',
+        host: 'ghe.example',
+        values: { number: 7, body: 'x' },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.match(readResult(dir, writeId)?.error ?? '', /allowlist/u);
+    } finally {
+      globalThis.fetch = originalFetch;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes the forkEnv failure for a public read with a missing account', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-public-account-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget', 'github.com', true);
+    const dir = channelDir(join(repo, '.git'));
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\necho SHOULD_NOT_RUN\n', 'utf8');
+    chmodSync(command, 0o755);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ private: false }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as typeof fetch;
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'cli/public',
+        account: 'no-such-account-xyz',
+        values: { number: 7 },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.match(readResult(dir, id)?.error ?? '', /no gh config for account/u);
+    } finally {
+      globalThis.fetch = originalFetch;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('writes a result when the config cannot be loaded', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-missing-config-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(join(repo, '.git'));
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\necho SHOULD_NOT_RUN\n', 'utf8');
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'acme/widget',
+        values: { number: 7 },
+      });
+      assert.equal(
+        await runHostBroker([
+          '--repo',
+          repo,
+          '--command',
+          command,
+          '--config',
+          join(root, 'missing.yml'),
+          '--once',
+        ]),
+        0,
+      );
+      assert.match(readResult(dir, id)?.error ?? '', /broker config allowlist/u);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

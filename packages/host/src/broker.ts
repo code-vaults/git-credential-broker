@@ -257,17 +257,6 @@ export function createRequestHandler(
     }
     context.repo = repo.full;
 
-    if (!repoAllowed(block.allow, repo.full)) {
-      return deny(
-        context,
-        CODES.REPO_NOT_ALLOWED,
-        'repository not in allowlist',
-        'repository is not allowlisted',
-        undefined,
-        auditEvent,
-      );
-    }
-
     const provider = current.providers.get(block.host);
     if (!provider) {
       return deny(
@@ -278,6 +267,51 @@ export function createRequestHandler(
         undefined,
         auditEvent,
       );
+    }
+
+    const allowedRepo = repoAllowed(block.allow, repo.full);
+    let forkPush = false;
+    let publicAction = false;
+    if (message['op'] === 'action' && block.allowPublicRead === true && typeof message['ghAction'] === 'string') {
+      try {
+        publicAction = getGhAction(message['ghAction']).readOnly === true;
+      } catch {
+        // The action branch reports the bad action name; this is only the allowlist test.
+      }
+    }
+    if (!allowedRepo && !publicAction) {
+      if (message['op'] === 'credential' && block.allowForkPush === true && provider.isForkOf !== undefined) {
+        let fork = false;
+        let forkError: unknown;
+        try {
+          fork = await provider.isForkOf(repo.owner, repo.repo, block.allow);
+        } catch (error) {
+          forkError = error;
+        }
+        if (forkError instanceof ProviderConfigError) {
+          return deny(context, CODES.PROVIDER_ERROR, forkError.message, forkError.message, undefined, auditEvent);
+        }
+        if (!fork) {
+          return deny(
+            context,
+            CODES.REPO_NOT_ALLOWED,
+            'fork is not a fork of an allowlisted repository',
+            'repository is not allowlisted',
+            undefined,
+            auditEvent,
+          );
+        }
+        forkPush = true;
+      } else {
+        return deny(
+          context,
+          CODES.REPO_NOT_ALLOWED,
+          'repository not in allowlist',
+          'repository is not allowlisted',
+          undefined,
+          auditEvent,
+        );
+      }
     }
 
     if (message['op'] === 'action') {
@@ -313,6 +347,26 @@ export function createRequestHandler(
           "this host's provider cannot run GitHub actions",
         );
       }
+      let publicRead = false;
+      if (!allowedRepo) {
+        if (provider.isPublicRepository === undefined) {
+          return denyAction(CODES.REPO_NOT_ALLOWED, 'provider cannot verify public repositories', 'repository is not allowlisted');
+        }
+        let publicRepo = false;
+        let publicError: unknown;
+        try {
+          publicRepo = await provider.isPublicRepository(repo.owner, repo.repo);
+        } catch (error) {
+          publicError = error;
+        }
+        if (publicError instanceof ProviderConfigError) {
+          return denyAction(CODES.PROVIDER_ERROR, publicError.message, publicError.message);
+        }
+        if (!publicRepo) {
+          return denyAction(CODES.REPO_NOT_ALLOWED, 'repository is not public', 'repository is not allowlisted');
+        }
+        publicRead = true;
+      }
       const startedAt = Date.now();
       try {
         const result = await provider.runAction({
@@ -323,6 +377,7 @@ export function createRequestHandler(
           action: ghAction,
           values: actionValues,
           ...(identity === undefined ? {} : { identity: identity as 'app' | 'user' }),
+          ...(publicRead ? { publicRead: true } : {}),
           proxy,
         });
         if (result.error !== undefined) {
@@ -337,6 +392,7 @@ export function createRequestHandler(
           command: spec.command.join(' '),
           permissions: spec.permissions,
           identity: identity ?? 'app',
+          public_read: publicRead,
           duration_ms: Date.now() - startedAt,
           token_fingerprint: result.tokenFingerprint,
           exit_code: result.code,
@@ -580,6 +636,7 @@ export function createRequestHandler(
         token_fingerprint: tokenFingerprint(credential.password),
         expires_at: new Date(credential.expiresAt).toISOString(),
         cached: credential.cached === true,
+        fork_push: forkPush,
       });
       return {
         ok: true,

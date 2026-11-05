@@ -104,6 +104,28 @@ describe('validateConfig', () => {
     }
   });
 
+  it('accepts the public-read and fork-push opt-ins as booleans', () => {
+    const config = validateConfig(
+      withHost({
+        provider: 'static',
+        allow: ['a/b'],
+        password: 'p',
+        allowPublicRead: true,
+        allowForkPush: true,
+      }),
+    );
+    assert.equal(config.hosts['github.com']?.allowPublicRead, true);
+    assert.equal(config.hosts['github.com']?.allowForkPush, true);
+    assert.throws(
+      () => validateConfig(withHost({ provider: 'static', allow: ['a/b'], password: 'p', allowPublicRead: 'yes' })),
+      /allowPublicRead must be a boolean/,
+    );
+    assert.throws(
+      () => validateConfig(withHost({ provider: 'static', allow: ['a/b'], password: 'p', allowForkPush: 'yes' })),
+      /allowForkPush must be a boolean/,
+    );
+  });
+
   it('accepts whole-segment wildcards', () => {
     const config = validateConfig(withHost({ provider: 'static', allow: ['acme/*', '*/*'], password: 'p' }));
     assert.deepEqual(config.hosts['github.com']?.allow, ['acme/*', '*/*']);
@@ -146,6 +168,34 @@ describe('validateConfig', () => {
         ),
       /permissions\["contents"\] must be a string/,
     );
+  });
+
+  it('requires apiBaseUrl to be an https URL', () => {
+    assert.throws(
+      () =>
+        validateConfig(
+          withHost({
+            provider: 'github-app',
+            allow: ['a/b'],
+            privateKeyPem: 'k',
+            apiBaseUrl: 'http://ghe.example/api/v3',
+          }),
+        ),
+      /apiBaseUrl must be an https URL/u,
+    );
+    const config = validateConfig(
+      withHost({
+        provider: 'github-app',
+        allow: ['a/b'],
+        privateKeyPem: 'k',
+        apiBaseUrl: 'https://ghe.example/api/v3',
+      }),
+    );
+    const host = config.hosts['github.com'];
+    assert.equal(host?.provider, 'github-app');
+    if (host?.provider === 'github-app') {
+      assert.equal(host.apiBaseUrl, 'https://ghe.example/api/v3');
+    }
   });
 
   it('accepts the github-app identity fields and requires neither at this layer', () => {

@@ -52,7 +52,8 @@ Opening (the default)
                        is configured. Without it, open/review/reply/edit/comment use
                        the app; resolve always needs the person
   --as-user <login>    Create, review, reply or edit through the host broker, using
-                       ~/.config/gh-<login> (run 'gcb host' on the host)
+                       ~/.config/gh-<login> (run 'gcb host' on the host).
+                       Catalogued reads use gcb gh pr view|list|checks|status instead.
 
 Acting on one
   --number <n>         The pull request number                       [required]
@@ -197,13 +198,13 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     action !== 'update'
   ) {
     fail(
-      '--as-user <login> only opens, replies or reviews through the host broker; use bare --as-user for ' +
+      'the flag-only gcb pr form only opens, replies or reviews through the host broker; use gcb gh pr ... for ' +
         JSON.stringify(action),
     );
   }
   if (asUser && !['open', 'resolve', 'reply', 'edit', 'comment', 'submit-review', 'update'].includes(action)) {
     fail(
-      '--as-user without a login only opens, replies, resolves, edits or comments on a pull request, so it does not go with ' +
+      'the flag-only gcb pr form only opens, replies, resolves, edits or comments on a pull request, so it does not go with ' +
         JSON.stringify(action),
     );
   }

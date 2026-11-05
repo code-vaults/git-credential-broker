@@ -18,10 +18,12 @@
  * Reference: https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app
  */
 import { userTokenPath } from '../config.ts';
+import { repoAllowed } from '../policy.ts';
 import { currentProxyKey, proxyFetch } from '../http.ts';
 import { createSign } from 'node:crypto';
 import { getGhAction, ProviderConfigError, tokenFingerprint, type ActionRunResult } from 'gcb-core';
 import { runGhAction } from '../gh.ts';
+import { isPublicRepository as checkPublicRepository, withRepositoryResponse } from '../public-repo.ts';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { refreshUserToken } from '../device-flow.ts';
@@ -633,9 +635,36 @@ function pullRequestNumber(value: unknown): number | undefined {
     async runAction(request) {
       const spec = getGhAction(request.action);
       const identity = request.identity ?? 'app';
-      let token: string;
+      let token = '';
       let minted = false;
-      if (identity === 'user') {
+      if (request.publicRead === true && identity === 'user') {
+        const person = await personTokenFor(request.owner);
+        if (person === undefined) {
+          throw new ProviderConfigError(
+            'no authorized user token for this action; run gcb authorize or configure userTokens',
+          );
+        }
+        token = person;
+      } else if (request.publicRead === true) {
+        try {
+          const installationId = await resolveInstallationId(request.owner);
+          const { json } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
+            repositories: [request.repo],
+            permissions: { metadata: 'read' },
+          });
+          const publicToken = (json as { token?: unknown } | null)?.token;
+          if (typeof publicToken !== 'string' || publicToken === '') {
+            throw new ProviderConfigError('GitHub returned no metadata token for the public read');
+          }
+          token = publicToken;
+          minted = true;
+        } catch (error) {
+          if (error instanceof ProviderConfigError) throw error;
+          throw new ProviderConfigError(
+            'the app needs an installation on this repository to read it with a metadata-only token',
+          );
+        }
+      } else if (identity === 'user') {
         const person = await personTokenFor(request.owner);
         if (person === undefined) {
           throw new ProviderConfigError(
@@ -732,6 +761,40 @@ function pullRequestNumber(value: unknown): number | undefined {
       tokens.set(request.full, credential);
       return { ...credential, cached: false };
     },
+    /** Check a public fork with no credential; only confirmed fork relationships pass. */
+    async isForkOf(owner: string, repo: string, bases: readonly string[]): Promise<boolean> {
+      return withRepositoryResponse(
+        fetchImpl,
+        api,
+        `${owner}/${repo}`,
+        { apiVersion, label: 'fork' },
+        async (response) => {
+          if (!response.ok) return false;
+          const text = await response.text();
+          let body: {
+            fork?: unknown;
+            parent?: { full_name?: unknown } | null;
+            source?: { full_name?: unknown } | null;
+          } | null;
+          try {
+            body = JSON.parse(text) as typeof body;
+          } catch {
+            return false;
+          }
+          if (body?.fork !== true) return false;
+          for (const candidate of [body.parent?.full_name, body.source?.full_name]) {
+            if (typeof candidate === 'string' && repoAllowed(bases, candidate)) return true;
+          }
+          return false;
+        },
+      );
+    },
+
+    /** Verify a public repository with no credential; a 403/429 is a provider error. */
+    async isPublicRepository(owner: string, repo: string): Promise<boolean> {
+      return checkPublicRepository(fetchImpl, api, `${owner}/${repo}`, apiVersion);
+    },
+
     /**
      * Read one workflow job's log.
      *

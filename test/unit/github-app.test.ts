@@ -66,6 +66,8 @@ interface RecordedCall {
   readonly method: string;
   readonly body: Record<string, unknown> | null;
   readonly authorization: string | undefined;
+  readonly signal?: AbortSignal;
+  readonly redirect?: string;
 }
 
 describe('signAppJwt', () => {
@@ -464,6 +466,124 @@ describe('createGithubAppProvider', () => {
       const minted = stub.calls.find((call) => call.method === 'POST' && call.url.includes('/access_tokens'));
       assert.deepEqual(minted?.body?.permissions, permissions);
       assert.ok(stub.calls.some((call) => call.method === 'DELETE' && call.url.endsWith('/installation/token')));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('passes the deadline and redirect refusal to the fork lookup', async () => {
+    const calls: RecordedCall[] = [];
+    const provider = providerFor({
+      calls,
+      fetchImpl: async (url, init) => {
+        calls.push({
+          url,
+          method: init.method,
+          body: recordedBody(init.body),
+          authorization: init.headers['authorization'],
+          raw: init.body ?? '',
+          signal: init.signal,
+          redirect: init.redirect,
+        });
+        return jsonResponse({ fork: true, parent: { full_name: 'acme/widget' } });
+      },
+    });
+    assert.equal(await provider.isForkOf!('alice', 'widget', ['acme/widget']), true);
+    assert.ok(calls[0]?.signal instanceof AbortSignal, 'the fork check must carry the abort signal');
+    assert.equal(calls[0]?.redirect, 'error', 'the fork check must refuse redirects');
+  });
+
+  it('classifies public and fork lookups without credentials', async () => {
+    const response = (status: number, body: unknown) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      text: async () => JSON.stringify(body),
+    });
+    const provider = (status: number, body: unknown) =>
+      providerFor(
+        { calls: [], fetchImpl: async () => response(status, body) },
+        {},
+        undefined,
+      );
+    assert.equal(await provider(200, { private: false }).isPublicRepository!('acme', 'widget'), true);
+    assert.equal(await provider(200, { private: true }).isPublicRepository!('acme', 'widget'), false);
+    assert.equal(await provider(404, {}).isPublicRepository!('acme', 'widget'), false);
+    await assert.rejects(provider(429, {}).isPublicRepository!('acme', 'widget'), /rate-limited/u);
+    await assert.rejects(provider(403, {}).isPublicRepository!('acme', 'widget'), /refused/u);
+    assert.equal(
+      await provider(200, { fork: true, parent: { full_name: 'acme/widget' } }).isForkOf!('alice', 'widget', ['acme/widget']),
+      true,
+    );
+    assert.equal(
+      await provider(200, { fork: true, source: { full_name: 'acme/widget' } }).isForkOf!('alice', 'widget', ['acme/widget']),
+      true,
+    );
+    assert.equal(await provider(200, { fork: false }).isForkOf!('alice', 'widget', ['acme/widget']), false);
+    assert.equal(await provider(404, {}).isForkOf!('alice', 'widget', ['acme/widget']), false);
+    await assert.rejects(provider(429, {}).isForkOf!('alice', 'widget', ['acme/widget']), /rate-limited/u);
+  });
+
+  it('mints a metadata-only token for a verified public read', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-public-read-'));
+    const gh = join(dir, 'gh');
+    writeFileSync(gh, '#!/bin/sh\nprintf "TOKEN=%s\\n" "$GH_TOKEN"\n');
+    chmodSync(gh, 0o755);
+    const permissions = { metadata: 'read' };
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'Acme' } }],
+      nowMs,
+      appPermissions: permissions,
+      installationPermissions: permissions,
+    });
+    const provider = providerFor(stub, { permissions }, gh);
+    try {
+      const result = await provider.runAction?.({
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        full: 'acme/widget',
+        action: 'pr:view',
+        values: { number: 7 },
+        publicRead: true,
+      });
+      assert.equal(result?.code, 0);
+      assert.match(result?.stdout ?? '', /TOKEN=ghs_stub_token_value/u);
+      const mint = stub.calls.find((call) => call.method === 'POST' && call.url.includes('/access_tokens'));
+      assert.deepEqual(mint?.body, { repositories: ['widget'], permissions: { metadata: 'read' } });
+      assert.ok(stub.calls.some((call) => call.method === 'DELETE' && call.url.endsWith('/installation/token')));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('uses the person token for a public read requested with --as-user', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-public-user-'));
+    const tokenPath = join(dir, 'acme.token');
+    writeFileSync(tokenPath, 'github_pat_public_user\n');
+    const gh = join(dir, 'gh');
+    writeFileSync(gh, '#!/bin/sh\nprintf "TOKEN=%s\\n" "$GH_TOKEN"\n');
+    chmodSync(gh, 0o755);
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'Acme' } }], nowMs });
+    const provider = providerFor(stub, { userTokens: { acme: tokenPath } }, gh);
+    try {
+      const result = await provider.runAction?.({
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        full: 'acme/widget',
+        action: 'pr:view',
+        values: { number: 7 },
+        identity: 'user',
+        publicRead: true,
+      });
+      assert.equal(result?.code, 0);
+      assert.match(result?.stdout ?? '', /TOKEN=github_pat_public_user/u);
+      assert.equal(
+        stub.calls.some((call) => call.url.includes('/access_tokens')),
+        false,
+        'a public read with --as-user must not mint an installation token',
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

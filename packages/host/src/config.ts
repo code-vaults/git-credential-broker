@@ -191,6 +191,32 @@ function stringField(
 }
 
 /**
+ * Read an optional HTTPS URL field.
+ *
+ * @param record - the object to read from.
+ * @param key - the field name.
+ * @param errors - the error accumulator.
+ * @param at - the configuration path, for the error message.
+ * @returns the URL, or undefined when absent or invalid.
+ */
+function httpsUrlField(
+  record: Record<string, unknown>,
+  key: string,
+  errors: string[],
+  at: string,
+): string | undefined {
+  const value = stringField(record, key, errors, at);
+  if (value === undefined) return undefined;
+  try {
+    if (new URL(value).protocol === 'https:') return value;
+  } catch {
+    // Fall through to the shared error below.
+  }
+  errors.push(`${at}.${key} must be an https URL`);
+  return undefined;
+}
+
+/**
  * Read an optional numeric field.
  *
  * @param record - the object to read from.
@@ -391,6 +417,8 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           provider: 'static',
           allow,
           allowInsecureHttp: booleanField(blockRaw, 'allowInsecureHttp', errors, at),
+          allowPublicRead: booleanField(blockRaw, 'allowPublicRead', errors, at),
+          allowForkPush: booleanField(blockRaw, 'allowForkPush', errors, at),
           username: stringField(blockRaw, 'username', errors, at),
           password: stringField(blockRaw, 'password', errors, at),
           passwordPath: stringField(blockRaw, 'passwordPath', errors, at),
@@ -403,6 +431,8 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           provider: 'github-app',
           allow,
           allowInsecureHttp: booleanField(blockRaw, 'allowInsecureHttp', errors, at),
+          allowPublicRead: booleanField(blockRaw, 'allowPublicRead', errors, at),
+          allowForkPush: booleanField(blockRaw, 'allowForkPush', errors, at),
           clientId: stringField(blockRaw, 'clientId', errors, at),
           appId: stringOrNumberField(blockRaw, 'appId', errors, at),
           privateKeyPath: stringField(blockRaw, 'privateKeyPath', errors, at),
@@ -412,7 +442,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
       userTokens: lowerCasedKeys(stringMapField(blockRaw['userTokens'], errors, at, 'userTokens')),
           privateKeyPem: stringField(blockRaw, 'privateKeyPem', errors, at),
           permissions: stringMapField(blockRaw['permissions'], errors, at),
-          apiBaseUrl: stringField(blockRaw, 'apiBaseUrl', errors, at),
+          apiBaseUrl: httpsUrlField(blockRaw, 'apiBaseUrl', errors, at),
           apiVersion: stringField(blockRaw, 'apiVersion', errors, at),
           installationCacheSeconds: numberField(blockRaw, 'installationCacheSeconds', errors, at),
           verifyAppPermissions: booleanField(blockRaw, 'verifyAppPermissions', errors, at),
