@@ -503,8 +503,8 @@ const RUN_WATCH: GhAction = {
     { name: 'exit-status', type: 'boolean' },
     { name: 'interval', type: 'number' },
   ],
-  permissions: { actions: 'read' },
-  timeoutSeconds: 3600,
+  permissions: { actions: 'read', checks: 'read' },
+  timeoutSeconds: 3300,
   appUser: true,
 };
 

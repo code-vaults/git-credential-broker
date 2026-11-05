@@ -790,7 +790,7 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `issue list` | `issues: read` |
 | `run view` | `actions: read` |
 | `run list` | `actions: read` |
-| `run watch` | `actions: read` |
+| `run watch` | `actions: read`, `checks: read` |
 | `run cancel` | `actions: write` |
 | `run rerun` | `actions: write` |
 <!-- action-permissions:end -->
