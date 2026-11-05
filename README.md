@@ -552,7 +552,7 @@ Every broker command also accepts a per-command choice:
 
 ```sh
 gcb gh pr view 7 --no-proxy
-gcb pr --status --number 7 --proxy http://proxy.example:7890
+gcb pr checks 7 --proxy http://proxy.example:7890
 ```
 
 For `git push`, the credential helper has no per-command argument, so it reads
