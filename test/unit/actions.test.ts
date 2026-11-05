@@ -102,6 +102,16 @@ describe('gh action catalog', () => {
     }
     assert.equal(getGhAction('run:rerun').positionals[0]?.required, undefined);
   });
+
+  it('declares the issue-admin policy', () => {
+    for (const name of ['issue:lock', 'issue:unlock', 'issue:pin', 'issue:unpin']) {
+      assert.equal(getGhAction(name).appUser, true, name);
+      assert.deepEqual(getGhAction(name).permissions, { issues: 'write' }, name);
+      assert.equal(getGhAction(name).timeoutSeconds, 60, name);
+    }
+    assert.equal(getGhAction('issue:unpin').target, 'issue');
+  });
+
 });
 
 describe('buildGhArgv', () => {
@@ -181,15 +191,18 @@ describe('buildGhArgv', () => {
     );
   });
 
-  it('declares the issue-admin policy', () => {
-    for (const name of ['issue:lock', 'issue:unlock', 'issue:pin', 'issue:unpin']) {
-      assert.equal(getGhAction(name).appUser, true, name);
-      assert.deepEqual(getGhAction(name).permissions, { issues: 'write' }, name);
-      assert.equal(getGhAction(name).timeoutSeconds, 60, name);
-    }
-  });
-
   it('builds the issue-admin argv', () => {
+    assert.deepEqual(buildGhArgv('issue:lock', { number: 7 }, 'acme/widget'), [
+      'issue',
+      'lock',
+      '7',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.throws(
+      () => buildGhArgv('issue:lock', {}, 'acme/widget'),
+      /needs number/u,
+    );
     assert.deepEqual(buildGhArgv('issue:lock', { number: 7, reason: 'spam' }, 'acme/widget'), [
       'issue',
       'lock',

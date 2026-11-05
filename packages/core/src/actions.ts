@@ -383,35 +383,6 @@ const ISSUE_LIST: GhAction = {
   timeoutSeconds: 120,
 };
 
-// GitHub: POST /repos/{owner}/{repo}/actions/runs/{run_id}/cancel, or .../force-cancel with --force
-const RUN_CANCEL: GhAction = {
-  name: 'run:cancel',
-  command: ['run', 'cancel'],
-  positionals: [{ name: 'runId', type: 'number', required: true }],
-  flags: [{ name: 'force', type: 'boolean' }],
-  permissions: { actions: 'write' },
-  timeoutSeconds: 60,
-  appUser: true,
-};
-
-// GitHub: POST .../actions/runs/{run_id}/rerun; --failed selects rerun-failed-jobs, and --job
-// selects .../actions/jobs/{job_id}/rerun. gh ignores a run id and --failed when --job is present.
-const RUN_RERUN: GhAction = {
-  name: 'run:rerun',
-  command: ['run', 'rerun'],
-  positionals: [{ name: 'runId', type: 'number' }],
-  flags: [
-    { name: 'debug', type: 'boolean' },
-    { name: 'failed', type: 'boolean' },
-    { name: 'job', type: 'string', nonEmpty: true },
-  ],
-  exactlyOneOf: ['runId', 'job'],
-  conflicts: [['failed', 'job']],
-  permissions: { actions: 'write' },
-  timeoutSeconds: 120,
-  appUser: true,
-};
-
 // GitHub GraphQL: lockLockable and unlockLockable
 const ISSUE_LOCK: GhAction = {
   name: 'issue:lock',
@@ -451,6 +422,36 @@ const ISSUE_UNPIN: GhAction = {
   flags: [],
   permissions: { issues: 'write' },
   timeoutSeconds: 60,
+  appUser: true,
+  target: 'issue',
+};
+
+// GitHub: POST /repos/{owner}/{repo}/actions/runs/{run_id}/cancel, or .../force-cancel with --force
+const RUN_CANCEL: GhAction = {
+  name: 'run:cancel',
+  command: ['run', 'cancel'],
+  positionals: [{ name: 'runId', type: 'number', required: true }],
+  flags: [{ name: 'force', type: 'boolean' }],
+  permissions: { actions: 'write' },
+  timeoutSeconds: 60,
+  appUser: true,
+};
+
+// GitHub: POST .../actions/runs/{run_id}/rerun; --failed selects rerun-failed-jobs, and --job
+// selects .../actions/jobs/{job_id}/rerun. gh ignores a run id and --failed when --job is present.
+const RUN_RERUN: GhAction = {
+  name: 'run:rerun',
+  command: ['run', 'rerun'],
+  positionals: [{ name: 'runId', type: 'number' }],
+  flags: [
+    { name: 'debug', type: 'boolean' },
+    { name: 'failed', type: 'boolean' },
+    { name: 'job', type: 'string', nonEmpty: true },
+  ],
+  exactlyOneOf: ['runId', 'job'],
+  conflicts: [['failed', 'job']],
+  permissions: { actions: 'write' },
+  timeoutSeconds: 120,
   appUser: true,
 };
 
