@@ -573,7 +573,7 @@ describe('the host action route', () => {
     const config = join(root, 'broker.config.yml');
     writeFileSync(
       config,
-      `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  ghe.example:\n    provider: github-app\n    clientId: Iv1.clientid\n    privateKeyPem: x\n    apiBaseUrl: https://ghe.example/api/v3\n    allowPublicRead: true\n    allow:\n      - acme/widget\n`,
+      `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  ghe.example:\n    provider: github-app\n    clientId: Iv1.clientid\n    privateKeyPem: x\n    apiBaseUrl: https://ghe.example/custom/v3\n    apiVersion: '2024-01-01'\n    allowPublicRead: true\n    allow:\n      - acme/widget\n`,
       'utf8',
     );
     const dir = channelDir(join(repo, '.git'));
@@ -583,8 +583,10 @@ describe('the host action route', () => {
     const originalFetch = globalThis.fetch;
     let publicRepo = true;
     let requested = '';
-    globalThis.fetch = (async (input: string | URL | Request) => {
+    let version = '';
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
       requested = String(input);
+      version = new Headers(init?.headers).get('x-github-api-version') ?? '';
       return new Response(JSON.stringify({ private: !publicRepo }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -600,7 +602,8 @@ describe('the host action route', () => {
       });
       assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
       assert.equal(readResult(dir, id)?.stdout, 'public action\n');
-      assert.match(requested, /^https:\/\/ghe\.example\/api\/v3\/repos\//u);
+      assert.match(requested, /^https:\/\/ghe\.example\/custom\/v3\/repos\//u);
+      assert.equal(version, '2024-01-01');
 
       publicRepo = false;
       const privateId = writeRequest(dir, {

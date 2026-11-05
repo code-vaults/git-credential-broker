@@ -44,6 +44,19 @@ describe('the unauthenticated public repository check', () => {
     );
   });
 
+  it('treats an unparseable body as not public', async () => {
+    const responseWithHtml = {
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      text: async () => '<html>proxy error</html>',
+    };
+    assert.equal(
+      await isPublicRepository(async () => responseWithHtml, 'https://api.github.com', 'acme/widget'),
+      false,
+    );
+  });
+
   it('reports an exhausted quota and a plain refusal differently', async () => {
     await assert.rejects(
       isPublicRepository(async () => response(429, {}), 'https://api.github.com', 'acme/widget'),
