@@ -349,10 +349,14 @@ export function createRequestHandler(
           return denyAction(CODES.REPO_NOT_ALLOWED, 'provider cannot verify public repositories', 'repository is not allowlisted');
         }
         let publicRepo = false;
+        let publicError: unknown;
         try {
           publicRepo = await provider.isPublicRepository(repo.owner, repo.repo);
-        } catch {
-          publicRepo = false;
+        } catch (error) {
+          publicError = error;
+        }
+        if (publicError instanceof ProviderConfigError) {
+          return denyAction(CODES.PROVIDER_ERROR, publicError.message, publicError.message);
         }
         if (!publicRepo) {
           return denyAction(CODES.REPO_NOT_ALLOWED, 'repository is not public', 'repository is not allowlisted');

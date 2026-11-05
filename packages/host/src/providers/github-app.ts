@@ -794,6 +794,11 @@ function pullRequestNumber(value: unknown): number | undefined {
           'user-agent': 'gcb',
         },
       });
+      if (response.status === 403 || response.status === 429) {
+        throw new ProviderConfigError(
+          'GitHub rate-limited the unauthenticated public-repository check; retry later or allowlist the repository',
+        );
+      }
       if (!response.ok) return false;
       const body = JSON.parse(await response.text()) as { private?: unknown } | null;
       return body?.private === false;
