@@ -485,7 +485,8 @@ describe('createGithubAppProvider', () => {
     assert.equal(await provider(200, { private: false }).isPublicRepository!('acme', 'widget'), true);
     assert.equal(await provider(200, { private: true }).isPublicRepository!('acme', 'widget'), false);
     assert.equal(await provider(404, {}).isPublicRepository!('acme', 'widget'), false);
-    await assert.rejects(provider(429, {}).isPublicRepository!('acme', 'widget'), ProviderConfigError);
+    await assert.rejects(provider(429, {}).isPublicRepository!('acme', 'widget'), /rate-limited/u);
+    await assert.rejects(provider(403, {}).isPublicRepository!('acme', 'widget'), /refused/u);
     assert.equal(
       await provider(200, { fork: true, parent: { full_name: 'acme/widget' } }).isForkOf!('alice', 'widget', ['acme/widget']),
       true,
@@ -496,7 +497,7 @@ describe('createGithubAppProvider', () => {
     );
     assert.equal(await provider(200, { fork: false }).isForkOf!('alice', 'widget', ['acme/widget']), false);
     assert.equal(await provider(404, {}).isForkOf!('alice', 'widget', ['acme/widget']), false);
-    await assert.rejects(provider(429, {}).isForkOf!('alice', 'widget', ['acme/widget']), ProviderConfigError);
+    await assert.rejects(provider(429, {}).isForkOf!('alice', 'widget', ['acme/widget']), /rate-limited/u);
   });
 
   it('mints a metadata-only token for a verified public read', async () => {

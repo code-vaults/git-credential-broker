@@ -763,8 +763,14 @@ function pullRequestNumber(value: unknown): number | undefined {
         },
       });
       if (response.status === 403 || response.status === 429) {
+        const exhausted =
+          response.status === 429 ||
+          response.headers.get('x-ratelimit-remaining') === '0' ||
+          response.headers.get('retry-after') !== null;
         throw new ProviderConfigError(
-          'GitHub rate-limited the unauthenticated fork check; retry later or allowlist the repository',
+          exhausted
+            ? 'GitHub rate-limited the unauthenticated fork check; retry later or allowlist the repository'
+            : 'GitHub refused the unauthenticated fork check; check the access policy or allowlist the repository',
         );
       }
       if (!response.ok) return false;
@@ -791,8 +797,14 @@ function pullRequestNumber(value: unknown): number | undefined {
         },
       });
       if (response.status === 403 || response.status === 429) {
+        const exhausted =
+          response.status === 429 ||
+          response.headers.get('x-ratelimit-remaining') === '0' ||
+          response.headers.get('retry-after') !== null;
         throw new ProviderConfigError(
-          'GitHub rate-limited the unauthenticated public-repository check; retry later or allowlist the repository',
+          exhausted
+            ? 'GitHub rate-limited the unauthenticated public-repository check; retry later or allowlist the repository'
+            : 'GitHub refused the unauthenticated public-repository check; check the access policy or allowlist the repository',
         );
       }
       if (!response.ok) return false;
