@@ -61,6 +61,8 @@ export interface GhAction {
   readonly atLeastOneOf?: readonly string[];
   /** This body must be present when any of these flags is present. */
   readonly bodyRequiredWith?: readonly string[];
+  /** Flag pairs that may not be present together. */
+  readonly conflicts?: readonly (readonly [string, string])[];
   readonly permissions: Readonly<Partial<Record<GhPermission, PermissionLevel>>>;
   /** The default per-action timeout, in seconds. */
   readonly timeoutSeconds: number;
@@ -403,6 +405,7 @@ const RUN_RERUN: GhAction = {
     { name: 'failed', type: 'boolean' },
     { name: 'job', type: 'string', nonEmpty: true },
   ],
+  conflicts: [['failed', 'job']],
   permissions: { actions: 'write' },
   timeoutSeconds: 120,
   appUser: true,
@@ -628,6 +631,11 @@ export function buildGhArgv(
   for (const flag of action.bodyRequiredWith ?? []) {
     if (present.has(flag) && (typeof values.body !== 'string' || values.body.trim() === '')) {
       throw new ActionError(`${name} needs a non-empty --body with --${flag}`);
+    }
+  }
+  for (const [left, right] of action.conflicts ?? []) {
+    if (present.has(left) && present.has(right)) {
+      throw new ActionError(`${name} does not allow --${left} with --${right}`);
     }
   }
 

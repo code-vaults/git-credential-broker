@@ -80,7 +80,6 @@ describe('gh action catalog', () => {
     assert.deepEqual(getGhAction('issue:list').permissions, { issues: 'read' });
     assert.equal(getGhAction('pr:checks').timeoutSeconds, 300);
   });
-});
 
   it('declares the lifecycle write policy', () => {
     for (const name of ['run:cancel', 'run:rerun']) {
@@ -99,8 +98,7 @@ describe('gh action catalog', () => {
     }
     assert.equal(getGhAction('run:rerun').positionals[0]?.required, undefined);
   });
-
-
+});
 
 describe('buildGhArgv', () => {
   it('rebuilds the canonical argv and injects the repository', () => {
@@ -215,6 +213,10 @@ describe('buildGhArgv', () => {
     assert.throws(
       () => buildGhArgv('run:rerun', { job: '' }, 'acme/widget'),
       /non-empty/u,
+    );
+    assert.throws(
+      () => buildGhArgv('run:rerun', { runId: 42, failed: true, job: '99' }, 'acme/widget'),
+      /does not allow --failed with --job/u,
     );
   });
 
