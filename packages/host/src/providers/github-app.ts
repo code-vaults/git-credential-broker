@@ -18,6 +18,7 @@
  * Reference: https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app
  */
 import { userTokenPath } from '../config.ts';
+import { repoAllowed } from '../policy.ts';
 import { currentProxyKey, proxyFetch } from '../http.ts';
 import { createSign } from 'node:crypto';
 import { getGhAction, ProviderConfigError, tokenFingerprint, type ActionRunResult } from 'gcb-core';
@@ -632,6 +633,17 @@ function pullRequestNumber(value: unknown): number | undefined {
 
     async runAction(request) {
       const spec = getGhAction(request.action);
+      if (request.anonymous === true) {
+        return runGhAction({
+          action: request.action,
+          values: request.values,
+          repo: request.full,
+          host: request.host,
+          ghPath,
+          env: process.env,
+          proxy: request.proxy,
+        });
+      }
       const identity = request.identity ?? 'app';
       let token: string;
       let minted = false;
@@ -743,6 +755,42 @@ function pullRequestNumber(value: unknown): number | undefined {
      * @param request - the job to read.
      * @returns the log text, bounded.
      */
+    async isForkOf(owner: string, repo: string, bases: readonly string[]): Promise<boolean> {
+      const response = await fetchImpl(`${api}/repos/${owner}/${repo}`, {
+        method: 'GET',
+        headers: {
+          accept: 'application/vnd.github+json',
+          'x-github-api-version': apiVersion,
+          'user-agent': 'gcb',
+        },
+      });
+      if (!response.ok) return false;
+      const body = JSON.parse(await response.text()) as {
+        fork?: unknown;
+        parent?: { full_name?: unknown } | null;
+        source?: { full_name?: unknown } | null;
+      } | null;
+      if (body?.fork !== true) return false;
+      for (const candidate of [body.parent?.full_name, body.source?.full_name]) {
+        if (typeof candidate === 'string' && repoAllowed(bases, candidate)) return true;
+      }
+      return false;
+    },
+
+    async isPublicRepository(owner: string, repo: string): Promise<boolean> {
+      const response = await fetchImpl(`${api}/repos/${owner}/${repo}`, {
+        method: 'GET',
+        headers: {
+          accept: 'application/vnd.github+json',
+          'x-github-api-version': apiVersion,
+          'user-agent': 'gcb',
+        },
+      });
+      if (!response.ok) return false;
+      const body = JSON.parse(await response.text()) as { private?: unknown } | null;
+      return body?.private === false;
+    },
+
     async getJobLog(request: JobLogRequest): Promise<JobLog> {
       await ensurePermissions(request.owner, LOG_PERMISSIONS);
       const installationId = await resolveInstallationId(request.owner);

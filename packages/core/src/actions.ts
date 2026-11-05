@@ -63,6 +63,8 @@ export interface GhAction {
   readonly bodyRequiredWith?: readonly string[];
   /** Flag pairs that may not be present together. */
   readonly conflicts?: readonly (readonly [string, string])[];
+  /** This action only reads; publicRead may run it anonymously on a verified public repository. */
+  readonly readOnly?: boolean;
   readonly permissions: Readonly<Partial<Record<GhPermission, PermissionLevel>>>;
   /** The default per-action timeout, in seconds. */
   readonly timeoutSeconds: number;
@@ -97,6 +99,7 @@ const PR_VIEW: GhAction = {
   ],
   permissions: { pull_requests: 'read', contents: 'read', checks: 'read', statuses: 'read' },
   timeoutSeconds: 120,
+  readOnly: true,
 };
 
 // GitHub: GraphQL repository.pullRequests (gh pr list uses GraphQL)
@@ -118,6 +121,7 @@ const PR_LIST: GhAction = {
   ],
   permissions: { pull_requests: 'read' },
   timeoutSeconds: 120,
+  readOnly: true,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number} (diff media type)
@@ -132,6 +136,7 @@ const PR_DIFF: GhAction = {
   ],
   permissions: { pull_requests: 'read', contents: 'read' },
   timeoutSeconds: 120,
+  readOnly: true,
 };
 
 // GitHub: POST /repos/{owner}/{repo}/pulls
@@ -258,6 +263,7 @@ const PR_CHECKS: GhAction = {
   ],
   permissions: { pull_requests: 'read', checks: 'read', statuses: 'read' },
   timeoutSeconds: 300,
+  readOnly: true,
 };
 
 // GitHub: the app's authored pull requests and review requests, with checks. A --repo override
@@ -274,6 +280,7 @@ const PR_STATUS: GhAction = {
   ],
   permissions: { pull_requests: 'read', checks: 'read', statuses: 'read' },
   timeoutSeconds: 120,
+  readOnly: true,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
@@ -287,6 +294,7 @@ const PR_REVIEW_BY_ID: GhAction = {
   flags: [{ name: 'jq', type: 'string' }],
   permissions: { pull_requests: 'read' },
   timeoutSeconds: 120,
+  readOnly: true,
   api: {
     method: 'GET',
     endpoint: 'repos/{owner}/{repo}/pulls/{number}/reviews/{id}',
@@ -390,6 +398,7 @@ const ISSUE_VIEW: GhAction = {
   ],
   permissions: { issues: 'read' },
   timeoutSeconds: 120,
+  readOnly: true,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/issues
@@ -414,6 +423,7 @@ const ISSUE_LIST: GhAction = {
   ],
   permissions: { issues: 'read' },
   timeoutSeconds: 120,
+  readOnly: true,
 };
 
 // GitHub GraphQL:
@@ -506,6 +516,7 @@ const RUN_WATCH: GhAction = {
   ],
   permissions: { actions: 'read', checks: 'read' },
   timeoutSeconds: 3300,
+  readOnly: true,
   appUser: true,
 };
 
@@ -523,6 +534,7 @@ const RUN_VIEW: GhAction = {
   ],
   permissions: { actions: 'read' },
   timeoutSeconds: 300,
+  readOnly: true,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/actions/runs
@@ -539,6 +551,7 @@ const RUN_LIST: GhAction = {
   ],
   permissions: { actions: 'read' },
   timeoutSeconds: 120,
+  readOnly: true,
 };
 
 /** Every built-in action, keyed by its action name. */

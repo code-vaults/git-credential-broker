@@ -37,7 +37,7 @@ export interface GhRunOptions {
   readonly action: string;
   readonly values: ActionValues;
   readonly repo: string;
-  readonly token: string;
+  readonly token?: string;
   readonly host?: string;
   readonly ghPath?: string;
   readonly timeoutMs?: number;
@@ -146,7 +146,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   mkdirSync(configDir, { recursive: true });
   const host = options.host?.toLowerCase() ?? 'github.com';
   const usesJq = options.values['jq'] !== undefined;
-  if (usesJq) {
+  if (usesJq && options.token !== undefined) {
     // gh runs --jq in the same process, so a caller expression could print GH_TOKEN via env.
     // Keep the token in the isolated config file instead when jq is present.
     try {
@@ -175,7 +175,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
     const value = source[key];
     if (value !== undefined && value !== '') env[key] = value;
   }
-  if (!usesJq) env.GH_TOKEN = options.token;
+  if (!usesJq && options.token !== undefined) env.GH_TOKEN = options.token;
   applyProxyChoice(env, options.proxy);
 
   const action = getGhAction(options.action);

@@ -29,6 +29,8 @@ export interface ActionRequest {
   readonly identity?: 'app' | 'user';
   /** Per-command proxy override: absent = host env, null = direct, string = proxy URL. */
   readonly proxy?: string | null;
+  /** Run without a token after the repository was verified public. */
+  readonly anonymous?: boolean;
 }
 
 /** The bounded result of one action. */
@@ -76,6 +78,10 @@ export interface Provider {
    * token and the host process.
    */
   runAction?(request: ActionRequest): Promise<ActionRunResult>;
+  /** Whether an unauthenticated request sees this repository as public. */
+  isPublicRepository?(owner: string, repo: string): Promise<boolean>;
+  /** Whether this repository is a fork of one of the allowed repositories. */
+  isForkOf?(owner: string, repo: string, bases: readonly string[]): Promise<boolean>;
   readonly name: string;
   getCredential(request: CredentialRequest): Promise<Credential>;
   /**
@@ -179,6 +185,10 @@ export interface BaseHostConfig {
    * suite's local plaintext git server.
    */
   readonly allowInsecureHttp?: boolean;
+  /** Allow explicit read-only actions on a verified public repository without an allowlist entry. */
+  readonly allowPublicRead?: boolean;
+  /** Allow git credentials for a fork whose source is an allowlisted repository. */
+  readonly allowForkPush?: boolean;
 }
 
 /** Host block backed by one fixed username/password pair. */

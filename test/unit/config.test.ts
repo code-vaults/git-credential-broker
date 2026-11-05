@@ -104,6 +104,28 @@ describe('validateConfig', () => {
     }
   });
 
+  it('accepts the public-read and fork-push opt-ins as booleans', () => {
+    const config = validateConfig(
+      withHost({
+        provider: 'static',
+        allow: ['a/b'],
+        password: 'p',
+        allowPublicRead: true,
+        allowForkPush: true,
+      }),
+    );
+    assert.equal(config.hosts['github.com']?.allowPublicRead, true);
+    assert.equal(config.hosts['github.com']?.allowForkPush, true);
+    assert.throws(
+      () => validateConfig(withHost({ provider: 'static', allow: ['a/b'], password: 'p', allowPublicRead: 'yes' })),
+      /allowPublicRead must be a boolean/,
+    );
+    assert.throws(
+      () => validateConfig(withHost({ provider: 'static', allow: ['a/b'], password: 'p', allowForkPush: 'yes' })),
+      /allowForkPush must be a boolean/,
+    );
+  });
+
   it('accepts whole-segment wildcards', () => {
     const config = validateConfig(withHost({ provider: 'static', allow: ['acme/*', '*/*'], password: 'p' }));
     assert.deepEqual(config.hosts['github.com']?.allow, ['acme/*', '*/*']);

@@ -39,7 +39,7 @@ import {
   type BrokerConfig,
 } from 'gcb-core';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
-import { applyProxyChoice, parseProxy, type ProxyChoice } from '../http.ts';
+import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts';
 import { loadConfig, resolveConfigPath } from '../config.ts';
 import { hostConfig, repoAllowed } from '../policy.ts';
 
@@ -224,8 +224,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const command = args.value('command') ?? process.env['GCB_HOST_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
   let config: BrokerConfig | undefined;
-  /** Whether the broker config allowlist permits this host/repository for a fork, reply or explicit repository. */
-  const allowed = (host: string, repo: string): boolean => {
+  const blockFor = (host: string) => {
     if (config === undefined) {
       try {
         config = loadConfig(resolveConfigPath(configPath));
@@ -235,9 +234,14 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         );
       }
     }
-    const block = hostConfig(config, host);
+    return hostConfig(config, host);
+  };
+  /** Whether the broker config allowlist permits this host/repository for a fork, reply or explicit repository. */
+  const allowed = (host: string, repo: string): boolean => {
+    const block = blockFor(host);
     return block !== null && repoAllowed(block.allow, repo);
   };
+  const publicRead = (host: string): boolean => blockFor(host)?.allowPublicRead === true;
   const extra = listFlag(args, 'arg');
   const interval = Number(args.value('interval') ?? '5');
   if (!Number.isFinite(interval) || interval < 1) {
@@ -295,7 +299,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
       // must not stop the host broker serving every other root, under Restart=always least of all.
       try {
         advertise(dir);
-        await sweep(dir, repo, command, extra, allowed);
+        await sweep(dir, repo, command, extra, allowed, publicRead);
       } catch (error) {
         warn(`could not serve ${repo}: ${(error as Error).message}`);
       }
@@ -320,6 +324,7 @@ async function sweep(
   command: string,
   extra: readonly string[],
   allowed: (host: string, repo: string) => boolean,
+  publicRead: (host: string) => boolean,
 ): Promise<number> {
   let answered = 0;
   for (const id of listRequests(dir)) {
@@ -362,7 +367,7 @@ async function sweep(
       answered += 1;
       continue;
     }
-    const result = await openOne(repo, command, extra, { ...request, proxy }, allowed);
+    const result = await openOne(repo, command, extra, { ...request, proxy }, allowed, publicRead);
     writeResult(dir, id, result);
     removeRequest(dir, id);
     if (result.error !== undefined) {
@@ -429,6 +434,42 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
   return env;
 }
 
+/** GitHub's REST base for a configured host. */
+function apiBase(host: string): string {
+  return host.toLowerCase() === 'github.com' ? 'https://api.github.com' : `https://${host}/api/v3`;
+}
+
+/** Verify a repository is public with an unauthenticated request. */
+async function repoIsPublic(host: string, repo: string, proxy: ProxyChoice): Promise<boolean> {
+  try {
+    const response = await fetcherFor(proxy)(`${apiBase(host)}/repos/${repo}`, {
+      method: 'GET',
+      headers: { accept: 'application/vnd.github+json', 'user-agent': 'gcb' },
+    });
+    if (!response.ok) return false;
+    const body = JSON.parse(await response.text()) as { private?: unknown } | null;
+    return body?.private === false;
+  } catch {
+    return false;
+  }
+}
+
+/** Isolated environment for an anonymous public action; never reads the host gh config. */
+function anonymousEnv(host: string, proxy: ProxyChoice): { env: NodeJS.ProcessEnv; cleanup: () => void } {
+  const home = mkdtempSync(join(tmpdir(), 'gcb-public-'));
+  const env: NodeJS.ProcessEnv = {
+    HOME: home,
+    GH_HOST: host,
+    PATH: process.env['PATH'] ?? '',
+    NO_COLOR: '1',
+    GH_PROMPT_DISABLED: '1',
+    GH_NO_UPDATE_NOTIFIER: '1',
+    GIT_TERMINAL_PROMPT: '0',
+  };
+  applyProxyChoice(env, proxy);
+  return { env, cleanup: () => rmSync(home, { recursive: true, force: true }) };
+}
+
 /**
  * Run one person operation: check the allowlist, then call the program and turn its failure into a result.
  *
@@ -488,6 +529,7 @@ async function openOne(
   extra: readonly string[],
   request: HostRequest,
   allowed: (host: string, repo: string) => boolean,
+  publicRead: (host: string) => boolean,
 ): Promise<HostResult> {
   if (request.kind === 'fork') {
     if (request.host !== undefined && !HOST.test(request.host)) {
@@ -526,8 +568,23 @@ async function openOne(
 
   if (request.kind === 'action') {
     const host = request.host ?? 'github.com';
-    return personRun(host, request.repo, allowed, async (host) => {
-      const action = getGhAction(request.action);
+    let action: ReturnType<typeof getGhAction>;
+    try {
+      action = getGhAction(request.action);
+    } catch (error) {
+      return { error: (error as Error).message };
+    }
+    let anonymousRead = false;
+    try {
+      anonymousRead =
+        action.readOnly === true &&
+        publicRead(host) &&
+        !allowed(host, request.repo);
+    } catch (error) {
+      return { error: (error as Error).message };
+    }
+
+    const execute = async (env: NodeJS.ProcessEnv): Promise<HostResult> => {
       const deadline = Date.now() + action.timeoutSeconds * 1_000;
       if (action.target === 'issue') {
         try {
@@ -544,7 +601,7 @@ async function openOne(
           [...extra, 'api', `repos/${request.repo}/issues/${String(number)}`, '--jq', '.pull_request != null'],
           {
             cwd: repo,
-            env: forkEnv(request.proxy, request.account, host),
+            env,
             timeoutMs: Math.max(1, deadline - Date.now()),
           },
         );
@@ -560,14 +617,30 @@ async function openOne(
         const argv = buildGhArgv(request.action, request.values, request.repo, bodyFile);
         const result = await runBounded(command, [...extra, ...argv], {
           cwd: repo,
-          env: forkEnv(request.proxy, request.account, host),
+          env,
           timeoutMs: Math.max(1, deadline - Date.now()),
           writeCaveat: Object.values(action.permissions).some((permission) => permission === 'write'),
         });
         return result;
       };
       return body === undefined ? invoke() : withBodyFile(body, invoke);
-    });
+    };
+
+    if (anonymousRead) {
+      if (!(await repoIsPublic(host, request.repo, request.proxy))) {
+        return { error: `repository ${request.repo} is not public` };
+      }
+      const anonymous = anonymousEnv(host, request.proxy);
+      try {
+        return await execute(anonymous.env);
+      } finally {
+        anonymous.cleanup();
+      }
+    }
+
+    return personRun(host, request.repo, allowed, async (host) =>
+      execute(forkEnv(request.proxy, request.account, host)),
+    );
   }
 
   if (request.kind === 'reply') {

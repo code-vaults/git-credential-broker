@@ -98,6 +98,27 @@ describe('gh action catalog', () => {
     assert.equal(getGhAction('run:watch').appUser, true);
   });
 
+  it('marks only read paths as readOnly', () => {
+    for (const name of [
+      'pr:view',
+      'pr:list',
+      'pr:diff',
+      'pr:checks',
+      'pr:status',
+      'pr:review-by-id',
+      'issue:view',
+      'issue:list',
+      'run:view',
+      'run:list',
+      'run:watch',
+    ]) {
+      assert.equal(getGhAction(name).readOnly, true, name);
+    }
+    for (const name of ['pr:create', 'pr:edit', 'pr:close', 'issue:create', 'run:cancel']) {
+      assert.equal(getGhAction(name).readOnly, undefined, name);
+    }
+  });
+
   it('declares the lifecycle write policy', () => {
     for (const name of ['run:cancel', 'run:rerun']) {
       assert.equal(getGhAction(name).appUser, true, name);
