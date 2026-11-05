@@ -89,6 +89,15 @@ describe('gh action catalog', () => {
     assert.equal(getGhAction('pr:checks').timeoutSeconds, 300);
   });
 
+  it('declares the run watch policy', () => {
+    assert.deepEqual(getGhAction('run:watch').permissions, {
+      actions: 'read',
+      checks: 'read',
+    });
+    assert.equal(getGhAction('run:watch').timeoutSeconds, 3300);
+    assert.equal(getGhAction('run:watch').appUser, true);
+  });
+
   it('declares the lifecycle write policy', () => {
     for (const name of ['run:cancel', 'run:rerun']) {
       assert.equal(getGhAction(name).appUser, true, name);

@@ -493,7 +493,8 @@ const RUN_RERUN: GhAction = {
   appUser: true,
 };
 
-// GitHub: poll GET /repos/{owner}/{repo}/actions/runs/{run_id} until it finishes
+// GitHub: poll GET /repos/{owner}/{repo}/actions/runs/{run_id} until it finishes; fetch
+// GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations for annotations
 const RUN_WATCH: GhAction = {
   name: 'run:watch',
   command: ['run', 'watch'],
