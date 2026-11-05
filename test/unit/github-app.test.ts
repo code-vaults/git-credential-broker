@@ -533,6 +533,38 @@ describe('createGithubAppProvider', () => {
     }
   });
 
+  it('uses the person token for a public read requested with --as-user', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-public-user-'));
+    const tokenPath = join(dir, 'acme.token');
+    writeFileSync(tokenPath, 'github_pat_public_user\n');
+    const gh = join(dir, 'gh');
+    writeFileSync(gh, '#!/bin/sh\nprintf "TOKEN=%s\\n" "$GH_TOKEN"\n');
+    chmodSync(gh, 0o755);
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'Acme' } }], nowMs });
+    const provider = providerFor(stub, { userTokens: { acme: tokenPath } }, gh);
+    try {
+      const result = await provider.runAction?.({
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        full: 'acme/widget',
+        action: 'pr:view',
+        values: { number: 7 },
+        identity: 'user',
+        publicRead: true,
+      });
+      assert.equal(result?.code, 0);
+      assert.match(result?.stdout ?? '', /TOKEN=github_pat_public_user/u);
+      assert.equal(
+        stub.calls.some((call) => call.url.includes('/access_tokens')),
+        false,
+        'a public read with --as-user must not mint an installation token',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('resolves the installation by account login and scopes the token to one named repository', async () => {
     const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'Acme' } }], nowMs });
     const provider = providerFor(stub);

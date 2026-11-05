@@ -37,6 +37,7 @@ import {
   buildGhArgv,
   getGhAction,
   type BrokerConfig,
+  type FetchResponseLike,
 } from 'gcb-core';
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
 import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts';
@@ -437,12 +438,28 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
 /** Unauthenticated public-repository check for the host route. */
 async function repoIsPublic(host: string, repository: string, proxy: ProxyChoice): Promise<boolean> {
   const base = host.toLowerCase() === 'github.com' ? 'https://api.github.com' : `https://${host}/api/v3`;
+  let response: FetchResponseLike;
   try {
-    const response = await fetcherFor(proxy)(`${base}/repos/${repository}`, {
+    response = await fetcherFor(proxy)(`${base}/repos/${repository}`, {
       method: 'GET',
       headers: { accept: 'application/vnd.github+json', 'user-agent': 'gcb' },
     });
-    if (!response.ok) return false;
+  } catch {
+    return false;
+  }
+  if (response.status === 403 || response.status === 429) {
+    const exhausted =
+      response.status === 429 ||
+      response.headers.get('x-ratelimit-remaining') === '0' ||
+      response.headers.get('retry-after') !== null;
+    throw new Error(
+      exhausted
+        ? 'GitHub rate-limited the unauthenticated public-repository check; retry later'
+        : 'GitHub refused the unauthenticated public-repository check',
+    );
+  }
+  if (!response.ok) return false;
+  try {
     const body = JSON.parse(await response.text()) as { private?: unknown } | null;
     return body?.private === false;
   } catch {
@@ -607,8 +624,12 @@ async function openOne(
       if (!allowedPublic) {
         return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
       }
-      if (!(await repoIsPublic(host, request.repo, request.proxy))) {
-        return { error: `repository ${request.repo} is not public` };
+      try {
+        if (!(await repoIsPublic(host, request.repo, request.proxy))) {
+          return { error: `repository ${request.repo} is not public` };
+        }
+      } catch (error) {
+        return { error: (error as Error).message };
       }
       return runAction(forkEnv(request.proxy, request.account, host));
     }
