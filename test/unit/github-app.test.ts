@@ -66,6 +66,8 @@ interface RecordedCall {
   readonly method: string;
   readonly body: Record<string, unknown> | null;
   readonly authorization: string | undefined;
+  readonly signal?: AbortSignal;
+  readonly redirect?: string;
 }
 
 describe('signAppJwt', () => {
@@ -467,6 +469,28 @@ describe('createGithubAppProvider', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('passes the deadline and redirect refusal to the fork lookup', async () => {
+    const calls: RecordedCall[] = [];
+    const provider = providerFor({
+      calls,
+      fetchImpl: async (url, init) => {
+        calls.push({
+          url,
+          method: init.method,
+          body: recordedBody(init.body),
+          authorization: init.headers['authorization'],
+          raw: init.body ?? '',
+          signal: init.signal,
+          redirect: init.redirect,
+        });
+        return jsonResponse({ fork: true, parent: { full_name: 'acme/widget' } });
+      },
+    });
+    assert.equal(await provider.isForkOf!('alice', 'widget', ['acme/widget']), true);
+    assert.ok(calls[0]?.signal instanceof AbortSignal, 'the fork check must carry the abort signal');
+    assert.equal(calls[0]?.redirect, 'error', 'the fork check must refuse redirects');
   });
 
   it('classifies public and fork lookups without credentials', async () => {
