@@ -10,7 +10,7 @@ export interface RepositoryCheckOptions {
   readonly apiVersion?: string;
   /** Whole-request deadline, including the body; defaults to 10 seconds. */
   readonly timeoutMs?: number;
-  /** Name used in the timeout message. */
+  /** Name used in the timeout and rate-limit messages. */
   readonly label?: string;
 }
 
@@ -44,6 +44,18 @@ export async function withRepositoryResponse<T>(
       signal: controller.signal,
       redirect: 'error',
     });
+    if (response.status === 403 || response.status === 429) {
+      const exhausted =
+        response.status === 429 ||
+        response.headers.get('x-ratelimit-remaining') === '0' ||
+        response.headers.get('retry-after') !== null;
+      const label = options.label ?? 'repository';
+      throw new ProviderConfigError(
+        exhausted
+          ? `GitHub rate-limited the unauthenticated ${label} check; retry later or allowlist the repository`
+          : `GitHub refused the unauthenticated ${label} check; check the access policy or allowlist the repository`,
+      );
+    }
     return await handle(response);
   } catch (error) {
     if (controller.signal.aborted) {
@@ -71,20 +83,10 @@ export async function isPublicRepository(
     repository,
     { apiVersion, timeoutMs, label: 'public-repository' },
     async (response) => {
-      if (response.status === 403 || response.status === 429) {
-        const exhausted =
-          response.status === 429 ||
-          response.headers.get('x-ratelimit-remaining') === '0' ||
-          response.headers.get('retry-after') !== null;
-        throw new ProviderConfigError(
-          exhausted
-            ? 'GitHub rate-limited the unauthenticated public-repository check; retry later or allowlist the repository'
-            : 'GitHub refused the unauthenticated public-repository check; check the access policy or allowlist the repository',
-        );
-      }
       if (!response.ok) return false;
+      const text = await response.text();
       try {
-        const body = JSON.parse(await response.text()) as { private?: unknown } | null;
+        const body = JSON.parse(text) as { private?: unknown } | null;
         return body?.private === false;
       } catch {
         return false;

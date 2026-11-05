@@ -769,25 +769,15 @@ function pullRequestNumber(value: unknown): number | undefined {
         `${owner}/${repo}`,
         { apiVersion, label: 'fork' },
         async (response) => {
-          if (response.status === 403 || response.status === 429) {
-            const exhausted =
-              response.status === 429 ||
-              response.headers.get('x-ratelimit-remaining') === '0' ||
-              response.headers.get('retry-after') !== null;
-            throw new ProviderConfigError(
-              exhausted
-                ? 'GitHub rate-limited the unauthenticated fork check; retry later or allowlist the repository'
-                : 'GitHub refused the unauthenticated fork check; check the access policy or allowlist the repository',
-            );
-          }
           if (!response.ok) return false;
+          const text = await response.text();
           let body: {
             fork?: unknown;
             parent?: { full_name?: unknown } | null;
             source?: { full_name?: unknown } | null;
           } | null;
           try {
-            body = JSON.parse(await response.text()) as typeof body;
+            body = JSON.parse(text) as typeof body;
           } catch {
             return false;
           }

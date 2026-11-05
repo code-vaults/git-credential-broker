@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { isPublicRepository } from '../../packages/host/src/public-repo.ts';
+import { isPublicRepository, withRepositoryResponse } from '../../packages/host/src/public-repo.ts';
 import { ProviderConfigError } from '../../packages/core/src/errors.ts';
 
 /** Build the small response shape the check consumes. */
@@ -75,6 +75,59 @@ describe('the unauthenticated public repository check', () => {
         5,
       ),
       /timed out/u,
+    );
+  });
+
+  it('bounds the body read, not just the headers', async () => {
+    await assert.rejects(
+      isPublicRepository(
+        async (_url, init) => ({
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          text: () =>
+            new Promise<string>((_resolve, reject) => {
+              init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+            }),
+        }),
+        'https://api.github.com',
+        'acme/widget',
+        '2022-11-28',
+        5,
+      ),
+      /timed out/u,
+    );
+  });
+
+  it('uses the label for fork limits and timeouts', async () => {
+    await assert.rejects(
+      withRepositoryResponse(
+        async () => response(429, {}),
+        'https://api.github.com',
+        'alice/widget',
+        { label: 'fork' },
+        async () => true,
+      ),
+      /rate-limited the unauthenticated fork check/u,
+    );
+    await assert.rejects(
+      withRepositoryResponse(
+        async (_url, init) => {
+          await new Promise((resolve, reject) => {
+            const slow = setTimeout(resolve, 60);
+            init.signal?.addEventListener('abort', () => {
+              clearTimeout(slow);
+              reject(new Error('aborted'));
+            });
+          });
+          return response(200, {});
+        },
+        'https://api.github.com',
+        'alice/widget',
+        { label: 'fork', timeoutMs: 5 },
+        async () => true,
+      ),
+      /timed out during the fork check/u,
     );
   });
 
