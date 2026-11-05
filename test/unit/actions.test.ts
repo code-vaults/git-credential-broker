@@ -42,6 +42,7 @@ describe('gh action catalog', () => {
       'issue:list',
       'run:view',
       'run:list',
+      'run:watch',
       'run:cancel',
       'run:rerun',
     ]);
@@ -86,6 +87,15 @@ describe('gh action catalog', () => {
     assert.deepEqual(getGhAction('issue:view').permissions, { issues: 'read' });
     assert.deepEqual(getGhAction('issue:list').permissions, { issues: 'read' });
     assert.equal(getGhAction('pr:checks').timeoutSeconds, 300);
+  });
+
+  it('declares the run watch policy', () => {
+    assert.deepEqual(getGhAction('run:watch').permissions, {
+      actions: 'read',
+      checks: 'read',
+    });
+    assert.equal(getGhAction('run:watch').timeoutSeconds, 3300);
+    assert.equal(getGhAction('run:watch').appUser, true);
   });
 
   it('declares the lifecycle write policy', () => {
@@ -286,6 +296,15 @@ describe('buildGhArgv', () => {
       'acme/widget',
     ]);
     assert.throws(() => buildGhArgv('pr:update-branch', {}, 'acme/widget'), /needs number/u);
+    assert.deepEqual(buildGhArgv('run:watch', { runId: 42, compact: true, 'exit-status': true }, 'acme/widget'), [
+      'run',
+      'watch',
+      '42',
+      '--compact',
+      '--exit-status',
+      '--repo',
+      'acme/widget',
+    ]);
     assert.deepEqual(buildGhArgv('run:cancel', { runId: 42, force: true }, 'acme/widget'), [
       'run',
       'cancel',
