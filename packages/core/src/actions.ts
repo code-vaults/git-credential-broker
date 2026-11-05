@@ -55,12 +55,14 @@ export interface GhAction {
   readonly command: readonly string[];
   readonly positionals: readonly PositionalSpec[];
   readonly flags: readonly FlagSpec[];
-  /** Exactly one of these flags must be present, when set. */
+  /** Exactly one of these values (positional or flag) must be present, when set. */
   readonly exactlyOneOf?: readonly string[];
   /** At least one of these flags must be present. */
   readonly atLeastOneOf?: readonly string[];
   /** This body must be present when any of these flags is present. */
   readonly bodyRequiredWith?: readonly string[];
+  /** Flag pairs that may not be present together. */
+  readonly conflicts?: readonly (readonly [string, string])[];
   readonly permissions: Readonly<Partial<Record<GhPermission, PermissionLevel>>>;
   /** The default per-action timeout, in seconds. */
   readonly timeoutSeconds: number;
@@ -193,6 +195,16 @@ const PR_REOPEN: GhAction = {
   command: ['pr', 'reopen'],
   positionals: [{ name: 'number', type: 'number', required: true }],
   flags: [],
+  permissions: { pull_requests: 'write' },
+  timeoutSeconds: 60,
+};
+
+// GitHub GraphQL: markPullRequestReadyForReview and convertPullRequestToDraft
+const PR_READY: GhAction = {
+  name: 'pr:ready',
+  command: ['pr', 'ready'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [{ name: 'undo', type: 'boolean' }],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 60,
 };
@@ -371,6 +383,35 @@ const ISSUE_LIST: GhAction = {
   timeoutSeconds: 120,
 };
 
+// GitHub: POST /repos/{owner}/{repo}/actions/runs/{run_id}/cancel, or .../force-cancel with --force
+const RUN_CANCEL: GhAction = {
+  name: 'run:cancel',
+  command: ['run', 'cancel'],
+  positionals: [{ name: 'runId', type: 'number', required: true }],
+  flags: [{ name: 'force', type: 'boolean' }],
+  permissions: { actions: 'write' },
+  timeoutSeconds: 60,
+  appUser: true,
+};
+
+// GitHub: POST .../actions/runs/{run_id}/rerun; --failed selects rerun-failed-jobs, and --job
+// selects .../actions/jobs/{job_id}/rerun. gh ignores a run id and --failed when --job is present.
+const RUN_RERUN: GhAction = {
+  name: 'run:rerun',
+  command: ['run', 'rerun'],
+  positionals: [{ name: 'runId', type: 'number' }],
+  flags: [
+    { name: 'debug', type: 'boolean' },
+    { name: 'failed', type: 'boolean' },
+    { name: 'job', type: 'string', nonEmpty: true },
+  ],
+  exactlyOneOf: ['runId', 'job'],
+  conflicts: [['failed', 'job']],
+  permissions: { actions: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+};
+
 // GitHub: GET /repos/{owner}/{repo}/actions/runs/{run_id}
 const RUN_VIEW: GhAction = {
   name: 'run:view',
@@ -412,6 +453,7 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:edit': PR_EDIT,
   'pr:close': PR_CLOSE,
   'pr:reopen': PR_REOPEN,
+  'pr:ready': PR_READY,
   'pr:checks': PR_CHECKS,
   'pr:status': PR_STATUS,
   'pr:comment': PR_COMMENT,
@@ -426,6 +468,8 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'issue:list': ISSUE_LIST,
   'run:view': RUN_VIEW,
   'run:list': RUN_LIST,
+  'run:cancel': RUN_CANCEL,
+  'run:rerun': RUN_RERUN,
 });
 
 /** The built-in action names, in a stable order. */
@@ -534,6 +578,10 @@ export function buildGhArgv(
   }
 
   const present = new Set<string>();
+  const provided = new Set<string>();
+  for (const positional of action.positionals) {
+    if (values[positional.name] !== undefined) provided.add(positional.name);
+  }
   for (const flag of action.flags) {
     const value = values[flag.name];
     if (value === undefined) {
@@ -545,6 +593,7 @@ export function buildGhArgv(
       if (value) {
         argv.push(`--${flag.name}`);
         present.add(flag.name);
+        provided.add(flag.name);
       }
       continue;
     }
@@ -572,6 +621,7 @@ export function buildGhArgv(
       argv.push(`--${flag.name}`, text);
     }
     present.add(flag.name);
+    provided.add(flag.name);
   }
 
   if (action.atLeastOneOf !== undefined && !action.atLeastOneOf.some((flag) => present.has(flag))) {
@@ -580,14 +630,23 @@ export function buildGhArgv(
     );
   }
   if (action.exactlyOneOf !== undefined) {
-    const chosen = action.exactlyOneOf.filter((flag) => present.has(flag));
+    const chosen = action.exactlyOneOf.filter((field) => provided.has(field));
     if (chosen.length !== 1) {
-      throw new ActionError(`${name} needs exactly one of ${action.exactlyOneOf.map((flag) => `--${flag}`).join(', ')}`);
+      const spell = (field: string): string =>
+        action.positionals.some((positional) => positional.name === field) ? field : `--${field}`;
+      throw new ActionError(
+        `${name} needs exactly one of ${action.exactlyOneOf.map(spell).join(', ')}`,
+      );
     }
   }
   for (const flag of action.bodyRequiredWith ?? []) {
     if (present.has(flag) && (typeof values.body !== 'string' || values.body.trim() === '')) {
       throw new ActionError(`${name} needs a non-empty --body with --${flag}`);
+    }
+  }
+  for (const [left, right] of action.conflicts ?? []) {
+    if (present.has(left) && present.has(right)) {
+      throw new ActionError(`${name} does not allow --${left} with --${right}`);
     }
   }
 

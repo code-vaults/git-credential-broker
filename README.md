@@ -455,10 +455,10 @@ picks up. The bound exists because the walk repeats every `--interval` seconds; 
 deeper layouts. To start it once and keep it,
 `examples/gcb-host.service` is a systemd user unit; on a system without user services,
 `examples/gcb-host-boot.sh` is the same thing for a DSM boot-up task — absolute paths, one
-instance at a time, and its output in a log file. Without `--as-user`, `pr` and `issue` actions use
-the broker route as the app; bare `--as-user` selects the broker's authorized person for a pull
-request or issue action; `--as-user <login>` writes a request for this host broker. With a login and no host broker
-running they fail; they do not fall back to the broker route.
+instance at a time, and its output in a log file. Without `--as-user`, catalogued actions use the
+broker route as the app; bare `--as-user` selects the broker's authorized person for actions that
+declare `appUser`; `--as-user <login>` writes a request for this host broker. With a login and no
+host broker running they fail; they do not fall back to the broker route.
 
 ```sh
 # in the container: the broker's authorized person
@@ -766,6 +766,7 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr edit` | `pull_requests: write` |
 | `pr close` | `pull_requests: write` |
 | `pr reopen` | `pull_requests: write` |
+| `pr ready` | `pull_requests: write` |
 | `pr checks` | `pull_requests: read`, `checks: read`, `statuses: read` |
 | `pr status` | `pull_requests: read`, `checks: read`, `statuses: read` |
 | `pr comment` | `pull_requests: write` |
@@ -780,6 +781,8 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `issue list` | `issues: read` |
 | `run view` | `actions: read` |
 | `run list` | `actions: read` |
+| `run cancel` | `actions: write` |
+| `run rerun` | `actions: write` |
 
 `pr status` with `--repo` reports the app identity's relevant pull requests and review requests
 with their checks; gh's current-branch section is absent because the broker has no branch.
