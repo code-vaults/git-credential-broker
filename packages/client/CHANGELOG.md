@@ -1,5 +1,12 @@
 # gcb-client
 
+## 0.6.0
+
+### Patch Changes
+
+- Updated dependencies [[`9ad2d26`](https://github.com/code-vaults/git-credential-broker/commit/9ad2d26139b8fd4e6875ce2279494f2b29ad8e0b), [`fdf3ff6`](https://github.com/code-vaults/git-credential-broker/commit/fdf3ff6779080573cd6fcae62e7b8156898352c2), [`51054d0`](https://github.com/code-vaults/git-credential-broker/commit/51054d0042306c6e14bf141e2fef0b53426c62af)]:
+  - gcb-core@0.6.0
+
 ## 0.5.0
 
 ### Minor Changes

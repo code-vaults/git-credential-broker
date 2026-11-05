@@ -1,5 +1,45 @@
 # gcb-core
 
+## 0.6.0
+
+### Minor Changes
+
+- [#102](https://github.com/code-vaults/git-credential-broker/pull/102) [`9ad2d26`](https://github.com/code-vaults/git-credential-broker/commit/9ad2d26139b8fd4e6875ce2279494f2b29ad8e0b) Thanks [@JounQin](https://github.com/JounQin)! - Add the `allowPublicRead` and `allowForkPush` host opt-ins. Catalog entries can now declare
+  `readOnly: true`; with `allowPublicRead`, such an action can run on a repository verified public
+  without an allowlist entry.
+  
+  The app identity uses a metadata-only installation token; the App must be installed on the
+  repository, and the request is refused rather than falling back to anonymous when it is not, because
+  `gh` needs authentication. Bare `--as-user` uses the authorized person token, and
+  `--as-user <login>` uses the host account token. The host route performs the same fresh public check
+  before running the action.
+  
+  Visibility is checked freshly for each request, not cached, bounded at 10 seconds and refused on a
+  redirect. The check shares GitHub's 60/hour IP quota; an exhausted 403/429 is reported as a rate
+  limit, a plain 403 as a refusal, and neither as a private repository. Person tokens may themselves
+  have private access; those forms rely on the visibility check rather than a token scope. A
+  configured `apiBaseUrl` must now be an HTTPS URL.
+  
+  `allowForkPush` lets a git credential request through for a **public** fork whose GitHub
+  parent/source is allowlisted, still limited to the credential path; catalog actions keep the normal
+  allowlist. Its unauthenticated fork check uses the same deadline and redirect refusal. It needs the
+  App installed on the fork owner, because the credential still comes from an installation token; a
+  plain contributor fork without that installation cannot mint one.
+
+- [#101](https://github.com/code-vaults/git-credential-broker/pull/101) [`fdf3ff6`](https://github.com/code-vaults/git-credential-broker/commit/fdf3ff6779080573cd6fcae62e7b8156898352c2) Thanks [@JounQin](https://github.com/JounQin)! - Add `run:watch` to the action catalog. It polls a workflow run until it finishes, with optional
+  `--compact`, `--exit-status` and `--interval`. The timeout is 3300 seconds, five minutes below the
+  one-hour installation-token lifetime, so a poll cannot outlive the token. It uses `actions: read` and
+  `checks: read` (for annotations) and sets `appUser`.
+
+- [#99](https://github.com/code-vaults/git-credential-broker/pull/99) [`51054d0`](https://github.com/code-vaults/git-credential-broker/commit/51054d0042306c6e14bf141e2fef0b53426c62af) Thanks [@JounQin](https://github.com/JounQin)! - Add `pr:update-branch` to the action catalog. It takes an optional `--rebase`, uses
+  `pull_requests: write` and `contents: write`, and sets `appUser`, so bare `--as-user` works through
+  the app broker. `appUser` follows `pr:edit`: updating a branch is an author operation, while
+  close/reopen/ready/lock stay host-account only. Bare `--as-user` needs a user token with
+  `contents: write`; the recommended `Contents: Read` token is enough for PR editing but not for
+  updating a branch. The default app route and `--as-user <login>` do not depend on that token. For a
+  PR whose head is a fork, the app installation token is scoped to the base repository and cannot
+  write the head fork; use `--as-user <login>` for that case.
+
 ## 0.5.0
 
 ### Minor Changes
