@@ -766,6 +766,7 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr edit` | `pull_requests: write` |
 | `pr close` | `pull_requests: write` |
 | `pr reopen` | `pull_requests: write` |
+| `pr ready` | `pull_requests: write` |
 | `pr checks` | `pull_requests: read`, `checks: read`, `statuses: read` |
 | `pr status` | `pull_requests: read`, `checks: read`, `statuses: read` |
 | `pr comment` | `pull_requests: write` |
@@ -780,6 +781,8 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `issue list` | `issues: read` |
 | `run view` | `actions: read` |
 | `run list` | `actions: read` |
+| `run cancel` | `actions: write` |
+| `run rerun` | `actions: write` |
 
 `pr status` with `--repo` reports the app identity's relevant pull requests and review requests
 with their checks; gh's current-branch section is absent because the broker has no branch.

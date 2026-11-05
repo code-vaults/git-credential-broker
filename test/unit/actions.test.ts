@@ -20,6 +20,7 @@ describe('gh action catalog', () => {
       'pr:edit',
       'pr:close',
       'pr:reopen',
+      'pr:ready',
       'pr:checks',
       'pr:status',
       'pr:comment',
@@ -34,6 +35,8 @@ describe('gh action catalog', () => {
       'issue:list',
       'run:view',
       'run:list',
+      'run:cancel',
+      'run:rerun',
     ]);
     assert.equal('pr:merge' in GH_ACTIONS, false);
     assert.equal(getGhAction('pr:create').command.join(' '), 'pr create');
@@ -154,6 +157,46 @@ describe('buildGhArgv', () => {
       buildGhArgv('pr:edit', { number: 7, title: 't', base: 'main' }, 'acme/widget'),
       ['pr', 'edit', '7', '--title', 't', '--base', 'main', '--repo', 'acme/widget'],
     );
+  });
+
+  it('declares the lifecycle write policy', () => {
+    for (const name of ['pr:ready', 'run:cancel', 'run:rerun']) {
+      assert.equal(getGhAction(name).appUser, true, name);
+    }
+    assert.deepEqual(getGhAction('pr:ready').permissions, { pull_requests: 'write' });
+    assert.deepEqual(getGhAction('run:cancel').permissions, { actions: 'write' });
+    assert.deepEqual(getGhAction('run:rerun').permissions, { actions: 'write' });
+    assert.equal(getGhAction('pr:ready').timeoutSeconds, 60);
+    assert.equal(getGhAction('run:rerun').timeoutSeconds, 120);
+  });
+
+  it('builds the lifecycle argv', () => {
+    assert.deepEqual(buildGhArgv('pr:ready', { number: 7, undo: true }, 'acme/widget'), [
+      'pr',
+      'ready',
+      '7',
+      '--undo',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('run:cancel', { runId: 42, force: true }, 'acme/widget'), [
+      'run',
+      'cancel',
+      '42',
+      '--force',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('run:rerun', { runId: 42, failed: true, job: '99' }, 'acme/widget'), [
+      'run',
+      'rerun',
+      '42',
+      '--failed',
+      '--job',
+      '99',
+      '--repo',
+      'acme/widget',
+    ]);
   });
 
   it('builds the read action argv', () => {

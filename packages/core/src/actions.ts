@@ -197,6 +197,17 @@ const PR_REOPEN: GhAction = {
   timeoutSeconds: 60,
 };
 
+// GitHub GraphQL: markPullRequestReadyForReview and convertPullRequestToDraft
+const PR_READY: GhAction = {
+  name: 'pr:ready',
+  command: ['pr', 'ready'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [{ name: 'undo', type: 'boolean' }],
+  permissions: { pull_requests: 'write' },
+  timeoutSeconds: 60,
+  appUser: true,
+};
+
 // GitHub: GET /repos/{owner}/{repo}/pulls/{number} then its check-runs and commit statuses
 const PR_CHECKS: GhAction = {
   name: 'pr:checks',
@@ -371,6 +382,32 @@ const ISSUE_LIST: GhAction = {
   timeoutSeconds: 120,
 };
 
+// GitHub: POST /repos/{owner}/{repo}/actions/runs/{run_id}/cancel
+const RUN_CANCEL: GhAction = {
+  name: 'run:cancel',
+  command: ['run', 'cancel'],
+  positionals: [{ name: 'runId', type: 'number', required: true }],
+  flags: [{ name: 'force', type: 'boolean' }],
+  permissions: { actions: 'write' },
+  timeoutSeconds: 60,
+  appUser: true,
+};
+
+// GitHub: POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun
+const RUN_RERUN: GhAction = {
+  name: 'run:rerun',
+  command: ['run', 'rerun'],
+  positionals: [{ name: 'runId', type: 'number', required: true }],
+  flags: [
+    { name: 'debug', type: 'boolean' },
+    { name: 'failed', type: 'boolean' },
+    { name: 'job', type: 'string' },
+  ],
+  permissions: { actions: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+};
+
 // GitHub: GET /repos/{owner}/{repo}/actions/runs/{run_id}
 const RUN_VIEW: GhAction = {
   name: 'run:view',
@@ -412,6 +449,7 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:edit': PR_EDIT,
   'pr:close': PR_CLOSE,
   'pr:reopen': PR_REOPEN,
+  'pr:ready': PR_READY,
   'pr:checks': PR_CHECKS,
   'pr:status': PR_STATUS,
   'pr:comment': PR_COMMENT,
@@ -426,6 +464,8 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'issue:list': ISSUE_LIST,
   'run:view': RUN_VIEW,
   'run:list': RUN_LIST,
+  'run:cancel': RUN_CANCEL,
+  'run:rerun': RUN_RERUN,
 });
 
 /** The built-in action names, in a stable order. */
