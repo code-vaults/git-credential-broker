@@ -800,6 +800,17 @@ function pullRequestNumber(value: unknown): number | undefined {
       return checkPublicRepository(fetchImpl, api, `${owner}/${repo}`, apiVersion);
     },
 
+    /**
+     * Read one workflow job's log.
+     *
+     * One call, to the repository-scoped route: the repository is part of the URL, so the allowlist
+     * binds the job id by construction. The global route is keyed by job id alone — an allowlisted
+     * repository could name any job this app can see — and it is the one that answers "Must have
+     * admin rights", which is a permission this broker should never want.
+     *
+     * @param request - the job to read.
+     * @returns the log text, bounded.
+     */
     async getJobLog(request: JobLogRequest): Promise<JobLog> {
       await ensurePermissions(request.owner, LOG_PERMISSIONS);
       const installationId = await resolveInstallationId(request.owner);

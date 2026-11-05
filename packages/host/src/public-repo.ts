@@ -28,6 +28,10 @@ export async function isPublicRepository(
     );
   }
   if (!response.ok) return false;
-  const body = JSON.parse(await response.text()) as { private?: unknown } | null;
-  return body?.private === false;
+  try {
+    const body = JSON.parse(await response.text()) as { private?: unknown } | null;
+    return body?.private === false;
+  } catch {
+    return false;
+  }
 }

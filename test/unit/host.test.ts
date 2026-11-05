@@ -570,33 +570,44 @@ describe('the host action route', () => {
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    const config = forkConfig(root, 'acme/widget', 'github.com', true);
+    const config = join(root, 'broker.config.yml');
+    writeFileSync(
+      config,
+      `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  ghe.example:\n    provider: github-app\n    clientId: Iv1.clientid\n    privateKeyPem: x\n    apiBaseUrl: https://ghe.example/api/v3\n    allowPublicRead: true\n    allow:\n      - acme/widget\n`,
+      'utf8',
+    );
     const dir = channelDir(join(repo, '.git'));
     const command = join(root, 'not-gh');
     writeFileSync(command, '#!/bin/sh\necho "public action"\n', 'utf8');
     chmodSync(command, 0o755);
     const originalFetch = globalThis.fetch;
     let publicRepo = true;
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ private: !publicRepo }), {
+    let requested = '';
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      requested = String(input);
+      return new Response(JSON.stringify({ private: !publicRepo }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
-      })) as typeof fetch;
+      });
+    }) as typeof fetch;
     try {
       const id = writeRequest(dir, {
         kind: 'action',
         action: 'pr:view',
         repo: 'cli/cli',
+        host: 'ghe.example',
         values: { number: 7 },
       });
       assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
       assert.equal(readResult(dir, id)?.stdout, 'public action\n');
+      assert.match(requested, /^https:\/\/ghe\.example\/api\/v3\/repos\//u);
 
       publicRepo = false;
       const privateId = writeRequest(dir, {
         kind: 'action',
         action: 'pr:view',
         repo: 'cli/private',
+        host: 'ghe.example',
         values: { number: 7 },
       });
       assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
@@ -607,6 +618,7 @@ describe('the host action route', () => {
         kind: 'action',
         action: 'issue:comment',
         repo: 'cli/public',
+        host: 'ghe.example',
         values: { number: 7, body: 'x' },
       });
       assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);

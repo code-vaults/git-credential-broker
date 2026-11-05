@@ -604,12 +604,7 @@ async function openOne(
       return { error: `no configuration for ${host}` };
     }
     if (!repoAllowed(hostBlock.allow, request.repo)) {
-      let allowedPublic = false;
-      try {
-        allowedPublic = action.readOnly === true && hostBlock.allowPublicRead === true;
-      } catch (error) {
-        return { error: (error as Error).message };
-      }
+      const allowedPublic = action.readOnly === true && hostBlock.allowPublicRead === true;
       if (!allowedPublic) {
         return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
       }
