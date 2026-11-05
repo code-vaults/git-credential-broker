@@ -29,7 +29,7 @@ export interface ActionRequest {
   readonly identity?: 'app' | 'user';
   /** Per-command proxy override: absent = host env, null = direct, string = proxy URL. */
   readonly proxy?: string | null;
-  /** Use a metadata-only token after the repository was verified public. */
+  /** Run through the public-read path after the repository was verified public. */
   readonly publicRead?: boolean;
 }
 

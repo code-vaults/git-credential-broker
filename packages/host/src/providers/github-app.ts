@@ -783,11 +783,16 @@ function pullRequestNumber(value: unknown): number | undefined {
         );
       }
       if (!response.ok) return false;
-      const body = JSON.parse(await response.text()) as {
+      let body: {
         fork?: unknown;
         parent?: { full_name?: unknown } | null;
         source?: { full_name?: unknown } | null;
       } | null;
+      try {
+        body = JSON.parse(await response.text()) as typeof body;
+      } catch {
+        return false;
+      }
       if (body?.fork !== true) return false;
       for (const candidate of [body.parent?.full_name, body.source?.full_name]) {
         if (typeof candidate === 'string' && repoAllowed(bases, candidate)) return true;
