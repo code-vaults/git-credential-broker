@@ -200,6 +200,8 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
   const installations = new Map<string, CachedInstallation>();
   /** owner/repo -> minted credential */
   const tokens = new Map<string, Credential>();
+  /** owner/repo -> public-check expiry; only confirmed public results are cached. */
+  const publicRepos = new Map<string, number>();
   /** Cached pre-flight result, per owner: installations differ, so the answer does too. */
   const permissionsChecked = new Map<string, Promise<void>>();
 
@@ -634,7 +636,7 @@ function pullRequestNumber(value: unknown): number | undefined {
     async runAction(request) {
       const spec = getGhAction(request.action);
       const identity = request.identity ?? 'app';
-      let token: string | undefined;
+      let token = '';
       let minted = false;
       if (request.publicRead === true) {
         try {
@@ -644,13 +646,16 @@ function pullRequestNumber(value: unknown): number | undefined {
             permissions: { metadata: 'read' },
           });
           const publicToken = (json as { token?: unknown } | null)?.token;
-          if (typeof publicToken === 'string' && publicToken !== '') {
-            token = publicToken;
-            minted = true;
+          if (typeof publicToken !== 'string' || publicToken === '') {
+            throw new ProviderConfigError('GitHub returned no metadata token for the public read');
           }
-        } catch {
-          // A public repository without an installation still works anonymously.
-          token = undefined;
+          token = publicToken;
+          minted = true;
+        } catch (error) {
+          if (error instanceof ProviderConfigError) throw error;
+          throw new ProviderConfigError(
+            'the app needs an installation on this repository to read it with a metadata-only token',
+          );
         }
       } else if (identity === 'user') {
         const person = await personTokenFor(request.owner);
@@ -718,11 +723,7 @@ function pullRequestNumber(value: unknown): number | undefined {
           }
         }
       }
-      return {
-        ...result,
-        ...(token === undefined ? {} : { tokenFingerprint: tokenFingerprint(token) }),
-        ...(warning === undefined ? {} : { warning }),
-      };
+      return { ...result, tokenFingerprint: tokenFingerprint(token), ...(warning === undefined ? {} : { warning }) };
     },
 
     async getCredential(request): Promise<Credential> {
@@ -787,6 +788,9 @@ function pullRequestNumber(value: unknown): number | undefined {
     },
 
     async isPublicRepository(owner: string, repo: string): Promise<boolean> {
+      const key = `${owner}/${repo}`.toLowerCase();
+      const cached = publicRepos.get(key);
+      if (cached !== undefined && cached > now()) return true;
       const response = await fetchImpl(`${api}/repos/${owner}/${repo}`, {
         method: 'GET',
         headers: {
@@ -797,7 +801,13 @@ function pullRequestNumber(value: unknown): number | undefined {
       });
       if (!response.ok) return false;
       const body = JSON.parse(await response.text()) as { private?: unknown } | null;
-      return body?.private === false;
+      if (body?.private !== false) return false;
+      if (publicRepos.size >= 100) {
+        const oldest = publicRepos.keys().next().value;
+        if (oldest !== undefined) publicRepos.delete(oldest);
+      }
+      publicRepos.set(key, now() + 60_000);
+      return true;
     },
 
     async getJobLog(request: JobLogRequest): Promise<JobLog> {
