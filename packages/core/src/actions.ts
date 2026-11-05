@@ -209,6 +209,25 @@ const PR_READY: GhAction = {
   timeoutSeconds: 60,
 };
 
+// GitHub GraphQL: lockLockable and unlockLockable
+const PR_LOCK: GhAction = {
+  name: 'pr:lock',
+  command: ['pr', 'lock'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [{ name: 'reason', type: 'string' }],
+  permissions: { pull_requests: 'write' },
+  timeoutSeconds: 60,
+};
+
+const PR_UNLOCK: GhAction = {
+  name: 'pr:unlock',
+  command: ['pr', 'unlock'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [],
+  permissions: { pull_requests: 'write' },
+  timeoutSeconds: 60,
+};
+
 // GitHub: GET /repos/{owner}/{repo}/pulls/{number} then its check-runs and commit statuses
 const PR_CHECKS: GhAction = {
   name: 'pr:checks',
@@ -498,6 +517,8 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:close': PR_CLOSE,
   'pr:reopen': PR_REOPEN,
   'pr:ready': PR_READY,
+  'pr:lock': PR_LOCK,
+  'pr:unlock': PR_UNLOCK,
   'pr:checks': PR_CHECKS,
   'pr:status': PR_STATUS,
   'pr:comment': PR_COMMENT,

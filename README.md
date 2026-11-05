@@ -767,6 +767,8 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr close` | `pull_requests: write` |
 | `pr reopen` | `pull_requests: write` |
 | `pr ready` | `pull_requests: write` |
+| `pr lock` | `pull_requests: write` |
+| `pr unlock` | `pull_requests: write` |
 | `pr checks` | `pull_requests: read`, `checks: read`, `statuses: read` |
 | `pr status` | `pull_requests: read`, `checks: read`, `statuses: read` |
 | `pr comment` | `pull_requests: write` |
