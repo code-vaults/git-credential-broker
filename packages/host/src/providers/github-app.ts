@@ -636,7 +636,15 @@ function pullRequestNumber(value: unknown): number | undefined {
       const identity = request.identity ?? 'app';
       let token = '';
       let minted = false;
-      if (request.publicRead === true) {
+      if (request.publicRead === true && identity === 'user') {
+        const person = await personTokenFor(request.owner);
+        if (person === undefined) {
+          throw new ProviderConfigError(
+            'no authorized user token for this action; run gcb authorize or configure userTokens',
+          );
+        }
+        token = person;
+      } else if (request.publicRead === true) {
         try {
           const installationId = await resolveInstallationId(request.owner);
           const { json } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {

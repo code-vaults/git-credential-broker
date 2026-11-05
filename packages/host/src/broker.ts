@@ -349,13 +349,6 @@ export function createRequestHandler(
       }
       let publicRead = false;
       if (!allowedRepo) {
-        if (identity === 'user') {
-          return denyAction(
-            CODES.BAD_REQUEST,
-            'public read uses the app metadata token, not --as-user',
-            'this action cannot use --as-user on a public repository outside the allowlist',
-          );
-        }
         if (provider.isPublicRepository === undefined) {
           return denyAction(CODES.REPO_NOT_ALLOWED, 'provider cannot verify public repositories', 'repository is not allowlisted');
         }

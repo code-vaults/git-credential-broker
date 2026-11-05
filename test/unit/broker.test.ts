@@ -758,14 +758,14 @@ describe('broker actions', () => {
     assert.equal(calls, 0);
   });
 
-  it('refuses bare --as-user on a public read outside the allowlist', async () => {
-    let calls = 0;
+  it('keeps the user identity on a public read requested with --as-user', async () => {
+    let seen: unknown;
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       isPublicRepository: async () => true,
-      runAction: async () => {
-        calls += 1;
+      runAction: async (request) => {
+        seen = request;
         return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
       },
     };
@@ -778,10 +778,9 @@ describe('broker actions', () => {
       values: { runId: 42 },
       identity: 'user',
     });
-    assert.equal(response.ok, false);
-    assert.equal(response.code, CODES.BAD_REQUEST);
-    assert.match(String(response.reason), /--as-user/u);
-    assert.equal(calls, 0);
+    assert.equal(response.ok, true);
+    assert.equal((seen as { publicRead?: boolean } | undefined)?.publicRead, true);
+    assert.equal(harness.events.at(-1)?.['identity'], 'user');
   });
 
   it('requires the public-read opt-in for an unlisted read', async () => {
@@ -885,7 +884,7 @@ describe('broker actions', () => {
       op: 'action',
       host: HOST,
       path: 'acme/widget',
-      ghAction: 'pr:view',
+      ghAction: 'pr:close',
       values: { number: 7 },
       identity: 'user',
     });

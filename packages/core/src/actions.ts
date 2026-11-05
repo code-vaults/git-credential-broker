@@ -100,6 +100,7 @@ const PR_VIEW: GhAction = {
   permissions: { pull_requests: 'read', contents: 'read', checks: 'read', statuses: 'read' },
   timeoutSeconds: 120,
   readOnly: true,
+  appUser: true,
 };
 
 // GitHub: GraphQL repository.pullRequests (gh pr list uses GraphQL)
@@ -122,6 +123,7 @@ const PR_LIST: GhAction = {
   permissions: { pull_requests: 'read' },
   timeoutSeconds: 120,
   readOnly: true,
+  appUser: true,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number} (diff media type)
@@ -137,6 +139,7 @@ const PR_DIFF: GhAction = {
   permissions: { pull_requests: 'read', contents: 'read' },
   timeoutSeconds: 120,
   readOnly: true,
+  appUser: true,
 };
 
 // GitHub: POST /repos/{owner}/{repo}/pulls
@@ -264,6 +267,7 @@ const PR_CHECKS: GhAction = {
   permissions: { pull_requests: 'read', checks: 'read', statuses: 'read' },
   timeoutSeconds: 300,
   readOnly: true,
+  appUser: true,
 };
 
 // GitHub: the app's authored pull requests and review requests, with checks. A --repo override
@@ -281,6 +285,7 @@ const PR_STATUS: GhAction = {
   permissions: { pull_requests: 'read', checks: 'read', statuses: 'read' },
   timeoutSeconds: 120,
   readOnly: true,
+  appUser: true,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
@@ -295,6 +300,7 @@ const PR_REVIEW_BY_ID: GhAction = {
   permissions: { pull_requests: 'read' },
   timeoutSeconds: 120,
   readOnly: true,
+  appUser: true,
   api: {
     method: 'GET',
     endpoint: 'repos/{owner}/{repo}/pulls/{number}/reviews/{id}',
@@ -399,6 +405,7 @@ const ISSUE_VIEW: GhAction = {
   permissions: { issues: 'read' },
   timeoutSeconds: 120,
   readOnly: true,
+  appUser: true,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/issues
@@ -424,6 +431,7 @@ const ISSUE_LIST: GhAction = {
   permissions: { issues: 'read' },
   timeoutSeconds: 120,
   readOnly: true,
+  appUser: true,
 };
 
 // GitHub GraphQL:
@@ -535,6 +543,7 @@ const RUN_VIEW: GhAction = {
   permissions: { actions: 'read' },
   timeoutSeconds: 300,
   readOnly: true,
+  appUser: true,
 };
 
 // GitHub: GET /repos/{owner}/{repo}/actions/runs
@@ -552,6 +561,7 @@ const RUN_LIST: GhAction = {
   permissions: { actions: 'read' },
   timeoutSeconds: 120,
   readOnly: true,
+  appUser: true,
 };
 
 /** Every built-in action, keyed by its action name. */

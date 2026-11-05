@@ -113,6 +113,7 @@ describe('gh action catalog', () => {
       'run:watch',
     ]) {
       assert.equal(getGhAction(name).readOnly, true, name);
+      assert.equal(getGhAction(name).appUser, true, name);
     }
     for (const name of ['pr:create', 'pr:edit', 'pr:close', 'issue:create', 'run:cancel']) {
       assert.equal(getGhAction(name).readOnly, undefined, name);
