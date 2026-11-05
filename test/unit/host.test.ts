@@ -607,6 +607,40 @@ describe('the host action route', () => {
     }
   });
 
+  it('writes a result when the config cannot be loaded', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-missing-config-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const dir = channelDir(join(repo, '.git'));
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\necho SHOULD_NOT_RUN\n', 'utf8');
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'acme/widget',
+        values: { number: 7 },
+      });
+      assert.equal(
+        await runHostBroker([
+          '--repo',
+          repo,
+          '--command',
+          command,
+          '--config',
+          join(root, 'missing.yml'),
+          '--once',
+        ]),
+        0,
+      );
+      assert.match(readResult(dir, id)?.error ?? '', /broker config allowlist/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('refuses a request the client already stopped waiting for', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-expired-'));
     const repo = join(root, 'checkout');
