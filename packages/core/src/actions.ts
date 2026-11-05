@@ -209,7 +209,9 @@ const PR_READY: GhAction = {
   timeoutSeconds: 60,
 };
 
-// GitHub GraphQL: lockLockable and unlockLockable
+// GitHub GraphQL:
+// https://docs.github.com/en/graphql/reference/mutations#locklockable
+// https://docs.github.com/en/graphql/reference/mutations#unlocklockable
 const PR_LOCK: GhAction = {
   name: 'pr:lock',
   command: ['pr', 'lock'],
@@ -402,7 +404,9 @@ const ISSUE_LIST: GhAction = {
   timeoutSeconds: 120,
 };
 
-// GitHub GraphQL: lockLockable and unlockLockable
+// GitHub GraphQL:
+// https://docs.github.com/en/graphql/reference/mutations#locklockable
+// https://docs.github.com/en/graphql/reference/mutations#unlocklockable
 const ISSUE_LOCK: GhAction = {
   name: 'issue:lock',
   command: ['issue', 'lock'],
@@ -423,7 +427,9 @@ const ISSUE_UNLOCK: GhAction = {
   appUser: true,
 };
 
-// GitHub GraphQL: pinIssue and unpinIssue
+// GitHub GraphQL:
+// https://docs.github.com/en/graphql/reference/mutations#pinissue
+// https://docs.github.com/en/graphql/reference/mutations#unpinissue
 const ISSUE_PIN: GhAction = {
   name: 'issue:pin',
   command: ['issue', 'pin'],
