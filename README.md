@@ -757,6 +757,7 @@ local build; CI and production pass a published version instead, e.g.
 The action catalog is the source for these requirements; `gcb gh --help` prints the same
 actions. Grant them on the App, then approve any changed permissions on each installation.
 
+<!-- action-permissions:start -->
 | Action | App permissions |
 |---|---|
 | `pr view` | `pull_requests: read`, `contents: read`, `checks: read`, `statuses: read` |
@@ -767,6 +768,8 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr close` | `pull_requests: write` |
 | `pr reopen` | `pull_requests: write` |
 | `pr ready` | `pull_requests: write` |
+| `pr lock` | `pull_requests: write` |
+| `pr unlock` | `pull_requests: write` |
 | `pr checks` | `pull_requests: read`, `checks: read`, `statuses: read` |
 | `pr status` | `pull_requests: read`, `checks: read`, `statuses: read` |
 | `pr comment` | `pull_requests: write` |
@@ -787,6 +790,7 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `run list` | `actions: read` |
 | `run cancel` | `actions: write` |
 | `run rerun` | `actions: write` |
+<!-- action-permissions:end -->
 
 `pr status` with `--repo` reports the app identity's relevant pull requests and review requests
 with their checks; gh's current-branch section is absent because the broker has no branch.

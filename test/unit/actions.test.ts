@@ -21,6 +21,8 @@ describe('gh action catalog', () => {
       'pr:close',
       'pr:reopen',
       'pr:ready',
+      'pr:lock',
+      'pr:unlock',
       'pr:checks',
       'pr:status',
       'pr:comment',
@@ -90,11 +92,17 @@ describe('gh action catalog', () => {
       assert.equal(getGhAction(name).appUser, true, name);
     }
     assert.equal(getGhAction('pr:ready').appUser, undefined);
+    assert.equal(getGhAction('pr:lock').appUser, undefined);
+    assert.equal(getGhAction('pr:unlock').appUser, undefined);
     assert.deepEqual(getGhAction('pr:ready').permissions, { pull_requests: 'write' });
+    assert.deepEqual(getGhAction('pr:lock').permissions, { pull_requests: 'write' });
+    assert.deepEqual(getGhAction('pr:unlock').permissions, { pull_requests: 'write' });
     assert.deepEqual(getGhAction('run:cancel').permissions, { actions: 'write' });
     assert.deepEqual(getGhAction('run:rerun').permissions, { actions: 'write' });
     for (const [name, seconds] of [
       ['pr:ready', 60],
+      ['pr:lock', 60],
+      ['pr:unlock', 60],
       ['run:cancel', 60],
       ['run:rerun', 120],
     ] as const) {
@@ -244,6 +252,24 @@ describe('buildGhArgv', () => {
       '--repo',
       'acme/widget',
     ]);
+    assert.deepEqual(buildGhArgv('pr:lock', { number: 7, reason: 'spam' }, 'acme/widget'), [
+      'pr',
+      'lock',
+      '7',
+      '--reason',
+      'spam',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('pr:unlock', { number: 7 }, 'acme/widget'), [
+      'pr',
+      'unlock',
+      '7',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.throws(() => buildGhArgv('pr:lock', {}, 'acme/widget'), /needs number/u);
+    assert.throws(() => buildGhArgv('pr:unlock', {}, 'acme/widget'), /needs number/u);
     assert.deepEqual(buildGhArgv('run:cancel', { runId: 42, force: true }, 'acme/widget'), [
       'run',
       'cancel',

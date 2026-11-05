@@ -59,6 +59,7 @@ Two consequences:
 ```sh
 corepack yarn build        # tsc per package + scripts/postbuild.mjs
 corepack yarn typecheck    # tsc, no emit
+corepack yarn docs:actions # regenerate the README action permission table (or --check)
 ```
 
 Output goes to `packages/*/lib/`. `scripts/postbuild.mjs` exists for one reason: the two
