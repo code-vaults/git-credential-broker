@@ -262,7 +262,7 @@ function changeAllow(path: string, positionals: readonly string[]): void {
     const hostKey = String((pair.key as { value: unknown }).value);
     const allowNode = hostNode.get('allow', true);
     if (allowNode !== undefined && !isSeq(allowNode)) {
-      throw new Error(`hosts.${host}.allow must be a list`);
+      throw new Error(`hosts.${hostKey}.allow must be a list`);
     }
     const entries = isSeq(allowNode)
       ? allowNode.items.map((item) => (isScalar(item) ? String(item.value) : undefined))
