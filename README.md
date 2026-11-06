@@ -304,6 +304,8 @@ sidecar. Commands find the configuration by convention — `--config`, else `$GI
 gcb probe --host github.com --repo owner/repo
 gcb config check --config /srv/git-cred-broker/broker.config.yml
 gcb config edit --config /srv/git-cred-broker/broker.config.yml
+gcb config allow add github.com owner/repo --config /srv/git-cred-broker/broker.config.yml
+gcb config allow remove github.com owner/repo --config /srv/git-cred-broker/broker.config.yml
 gcb doctor --config /srv/git-cred-broker/broker.config.yml
 gcb diagnose --config /srv/git-cred-broker/broker.config.yml
 ```
@@ -315,7 +317,9 @@ it runs wherever the pusher runs.
 `config check` is host-side and reads only the configuration file: it validates it and prints the
 deployment mode and hosts without starting the broker or reading the key. `config edit` opens the
 existing file in `$VISUAL`/`$EDITOR` (it does not create a missing one; run `init` first) and
-validates it after the editor exits.
+validates it after the editor exits. `config allow add|remove <host> <owner/name>` changes one exact
+allowlist entry, preserving comments and the rest of the document, validates the result, and replaces
+the file atomically. The running daemon picks it up through its config watcher (or a `SIGHUP`).
 
 `doctor` is host-side and read-only: it validates the config, prints its SHA-256 digest, asks the
 running daemon for its active audit path (labelling it active or configured), the last `config` audit

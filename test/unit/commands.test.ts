@@ -980,9 +980,114 @@ describe('host flag validation at the CLI boundary', () => {
   }
 });
 
+describe('gcb config allow', () => {
+  const runAllow = (args: readonly string[]): { status: number; stdout: string; stderr: string } => {
+    try {
+      const stdout = execFileSync(
+        'node',
+        ['--conditions=development', 'packages/host/bin/gcb.js', 'config', 'allow', ...args],
+        { cwd: path.resolve('.'), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      return { status: 0, stdout, stderr: '' };
+    } catch (error) {
+      const failed = error as { status?: number | null; stdout?: string; stderr?: string };
+      return { status: failed.status ?? -1, stdout: String(failed.stdout ?? ''), stderr: String(failed.stderr ?? '') };
+    }
+  };
+
+  const fixture = (): { dir: string; file: string; original: string } => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-'));
+    const file = path.join(dir, 'broker.config.yml');
+    const original = [
+      '# keep this comment',
+      'socketPath: /run/gcb.sock',
+      'hosts:',
+      '  github.com:',
+      '    provider: static',
+      '    password: p',
+      '    allow:',
+      '      - acme/widget # keep this too',
+      '      - acme/other',
+      '',
+    ].join('\n');
+    fs.writeFileSync(file, original);
+    return { dir, file, original };
+  };
+
+  it('adds then removes one entry without disturbing comments or formatting', () => {
+    const { dir, file, original } = fixture();
+    try {
+      const added = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(added.status, 0);
+      assert.match(added.stdout, /allow add github\.com acme\/new: written/u);
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u);
+      assert.match(fs.readFileSync(file, 'utf8'), /# keep this too/u);
+
+      const checked = execFileSync('node', ['--conditions=development', 'packages/host/bin/gcb.js', 'config', 'check', '--config', file], {
+        cwd: path.resolve('.'),
+        encoding: 'utf8',
+      });
+      assert.match(checked, /ok: /u);
+
+      const removed = runAllow(['remove', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(removed.status, 0);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a duplicate add and a missing remove without writing', () => {
+    const { dir, file, original } = fixture();
+    try {
+      const duplicate = runAllow(['add', 'github.com', 'acme/widget', '--config', file]);
+      assert.equal(duplicate.status, 1);
+      assert.match(duplicate.stderr, /already in github\.com\.allow/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+
+      const missing = runAllow(['remove', 'github.com', 'acme/absent', '--config', file]);
+      assert.equal(missing.status, 1);
+      assert.match(missing.stderr, /not in github\.com\.allow/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses malformed repositories and unknown hosts before writing', () => {
+    const { dir, file, original } = fixture();
+    try {
+      for (const bad of ['acme', 'acme/widget/extra', 'https://github.com/acme/widget', 'acme/*', '']) {
+        const result = runAllow(['add', 'github.com', bad, '--config', file]);
+        assert.equal(result.status, 1, bad);
+        assert.match(result.stderr, /one exact owner\/name/u);
+      }
+      const host = runAllow(['add', 'gitlab.com', 'acme/widget', '--config', file]);
+      assert.equal(host.status, 1);
+      assert.match(host.stderr, /no host "gitlab\.com"/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a non-list allow field', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-bad-'));
+    const file = path.join(dir, 'broker.config.yml');
+    fs.writeFileSync(file, 'socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow: acme/widget\n');
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /allow must be a list/u);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('gcb config check', () => {
   const run = (
-    command: 'check' | 'edit',
+    command: string,
     args: readonly string[],
     extraEnv: NodeJS.ProcessEnv = {},
   ): { status: number; stdout: string; stderr: string } => {
