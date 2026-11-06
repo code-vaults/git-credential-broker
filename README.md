@@ -319,7 +319,8 @@ deployment mode and hosts without starting the broker or reading the key. `confi
 existing file in `$VISUAL`/`$EDITOR` (it does not create a missing one; run `init` first) and
 validates it after the editor exits. `config allow add|remove <host> <owner/name>` changes one exact
 allowlist entry (no glob, URL, wildcard or `.git`), preserving comments and the rest of the
-document, validates the result, and replaces the file atomically. The output says the reload is
+document, keeps its LF or CRLF line endings (mixed endings are refused), validates the result,
+and replaces the file atomically. The output says the reload is
 unconfirmed: the running daemon watches the config directory, but the command does not signal it,
 and `socketPath`/`socketMode`/`auditPath` still need a restart. The line also carries
 `entry=… reload=unconfirmed signal=unavailable`. `config edit` edits the existing file in place and
