@@ -654,8 +654,9 @@ granted; the broker checks once per process and names any missing permission.
 
 `static`: `username`, `password`, `passwordPath` or `passwordEnv`, `expiresInSeconds`.
 
-`hosts` is validated strictly — a known provider and a non-empty allowlist — so a typo cannot sit
-there looking like configuration while doing nothing. Only top-level `_comment*` keys are ignored.
+`hosts` is validated strictly — a known provider, a non-empty allowlist, and no two host keys that
+differ only by case — so a typo cannot sit there looking like configuration while doing nothing.
+Only top-level `_comment*` keys are ignored.
 
 ## Troubleshooting
 

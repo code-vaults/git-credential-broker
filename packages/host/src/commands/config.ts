@@ -159,11 +159,7 @@ function withConfigLock<T>(path: string, fn: (target: string) => T): T {
     // the lock is never visible empty, unlike open-then-write.
     const temporary = `${lock}.${String(process.pid)}.${randomUUID()}.tmp`;
     try {
-      try {
-        writeFileSync(temporary, String(process.pid), { mode: 0o644, flag: 'wx' });
-      } catch (error) {
-        throw lockError(path, dirname(target), error);
-      }
+      writeFileSync(temporary, String(process.pid), { mode: 0o644, flag: 'wx' });
       linkSync(temporary, lock);
       break;
     } catch (error) {
@@ -254,8 +250,16 @@ function changeAllow(path: string, positionals: readonly string[]): void {
         `config ${path} is not valid YAML: ${document.errors.map((error) => error.message).join('; ')}`,
       );
     }
-    const hostNode = document.getIn(['hosts', host], true);
-    if (!isMap(hostNode)) throw new Error(`no host ${JSON.stringify(host)} in ${path}`);
+    const hostsNode = document.getIn(['hosts'], true);
+    if (!isMap(hostsNode)) throw new Error(`no hosts in ${path}`);
+    const pair = hostsNode.items.find(
+      (item) => isScalar(item.key) && String(item.key.value).toLowerCase() === host.toLowerCase(),
+    );
+    if (pair === undefined || !isMap(pair.value)) {
+      throw new Error(`no host ${JSON.stringify(host)} in ${path}`);
+    }
+    const hostNode = pair.value;
+    const hostKey = String((pair.key as { value: unknown }).value);
     const allowNode = hostNode.get('allow', true);
     if (allowNode !== undefined && !isSeq(allowNode)) {
       throw new Error(`hosts.${host}.allow must be a list`);
@@ -268,17 +272,17 @@ function changeAllow(path: string, positionals: readonly string[]): void {
     const index = normalized.findIndex((entry) => entry === wanted);
 
     if (action === 'add') {
-      if (index !== -1) throw new Error(`${repository} is already in ${host}.allow`);
+      if (index !== -1) throw new Error(`${repository} is already in ${hostKey}.allow`);
       if (isSeq(allowNode)) {
         allowNode.add(repository);
       } else {
         hostNode.set('allow', document.createNode([repository]));
       }
     } else {
-      if (index === -1 || !isSeq(allowNode)) throw new Error(`${repository} is not in ${host}.allow`);
+      if (index === -1 || !isSeq(allowNode)) throw new Error(`${repository} is not in ${hostKey}.allow`);
       const kept = allowNode.items.filter((_item, position) => normalized[position] !== wanted);
       if (kept.length === 0) {
-        throw new Error(`refusing to remove: this would leave the allowlist empty for ${host}`);
+        throw new Error(`refusing to remove: this would leave the allowlist empty for ${hostKey}`);
       }
       allowNode.items = kept;
     }

@@ -1095,6 +1095,22 @@ describe('gcb config allow', () => {
     }
   });
 
+  it('finds a host key regardless of case', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-host-'));
+    const file = path.join(dir, 'broker.config.yml');
+    fs.writeFileSync(
+      file,
+      'socketPath: /run/gcb.sock\nhosts:\n  GitHub.com:\n    provider: static\n    password: p\n    allow:\n      - acme/widget\n',
+    );
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(result.status, 0);
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('refuses a duplicate add and a missing remove without writing', () => {
     const { dir, file, original } = fixture();
     try {
