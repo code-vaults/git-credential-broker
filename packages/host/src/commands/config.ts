@@ -2,10 +2,12 @@
  * `config` — inspect, edit and validate the broker configuration.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, closeSync, existsSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { parseDocument, isMap, isScalar, isSeq } from 'yaml';
 
 import { inferMode, loadConfig, loadConfigText, readConfigText, resolveConfigPath } from '../config.ts';
+import { parseAllowEntry } from '../policy.ts';
 import { fail, parseArgs, say } from 'gcb-core';
 
 export const CONFIG_USAGE = `Usage: gcb config check|edit|allow add|remove [options]
@@ -75,9 +77,6 @@ export function runConfig(argv: readonly string[]): number {
   }
 }
 
-/** One exact repository entry: no URL, glob or extra segment. */
-const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
-
 /** How long an update waits for another config update to finish. */
 const LOCK_WAIT_MS = 5_000;
 
@@ -103,8 +102,9 @@ function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    // EPERM means the process exists but belongs to another user; ESRCH is the only dead answer.
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
   }
 }
 
@@ -129,7 +129,12 @@ function withConfigLock<T>(path: string, fn: () => T): T {
       let stale = true;
       try {
         const pid = Number(readFileSync(lock, 'utf8'));
-        stale = !Number.isInteger(pid) || pid <= 0 || !pidAlive(pid) || Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS;
+        stale =
+          !Number.isInteger(pid) ||
+          pid <= 0 ||
+          pid > 0x7fffffff ||
+          !pidAlive(pid) ||
+          Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS;
       } catch {
         stale = true;
       }
@@ -166,12 +171,22 @@ function changeAllow(path: string, positionals: readonly string[]): void {
   if (positionals.length !== 4) {
     throw new Error('usage: gcb config allow add|remove <host> <owner/name> [--config <path>]');
   }
-  if (!REPOSITORY.test(repository)) {
-    throw new Error(`repository must be one exact owner/name, got ${JSON.stringify(repository)}`);
+  const parsed = parseAllowEntry(repository);
+  if (
+    parsed === null ||
+    parsed.owner === '*' ||
+    parsed.repo === '*' ||
+    repository.toLowerCase().endsWith('.git')
+  ) {
+    throw new Error(
+      `repository must be one exact owner/name without a wildcard or .git, got ${JSON.stringify(repository)}`,
+    );
   }
 
   withConfigLock(path, () => {
-    const before = readConfigText(path);
+    // Follow a managed symlink; replacing the link would leave the real config untouched.
+    const target = realpathSync(path);
+    const before = readConfigText(target);
     const document = parseDocument(before, { schema: 'core', uniqueKeys: true, prettyErrors: true });
     if (document.errors.length > 0) {
       throw new Error(
@@ -206,17 +221,23 @@ function changeAllow(path: string, positionals: readonly string[]): void {
 
     const after = document.toString();
     loadConfigText(after, path);
-    const mode = statSync(path).mode;
-    const temporary = `${path}.${String(process.pid)}.${String(Date.now())}.tmp`;
+    const mode = statSync(target).mode & 0o777;
+    const temporary = `${target}.${String(process.pid)}.${randomUUID()}.tmp`;
     try {
-      writeFileSync(temporary, after, { mode });
-      chmodSync(temporary, mode & 0o777);
-      renameSync(temporary, path);
+      const fd = openSync(temporary, 'wx', mode);
+      try {
+        writeFileSync(fd, after);
+      } finally {
+        closeSync(fd);
+      }
+      // Write an exact mode: the create mode is filtered by umask on some shares.
+      chmodSync(temporary, mode);
+      renameSync(temporary, target);
     } finally {
       rmSync(temporary, { force: true });
     }
     say(
-      `allow ${action} ${host} ${repository}: written; reload: unconfirmed (check the daemon log; a restart is needed for socketPath, socketMode or auditPath)`,
+      `allow ${action} ${host} ${repository}: written; reload: unconfirmed (run gcb doctor; a restart is needed for socketPath, socketMode or auditPath)`,
     );
   });
 }

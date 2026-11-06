@@ -1011,7 +1011,7 @@ describe('gcb config allow', () => {
       '',
     ].join('\n');
     fs.writeFileSync(file, original);
-    if (process.platform !== 'win32') fs.chmodSync(file, 0o600);
+    if (process.platform !== 'win32') fs.chmodSync(file, 0o660);
     return { dir, file, original };
   };
 
@@ -1023,7 +1023,7 @@ describe('gcb config allow', () => {
       assert.match(added.stdout, /allow add github\.com acme\/new: written/u);
       assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u);
       assert.match(fs.readFileSync(file, 'utf8'), /# keep this too/u);
-      if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600, 'add keeps the mode');
+      if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o660, 'add keeps the mode');
 
       const checked = execFileSync('node', ['--conditions=development', 'packages/host/bin/gcb.js', 'config', 'check', '--config', file], {
         cwd: path.resolve('.'),
@@ -1034,7 +1034,7 @@ describe('gcb config allow', () => {
       const removed = runAllow(['remove', 'github.com', 'acme/new', '--config', file]);
       assert.equal(removed.status, 0);
       assert.equal(fs.readFileSync(file, 'utf8'), original);
-      if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600, 'remove keeps the mode');
+      if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o660, 'remove keeps the mode');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -1069,6 +1069,62 @@ describe('gcb config allow', () => {
       assert.equal(host.status, 1);
       assert.match(host.stderr, /no host "gitlab\.com"/u);
       assert.equal(fs.readFileSync(file, 'utf8'), original);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a case-variant duplicate and an extra positional', () => {
+    const { dir, file, original } = fixture();
+    try {
+      const duplicate = runAllow(['add', 'github.com', 'ACME/Widget', '--config', file]);
+      assert.equal(duplicate.status, 1);
+      assert.match(duplicate.stderr, /already in github\.com\.allow/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+
+      const extra = runAllow(['add', 'github.com', 'acme/new', 'oops', '--config', file]);
+      assert.equal(extra.status, 1);
+      assert.match(extra.stderr, /usage: gcb config allow/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a .git suffix and a malformed existing entry', () => {
+    const { dir, file, original } = fixture();
+    try {
+      const dotGit = runAllow(['add', 'github.com', 'acme/widget.git', '--config', file]);
+      assert.equal(dotGit.status, 1);
+      assert.match(dotGit.stderr, /without a wildcard or \.git/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    const badDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-loader-'));
+    const badFile = path.join(badDir, 'broker.config.yml');
+    const bad = 'socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow:\n      - acme/wid*\n';
+    fs.writeFileSync(badFile, bad);
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', badFile]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /allow/u);
+      assert.equal(fs.readFileSync(badFile, 'utf8'), bad);
+    } finally {
+      fs.rmSync(badDir, { recursive: true, force: true });
+    }
+  });
+
+  it('follows a symlinked config instead of replacing the link', () => {
+    const { dir, file } = fixture();
+    const link = path.join(dir, 'link.yml');
+    fs.symlinkSync(file, link);
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', link]);
+      assert.equal(result.status, 0);
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u);
+      assert.equal(fs.lstatSync(link).isSymbolicLink(), true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
