@@ -1322,12 +1322,19 @@ describe('gcb config check', () => {
   });
 
   it('opens the config in the editor and validates it', () => {
-    const result = runConfigCli('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
-      VISUAL: 'true',
-      EDITOR: 'true',
-    });
-    assert.equal(result.status, 0);
-    assert.match(result.stdout, /ok: .* \(host\)/);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-open-'));
+    const config = path.join(directory, 'broker.config.yml');
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
+    try {
+      const result = runConfigCli('edit', ['--config', config], {
+        VISUAL: 'true',
+        EDITOR: 'true',
+      });
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /ok: .* \(host\)/);
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('passes the path as one argument to an editor command with arguments', () => {
@@ -1381,12 +1388,19 @@ describe('gcb config check', () => {
   });
 
   it('reports an editor killed by a signal', () => {
-    const result = runConfigCli('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
-      VISUAL: 'kill -KILL $$',
-      EDITOR: 'kill -KILL $$',
-    });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /editor exited with signal SIGKILL/);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-signal-'));
+    const config = path.join(directory, 'broker.config.yml');
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
+    try {
+      const result = runConfigCli('edit', ['--config', config], {
+        VISUAL: 'kill -KILL $$',
+        EDITOR: 'kill -KILL $$',
+      });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /editor exited with signal SIGKILL/);
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('refuses config edit without an editor', () => {
