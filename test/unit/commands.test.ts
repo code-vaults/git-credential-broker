@@ -57,8 +57,6 @@ function runConfigCli(
   }
 }
 
-
-
 after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
 /**
