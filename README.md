@@ -323,7 +323,8 @@ document, validates the result, and replaces the file atomically. The output say
 unconfirmed: the running daemon watches the config directory, but the command does not signal it,
 and `socketPath`/`socketMode`/`auditPath` still need a restart. The line also carries
 `entry=… reload=unconfirmed signal=unavailable`. `config edit` edits the existing file in place and
-needs write access only to the file, not its directory. `config allow` takes a target-keyed lock
+needs write access to the file; some editors also write swap or backup files beside it, so their
+directory may need write access too. `config allow` takes a target-keyed lock
 beside the config to serialize allow updates; a lock left by a crash is not removed automatically,
 so the command fails with the lock path and an operator removes it once no gcb command is running.
 Do not run `config edit` concurrently with a `config allow` update; the edit is a manual full-file

@@ -1067,6 +1067,20 @@ describe('gcb config allow', () => {
     }
   });
 
+  it('preserves CRLF line endings through add and remove', () => {
+    const { dir, file, original } = fixture();
+    const crlf = original.replaceAll('\n', '\r\n');
+    fs.writeFileSync(file, crlf);
+    try {
+      assert.equal(runAllow(['add', 'github.com', 'acme/new', '--config', file]).status, 0);
+      assert.match(fs.readFileSync(file, 'utf8'), /\r\n/u);
+      assert.equal(runAllow(['remove', 'github.com', 'acme/new', '--config', file]).status, 0);
+      assert.equal(fs.readFileSync(file, 'utf8'), crlf);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('refuses a duplicate add and a missing remove without writing', () => {
     const { dir, file, original } = fixture();
     try {

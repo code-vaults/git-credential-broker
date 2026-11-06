@@ -49,7 +49,7 @@ export function runConfig(argv: readonly string[]): number {
     if (!existsSync(path)) fail(`cannot edit missing config ${path}`);
     const editor = process.env['VISUAL'] ?? process.env['EDITOR'];
     if (editor === undefined || editor.trim() === '') fail('config edit needs $VISUAL or $EDITOR');
-    // Edit in place: this path only needs write access to the file, not its directory.
+    // Edit in place: this path needs write access to the file; some editors also need its directory.
     // `$VISUAL`/`$EDITOR` is a shell command in git's own semantics; `$@` keeps the path intact.
     const result = spawnSync('/bin/sh', ['-c', `${editor} "$@"`, editor, path], { stdio: 'inherit' });
     if (result.error !== undefined) {
@@ -146,7 +146,7 @@ function withConfigLock<T>(path: string, fn: (target: string) => T): T {
         writeFileSync(temporary, String(process.pid), { mode: 0o644, flag: 'wx' });
       } catch (error) {
         throw new Error(
-          `cannot lock ${path}: ${dirname(target)} must be writable (${(error as Error).message})`,
+          `cannot lock ${path}: ${dirname(target)} must be writable (${(error as NodeJS.ErrnoException).code ?? 'error'})`,
         );
       }
       linkSync(temporary, lock);
@@ -263,7 +263,10 @@ function changeAllow(path: string, positionals: readonly string[]): void {
       allowNode.items = kept;
     }
 
-    const after = document.toString();
+    const serialized = document.toString();
+    const newline = before.includes('\r\n') ? '\r\n' : '\n';
+    const after =
+      newline === '\n' ? serialized : serialized.replace(/\r?\n/gu, '\n').replace(/\n/gu, '\r\n');
     loadConfigText(after, path);
     const original = statSync(target);
     const mode = original.mode & 0o777;
