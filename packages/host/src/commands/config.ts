@@ -110,6 +110,23 @@ function pidAlive(pid: number): boolean {
 }
 
 /**
+ * Describe a lock-creation failure without exposing an internal temp name.
+ *
+ * @param path - the config path the user named.
+ * @param directory - its directory.
+ * @param error - the underlying filesystem error.
+ * @returns the error to throw.
+ */
+function lockError(path: string, directory: string, error: unknown): Error {
+  const code = (error as NodeJS.ErrnoException).code ?? 'error';
+  const detail =
+    code === 'EACCES' || code === 'EROFS'
+      ? `${directory} must be writable`
+      : `${code}: ${(error as Error).message}`;
+  return new Error(`cannot lock ${path}: ${detail}`);
+}
+
+/**
  * Resolve the real file a config path names, keeping a missing-file message useful.
  *
  * @param path - the configured path, which may be a symlink.
@@ -145,18 +162,13 @@ function withConfigLock<T>(path: string, fn: (target: string) => T): T {
       try {
         writeFileSync(temporary, String(process.pid), { mode: 0o644, flag: 'wx' });
       } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code ?? 'error';
-        const detail =
-          code === 'EACCES' || code === 'EROFS'
-            ? `${dirname(target)} must be writable`
-            : `${code}: ${(error as Error).message}`;
-        throw new Error(`cannot lock ${path}: ${detail}`);
+        throw lockError(path, dirname(target), error);
       }
       linkSync(temporary, lock);
       break;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-        throw new Error(`cannot lock ${path}: ${(error as Error).message}`);
+        throw lockError(path, dirname(target), error);
       }
       let pid: number | undefined;
       try {

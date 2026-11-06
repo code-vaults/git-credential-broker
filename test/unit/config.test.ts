@@ -198,6 +198,21 @@ describe('validateConfig', () => {
     }
   });
 
+  it('rejects host keys that differ only by case', () => {
+    assert.throws(
+      () =>
+        validateConfig(
+          base({
+            hosts: {
+              'github.com': { provider: 'static', allow: ['acme/widget'], password: 'p' },
+              'GitHub.com': { provider: 'static', allow: ['acme/other'], password: 'p' },
+            },
+          }),
+        ),
+      /duplicates hosts\["github\.com"\] ignoring case/u,
+    );
+  });
+
   it('accepts the github-app identity fields and requires neither at this layer', () => {
     const config = validateConfig(
       withHost({ provider: 'github-app', allow: ['a/b'], privateKeyPem: 'k', clientId: 'Iv1.x', appId: 42 }),
