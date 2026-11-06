@@ -232,7 +232,7 @@ function changeAllow(path: string, positionals: readonly string[]): void {
   withConfigLock(path, (target) => {
     const before = readConfigText(target);
     if (before.includes('\r\n') && /(^|[^\r])\n/u.test(before)) {
-      throw new Error(`config ${target} has mixed line endings; normalize it to LF or CRLF first`);
+      throw new Error(`config ${path} has mixed line endings; normalize it to LF or CRLF first`);
     }
     const document = parseDocument(before, { schema: 'core', uniqueKeys: true, prettyErrors: true });
     if (document.errors.length > 0) {
