@@ -690,12 +690,41 @@ export function writeResult(dir: string, id: string, result: HostResult): void {
  * @param id - the request id.
  * @returns the request, or undefined when it was gone or is already claimed.
  */
+/** How long a claim with no readable record may sit before it is treated as a crash. */
+const CLAIM_NO_RECORD_MS = 120_000;
+
+/** A backstop for a reboot that reused the recorded pid. Longer than the longest catalogued timeout. */
+const CLAIM_MAX_AGE_MS = 2 * 60 * 60_000;
+
+/** The sidecar recording who claimed a request. */
+const claimFile = (dir: string, id: string): string => join(dir, `${id}.claim`);
+
+/**
+ * Whether a process is still alive.
+ *
+ * @param pid - the pid to probe.
+ * @returns true when the process exists and this user may signal it.
+ */
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function claimRequest(dir: string, id: string): HostRequest | undefined {
   const claimed = join(dir, `${id}.json.working`);
   try {
     renameSync(join(dir, `${id}.json`), claimed);
   } catch {
     return undefined;
+  }
+  try {
+    writeFileSync(claimFile(dir, id), JSON.stringify({ pid: process.pid, at: Date.now() }), { mode: 0o600 });
+  } catch {
+    // The claim is only needed to reclaim a crashed claim; an unrecorded claim falls back to mtime.
   }
   const request = readJson(claimed) as HostRequest | undefined;
   // The channel is written by the container, so the shape is not a given: the host broker's own checks run on
@@ -743,9 +772,65 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
         typeof request.base === 'string');
   if (!shaped) {
     rmSync(claimed, { force: true, recursive: true });
+    rmSync(claimFile(dir, id), { force: true });
     return undefined;
   }
   return request;
+}
+
+/**
+ * Put claims abandoned by a crashed host broker back in the queue.
+ *
+ * The rename in {@link claimRequest} makes exactly one opener win, but a crash after it leaves only a
+ * `.working` file. A live claim is left alone; a dead one is renamed back, and a claim with no
+ * readable record falls back to the file's age. An answer already written means the work finished and
+ * the claim is simply removed, not retried.
+ *
+ * @param dir - the channel directory.
+ * @returns the ids that were reclaimed.
+ */
+export function reclaimAbandoned(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  const reclaimed: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.json.working')) continue;
+    const id = entry.name.slice(0, -'.json.working'.length);
+    const claimed = join(dir, entry.name);
+    if (readResult(dir, id) !== undefined) {
+      removeRequest(dir, id);
+      reclaimed.push(id);
+      continue;
+    }
+    let claim: { pid?: unknown; at?: unknown } | undefined;
+    try {
+      claim = JSON.parse(readFileSync(claimFile(dir, id), 'utf8')) as { pid?: unknown; at?: unknown };
+    } catch {
+      claim = undefined;
+    }
+    const pid = typeof claim?.pid === 'number' && Number.isInteger(claim.pid) ? claim.pid : undefined;
+    const at = typeof claim?.at === 'number' ? claim.at : undefined;
+    let stale: boolean;
+    if (pid === undefined) {
+      let age = CLAIM_NO_RECORD_MS;
+      try {
+        age = Date.now() - statSync(claimed).mtimeMs;
+      } catch {
+        continue;
+      }
+      stale = age >= CLAIM_NO_RECORD_MS;
+    } else {
+      stale = !pidAlive(pid) || (at !== undefined && Date.now() - at > CLAIM_MAX_AGE_MS);
+    }
+    if (!stale) continue;
+    try {
+      renameSync(claimed, join(dir, `${id}.json`));
+    } catch {
+      continue;
+    }
+    rmSync(claimFile(dir, id), { force: true });
+    reclaimed.push(id);
+  }
+  return reclaimed;
 }
 
 /**
@@ -761,6 +846,7 @@ export function removeRequest(dir: string, id: string): void {
   // directory, and nothing ever removed it.
   rmSync(join(dir, `${id}.json`), { force: true, recursive: true });
   rmSync(join(dir, `${id}.json.working`), { force: true, recursive: true });
+  rmSync(claimFile(dir, id), { force: true });
 }
 
 /**

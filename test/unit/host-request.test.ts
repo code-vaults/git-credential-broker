@@ -6,7 +6,7 @@
  * while it waits.
  */
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,6 +16,7 @@ import { pullRequestUrl } from '../../packages/host/src/commands/host.ts';
 import {
   channelDir,
   claimRequest,
+  reclaimAbandoned,
   clearHostBroker,
   discoverCheckouts,
   findGitDir,
@@ -212,6 +213,29 @@ describe('the host request channel', () => {
     assert.equal(read?.kind, 'fork');
     assert.equal(read !== undefined && read.kind === 'fork' ? read.repo : undefined, 'acme/widget');
     removeRequest(dir, id);
+  });
+
+  it('reclaims a claim whose process is gone', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: Number.MAX_SAFE_INTEGER, at: Date.now() }));
+    assert.deepEqual(reclaimAbandoned(dir), [id]);
+    assert.ok(listRequests(dir).includes(id), 'the request is back in the queue');
+    assert.equal(existsSync(join(dir, `${id}.json.working`)), false);
+    removeRequest(dir, id);
+  });
+
+  it('leaves a live claim alone and retires an answered one', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    assert.deepEqual(reclaimAbandoned(dir), [], 'the claimant is this process');
+    assert.ok(existsSync(join(dir, `${id}.json.working`)));
+
+    writeResult(dir, id, { stdout: 'ok', stderr: '', code: 0 });
+    assert.deepEqual(reclaimAbandoned(dir), [id]);
+    assert.equal(existsSync(join(dir, `${id}.json.working`)), false);
+    assert.equal(readResult(dir, id)?.stdout, 'ok');
+    removeResult(dir, id);
   });
 
   it('names a request after the clock, with something to break a tie', () => {
