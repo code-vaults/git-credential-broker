@@ -1,5 +1,25 @@
 # gcb-host
 
+## 0.7.0
+
+### Minor Changes
+
+- [#103](https://github.com/code-vaults/git-credential-broker/pull/103) [`c040d5e`](https://github.com/code-vaults/git-credential-broker/commit/c040d5e73f7eede891800f1cae8ad9b3903dbab6) Thanks [@JounQin](https://github.com/JounQin)! - Add `gcb config allow add|remove <host> <owner/name>` for one exact entry. Globs, URLs,
+  wildcards and a `.git` suffix are refused. It edits the entry with `parseDocument`, so comments and
+  formatting survive, keeps LF or CRLF line endings, rejects mixed endings, validates the result with
+  the same loader as the daemon, and replaces the file atomically. It also rejects host keys that
+  differ only by case, which would otherwise leave one block silently unreachable. It serializes
+  allow updates with a target-keyed lock, refuses to remove the last entry, and reports one line with
+  `entry=… reload=unconfirmed signal=unavailable`: the daemon watches the config directory, but the
+  command does not signal it, and restart-only keys still need a restart. `config edit` stays an
+  in-place editor and needs no directory write. A lock left by a crash fails closed and names the path
+  for an operator to remove.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - gcb-core@0.7.0
+
 ## 0.6.0
 
 ### Patch Changes
