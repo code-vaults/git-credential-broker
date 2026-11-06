@@ -7,7 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -225,6 +225,43 @@ describe('the host request channel', () => {
     assert.deepEqual(reclaimAbandoned(dir), [id]);
     assert.ok(listRequests(dir).includes(id), 'the request is back in the queue');
     assert.equal(existsSync(join(dir, `${id}.json.working`)), false);
+    removeRequest(dir, id);
+  });
+
+  it('leaves a claim alone while another reclaimer holds the lock', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    assert.ok(dead.pid !== undefined);
+    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
+    writeFileSync(join(dir, `${id}.reclaim`), String(process.pid));
+    assert.deepEqual(reclaimAbandoned(dir), []);
+    assert.equal(existsSync(join(dir, `${id}.json.working`)), true);
+    rmSync(join(dir, `${id}.reclaim`));
+    assert.deepEqual(reclaimAbandoned(dir), [id]);
+    removeRequest(dir, id);
+  });
+
+  it('does not requeue a completed request after the client consumed the result', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    writeResult(dir, id, { stdout: 'ok', stderr: '', code: 0 });
+    removeResult(dir, id);
+    assert.deepEqual(reclaimAbandoned(dir), [id]);
+    assert.equal(listRequests(dir).includes(id), false);
+    assert.equal(readResult(dir, id), undefined);
+  });
+
+  it('resets a requeued request to eligible age', () => {
+    const id = writeRequest(dir, GOOD);
+    const old = new Date(Date.now() - 10 * 60_000);
+    utimesSync(join(dir, `${id}.json`), old, old);
+    assert.ok(claimRequest(dir, id));
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    assert.ok(dead.pid !== undefined);
+    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
+    assert.deepEqual(reclaimAbandoned(dir), [id]);
+    assert.ok(Date.now() - statSync(join(dir, `${id}.json`)).mtimeMs < 2_000);
     removeRequest(dir, id);
   });
 

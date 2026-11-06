@@ -16,6 +16,7 @@ import {
   constants as fsConstants,
   existsSync,
   fstatSync,
+  linkSync,
   openSync,
   mkdirSync,
   readFileSync,
@@ -23,7 +24,7 @@ import {
   renameSync,
   rmSync,
   statSync,
-  utimesSync,
+  futimesSync,
   writeFileSync,
   type Dirent,
 } from 'node:fs';
@@ -32,6 +33,7 @@ import { lstatSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 
 import { canonicalPath } from './paths.ts';
+import { randomUUID } from 'node:crypto';
 
 /** The directory under the git directory that carries requests and answers. */
 export const CHANNEL_PATH = 'gcb/host-broker';
@@ -682,6 +684,7 @@ export function writeResult(dir: string, id: string, result: HostResult): void {
     ...(typeof result.stderr === 'string' ? { stderr: clampJsonStream(result.stderr) } : {}),
   };
   writeJsonAtomic(join(dir, `${id}.result.json`), { v: 1, id, ...bounded });
+  writeJsonAtomic(doneFile(dir, id), { at: Date.now() });
 }
 
 /**
@@ -703,6 +706,31 @@ const CLAIM_MAX_AGE_MS = 2 * 60 * 60_000;
 
 /** The sidecar recording who claimed a request. */
 const claimFile = (dir: string, id: string): string => join(dir, `${id}.claim`);
+
+/** Evidence that the work finished, kept until the host removes the request. */
+const doneFile = (dir: string, id: string): string => join(dir, `${id}.done`);
+
+/**
+ * Refresh a regular file's timestamps without following a symlink or blocking on a FIFO.
+ *
+ * @param file - the path to touch.
+ */
+function touchRegular(file: string): void {
+  let fd: number | undefined;
+  try {
+    fd = openSync(
+      file,
+      fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0),
+    );
+    if (!fstatSync(fd).isFile()) return;
+    const now = new Date();
+    futimesSync(fd, now, now);
+  } catch {
+    // A missing or replaced file simply keeps its old age; recovery stays fail-safe.
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
 
 /**
  * Whether a process is still alive.
@@ -744,12 +772,7 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
   } catch {
     // The claim is only needed to reclaim a crashed claim; an unrecorded claim falls back to mtime.
   }
-  try {
-    const now = new Date();
-    utimesSync(claimed, now, now);
-  } catch {
-    // The fallback age starts at the rename time when the filesystem refuses the update.
-  }
+  touchRegular(claimed);
   const request = readJson(claimed) as HostRequest | undefined;
   // The channel is written by the container, so the shape is not a given: the host broker's own checks run on
   // this next, and a request missing a string field would make them index undefined and take it down.
@@ -802,6 +825,36 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
   return request;
 }
 
+/** A reclaim marker older than this is assumed to belong to a crashed reclaimer. */
+const RECLAIM_LOCK_STALE_MS = 5 * 60_000;
+
+/**
+ * Take the per-request reclaim lock, so two sweeps cannot requeue the same claim.
+ *
+ * @param dir - the channel directory.
+ * @param id - the request id.
+ * @returns the lock path, or undefined when another sweep owns it.
+ */
+function acquireReclaimLock(dir: string, id: string): string | undefined {
+  const lock = join(dir, `${id}.reclaim`);
+  const temporary = `${lock}.${String(process.pid)}.${randomUUID()}.tmp`;
+  writeFileSync(temporary, String(process.pid), { mode: 0o600, flag: 'wx' });
+  try {
+    linkSync(temporary, lock);
+    return lock;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    try {
+      if (Date.now() - statSync(lock).mtimeMs > RECLAIM_LOCK_STALE_MS) rmSync(lock, { force: true });
+    } catch {
+      // A vanished lock is retried on the next sweep.
+    }
+    return undefined;
+  } finally {
+    rmSync(temporary, { force: true });
+  }
+}
+
 /**
  * Put claims abandoned by a crashed host broker back in the queue.
  *
@@ -820,7 +873,10 @@ export function reclaimAbandoned(dir: string): string[] {
     if (!entry.isFile() || !entry.name.endsWith('.json.working')) continue;
     const id = entry.name.slice(0, -'.json.working'.length);
     const claimed = join(dir, entry.name);
-    if (readResult(dir, id) !== undefined) {
+    const lock = acquireReclaimLock(dir, id);
+    if (lock === undefined) continue;
+    try {
+    if (readResult(dir, id) !== undefined || readJson(doneFile(dir, id)) !== undefined) {
       removeRequest(dir, id);
       reclaimed.push(id);
       continue;
@@ -856,8 +912,12 @@ export function reclaimAbandoned(dir: string): string[] {
     } catch {
       continue;
     }
+    touchRegular(join(dir, `${id}.json`));
     rmSync(claimFile(dir, id), { force: true });
     reclaimed.push(id);
+    } finally {
+      rmSync(lock, { force: true });
+    }
   }
   return reclaimed;
 }
@@ -877,6 +937,8 @@ export function removeRequest(dir: string, id: string): void {
   rmSync(join(dir, `${id}.json.working`), { force: true, recursive: true });
   rmSync(claimFile(dir, id), { force: true });
   rmSync(join(dir, `${id}.reclaims`), { force: true });
+  rmSync(doneFile(dir, id), { force: true });
+  rmSync(join(dir, `${id}.reclaim`), { force: true });
 }
 
 /**
