@@ -6,7 +6,7 @@
  * a configuration the daemon would reject.
  */
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
 import net from 'node:net';
 import fs from 'node:fs';
@@ -1035,12 +1035,13 @@ describe('gcb config allow', () => {
       });
       assert.match(checked, /ok: /u);
 
+      const beforeRemove = process.platform === 'win32' ? undefined : fs.statSync(file).ino;
       const removed = runAllow(['remove', 'github.com', 'acme/new', '--config', file]);
       assert.equal(removed.status, 0);
       assert.equal(fs.readFileSync(file, 'utf8'), original);
       if (process.platform !== 'win32') {
         assert.equal(fs.statSync(file).mode & 0o777, 0o660, 'remove keeps the mode');
-        assert.notEqual(fs.statSync(file).ino, inode, 'remove replaces the inode');
+        assert.notEqual(fs.statSync(file).ino, beforeRemove, 'remove replaces the inode');
       }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -1093,6 +1094,13 @@ describe('gcb config allow', () => {
       assert.equal(extra.status, 1);
       assert.match(extra.stderr, /usage: gcb config allow/u);
       assert.equal(fs.readFileSync(file, 'utf8'), original);
+
+      const spaces = runAllow(['add', 'github.com', ' acme/spaced ', '--config', file]);
+      assert.equal(spaces.status, 0);
+      assert.match(fs.readFileSync(file, 'utf8'), /- acme\/spaced/u);
+      const spacesAgain = runAllow(['add', 'github.com', 'acme/spaced', '--config', file]);
+      assert.equal(spacesAgain.status, 1);
+      assert.match(spacesAgain.stderr, /already in/u);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -1116,7 +1124,7 @@ describe('gcb config allow', () => {
     try {
       const result = runAllow(['add', 'github.com', 'acme/new', '--config', badFile]);
       assert.equal(result.status, 1);
-      assert.match(result.stderr, /allow/u);
+      assert.match(result.stderr, /not a valid "owner\/repo" pattern/u);
       assert.equal(fs.readFileSync(badFile, 'utf8'), bad);
     } finally {
       fs.rmSync(badDir, { recursive: true, force: true });
@@ -1152,6 +1160,26 @@ describe('gcb config allow', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('takes over a fresh lock whose pid has exited', () => {
+    const { dir, file } = fixture();
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    assert.ok(dead.pid !== undefined);
+    fs.writeFileSync(`${file}.lock`, String(dead.pid));
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(result.status, 0);
+      assert.equal(fs.existsSync(`${file}.lock`), false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a missing config with the config path', () => {
+    const result = runAllow(['add', 'github.com', 'acme/new', '--config', '/definitely/not/here.yml']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /cannot read config \/definitely\/not\/here\.yml/u);
   });
 
   it('ignores a stale lock left by a dead process', () => {

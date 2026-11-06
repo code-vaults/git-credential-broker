@@ -48,12 +48,18 @@ export function runConfig(argv: readonly string[]): number {
     if (!existsSync(path)) fail(`cannot edit missing config ${path}`);
     const editor = process.env['VISUAL'] ?? process.env['EDITOR'];
     if (editor === undefined || editor.trim() === '') fail('config edit needs $VISUAL or $EDITOR');
-    // `$VISUAL`/`$EDITOR` is a shell command in git's own semantics; `$@` keeps the path intact.
-    const result = spawnSync('/bin/sh', ['-c', `${editor} "$@"`, editor, path], { stdio: 'inherit' });
-    if (result.error !== undefined) fail(`cannot run editor ${JSON.stringify(editor)}: ${result.error.message}`);
-    if (result.status !== 0) {
-      const how = result.status === null ? `signal ${String(result.signal)}` : `status ${String(result.status)}`;
-      fail(`editor exited with ${how}`);
+    try {
+      withConfigLock(path, () => {
+        // `$VISUAL`/`$EDITOR` is a shell command in git's own semantics; `$@` keeps the path intact.
+        const result = spawnSync('/bin/sh', ['-c', `${editor} "$@"`, editor, path], { stdio: 'inherit' });
+        if (result.error !== undefined) fail(`cannot run editor ${JSON.stringify(editor)}: ${result.error.message}`);
+        if (result.status !== 0) {
+          const how = result.status === null ? `signal ${String(result.signal)}` : `status ${String(result.status)}`;
+          fail(`editor exited with ${how}`);
+        }
+      });
+    } catch (error) {
+      fail((error as Error).message);
     }
   }
 
@@ -109,6 +115,23 @@ function pidAlive(pid: number): boolean {
 }
 
 /**
+ * Resolve the real file a config path names, keeping a missing-file message useful.
+ *
+ * @param path - the configured path, which may be a symlink.
+ * @returns the target path.
+ */
+function configTarget(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(`cannot read config ${path}: ${(error as Error).message}`);
+    }
+    throw error;
+  }
+}
+
+/**
  * Serialize one read/update/replace sequence on a config file.
  *
  * @param path - the configuration path.
@@ -116,7 +139,8 @@ function pidAlive(pid: number): boolean {
  * @returns whatever the update returns.
  */
 function withConfigLock<T>(path: string, fn: () => T): T {
-  const lock = `${path}.lock`;
+  const target = configTarget(path);
+  const lock = `${target}.lock`;
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (;;) {
     try {
@@ -144,7 +168,7 @@ function withConfigLock<T>(path: string, fn: () => T): T {
             !pidAlive(pid));
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
-        stale = false;
+        throw error;
       }
       if (stale) {
         rmSync(lock, { force: true });
@@ -172,7 +196,7 @@ function withConfigLock<T>(path: string, fn: () => T): T {
 function changeAllow(path: string, positionals: readonly string[]): void {
   const action = positionals[1];
   const host = positionals[2];
-  const repository = positionals[3];
+  const repository = positionals[3]?.trim();
   if ((action !== 'add' && action !== 'remove') || host === undefined || repository === undefined) {
     throw new Error('usage: gcb config allow add|remove <host> <owner/name> [--config <path>]');
   }
@@ -193,7 +217,7 @@ function changeAllow(path: string, positionals: readonly string[]): void {
 
   withConfigLock(path, () => {
     // Follow a managed symlink; replacing the link would leave the real config untouched.
-    const target = realpathSync(path);
+    const target = configTarget(path);
     const before = readConfigText(target);
     const document = parseDocument(before, { schema: 'core', uniqueKeys: true, prettyErrors: true });
     if (document.errors.length > 0) {
@@ -210,7 +234,7 @@ function changeAllow(path: string, positionals: readonly string[]): void {
     const entries = isSeq(allowNode)
       ? allowNode.items.map((item) => (isScalar(item) ? String(item.value) : undefined))
       : [];
-    const index = entries.findIndex((entry) => entry?.toLowerCase() === repository.toLowerCase());
+    const index = entries.findIndex((entry) => entry?.trim().toLowerCase() === repository.toLowerCase());
 
     if (action === 'add') {
       if (index !== -1) throw new Error(`${repository} is already in ${host}.allow`);
@@ -243,9 +267,8 @@ function changeAllow(path: string, positionals: readonly string[]): void {
       chmodSync(temporary, mode);
       try {
         chownSync(temporary, original.uid, original.gid);
-      } catch (error) {
-        // A non-owner cannot restore a group; the mode is still right.
-        if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
+      } catch {
+        // Ownership is best-effort metadata; the mode still matches the original.
       }
       renameSync(temporary, target);
     } finally {
