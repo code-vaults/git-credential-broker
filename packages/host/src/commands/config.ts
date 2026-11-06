@@ -155,7 +155,9 @@ function withConfigLock<T>(path: string, fn: (target: string) => T): T {
       linkSync(temporary, lock);
       break;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+        throw new Error(`cannot lock ${path}: ${(error as Error).message}`);
+      }
       let pid: number | undefined;
       try {
         pid = Number(readFileSync(lock, 'utf8'));
@@ -208,13 +210,13 @@ function withConfigLock<T>(path: string, fn: (target: string) => T): T {
  * @param positionals - `allow`, `add|remove`, host, `owner/name`.
  */
 function changeAllow(path: string, positionals: readonly string[]): void {
-  const action = positionals[1];
-  const host = positionals[2];
-  const repository = positionals[3]?.trim();
-  if ((action !== 'add' && action !== 'remove') || host === undefined || repository === undefined) {
+  if (positionals.length !== 4) {
     throw new Error('usage: gcb config allow add|remove <host> <owner/name> [--config <path>]');
   }
-  if (positionals.length !== 4) {
+  const action = positionals[1]!;
+  const host = positionals[2]!;
+  const repository = positionals[3]!.trim();
+  if (action !== 'add' && action !== 'remove') {
     throw new Error('usage: gcb config allow add|remove <host> <owner/name> [--config <path>]');
   }
   const parsed = parseAllowEntry(repository);
