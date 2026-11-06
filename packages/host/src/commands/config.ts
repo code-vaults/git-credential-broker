@@ -4,6 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import { chmodSync, chownSync, existsSync, linkSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { dirname } from 'node:path';
 import { parseDocument, isMap, isScalar, isSeq } from 'yaml';
 
 import { inferMode, loadConfig, loadConfigText, readConfigText, resolveConfigPath } from '../config.ts';
@@ -48,19 +49,15 @@ export function runConfig(argv: readonly string[]): number {
     if (!existsSync(path)) fail(`cannot edit missing config ${path}`);
     const editor = process.env['VISUAL'] ?? process.env['EDITOR'];
     if (editor === undefined || editor.trim() === '') fail('config edit needs $VISUAL or $EDITOR');
-    try {
-      // Edit in place: this path only needs write access to the file, not its directory.
-      // `$VISUAL`/`$EDITOR` is a shell command in git's own semantics; `$@` keeps the path intact.
-      const result = spawnSync('/bin/sh', ['-c', `${editor} "$@"`, editor, path], { stdio: 'inherit' });
-      if (result.error !== undefined) {
-        throw new Error(`cannot run editor ${JSON.stringify(editor)}: ${result.error.message}`);
-      }
-      if (result.status !== 0) {
-        const how = result.status === null ? `signal ${String(result.signal)}` : `status ${String(result.status)}`;
-        throw new Error(`editor exited with ${how}`);
-      }
-    } catch (error) {
-      fail((error as Error).message);
+    // Edit in place: this path only needs write access to the file, not its directory.
+    // `$VISUAL`/`$EDITOR` is a shell command in git's own semantics; `$@` keeps the path intact.
+    const result = spawnSync('/bin/sh', ['-c', `${editor} "$@"`, editor, path], { stdio: 'inherit' });
+    if (result.error !== undefined) {
+      fail(`cannot run editor ${JSON.stringify(editor)}: ${result.error.message}`);
+    }
+    if (result.status !== 0) {
+      const how = result.status === null ? `signal ${String(result.signal)}` : `status ${String(result.status)}`;
+      fail(`editor exited with ${how}`);
     }
   }
 
@@ -145,7 +142,13 @@ function withConfigLock<T>(path: string, fn: (target: string) => T): T {
     // the lock is never visible empty, unlike open-then-write.
     const temporary = `${lock}.${String(process.pid)}.${randomUUID()}.tmp`;
     try {
-      writeFileSync(temporary, String(process.pid), { mode: 0o644, flag: 'wx' });
+      try {
+        writeFileSync(temporary, String(process.pid), { mode: 0o644, flag: 'wx' });
+      } catch (error) {
+        throw new Error(
+          `cannot lock ${path}: ${dirname(target)} must be writable (${(error as Error).message})`,
+        );
+      }
       linkSync(temporary, lock);
       break;
     } catch (error) {
