@@ -6,7 +6,7 @@
  * a configuration the daemon would reject.
  */
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
 import net from 'node:net';
 import fs from 'node:fs';
@@ -1163,6 +1163,37 @@ describe('gcb config allow', () => {
       assert.match(result.stderr, /last allowlist entry/u);
       assert.match(fs.readFileSync(file, 'utf8'), /acme\/widget/u);
     } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('waits for an empty lock instead of calling it stale', async () => {
+    const { dir, file } = fixture();
+    fs.writeFileSync(`${file}.lock`, '');
+    const child = spawn(
+      process.execPath,
+      [
+        '--conditions=development',
+        'packages/host/bin/gcb.js',
+        'config',
+        'allow',
+        'add',
+        'github.com',
+        'acme/late',
+        '--config',
+        file,
+      ],
+      { cwd: path.resolve('.'), stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      fs.writeFileSync(`${file}.lock`, String(process.pid));
+      fs.rmSync(`${file}.lock`);
+      const code = await new Promise<number | null>((resolve) => child.on('exit', resolve));
+      assert.equal(code, 0);
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/late/u);
+    } finally {
+      child.kill();
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });

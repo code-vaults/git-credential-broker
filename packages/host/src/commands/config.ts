@@ -157,7 +157,22 @@ function withConfigLock<T>(path: string, fn: (target: string) => T): T {
         throw error;
       }
       const usablePid = Number.isInteger(pid) && pid > 0 && pid <= 0x7fffffff;
-      if (usablePid && pidAlive(pid)) {
+      if (!usablePid) {
+        let age = 0;
+        try {
+          age = Date.now() - statSync(lock).mtimeMs;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+          throw error;
+        }
+        // openSync creates the file before the pid is written; an empty lock is not stale.
+        if (age <= 1_000 && Date.now() < deadline) {
+          sleepSync(50);
+          continue;
+        }
+        throw new Error(`stale lock ${lock}; remove it if no gcb command is running`);
+      }
+      if (pidAlive(pid)) {
         if (Date.now() >= deadline) {
           throw new Error(`another gcb command is updating ${path}; retry after it finishes`);
         }
@@ -263,7 +278,7 @@ function changeAllow(path: string, positionals: readonly string[]): void {
       rmSync(temporary, { force: true });
     }
     say(
-      `allow ${action} ${host} ${repository}: written; entry=${host}/${repository} reload=unconfirmed signal=unavailable (run gcb doctor; a restart is needed for socketPath, socketMode or auditPath)`,
+      `allow ${action} ${host} ${repository}: written; entry=${repository} reload=unconfirmed signal=unavailable (run gcb doctor; a restart is needed for socketPath, socketMode or auditPath)`,
     );
   });
 }
