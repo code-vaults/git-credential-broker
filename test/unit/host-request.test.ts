@@ -266,7 +266,7 @@ describe('the host request channel', () => {
 
   it('starts the no-record age at the claim, not at the original request', () => {
     const id = writeRequest(dir, GOOD);
-    const old = new Date(Date.now() - 10 * 60_000);
+    const old = new Date(Date.now() - 61 * 60_000);
     utimesSync(join(dir, `${id}.json`), old, old);
     assert.ok(claimRequest(dir, id));
     rmSync(join(dir, `${id}.claim`));
