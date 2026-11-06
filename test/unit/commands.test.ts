@@ -1008,6 +1008,7 @@ describe('gcb config allow', () => {
       '    allow:',
       '      - acme/widget # keep this too',
       '      - acme/other',
+      '      - " acme/padded "',
       '',
     ].join('\n');
     fs.writeFileSync(file, original);
@@ -1052,6 +1053,10 @@ describe('gcb config allow', () => {
     const { dir, file, original } = fixture();
     try {
       const duplicate = runAllow(['add', 'github.com', 'acme/widget', '--config', file]);
+      assert.match(
+        (runAllow(['add', 'github.com', 'acme/padded', '--config', file]).stderr),
+        /already in/u,
+      );
       assert.equal(duplicate.status, 1);
       assert.match(duplicate.stderr, /already in github\.com\.allow/u);
       assert.equal(fs.readFileSync(file, 'utf8'), original);
@@ -1157,6 +1162,22 @@ describe('gcb config allow', () => {
       assert.equal(result.status, 1);
       assert.match(result.stderr, /last allowlist entry/u);
       assert.match(fs.readFileSync(file, 'utf8'), /acme\/widget/u);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not steal an old lock from a live process', () => {
+    const { dir, file, original } = fixture();
+    fs.writeFileSync(`${file}.lock`, String(process.pid));
+    const old = new Date(Date.now() - 31_000);
+    fs.utimesSync(`${file}.lock`, old, old);
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /another gcb command is updating/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+      assert.equal(fs.existsSync(`${file}.lock`), true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -1288,13 +1309,22 @@ describe('gcb config check', () => {
   });
 
   it('stops when the editor fails', () => {
-    const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
-      VISUAL: 'false',
-      EDITOR: 'false',
-    });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /editor exited with status 1/);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-fail-'));
+    const config = path.join(dir, 'broker.config.yml');
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
+    try {
+      const result = run('edit', ['--config', config], {
+        VISUAL: 'false',
+        EDITOR: 'false',
+      });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /editor exited with status 1/);
+      assert.equal(fs.existsSync(`${config}.lock`), false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
+
 
   it('validates the file the editor saved, not the one it opened', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-'));

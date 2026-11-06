@@ -140,7 +140,7 @@ function configTarget(path: string): string {
  * @param fn - the update to run while holding the lock.
  * @returns whatever the update returns.
  */
-function withConfigLock<T>(path: string, fn: () => T): T {
+function withConfigLock<T>(path: string, fn: (target: string) => T): T {
   const target = configTarget(path);
   const lock = `${target}.lock`;
   const deadline = Date.now() + LOCK_WAIT_MS;
@@ -160,14 +160,12 @@ function withConfigLock<T>(path: string, fn: () => T): T {
           pid = Number(readFileSync(lock, 'utf8'));
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+          throw error;
         }
-        stale =
-          age > LOCK_STALE_MS ||
-          (pid !== undefined &&
-            Number.isInteger(pid) &&
-            pid > 0 &&
-            pid <= 0x7fffffff &&
-            !pidAlive(pid));
+        const usablePid =
+          pid !== undefined && Number.isInteger(pid) && pid > 0 && pid <= 0x7fffffff;
+        // A live holder is never too old: config edit holds this lock for a whole editor session.
+        stale = usablePid ? !pidAlive(pid) : age > LOCK_STALE_MS;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
         throw error;
@@ -177,13 +175,13 @@ function withConfigLock<T>(path: string, fn: () => T): T {
         continue;
       }
       if (Date.now() >= deadline) {
-        throw new Error(`another process is updating ${path}; retry after it finishes`);
+        throw new Error(`another gcb command is updating ${path}; retry after it finishes`);
       }
       sleepSync(50);
     }
   }
   try {
-    return fn();
+    return fn(target);
   } finally {
     rmSync(lock, { force: true });
   }
@@ -217,9 +215,7 @@ function changeAllow(path: string, positionals: readonly string[]): void {
     );
   }
 
-  withConfigLock(path, () => {
-    // Follow a managed symlink; replacing the link would leave the real config untouched.
-    const target = configTarget(path);
+  withConfigLock(path, (target) => {
     const before = readConfigText(target);
     const document = parseDocument(before, { schema: 'core', uniqueKeys: true, prettyErrors: true });
     if (document.errors.length > 0) {
