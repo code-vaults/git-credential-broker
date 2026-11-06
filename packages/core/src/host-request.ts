@@ -12,13 +12,16 @@
  * another appearing back.
  */
 import {
+  closeSync,
   existsSync,
+  openSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   renameSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
   type Dirent,
 } from 'node:fs';
@@ -709,9 +712,16 @@ function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
   }
+}
+
+/** A pid a signal can name: positive, integer, and inside the OS range. */
+function usablePid(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= 0x7fffffff
+    ? value
+    : undefined;
 }
 
 export function claimRequest(dir: string, id: string): HostRequest | undefined {
@@ -722,9 +732,21 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
     return undefined;
   }
   try {
-    writeFileSync(claimFile(dir, id), JSON.stringify({ pid: process.pid, at: Date.now() }), { mode: 0o600 });
+    const claim = claimFile(dir, id);
+    // The channel is container-writable: remove a planted entry without following it, then create
+    // the sidecar exclusively, so a replacement symlink cannot redirect the write.
+    rmSync(claim, { force: true });
+    const fd = openSync(claim, 'wx', 0o600);
+    writeFileSync(fd, JSON.stringify({ pid: process.pid, at: Date.now() }));
+    closeSync(fd);
   } catch {
     // The claim is only needed to reclaim a crashed claim; an unrecorded claim falls back to mtime.
+  }
+  try {
+    const now = new Date();
+    utimesSync(claimed, now, now);
+  } catch {
+    // The fallback age starts at the rename time when the filesystem refuses the update.
   }
   const request = readJson(claimed) as HostRequest | undefined;
   // The channel is written by the container, so the shape is not a given: the host broker's own checks run on
@@ -801,13 +823,8 @@ export function reclaimAbandoned(dir: string): string[] {
       reclaimed.push(id);
       continue;
     }
-    let claim: { pid?: unknown; at?: unknown } | undefined;
-    try {
-      claim = JSON.parse(readFileSync(claimFile(dir, id), 'utf8')) as { pid?: unknown; at?: unknown };
-    } catch {
-      claim = undefined;
-    }
-    const pid = typeof claim?.pid === 'number' && Number.isInteger(claim.pid) ? claim.pid : undefined;
+    const claim = readJson(claimFile(dir, id)) as { pid?: unknown; at?: unknown } | undefined;
+    const pid = usablePid(claim?.pid);
     const at = typeof claim?.at === 'number' ? claim.at : undefined;
     let stale: boolean;
     if (pid === undefined) {
@@ -822,7 +839,17 @@ export function reclaimAbandoned(dir: string): string[] {
       stale = !pidAlive(pid) || (at !== undefined && Date.now() - at > CLAIM_MAX_AGE_MS);
     }
     if (!stale) continue;
+    const countFile = join(dir, `${id}.reclaims`);
+    const count = (readJson(countFile) as number | undefined) ?? 0;
+    if (count >= 1) {
+      writeResult(dir, id, { error: `request ${id} was reclaimed twice; not retrying` });
+      removeRequest(dir, id);
+      reclaimed.push(id);
+      continue;
+    }
     try {
+      rmSync(countFile, { force: true });
+      writeFileSync(countFile, JSON.stringify(count + 1), { mode: 0o600, flag: 'wx' });
       renameSync(claimed, join(dir, `${id}.json`));
     } catch {
       continue;
@@ -847,6 +874,7 @@ export function removeRequest(dir: string, id: string): void {
   rmSync(join(dir, `${id}.json`), { force: true, recursive: true });
   rmSync(join(dir, `${id}.json.working`), { force: true, recursive: true });
   rmSync(claimFile(dir, id), { force: true });
+  rmSync(join(dir, `${id}.reclaims`), { force: true });
 }
 
 /**

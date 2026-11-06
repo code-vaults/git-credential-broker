@@ -6,7 +6,8 @@
  * while it waits.
  */
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -218,11 +219,42 @@ describe('the host request channel', () => {
   it('reclaims a claim whose process is gone', () => {
     const id = writeRequest(dir, GOOD);
     assert.ok(claimRequest(dir, id));
-    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: Number.MAX_SAFE_INTEGER, at: Date.now() }));
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    assert.ok(dead.pid !== undefined);
+    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
     assert.deepEqual(reclaimAbandoned(dir), [id]);
     assert.ok(listRequests(dir).includes(id), 'the request is back in the queue');
     assert.equal(existsSync(join(dir, `${id}.json.working`)), false);
     removeRequest(dir, id);
+  });
+
+  it('reclaims an unrecorded claim once it is old enough', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    rmSync(join(dir, `${id}.claim`));
+    const old = new Date(Date.now() - 121_000);
+    utimesSync(join(dir, `${id}.json.working`), old, old);
+    assert.deepEqual(reclaimAbandoned(dir), [id]);
+    removeRequest(dir, id);
+  });
+
+  it('reclaims an old claim even when its pid is alive, and stops after two', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    writeFileSync(
+      join(dir, `${id}.claim`),
+      JSON.stringify({ pid: process.pid, at: Date.now() - 2 * 60 * 60_000 - 1 }),
+    );
+    assert.deepEqual(reclaimAbandoned(dir), [id]);
+
+    assert.ok(claimRequest(dir, id));
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    assert.ok(dead.pid !== undefined);
+    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
+    assert.deepEqual(reclaimAbandoned(dir), [id]);
+    assert.match(readResult(dir, id)?.error ?? '', /reclaimed twice/u);
+    assert.equal(listRequests(dir).includes(id), false);
+    removeResult(dir, id);
   });
 
   it('leaves a live claim alone and retires an answered one', () => {
