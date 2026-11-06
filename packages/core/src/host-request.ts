@@ -687,8 +687,8 @@ export function writeResult(dir: string, id: string, result: HostResult): void {
   writeJsonAtomic(doneFile(dir, id), { at: Date.now() });
 }
 
-/** The rename→record window; longer than the longest mutating action timeout (120 s). */
-const CLAIM_NO_RECORD_MS = 120_000;
+/** The rename→record window; longer than run:watch's 3,300 s timeout plus setup/termination. */
+const CLAIM_NO_RECORD_MS = 3_600_000;
 
 /** A backstop for a reboot that reused the recorded pid. Longer than the longest catalogued timeout. */
 const CLAIM_MAX_AGE_MS = 2 * 60 * 60_000;
@@ -759,7 +759,12 @@ function usablePid(value: unknown): number | undefined {
  * @returns the request, or undefined when it was gone or is already claimed.
  */
 export function claimRequest(dir: string, id: string): HostRequest | undefined {
-  const lock = acquireReclaimLock(dir, id);
+  let lock: string | undefined;
+  try {
+    lock = acquireReclaimLock(dir, id);
+  } catch {
+    return undefined;
+  }
   if (lock === undefined) return undefined;
   try {
     const claimed = join(dir, `${id}.json.working`);

@@ -311,7 +311,7 @@ describe('the host request channel', () => {
     const id = writeRequest(dir, GOOD);
     assert.ok(claimRequest(dir, id));
     rmSync(join(dir, `${id}.claim`));
-    const old = new Date(Date.now() - 121_000);
+    const old = new Date(Date.now() - 3_601_000);
     utimesSync(join(dir, `${id}.json.working`), old, old);
     assert.deepEqual(reclaimAbandoned(dir), [id]);
     removeRequest(dir, id);
