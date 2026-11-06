@@ -88,9 +88,6 @@ export function runConfig(argv: readonly string[]): number {
 /** How long an update waits for another config update to finish. */
 const LOCK_WAIT_MS = 5_000;
 
-/** A lock left by a crashed process is ignored after this long. */
-const LOCK_STALE_MS = 30_000;
-
 /**
  * Sleep without yielding the event loop; this command is synchronous by design.
  *
@@ -146,38 +143,31 @@ function withConfigLock<T>(path: string, fn: (target: string) => T): T {
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (;;) {
     try {
-      const fd = openSync(lock, 'wx', 0o600);
+      const fd = openSync(lock, 'wx', 0o644);
       writeFileSync(fd, String(process.pid));
       closeSync(fd);
       break;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      let stale = false;
+      let pid: number | undefined;
       try {
-        const age = Date.now() - statSync(lock).mtimeMs;
-        let pid: number | undefined;
-        try {
-          pid = Number(readFileSync(lock, 'utf8'));
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
-          throw error;
-        }
-        const usablePid =
-          pid !== undefined && Number.isInteger(pid) && pid > 0 && pid <= 0x7fffffff;
-        // A live holder is never too old: config edit holds this lock for a whole editor session.
-        stale = usablePid ? !pidAlive(pid) : age > LOCK_STALE_MS;
+        pid = Number(readFileSync(lock, 'utf8'));
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
         throw error;
       }
-      if (stale) {
-        rmSync(lock, { force: true });
+      const usablePid = Number.isInteger(pid) && pid > 0 && pid <= 0x7fffffff;
+      if (usablePid && pidAlive(pid)) {
+        if (Date.now() >= deadline) {
+          throw new Error(`another gcb command is updating ${path}; retry after it finishes`);
+        }
+        sleepSync(50);
         continue;
       }
-      if (Date.now() >= deadline) {
-        throw new Error(`another gcb command is updating ${path}; retry after it finishes`);
-      }
-      sleepSync(50);
+      // Recovering a stale lock by unlink/rename races the holder's release and a new acquirer,
+      // and the loser can delete a lock the winner just created. Fail closed instead; removing the
+      // file is a deliberate operator action once no gcb command is running.
+      throw new Error(`stale lock ${lock}; remove it if no gcb command is running`);
     }
   }
   try {
@@ -273,7 +263,7 @@ function changeAllow(path: string, positionals: readonly string[]): void {
       rmSync(temporary, { force: true });
     }
     say(
-      `allow ${action} ${host} ${repository}: written; reload: unconfirmed (run gcb doctor; a restart is needed for socketPath, socketMode or auditPath)`,
+      `allow ${action} ${host} ${repository}: written; entry=${host}/${repository} reload=unconfirmed signal=unavailable (run gcb doctor; a restart is needed for socketPath, socketMode or auditPath)`,
     );
   });
 }

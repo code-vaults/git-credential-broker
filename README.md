@@ -321,9 +321,11 @@ validates it after the editor exits. `config allow add|remove <host> <owner/name
 allowlist entry (no glob, URL, wildcard or `.git`), preserving comments and the rest of the
 document, validates the result, and replaces the file atomically. The output says the reload is
 unconfirmed: the running daemon watches the config directory, but the command does not signal it,
-and `socketPath`/`socketMode`/`auditPath` still need a restart. `config edit` and `config allow`
-take the same lock and need a writable directory for it; another gcb command holding it makes the
-edit or update fail rather than race.
+and `socketPath`/`socketMode`/`auditPath` still need a restart. The line also carries
+`entry=… reload=unconfirmed signal=unavailable`. `config edit` and `config allow` take the same
+lock and need a writable directory for it; another gcb command holding it makes the edit or update
+fail rather than race. A lock left by a crash is not removed automatically: the command fails with
+the lock path, and an operator removes it once no gcb command is running.
 
 `doctor` is host-side and read-only: it validates the config, prints its SHA-256 digest, asks the
 running daemon for its active audit path (labelling it active or configured), the last `config` audit

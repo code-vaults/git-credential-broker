@@ -1183,15 +1183,17 @@ describe('gcb config allow', () => {
     }
   });
 
-  it('takes over a fresh lock whose pid has exited', () => {
-    const { dir, file } = fixture();
+  it('fails closed on a fresh lock whose pid has exited', () => {
+    const { dir, file, original } = fixture();
     const dead = spawnSync(process.execPath, ['-e', '']);
     assert.ok(dead.pid !== undefined);
     fs.writeFileSync(`${file}.lock`, String(dead.pid));
     try {
       const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
-      assert.equal(result.status, 0);
-      assert.equal(fs.existsSync(`${file}.lock`), false);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /stale lock .*; remove it/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+      assert.equal(fs.existsSync(`${file}.lock`), true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -1203,15 +1205,17 @@ describe('gcb config allow', () => {
     assert.match(result.stderr, /cannot read config \/definitely\/not\/here\.yml/u);
   });
 
-  it('ignores a stale lock left by a dead process', () => {
-    const { dir, file } = fixture();
+  it('fails closed on a stale lock left by a dead process', () => {
+    const { dir, file, original } = fixture();
     fs.writeFileSync(`${file}.lock`, String(Number.MAX_SAFE_INTEGER));
     const old = new Date(Date.now() - 31_000);
     fs.utimesSync(`${file}.lock`, old, old);
     try {
       const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
-      assert.equal(result.status, 0);
-      assert.equal(fs.existsSync(`${file}.lock`), false);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /stale lock .*; remove it/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+      assert.equal(fs.existsSync(`${file}.lock`), true);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
