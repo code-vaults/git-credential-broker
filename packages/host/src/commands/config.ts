@@ -2,7 +2,7 @@
  * `config` — inspect, edit and validate the broker configuration.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { parseDocument, isMap, isScalar, isSeq } from 'yaml';
 
 import { inferMode, loadConfig, loadConfigText, readConfigText, resolveConfigPath } from '../config.ts';
@@ -14,8 +14,8 @@ Validate or edit the broker configuration, or change one allowlist entry.
 
   check                       Validate the file without changing it
   edit                        Open it in $VISUAL/$EDITOR and validate the saved file
-  allow add <host> <repo>     Append one exact owner/name entry
-  allow remove <host> <repo>  Remove one exact owner/name entry
+  allow add <host> <repo>     Append one exact owner/name entry (no glob, URL or wildcard)
+  allow remove <host> <repo>  Remove one exact owner/name entry (no glob, URL or wildcard)
   --config <path>             Config file (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   -h, --help                  Show this help
 `;
@@ -78,6 +78,78 @@ export function runConfig(argv: readonly string[]): number {
 /** One exact repository entry: no URL, glob or extra segment. */
 const REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u;
 
+/** How long an update waits for another config update to finish. */
+const LOCK_WAIT_MS = 5_000;
+
+/** A lock left by a crashed process is ignored after this long. */
+const LOCK_STALE_MS = 30_000;
+
+/**
+ * Sleep without yielding the event loop; this command is synchronous by design.
+ *
+ * @param ms - milliseconds to wait.
+ */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Whether a pid is still alive.
+ *
+ * @param pid - the pid to probe.
+ * @returns true when the process exists.
+ */
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Serialize one read/update/replace sequence on a config file.
+ *
+ * @param path - the configuration path.
+ * @param fn - the update to run while holding the lock.
+ * @returns whatever the update returns.
+ */
+function withConfigLock<T>(path: string, fn: () => T): T {
+  const lock = `${path}.lock`;
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      const fd = openSync(lock, 'wx', 0o600);
+      writeFileSync(fd, String(process.pid));
+      closeSync(fd);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      let stale = true;
+      try {
+        const pid = Number(readFileSync(lock, 'utf8'));
+        stale = !Number.isInteger(pid) || pid <= 0 || !pidAlive(pid) || Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS;
+      } catch {
+        stale = true;
+      }
+      if (stale) {
+        rmSync(lock, { force: true });
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`another process is updating ${path}; retry after it finishes`);
+      }
+      sleepSync(50);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    rmSync(lock, { force: true });
+  }
+}
+
 /**
  * Apply one allowlist add or remove, validate the result, then replace the file atomically.
  *
@@ -89,53 +161,62 @@ function changeAllow(path: string, positionals: readonly string[]): void {
   const host = positionals[2];
   const repository = positionals[3];
   if ((action !== 'add' && action !== 'remove') || host === undefined || repository === undefined) {
-    fail('usage: gcb config allow add|remove <host> <owner/name> [--config <path>]');
+    throw new Error('usage: gcb config allow add|remove <host> <owner/name> [--config <path>]');
   }
   if (positionals.length !== 4) {
-    fail('usage: gcb config allow add|remove <host> <owner/name> [--config <path>]');
+    throw new Error('usage: gcb config allow add|remove <host> <owner/name> [--config <path>]');
   }
   if (!REPOSITORY.test(repository)) {
-    fail(`repository must be one exact owner/name, got ${JSON.stringify(repository)}`);
+    throw new Error(`repository must be one exact owner/name, got ${JSON.stringify(repository)}`);
   }
 
-  const before = readConfigText(path);
-  const document = parseDocument(before, { schema: 'core', uniqueKeys: true, prettyErrors: true });
-  if (document.errors.length > 0) {
-    fail(`config ${path} is not valid YAML: ${document.errors.map((error) => error.message).join('; ')}`);
-  }
-  const hostNode = document.getIn(['hosts', host], true);
-  if (!isMap(hostNode)) fail(`no host ${JSON.stringify(host)} in ${path}`);
-  const allowNode = hostNode.get('allow', true);
-  if (allowNode !== undefined && !isSeq(allowNode)) {
-    fail(`hosts.${host}.allow must be a list`);
-  }
-  const entries = isSeq(allowNode)
-    ? allowNode.items.map((item) => (isScalar(item) ? String(item.value) : undefined))
-    : [];
-  const index = entries.findIndex((entry) => entry?.toLowerCase() === repository.toLowerCase());
-
-  if (action === 'add') {
-    if (index !== -1) fail(`${repository} is already in ${host}.allow`);
-    if (isSeq(allowNode)) {
-      allowNode.add(repository);
-    } else {
-      hostNode.set('allow', document.createNode([repository]));
+  withConfigLock(path, () => {
+    const before = readConfigText(path);
+    const document = parseDocument(before, { schema: 'core', uniqueKeys: true, prettyErrors: true });
+    if (document.errors.length > 0) {
+      throw new Error(
+        `config ${path} is not valid YAML: ${document.errors.map((error) => error.message).join('; ')}`,
+      );
     }
-  } else {
-    if (index === -1 || !isSeq(allowNode)) fail(`${repository} is not in ${host}.allow`);
-    allowNode.items.splice(index, 1);
-  }
+    const hostNode = document.getIn(['hosts', host], true);
+    if (!isMap(hostNode)) throw new Error(`no host ${JSON.stringify(host)} in ${path}`);
+    const allowNode = hostNode.get('allow', true);
+    if (allowNode !== undefined && !isSeq(allowNode)) {
+      throw new Error(`hosts.${host}.allow must be a list`);
+    }
+    const entries = isSeq(allowNode)
+      ? allowNode.items.map((item) => (isScalar(item) ? String(item.value) : undefined))
+      : [];
+    const index = entries.findIndex((entry) => entry?.toLowerCase() === repository.toLowerCase());
 
-  const after = document.toString();
-  loadConfigText(after, path);
-  const mode = statSync(path).mode;
-  const temporary = `${path}.${String(process.pid)}.${String(Date.now())}.tmp`;
-  try {
-    writeFileSync(temporary, after, { mode });
-    chmodSync(temporary, mode & 0o777);
-    renameSync(temporary, path);
-  } finally {
-    rmSync(temporary, { force: true });
-  }
-  say(`allow ${action} ${host} ${repository}: written; reload: config watcher (or send SIGHUP)`);
+    if (action === 'add') {
+      if (index !== -1) throw new Error(`${repository} is already in ${host}.allow`);
+      if (isSeq(allowNode)) {
+        allowNode.add(repository);
+      } else {
+        hostNode.set('allow', document.createNode([repository]));
+      }
+    } else {
+      if (index === -1 || !isSeq(allowNode)) throw new Error(`${repository} is not in ${host}.allow`);
+      if (entries.length === 1) {
+        throw new Error(`refusing to remove the last allowlist entry for ${host}`);
+      }
+      allowNode.items.splice(index, 1);
+    }
+
+    const after = document.toString();
+    loadConfigText(after, path);
+    const mode = statSync(path).mode;
+    const temporary = `${path}.${String(process.pid)}.${String(Date.now())}.tmp`;
+    try {
+      writeFileSync(temporary, after, { mode });
+      chmodSync(temporary, mode & 0o777);
+      renameSync(temporary, path);
+    } finally {
+      rmSync(temporary, { force: true });
+    }
+    say(
+      `allow ${action} ${host} ${repository}: written; reload: unconfirmed (check the daemon log; a restart is needed for socketPath, socketMode or auditPath)`,
+    );
+  });
 }

@@ -1011,6 +1011,7 @@ describe('gcb config allow', () => {
       '',
     ].join('\n');
     fs.writeFileSync(file, original);
+    if (process.platform !== 'win32') fs.chmodSync(file, 0o600);
     return { dir, file, original };
   };
 
@@ -1022,6 +1023,7 @@ describe('gcb config allow', () => {
       assert.match(added.stdout, /allow add github\.com acme\/new: written/u);
       assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u);
       assert.match(fs.readFileSync(file, 'utf8'), /# keep this too/u);
+      if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600, 'add keeps the mode');
 
       const checked = execFileSync('node', ['--conditions=development', 'packages/host/bin/gcb.js', 'config', 'check', '--config', file], {
         cwd: path.resolve('.'),
@@ -1032,6 +1034,7 @@ describe('gcb config allow', () => {
       const removed = runAllow(['remove', 'github.com', 'acme/new', '--config', file]);
       assert.equal(removed.status, 0);
       assert.equal(fs.readFileSync(file, 'utf8'), original);
+      if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600, 'remove keeps the mode');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -1066,6 +1069,35 @@ describe('gcb config allow', () => {
       assert.equal(host.status, 1);
       assert.match(host.stderr, /no host "gitlab\.com"/u);
       assert.equal(fs.readFileSync(file, 'utf8'), original);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses to remove the last entry', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-last-'));
+    const file = path.join(dir, 'broker.config.yml');
+    fs.writeFileSync(
+      file,
+      'socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow:\n      - acme/widget\n',
+    );
+    try {
+      const result = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /last allowlist entry/u);
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/widget/u);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores a stale lock left by a dead process', () => {
+    const { dir, file } = fixture();
+    fs.writeFileSync(`${file}.lock`, String(Number.MAX_SAFE_INTEGER));
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(result.status, 0);
+      assert.equal(fs.existsSync(`${file}.lock`), false);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
