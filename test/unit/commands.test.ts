@@ -1081,6 +1081,20 @@ describe('gcb config allow', () => {
     }
   });
 
+  it('refuses mixed line endings instead of normalizing them', () => {
+    const { dir, file, original } = fixture();
+    const mixed = original.replaceAll('\n', '\r\n').replace('socketPath: /run/gcb.sock\r\n', 'socketPath: /run/gcb.sock\n');
+    fs.writeFileSync(file, mixed);
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /mixed line endings/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), mixed);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('refuses a duplicate add and a missing remove without writing', () => {
     const { dir, file, original } = fixture();
     try {

@@ -145,9 +145,12 @@ function withConfigLock<T>(path: string, fn: (target: string) => T): T {
       try {
         writeFileSync(temporary, String(process.pid), { mode: 0o644, flag: 'wx' });
       } catch (error) {
-        throw new Error(
-          `cannot lock ${path}: ${dirname(target)} must be writable (${(error as NodeJS.ErrnoException).code ?? 'error'})`,
-        );
+        const code = (error as NodeJS.ErrnoException).code ?? 'error';
+        const detail =
+          code === 'EACCES' || code === 'EROFS'
+            ? `${dirname(target)} must be writable`
+            : `${code}: ${(error as Error).message}`;
+        throw new Error(`cannot lock ${path}: ${detail}`);
       }
       linkSync(temporary, lock);
       break;
@@ -228,6 +231,9 @@ function changeAllow(path: string, positionals: readonly string[]): void {
 
   withConfigLock(path, (target) => {
     const before = readConfigText(target);
+    if (before.includes('\r\n') && /(^|[^\r])\n/u.test(before)) {
+      throw new Error(`config ${target} has mixed line endings; normalize it to LF or CRLF first`);
+    }
     const document = parseDocument(before, { schema: 'core', uniqueKeys: true, prettyErrors: true });
     if (document.errors.length > 0) {
       throw new Error(
