@@ -1017,13 +1017,17 @@ describe('gcb config allow', () => {
 
   it('adds then removes one entry without disturbing comments or formatting', () => {
     const { dir, file, original } = fixture();
+    const inode = process.platform === 'win32' ? undefined : fs.statSync(file).ino;
     try {
       const added = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
       assert.equal(added.status, 0);
       assert.match(added.stdout, /allow add github\.com acme\/new: written/u);
       assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u);
       assert.match(fs.readFileSync(file, 'utf8'), /# keep this too/u);
-      if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o660, 'add keeps the mode');
+      if (process.platform !== 'win32') {
+        assert.equal(fs.statSync(file).mode & 0o777, 0o660, 'add keeps the mode');
+        assert.notEqual(fs.statSync(file).ino, inode, 'add replaces the inode');
+      }
 
       const checked = execFileSync('node', ['--conditions=development', 'packages/host/bin/gcb.js', 'config', 'check', '--config', file], {
         cwd: path.resolve('.'),
@@ -1034,7 +1038,10 @@ describe('gcb config allow', () => {
       const removed = runAllow(['remove', 'github.com', 'acme/new', '--config', file]);
       assert.equal(removed.status, 0);
       assert.equal(fs.readFileSync(file, 'utf8'), original);
-      if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o660, 'remove keeps the mode');
+      if (process.platform !== 'win32') {
+        assert.equal(fs.statSync(file).mode & 0o777, 0o660, 'remove keeps the mode');
+        assert.notEqual(fs.statSync(file).ino, inode, 'remove replaces the inode');
+      }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
