@@ -317,19 +317,18 @@ it runs wherever the pusher runs.
 `config check` is host-side and reads only the configuration file: it validates it and prints the
 deployment mode and hosts without starting the broker or reading the key. `config edit` opens the
 existing file in `$VISUAL`/`$EDITOR` (it does not create a missing one; run `init` first) and
-validates it after the editor exits. `config allow add|remove <host> <owner/name>` changes one exact
-allowlist entry (no glob, URL, wildcard or `.git`), preserving comments and the rest of the
-document, keeps its LF or CRLF line endings (mixed endings are refused), validates the result,
-and replaces the file atomically. The output says the reload is
-unconfirmed: the running daemon watches the config directory, but the command does not signal it,
-and `socketPath`/`socketMode`/`auditPath` still need a restart. The line also carries
-`entry=… reload=unconfirmed signal=unavailable`. `config edit` edits the existing file in place and
-needs write access to the file; some editors also write swap or backup files beside it, so their
-directory may need write access too. `config allow` takes a target-keyed lock
-beside the config to serialize allow updates; a lock left by a crash is not removed automatically,
-so the command fails with the lock path and an operator removes it once no gcb command is running.
-Do not run `config edit` concurrently with a `config allow` update; the edit is a manual full-file
-write and does not take that lock.
+validates it after the editor exits. `config allow add|remove <host> <owner/name>` changes one
+exact allowlist entry (no glob, URL, wildcard or `.git`), preserving comments and the rest of the
+document, keeps its LF or CRLF line endings (mixed endings are refused), validates the result, and
+replaces the file atomically. The output says the reload is unconfirmed: the running daemon watches
+the config directory, but the command does not signal it, and `socketPath`/`socketMode`/`auditPath`
+still need a restart. The line also carries `entry=… reload=unconfirmed signal=unavailable`.
+`config edit` edits the existing file in place and needs write access to the file; some editors also
+write swap or backup files beside it, so their directory may need write access too. `config allow`
+takes a target-keyed lock beside the config to serialize allow updates; a lock left by a crash is
+not removed automatically, so the command fails with the lock path and an operator removes it once
+no gcb command is running. Do not run `config edit` concurrently with a `config allow` update; the
+edit is a manual full-file write and does not take that lock.
 
 `doctor` is host-side and read-only: it validates the config, prints its SHA-256 digest, asks the
 running daemon for its active audit path (labelling it active or configured), the last `config` audit
