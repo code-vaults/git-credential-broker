@@ -52,10 +52,12 @@ export function runConfig(argv: readonly string[]): number {
       withConfigLock(path, () => {
         // `$VISUAL`/`$EDITOR` is a shell command in git's own semantics; `$@` keeps the path intact.
         const result = spawnSync('/bin/sh', ['-c', `${editor} "$@"`, editor, path], { stdio: 'inherit' });
-        if (result.error !== undefined) fail(`cannot run editor ${JSON.stringify(editor)}: ${result.error.message}`);
+        if (result.error !== undefined) {
+          throw new Error(`cannot run editor ${JSON.stringify(editor)}: ${result.error.message}`);
+        }
         if (result.status !== 0) {
           const how = result.status === null ? `signal ${String(result.signal)}` : `status ${String(result.status)}`;
-          fail(`editor exited with ${how}`);
+          throw new Error(`editor exited with ${how}`);
         }
       });
     } catch (error) {
