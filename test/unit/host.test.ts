@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { runBounded, runHostBroker } from '../../packages/host/src/commands/host.ts';
-import { channelDir, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
+import { channelDir, claimRequest, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 
 describe('the host broker, once', () => {
   let root = '';
@@ -392,6 +392,32 @@ describe('edit routes outside the allowlist', () => {
 });
 
 describe('the host action route', () => {
+  it('recovers a dead claim in the same sweep', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-reclaim-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\necho "reclaimed action"\n', 'utf8');
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'acme/widget',
+        values: { number: 7 },
+      });
+      assert.ok(claimRequest(dir, id));
+      writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: 0x7fffffff, at: Date.now() }));
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.equal(readResult(dir, id)?.stdout, 'reclaimed action\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('runs a catalogued action and returns its output', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-action-'));
     const repo = join(root, 'checkout');

@@ -687,28 +687,21 @@ export function writeResult(dir: string, id: string, result: HostResult): void {
   writeJsonAtomic(doneFile(dir, id), { at: Date.now() });
 }
 
-/**
- * Take a request, so that nobody else can act on it.
- *
- * Acting first and removing it afterwards is not enough: opening a pull request is not idempotent, and the
- * window between the two is as long as the program takes. The rename is atomic, so exactly one caller wins,
- * and a claimed name is not a request id, so a sweep in another process does not see it again.
- *
- * @param dir - the channel directory.
- * @param id - the request id.
- * @returns the request, or undefined when it was gone or is already claimed.
- */
-/** How long a claim with no readable record may sit before it is treated as a crash. */
+/** The rename→record window; longer than the longest mutating action timeout (120 s). */
 const CLAIM_NO_RECORD_MS = 120_000;
 
 /** A backstop for a reboot that reused the recorded pid. Longer than the longest catalogued timeout. */
 const CLAIM_MAX_AGE_MS = 2 * 60 * 60_000;
 
 /** The sidecar recording who claimed a request. */
-const claimFile = (dir: string, id: string): string => join(dir, `${id}.claim`);
+function claimFile(dir: string, id: string): string {
+  return join(dir, `${id}.claim`);
+}
 
 /** Evidence that the work finished, kept until the host removes the request. */
-const doneFile = (dir: string, id: string): string => join(dir, `${id}.done`);
+function doneFile(dir: string, id: string): string {
+  return join(dir, `${id}.done`);
+}
 
 /**
  * Refresh a regular file's timestamps without following a symlink or blocking on a FIFO.
@@ -754,75 +747,88 @@ function usablePid(value: unknown): number | undefined {
     : undefined;
 }
 
+/**
+ * Take a request, so that nobody else can act on it.
+ *
+ * Acting first and removing it afterwards is not enough: opening a pull request is not idempotent, and the
+ * window between the two is as long as the program takes. The rename is atomic, so exactly one caller wins,
+ * and a claimed name is not a request id, so a sweep in another process does not see it again.
+ *
+ * @param dir - the channel directory.
+ * @param id - the request id.
+ * @returns the request, or undefined when it was gone or is already claimed.
+ */
 export function claimRequest(dir: string, id: string): HostRequest | undefined {
-  const claimed = join(dir, `${id}.json.working`);
+  const lock = acquireReclaimLock(dir, id);
+  if (lock === undefined) return undefined;
   try {
-    renameSync(join(dir, `${id}.json`), claimed);
-  } catch {
-    return undefined;
+    const claimed = join(dir, `${id}.json.working`);
+    try {
+      renameSync(join(dir, `${id}.json`), claimed);
+    } catch {
+      return undefined;
+    }
+    try {
+      const claim = claimFile(dir, id);
+      rmSync(claim, { force: true, recursive: true });
+      writeFileSync(claim, JSON.stringify({ pid: process.pid, at: Date.now() }), {
+        mode: 0o600,
+        flag: 'wx',
+      });
+    } catch {
+      // The claim is only needed to reclaim a crashed claim; an unrecorded claim falls back to mtime.
+    }
+    touchRegular(claimed);
+    const request = readJson(claimed) as HostRequest | undefined;
+    const shaped =
+      request !== undefined &&
+      (request.account === undefined || typeof request.account === 'string') &&
+      (request.kind === 'action'
+        ? typeof request.repo === 'string' &&
+          REPOSITORY.test(request.repo) &&
+          typeof request.action === 'string' &&
+          request.values !== null &&
+          typeof request.values === 'object' &&
+          !Array.isArray(request.values)
+        : request.kind === 'edit'
+        ? typeof request.repo === 'string' &&
+          REPOSITORY.test(request.repo) &&
+          Number.isInteger(request.number) &&
+          (request.title === undefined || typeof request.title === 'string') &&
+          (request.body === undefined || typeof request.body === 'string') &&
+          (request.base === undefined || typeof request.base === 'string') &&
+          (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
+        : request.kind === 'review'
+        ? typeof request.repo === 'string' &&
+          REPOSITORY.test(request.repo) &&
+          typeof request.body === 'string' &&
+          Number.isInteger(request.number) &&
+          (request.event === 'approve' || request.event === 'request-changes' || request.event === 'comment') &&
+          (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
+        : request.kind === 'reply'
+        ? typeof request.repo === 'string' &&
+          REPOSITORY.test(request.repo) &&
+          typeof request.body === 'string' &&
+          Number.isInteger(request.number) &&
+          Number.isInteger(request.commentId) &&
+          (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
+        : request.kind === 'fork'
+        ? typeof request.repo === 'string' &&
+          REPOSITORY.test(request.repo) &&
+          (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
+        : typeof request.title === 'string' &&
+          typeof request.body === 'string' &&
+          typeof request.head === 'string' &&
+          typeof request.base === 'string');
+    if (!shaped) {
+      rmSync(claimed, { force: true, recursive: true });
+      rmSync(claimFile(dir, id), { force: true, recursive: true });
+      return undefined;
+    }
+    return request;
+  } finally {
+    rmSync(lock, { force: true, recursive: true });
   }
-  try {
-    const claim = claimFile(dir, id);
-    // The channel is container-writable: remove a planted entry without following it, then create
-    // the sidecar exclusively, so a replacement symlink cannot redirect the write.
-    rmSync(claim, { force: true });
-    const fd = openSync(claim, 'wx', 0o600);
-    writeFileSync(fd, JSON.stringify({ pid: process.pid, at: Date.now() }));
-    closeSync(fd);
-  } catch {
-    // The claim is only needed to reclaim a crashed claim; an unrecorded claim falls back to mtime.
-  }
-  touchRegular(claimed);
-  const request = readJson(claimed) as HostRequest | undefined;
-  // The channel is written by the container, so the shape is not a given: the host broker's own checks run on
-  // this next, and a request missing a string field would make them index undefined and take it down.
-  const shaped =
-    request !== undefined &&
-    // Untyped JSON: the file can spell account as an array or a number even though the type cannot.
-    (request.account === undefined || typeof request.account === 'string') &&
-    (request.kind === 'action'
-      ? typeof request.repo === 'string' &&
-        REPOSITORY.test(request.repo) &&
-        typeof request.action === 'string' &&
-        request.values !== null &&
-        typeof request.values === 'object' &&
-        !Array.isArray(request.values)
-      : request.kind === 'edit'
-      ? typeof request.repo === 'string' &&
-        REPOSITORY.test(request.repo) &&
-        Number.isInteger(request.number) &&
-        (request.title === undefined || typeof request.title === 'string') &&
-        (request.body === undefined || typeof request.body === 'string') &&
-        (request.base === undefined || typeof request.base === 'string') &&
-        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
-      : request.kind === 'review'
-      ? typeof request.repo === 'string' &&
-        REPOSITORY.test(request.repo) &&
-        typeof request.body === 'string' &&
-        Number.isInteger(request.number) &&
-        (request.event === 'approve' || request.event === 'request-changes' || request.event === 'comment') &&
-        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
-      : request.kind === 'reply'
-      ? typeof request.repo === 'string' &&
-        REPOSITORY.test(request.repo) &&
-        typeof request.body === 'string' &&
-        Number.isInteger(request.number) &&
-        Number.isInteger(request.commentId) &&
-        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
-      : request.kind === 'fork'
-      ? typeof request.repo === 'string' &&
-        REPOSITORY.test(request.repo) &&
-        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
-      : typeof request.title === 'string' &&
-        typeof request.body === 'string' &&
-        typeof request.head === 'string' &&
-        typeof request.base === 'string');
-  if (!shaped) {
-    rmSync(claimed, { force: true, recursive: true });
-    rmSync(claimFile(dir, id), { force: true });
-    return undefined;
-  }
-  return request;
 }
 
 /** A reclaim marker older than this is assumed to belong to a crashed reclaimer. */
@@ -845,13 +851,14 @@ function acquireReclaimLock(dir: string, id: string): string | undefined {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     try {
-      if (Date.now() - statSync(lock).mtimeMs > RECLAIM_LOCK_STALE_MS) rmSync(lock, { force: true });
+      if (Date.now() - statSync(lock).mtimeMs > RECLAIM_LOCK_STALE_MS)
+        rmSync(lock, { force: true, recursive: true });
     } catch {
       // A vanished lock is retried on the next sweep.
     }
     return undefined;
   } finally {
-    rmSync(temporary, { force: true });
+    rmSync(temporary, { force: true, recursive: true });
   }
 }
 
@@ -873,52 +880,66 @@ export function reclaimAbandoned(dir: string): string[] {
     if (!entry.isFile() || !entry.name.endsWith('.json.working')) continue;
     const id = entry.name.slice(0, -'.json.working'.length);
     const claimed = join(dir, entry.name);
-    const lock = acquireReclaimLock(dir, id);
-    if (lock === undefined) continue;
+    let lock: string | undefined;
     try {
-    if (readResult(dir, id) !== undefined || readJson(doneFile(dir, id)) !== undefined) {
-      removeRequest(dir, id);
-      reclaimed.push(id);
-      continue;
-    }
-    const claim = readJson(claimFile(dir, id)) as { pid?: unknown; at?: unknown } | undefined;
-    const pid = usablePid(claim?.pid);
-    const at = typeof claim?.at === 'number' ? claim.at : undefined;
-    let stale: boolean;
-    if (pid === undefined) {
-      let age = CLAIM_NO_RECORD_MS;
-      try {
-        age = Date.now() - statSync(claimed).mtimeMs;
-      } catch {
-        continue;
-      }
-      stale = age >= CLAIM_NO_RECORD_MS;
-    } else {
-      stale = !pidAlive(pid) || (at !== undefined && Date.now() - at > CLAIM_MAX_AGE_MS);
-    }
-    if (!stale) continue;
-    const countFile = join(dir, `${id}.reclaims`);
-    const rawCount = readJson(countFile);
-    const count =
-      typeof rawCount === 'number' && Number.isInteger(rawCount) && rawCount >= 0 ? rawCount : 0;
-    if (count >= 1) {
-      writeResult(dir, id, { error: `request ${id} was reclaimed twice; not retrying` });
-      removeRequest(dir, id);
-      reclaimed.push(id);
-      continue;
-    }
-    try {
-      rmSync(countFile, { force: true });
-      writeFileSync(countFile, JSON.stringify(count + 1), { mode: 0o600, flag: 'wx' });
-      renameSync(claimed, join(dir, `${id}.json`));
+      lock = acquireReclaimLock(dir, id);
     } catch {
       continue;
     }
-    touchRegular(join(dir, `${id}.json`));
-    rmSync(claimFile(dir, id), { force: true });
-    reclaimed.push(id);
+    if (lock === undefined) continue;
+    try {
+      if (readResult(dir, id) !== undefined || readJson(doneFile(dir, id)) !== undefined) {
+        removeRequest(dir, id);
+        reclaimed.push(id);
+        continue;
+      }
+      const claim = readJson(claimFile(dir, id)) as { pid?: unknown; at?: unknown } | undefined;
+      const pid = usablePid(claim?.pid);
+      const at = typeof claim?.at === 'number' ? claim.at : undefined;
+      let stale: boolean;
+      if (pid === undefined) {
+        let age: number;
+        try {
+          age = Date.now() - statSync(claimed).mtimeMs;
+        } catch {
+          continue;
+        }
+        stale = age >= CLAIM_NO_RECORD_MS;
+      } else {
+        stale = !pidAlive(pid) || (at !== undefined && Date.now() - at > CLAIM_MAX_AGE_MS);
+      }
+      if (!stale) continue;
+      const countFile = join(dir, `${id}.reclaims`);
+      const rawCount = readJson(countFile);
+      const count =
+        typeof rawCount === 'number' && Number.isInteger(rawCount) && rawCount >= 0 ? rawCount : 0;
+      if (count >= 1) {
+        writeResult(dir, id, { error: `request ${id} was reclaimed twice; not retrying` });
+        removeRequest(dir, id);
+        reclaimed.push(id);
+        continue;
+      }
+      // Remove the old sidecar before publishing the request; with the reclaim lock held no new
+      // claimant can have replaced it.
+      rmSync(claimFile(dir, id), { force: true, recursive: true });
+      try {
+        renameSync(claimed, join(dir, `${id}.json`));
+      } catch {
+        continue;
+      }
+      touchRegular(join(dir, `${id}.json`));
+      try {
+        rmSync(countFile, { force: true, recursive: true });
+        writeFileSync(countFile, JSON.stringify(count + 1), { mode: 0o600, flag: 'wx' });
+      } catch {
+        writeResult(dir, id, { error: `could not record the retry count for ${id}` });
+        removeRequest(dir, id);
+        reclaimed.push(id);
+        continue;
+      }
+      reclaimed.push(id);
     } finally {
-      rmSync(lock, { force: true });
+      rmSync(lock, { force: true, recursive: true });
     }
   }
   return reclaimed;
@@ -937,10 +958,9 @@ export function removeRequest(dir: string, id: string): void {
   // directory, and nothing ever removed it.
   rmSync(join(dir, `${id}.json`), { force: true, recursive: true });
   rmSync(join(dir, `${id}.json.working`), { force: true, recursive: true });
-  rmSync(claimFile(dir, id), { force: true });
-  rmSync(join(dir, `${id}.reclaims`), { force: true });
-  rmSync(doneFile(dir, id), { force: true });
-  rmSync(join(dir, `${id}.reclaim`), { force: true });
+  rmSync(claimFile(dir, id), { force: true, recursive: true });
+  rmSync(join(dir, `${id}.reclaims`), { force: true, recursive: true });
+  rmSync(doneFile(dir, id), { force: true, recursive: true });
 }
 
 /**

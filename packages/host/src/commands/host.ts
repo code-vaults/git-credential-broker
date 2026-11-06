@@ -330,7 +330,7 @@ async function sweep(
 ): Promise<number> {
   let answered = 0;
   for (const id of reclaimAbandoned(dir)) {
-    warn(`reclaimed ${id}: its claim belonged to a process that is gone`);
+    warn(`reclaimed ${id}: its claim was recovered`);
   }
   for (const id of listRequests(dir)) {
     // Claimed, not read: two host brokers — a service and a hand-run --once — would otherwise both act on the

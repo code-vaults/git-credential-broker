@@ -7,7 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -43,8 +43,8 @@ describe('what the channel refuses to read', () => {
     const root = mkdtempSync(join(tmpdir(), 'channel-kind-'));
     const dir = channelDir(join(root, '.git'));
     mkdirSync(dir, { recursive: true });
-    // A directory is the non-regular file a test can make without blocking; the guard is the same lstat
-    // check that a FIFO needs, and a FIFO would block open(2) before any assertion ran.
+    // A directory is the non-regular file a test can make without blocking; readJson now rejects it
+    // after an O_NONBLOCK, O_NOFOLLOW open rather than by lstat.
     mkdirSync(join(dir, 'host-broker.json'), { recursive: true });
     assert.equal(readHostBroker(dir), undefined, 'a directory is not a marker');
     rmSync(root, { recursive: true, force: true });
@@ -264,11 +264,41 @@ describe('the host request channel', () => {
     removeRequest(dir, id);
   });
 
-  it('resets a requeued request to eligible age', () => {
+  it('starts the no-record age at the claim, not at the original request', () => {
     const id = writeRequest(dir, GOOD);
     const old = new Date(Date.now() - 10 * 60_000);
     utimesSync(join(dir, `${id}.json`), old, old);
     assert.ok(claimRequest(dir, id));
+    rmSync(join(dir, `${id}.claim`));
+    assert.deepEqual(reclaimAbandoned(dir), []);
+    removeRequest(dir, id);
+  });
+
+  it('does not reclaim a young claim whose sidecar is missing', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    rmSync(join(dir, `${id}.claim`));
+    assert.deepEqual(reclaimAbandoned(dir), []);
+    assert.ok(existsSync(join(dir, `${id}.json.working`)));
+    removeRequest(dir, id);
+  });
+
+  it('does not write through a symlinked claim sidecar', () => {
+    const id = writeRequest(dir, GOOD);
+    const target = join(dir, 'target.txt');
+    writeFileSync(target, 'untouched');
+    symlinkSync(target, join(dir, `${id}.claim`));
+    assert.ok(claimRequest(dir, id));
+    assert.equal(readFileSync(target, 'utf8'), 'untouched');
+    removeRequest(dir, id);
+    rmSync(target, { force: true });
+  });
+
+  it('resets a requeued request to eligible age', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    const old = new Date(Date.now() - 10 * 60_000);
+    utimesSync(join(dir, `${id}.json.working`), old, old);
     const dead = spawnSync(process.execPath, ['-e', '']);
     assert.ok(dead.pid !== undefined);
     writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
