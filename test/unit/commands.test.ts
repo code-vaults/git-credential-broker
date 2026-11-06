@@ -1379,7 +1379,6 @@ describe('gcb config check', () => {
       });
       assert.equal(result.status, 0);
       assert.match(result.stdout, /\[\/.*gcb config edit-[^/]*\/broker\.config\.yml\]/);
-      assert.equal(fs.existsSync(`${config}.lock`), false);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -1396,7 +1395,6 @@ describe('gcb config check', () => {
       });
       assert.equal(result.status, 1);
       assert.match(result.stderr, /editor exited with status 1/);
-      assert.equal(fs.existsSync(`${config}.lock`), false);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

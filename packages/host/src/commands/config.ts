@@ -49,17 +49,16 @@ export function runConfig(argv: readonly string[]): number {
     const editor = process.env['VISUAL'] ?? process.env['EDITOR'];
     if (editor === undefined || editor.trim() === '') fail('config edit needs $VISUAL or $EDITOR');
     try {
-      withConfigLock(path, () => {
-        // `$VISUAL`/`$EDITOR` is a shell command in git's own semantics; `$@` keeps the path intact.
-        const result = spawnSync('/bin/sh', ['-c', `${editor} "$@"`, editor, path], { stdio: 'inherit' });
-        if (result.error !== undefined) {
-          throw new Error(`cannot run editor ${JSON.stringify(editor)}: ${result.error.message}`);
-        }
-        if (result.status !== 0) {
-          const how = result.status === null ? `signal ${String(result.signal)}` : `status ${String(result.status)}`;
-          throw new Error(`editor exited with ${how}`);
-        }
-      });
+      // Edit in place: this path only needs write access to the file, not its directory.
+      // `$VISUAL`/`$EDITOR` is a shell command in git's own semantics; `$@` keeps the path intact.
+      const result = spawnSync('/bin/sh', ['-c', `${editor} "$@"`, editor, path], { stdio: 'inherit' });
+      if (result.error !== undefined) {
+        throw new Error(`cannot run editor ${JSON.stringify(editor)}: ${result.error.message}`);
+      }
+      if (result.status !== 0) {
+        const how = result.status === null ? `signal ${String(result.signal)}` : `status ${String(result.status)}`;
+        throw new Error(`editor exited with ${how}`);
+      }
     } catch (error) {
       fail((error as Error).message);
     }
