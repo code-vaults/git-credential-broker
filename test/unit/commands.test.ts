@@ -1082,6 +1082,10 @@ describe('gcb config allow', () => {
       assert.equal(missing.status, 1);
       assert.match(missing.stderr, /not in github\.com\.allow/u);
       assert.equal(fs.readFileSync(file, 'utf8'), original);
+
+      const removePadded = runAllow(['remove', 'github.com', 'acme/padded', '--config', file]);
+      assert.equal(removePadded.status, 0);
+      assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /padded/u);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -1183,7 +1187,7 @@ describe('gcb config allow', () => {
       fs.writeFileSync(file, body('      - acme/widget\n      - ACME/Widget\n'));
       const last = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
       assert.equal(last.status, 1);
-      assert.match(last.stderr, /last allowlist entry/u);
+      assert.match(last.stderr, /allowlist empty/u);
       assert.match(fs.readFileSync(file, 'utf8'), /ACME\/Widget/u);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -1200,7 +1204,7 @@ describe('gcb config allow', () => {
     try {
       const result = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
       assert.equal(result.status, 1);
-      assert.match(result.stderr, /last allowlist entry/u);
+      assert.match(result.stderr, /allowlist empty/u);
       assert.match(fs.readFileSync(file, 'utf8'), /acme\/widget/u);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

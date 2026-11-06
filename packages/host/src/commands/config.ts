@@ -241,7 +241,9 @@ function changeAllow(path: string, positionals: readonly string[]): void {
     const entries = isSeq(allowNode)
       ? allowNode.items.map((item) => (isScalar(item) ? String(item.value) : undefined))
       : [];
-    const index = entries.findIndex((entry) => entry?.trim().toLowerCase() === repository.toLowerCase());
+    const normalized = entries.map((entry) => entry?.trim().toLowerCase());
+    const wanted = repository.toLowerCase();
+    const index = normalized.findIndex((entry) => entry === wanted);
 
     if (action === 'add') {
       if (index !== -1) throw new Error(`${repository} is already in ${host}.allow`);
@@ -252,10 +254,9 @@ function changeAllow(path: string, positionals: readonly string[]): void {
       }
     } else {
       if (index === -1 || !isSeq(allowNode)) throw new Error(`${repository} is not in ${host}.allow`);
-      const target = repository.toLowerCase();
-      const kept = allowNode.items.filter((_item, position) => entries[position]?.trim().toLowerCase() !== target);
+      const kept = allowNode.items.filter((_item, position) => normalized[position] !== wanted);
       if (kept.length === 0) {
-        throw new Error(`refusing to remove the last allowlist entry for ${host}`);
+        throw new Error(`refusing to remove: this would leave the allowlist empty for ${host}`);
       }
       allowNode.items = kept;
     }
