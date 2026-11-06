@@ -16,15 +16,15 @@ import {
   constants as fsConstants,
   existsSync,
   fstatSync,
+  futimesSync,
   linkSync,
-  openSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
   renameSync,
   rmSync,
   statSync,
-  futimesSync,
   writeFileSync,
   type Dirent,
 } from 'node:fs';
@@ -32,8 +32,9 @@ import { realpathSync } from 'node:fs';
 import { lstatSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 
-import { canonicalPath } from './paths.ts';
 import { randomUUID } from 'node:crypto';
+
+import { canonicalPath } from './paths.ts';
 
 /** The directory under the git directory that carries requests and answers. */
 export const CHANNEL_PATH = 'gcb/host-broker';
@@ -924,14 +925,14 @@ export function reclaimAbandoned(dir: string): string[] {
         reclaimed.push(id);
         continue;
       }
-      // Remove the old sidecar before publishing the request; with the reclaim lock held no new
-      // claimant can have replaced it.
-      rmSync(claimFile(dir, id), { force: true, recursive: true });
       try {
         renameSync(claimed, join(dir, `${id}.json`));
       } catch {
         continue;
       }
+      // The reclaim lock excludes a new claimant, so the old sidecar can be removed after the
+      // rename; a failed rename keeps it for the next recovery attempt.
+      rmSync(claimFile(dir, id), { force: true, recursive: true });
       touchRegular(join(dir, `${id}.json`));
       try {
         rmSync(countFile, { force: true, recursive: true });

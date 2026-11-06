@@ -258,7 +258,7 @@ describe('the host request channel', () => {
     const dead = spawnSync(process.execPath, ['-e', '']);
     assert.ok(dead.pid !== undefined);
     writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
-    writeFileSync(join(dir, `${id}.reclaims`), JSON.stringify('not-a-number'));
+    writeFileSync(join(dir, `${id}.reclaims`), JSON.stringify('5'));
     assert.deepEqual(reclaimAbandoned(dir), [id]);
     assert.ok(listRequests(dir).includes(id));
     removeRequest(dir, id);
