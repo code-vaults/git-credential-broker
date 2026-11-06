@@ -1186,8 +1186,10 @@ describe('gcb config allow', () => {
       { cwd: path.resolve('.'), stdio: ['ignore', 'pipe', 'pipe'] },
     );
     try {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      assert.equal(child.exitCode, null, 'the child waits instead of failing on an empty lock');
       fs.writeFileSync(`${file}.lock`, String(process.pid));
+      await new Promise((resolve) => setTimeout(resolve, 50));
       fs.rmSync(`${file}.lock`);
       const code = await new Promise<number | null>((resolve) => child.on('exit', resolve));
       assert.equal(code, 0);
