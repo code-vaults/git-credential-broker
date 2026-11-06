@@ -855,8 +855,8 @@ const RECLAIM_LOCK_STALE_MS = 5 * 60_000;
 function acquireReclaimLock(dir: string, id: string): string | undefined {
   const lock = join(dir, `${id}.reclaim`);
   const temporary = `${lock}.${String(process.pid)}.${randomUUID()}.tmp`;
-  writeFileSync(temporary, String(process.pid), { mode: 0o600, flag: 'wx' });
   try {
+    writeFileSync(temporary, String(process.pid), { mode: 0o600, flag: 'wx' });
     linkSync(temporary, lock);
     return lock;
   } catch (error) {
