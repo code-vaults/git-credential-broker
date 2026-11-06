@@ -700,6 +700,21 @@ const CLAIM_NO_RECORD_MS = 3_600_000;
 const CLAIM_MAX_AGE_MS = 2 * 60 * 60_000;
 
 /** The sidecar recording who claimed a request. */
+/**
+ * Whether a marker path exists, treating a path that exists but cannot be inspected as present.
+ *
+ * @param file - the marker path.
+ * @returns true for present or unreadable; false only for ENOENT.
+ */
+function markerPresent(file: string): boolean {
+  try {
+    lstatSync(file);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ENOENT';
+  }
+}
+
 function claimFile(dir: string, id: string): string {
   return join(dir, `${id}.claim`);
 }
@@ -935,10 +950,15 @@ export function reclaimAbandoned(dir: string): string[] {
         stale = !pidAlive(pid) || (at !== undefined && Date.now() - at > CLAIM_MAX_AGE_MS);
       }
       if (!stale) continue;
-      if (readJson(startedFile(dir, id)) !== undefined) {
-        writeResult(dir, id, {
-          error: `request ${id} started before its broker exited; outcome unknown, not retrying`,
-        });
+      if (markerPresent(startedFile(dir, id))) {
+        try {
+          writeResult(dir, id, {
+            error: `request ${id} started before its broker exited; outcome unknown, not retrying`,
+          });
+        } catch {
+          // Keep the started claim for the next sweep rather than losing the evidence.
+          continue;
+        }
         removeRequest(dir, id);
         reclaimed.push(id);
         continue;

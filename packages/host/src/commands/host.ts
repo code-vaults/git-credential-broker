@@ -376,7 +376,11 @@ async function sweep(
     try {
       markRequestStarted(dir, id);
     } catch (error) {
-      writeResult(dir, id, { error: `could not record that the request started: ${(error as Error).message}` });
+      try {
+        writeResult(dir, id, { error: `could not record that the request started: ${(error as Error).message}` });
+      } catch {
+        warn(`refused ${id}: could not record its execution start or the error result`);
+      }
       removeRequest(dir, id);
       warn(`refused ${id}: could not record its execution start`);
       answered += 1;

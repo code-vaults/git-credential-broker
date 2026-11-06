@@ -290,6 +290,19 @@ describe('the host request channel', () => {
     removeRequest(dir, id);
   });
 
+  it('treats an unreadable started marker as started', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    mkdirSync(join(dir, `${id}.started`));
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    assert.ok(dead.pid !== undefined);
+    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
+    assert.deepEqual(reclaimAbandoned(dir), [id]);
+    assert.equal(listRequests(dir).includes(id), false);
+    assert.match(readResult(dir, id)?.error ?? '', /outcome unknown/u);
+    removeRequest(dir, id);
+  });
+
   it('ignores a malformed reclaim counter', () => {
     const id = writeRequest(dir, GOOD);
     assert.ok(claimRequest(dir, id));
