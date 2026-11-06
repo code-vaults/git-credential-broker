@@ -981,6 +981,15 @@ export function removeRequest(dir: string, id: string): void {
  * @param id - the identifier.
  */
 export function removeResult(dir: string, id: string): void {
+  // If the host has not retired the claim yet, leave completion evidence: the client may consume
+  // the result before the host's own done marker is written.
+  if (existsSync(join(dir, `${id}.json`)) || existsSync(join(dir, `${id}.json.working`))) {
+    try {
+      writeJsonAtomic(doneFile(dir, id), { at: Date.now() });
+    } catch {
+      return;
+    }
+  }
   rmSync(join(dir, `${id}.result.json`), { force: true });
 }
 

@@ -254,6 +254,18 @@ describe('the host request channel', () => {
     removeRequest(dir, id);
   });
 
+  it('writes completion evidence when the client consumes a result without a done marker', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    writeResult(dir, id, { stdout: 'ok', stderr: '', code: 0 });
+    rmSync(join(dir, `${id}.done`));
+    removeResult(dir, id);
+    assert.ok(existsSync(join(dir, `${id}.done`)));
+    assert.deepEqual(reclaimAbandoned(dir), [id]);
+    assert.equal(listRequests(dir).includes(id), false);
+    removeRequest(dir, id);
+  });
+
   it('does not requeue a completed request after the client consumed the result', () => {
     const id = writeRequest(dir, GOOD);
     assert.ok(claimRequest(dir, id));
