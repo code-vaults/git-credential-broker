@@ -145,8 +145,8 @@ function withConfigLock<T>(path: string, fn: (target: string) => T): T {
     // Write the pid to a private temp name, then hard-link it into place. link(2) is atomic and
     // the lock is never visible empty, unlike open-then-write.
     const temporary = `${lock}.${String(process.pid)}.${randomUUID()}.tmp`;
-    writeFileSync(temporary, String(process.pid), { mode: 0o644, flag: 'wx' });
     try {
+      writeFileSync(temporary, String(process.pid), { mode: 0o644, flag: 'wx' });
       linkSync(temporary, lock);
       break;
     } catch (error) {

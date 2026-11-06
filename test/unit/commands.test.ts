@@ -1341,6 +1341,7 @@ describe('gcb config check', () => {
       });
       assert.equal(result.status, 0);
       assert.match(result.stdout, /\[\/.*gcb config edit-[^/]*\/broker\.config\.yml\]/);
+      assert.equal(fs.existsSync(`${config}.lock`), false);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
