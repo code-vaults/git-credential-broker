@@ -13,7 +13,9 @@
  */
 import {
   closeSync,
+  constants as fsConstants,
   existsSync,
+  fstatSync,
   openSync,
   mkdirSync,
   readFileSync,
@@ -918,14 +920,22 @@ export async function waitForResult(
  * @returns the parsed value, or `undefined`.
  */
 function readJson(file: string): unknown {
+  let fd: number | undefined;
   try {
-    const stat = lstatSync(file);
-    // lstat on purpose: a symlink is not a request, and following one would read a file outside the
-    // channel. A FIFO would block here forever, with no error and no log line to explain it.
+    // Open without following a symlink and without blocking on a FIFO; lstat+read leaves a window
+    // in which the container can replace the entry. The platform may not define O_NOFOLLOW; the
+    // fstat check below still rejects anything that is not a regular file.
+    fd = openSync(
+      file,
+      fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0),
+    );
+    const stat = fstatSync(fd);
     if (!stat.isFile() || stat.size > MAX_BODY_CHARS * 4) return undefined;
-    return JSON.parse(readFileSync(file, 'utf8'));
+    return JSON.parse(readFileSync(fd, 'utf8'));
   } catch {
     return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 
