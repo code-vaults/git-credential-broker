@@ -28,6 +28,37 @@ import { runAsync } from '../common/run.ts';
 
 /** Scratch space for the whole file. */
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-commands-'));
+
+/** Run one host config command and capture its answer. */
+function runConfigCli(
+  command: string,
+  args: readonly string[],
+  extraEnv: NodeJS.ProcessEnv = {},
+): { status: number; stdout: string; stderr: string } {
+  try {
+    const stdout = execFileSync(
+      'node',
+      ['--conditions=development', 'packages/host/bin/gcb.js', 'config', command, ...args],
+      {
+        cwd: path.resolve('.'),
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, ...extraEnv },
+      },
+    );
+    return { status: 0, stdout, stderr: '' };
+  } catch (error) {
+    const failed = error as { status?: number | null; stdout?: string; stderr?: string };
+    return {
+      status: failed.status ?? -1,
+      stdout: String(failed.stdout ?? ''),
+      stderr: String(failed.stderr ?? ''),
+    };
+  }
+}
+
+
+
 after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
 /**
@@ -981,19 +1012,7 @@ describe('host flag validation at the CLI boundary', () => {
 });
 
 describe('gcb config allow', () => {
-  const runAllow = (args: readonly string[]): { status: number; stdout: string; stderr: string } => {
-    try {
-      const stdout = execFileSync(
-        'node',
-        ['--conditions=development', 'packages/host/bin/gcb.js', 'config', 'allow', ...args],
-        { cwd: path.resolve('.'), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-      );
-      return { status: 0, stdout, stderr: '' };
-    } catch (error) {
-      const failed = error as { status?: number | null; stdout?: string; stderr?: string };
-      return { status: failed.status ?? -1, stdout: String(failed.stdout ?? ''), stderr: String(failed.stderr ?? '') };
-    }
-  };
+  const runAllow = (args: readonly string[]) => runConfigCli('allow', args);
 
   const fixture = (): { dir: string; file: string; original: string } => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-'));
@@ -1023,6 +1042,7 @@ describe('gcb config allow', () => {
       const added = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
       assert.equal(added.status, 0);
       assert.match(added.stdout, /allow add github\.com acme\/new: written/u);
+      assert.match(added.stdout, /entry=acme\/new reload=unconfirmed signal=unavailable/u);
       assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u);
       assert.match(fs.readFileSync(file, 'utf8'), /# keep this too/u);
       if (process.platform !== 'win32') {
@@ -1053,10 +1073,9 @@ describe('gcb config allow', () => {
     const { dir, file, original } = fixture();
     try {
       const duplicate = runAllow(['add', 'github.com', 'acme/widget', '--config', file]);
-      assert.match(
-        (runAllow(['add', 'github.com', 'acme/padded', '--config', file]).stderr),
-        /already in/u,
-      );
+      const padded = runAllow(['add', 'github.com', 'acme/padded', '--config', file]);
+      assert.equal(padded.status, 1);
+      assert.match(padded.stderr, /already in/u);
       assert.equal(duplicate.status, 1);
       assert.match(duplicate.stderr, /already in github\.com\.allow/u);
       assert.equal(fs.readFileSync(file, 'utf8'), original);
@@ -1269,59 +1288,41 @@ describe('gcb config allow', () => {
 });
 
 describe('gcb config check', () => {
-  const run = (
-    command: string,
-    args: readonly string[],
-    extraEnv: NodeJS.ProcessEnv = {},
-  ): { status: number; stdout: string; stderr: string } => {
-    try {
-      const stdout = execFileSync(
-        'node',
-        ['--conditions=development', 'packages/host/bin/gcb.js', 'config', command, ...args],
-        { cwd: path.resolve('.'), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...extraEnv } },
-      );
-      return { status: 0, stdout, stderr: '' };
-    } catch (error) {
-      const failed = error as { status?: number | null; stdout?: string; stderr?: string };
-      return { status: failed.status ?? -1, stdout: String(failed.stdout ?? ''), stderr: String(failed.stderr ?? '') };
-    }
-  };
-
   it('validates a real configuration and prints its mode and hosts', () => {
-    const result = run('check', ['--config', path.resolve('examples/broker.config.example.yml')]);
+    const result = runConfigCli('check', ['--config', path.resolve('examples/broker.config.example.yml')]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /ok: .* \(host\)/);
     assert.match(result.stdout, /hosts: github\.com/);
   });
 
   it('refuses a missing file, a bare --config and an extra positional', () => {
-    const missing = run('check', ['--config', '/definitely/not/here.yml']);
+    const missing = runConfigCli('check', ['--config', '/definitely/not/here.yml']);
     assert.equal(missing.status, 1);
     assert.match(missing.stderr, /cannot read config/);
 
-    const bare = run('check', ['--config']);
+    const bare = runConfigCli('check', ['--config']);
     assert.equal(bare.status, 1);
     assert.match(bare.stderr, /--config may only be given once/);
 
-    const repeated = run('check', ['--config', 'a.yml', '--config', 'b.yml']);
+    const repeated = runConfigCli('check', ['--config', 'a.yml', '--config', 'b.yml']);
     assert.equal(repeated.status, 1);
     assert.match(repeated.stderr, /--config may only be given once/);
 
-    const oneMissing = run('check', ['--config', 'a.yml', '--config']);
+    const oneMissing = runConfigCli('check', ['--config', 'a.yml', '--config']);
     assert.equal(oneMissing.status, 1);
     assert.match(oneMissing.stderr, /--config may only be given once/);
 
-    const misspelled = run('check', ['--confg', 'x']);
+    const misspelled = runConfigCli('check', ['--confg', 'x']);
     assert.equal(misspelled.status, 1);
     assert.match(misspelled.stderr, /unknown option --confg/);
 
-    const extra = run('check', ['extra']);
+    const extra = runConfigCli('check', ['extra']);
     assert.equal(extra.status, 1);
     assert.match(extra.stderr, /usage: gcb config check/);
   });
 
   it('opens the config in the editor and validates it', () => {
-    const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
+    const result = runConfigCli('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
       VISUAL: 'true',
       EDITOR: 'true',
     });
@@ -1334,7 +1335,7 @@ describe('gcb config check', () => {
     const config = path.join(dir, 'broker.config.yml');
     fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
     try {
-      const result = run('edit', ['--config', config], {
+      const result = runConfigCli('edit', ['--config', config], {
         VISUAL: 'printf [%s]\\n',
         EDITOR: 'printf [%s]\\n',
       });
@@ -1350,7 +1351,7 @@ describe('gcb config check', () => {
     const config = path.join(dir, 'broker.config.yml');
     fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
     try {
-      const result = run('edit', ['--config', config], {
+      const result = runConfigCli('edit', ['--config', config], {
         VISUAL: 'false',
         EDITOR: 'false',
       });
@@ -1370,7 +1371,7 @@ describe('gcb config check', () => {
     const editor = path.join(dir, 'editor.sh');
     fs.writeFileSync(editor, '#!/bin/sh\nprintf \'hosts: [\' > "$1"\n', { mode: 0o755 });
     try {
-      const result = run('edit', ['--config', config], { VISUAL: editor, EDITOR: editor });
+      const result = runConfigCli('edit', ['--config', config], { VISUAL: editor, EDITOR: editor });
       assert.equal(result.status, 1);
       assert.match(result.stderr, /not valid YAML/);
     } finally {
@@ -1379,7 +1380,7 @@ describe('gcb config check', () => {
   });
 
   it('reports an editor killed by a signal', () => {
-    const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
+    const result = runConfigCli('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
       VISUAL: 'kill -KILL $$',
       EDITOR: 'kill -KILL $$',
     });
@@ -1388,7 +1389,7 @@ describe('gcb config check', () => {
   });
 
   it('refuses config edit without an editor', () => {
-    const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
+    const result = runConfigCli('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
       VISUAL: '',
       EDITOR: '',
     });
@@ -1397,7 +1398,7 @@ describe('gcb config check', () => {
   });
 
   it('prints help before rejecting unknown options', () => {
-    const result = run('check', ['--help', '--bogus']);
+    const result = runConfigCli('check', ['--help', '--bogus']);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /Usage: gcb config check/);
   });

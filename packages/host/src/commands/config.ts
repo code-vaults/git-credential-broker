@@ -2,7 +2,7 @@
  * `config` — inspect, edit and validate the broker configuration.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, chownSync, closeSync, existsSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, chownSync, existsSync, linkSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { parseDocument, isMap, isScalar, isSeq } from 'yaml';
 
@@ -142,10 +142,12 @@ function withConfigLock<T>(path: string, fn: (target: string) => T): T {
   const lock = `${target}.lock`;
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (;;) {
+    // Write the pid to a private temp name, then hard-link it into place. link(2) is atomic and
+    // the lock is never visible empty, unlike open-then-write.
+    const temporary = `${lock}.${String(process.pid)}.${randomUUID()}.tmp`;
+    writeFileSync(temporary, String(process.pid), { mode: 0o644, flag: 'wx' });
     try {
-      const fd = openSync(lock, 'wx', 0o644);
-      writeFileSync(fd, String(process.pid));
-      closeSync(fd);
+      linkSync(temporary, lock);
       break;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -165,7 +167,7 @@ function withConfigLock<T>(path: string, fn: (target: string) => T): T {
           if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
           throw error;
         }
-        // openSync creates the file before the pid is written; an empty lock is not stale.
+        // Only a lock from an older writer can be empty now; give it a moment, then fail closed.
         if (age <= 1_000 && Date.now() < deadline) {
           sleepSync(50);
           continue;
@@ -183,6 +185,8 @@ function withConfigLock<T>(path: string, fn: (target: string) => T): T {
       // and the loser can delete a lock the winner just created. Fail closed instead; removing the
       // file is a deliberate operator action once no gcb command is running.
       throw new Error(`stale lock ${lock}; remove it if no gcb command is running`);
+    } finally {
+      rmSync(temporary, { force: true });
     }
   }
   try {
@@ -260,12 +264,8 @@ function changeAllow(path: string, positionals: readonly string[]): void {
     const mode = original.mode & 0o777;
     const temporary = `${target}.${String(process.pid)}.${randomUUID()}.tmp`;
     try {
-      const fd = openSync(temporary, 'wx', mode);
-      try {
-        writeFileSync(fd, after);
-      } finally {
-        closeSync(fd);
-      }
+      // wx is O_EXCL: a pre-created symlink at this name fails rather than chooses the target.
+      writeFileSync(temporary, after, { flag: 'wx', mode });
       // Write an exact mode: the create mode is filtered by umask on some shares.
       chmodSync(temporary, mode);
       try {
