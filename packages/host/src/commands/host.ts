@@ -23,6 +23,7 @@ import {
   discoverCheckouts,
   findGitDir,
   listRequests,
+  markRequestStarted,
   reclaimAbandoned,
   readHostBroker,
   claimRequest,
@@ -369,6 +370,15 @@ async function sweep(
       writeResult(dir, id, { error: 'invalid proxy in the request' });
       removeRequest(dir, id);
       warn(`refused ${id}: invalid proxy`);
+      answered += 1;
+      continue;
+    }
+    try {
+      markRequestStarted(dir, id);
+    } catch (error) {
+      writeResult(dir, id, { error: `could not record that the request started: ${(error as Error).message}` });
+      removeRequest(dir, id);
+      warn(`refused ${id}: could not record its execution start`);
       answered += 1;
       continue;
     }

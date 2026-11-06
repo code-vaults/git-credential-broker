@@ -709,6 +709,11 @@ function doneFile(dir: string, id: string): string {
   return join(dir, `${id}.done`);
 }
 
+/** The marker written immediately before a claimed request may execute. */
+function startedFile(dir: string, id: string): string {
+  return join(dir, `${id}.started`);
+}
+
 /**
  * Refresh a regular file's timestamps without following a symlink or blocking on a FIFO.
  *
@@ -874,6 +879,16 @@ function acquireReclaimLock(dir: string, id: string): string | undefined {
 }
 
 /**
+ * Record that a claimed request is about to execute.
+ *
+ * @param dir - the channel directory.
+ * @param id - the request id.
+ */
+export function markRequestStarted(dir: string, id: string): void {
+  writeJsonAtomic(startedFile(dir, id), { at: Date.now() });
+}
+
+/**
  * Put claims abandoned by a crashed host broker back in the queue.
  *
  * The rename in {@link claimRequest} makes exactly one opener win, but a crash after it leaves only a
@@ -920,6 +935,14 @@ export function reclaimAbandoned(dir: string): string[] {
         stale = !pidAlive(pid) || (at !== undefined && Date.now() - at > CLAIM_MAX_AGE_MS);
       }
       if (!stale) continue;
+      if (readJson(startedFile(dir, id)) !== undefined) {
+        writeResult(dir, id, {
+          error: `request ${id} started before its broker exited; outcome unknown, not retrying`,
+        });
+        removeRequest(dir, id);
+        reclaimed.push(id);
+        continue;
+      }
       const countFile = join(dir, `${id}.reclaims`);
       const rawCount = readJson(countFile);
       const count =
@@ -972,6 +995,7 @@ export function removeRequest(dir: string, id: string): void {
   rmSync(claimFile(dir, id), { force: true, recursive: true });
   rmSync(join(dir, `${id}.reclaims`), { force: true, recursive: true });
   rmSync(doneFile(dir, id), { force: true, recursive: true });
+  rmSync(startedFile(dir, id), { force: true, recursive: true });
 }
 
 /**
