@@ -1023,14 +1023,15 @@ function readJson(file: string): unknown {
     const stat = fstatSync(fd);
     const limit = MAX_BODY_CHARS * 4;
     if (!stat.isFile() || stat.size > limit) return undefined;
-    const buffer = Buffer.allocUnsafe(limit + 1);
+    // One byte past the checked size both catches growth and keeps sidecar reads proportional.
+    const buffer = Buffer.allocUnsafe(stat.size + 1);
     let bytesRead = 0;
     while (bytesRead < buffer.length) {
       const count = readSync(fd, buffer, bytesRead, buffer.length - bytesRead, null);
       if (count === 0) break;
       bytesRead += count;
     }
-    if (bytesRead > limit) return undefined;
+    if (bytesRead > stat.size) return undefined;
     return JSON.parse(buffer.toString('utf8', 0, bytesRead));
   } catch {
     return undefined;
