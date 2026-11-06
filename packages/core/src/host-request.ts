@@ -686,7 +686,11 @@ export function writeResult(dir: string, id: string, result: HostResult): void {
     ...(typeof result.stderr === 'string' ? { stderr: clampJsonStream(result.stderr) } : {}),
   };
   writeJsonAtomic(join(dir, `${id}.result.json`), { v: 1, id, ...bounded });
-  writeJsonAtomic(doneFile(dir, id), { at: Date.now() });
+  try {
+    writeJsonAtomic(doneFile(dir, id), { at: Date.now() });
+  } catch {
+    // The result is already published; a missing marker must not keep the claim alive.
+  }
 }
 
 /** The rename→record window; longer than run:watch's 3,300 s timeout plus setup/termination. */
