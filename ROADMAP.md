@@ -147,6 +147,7 @@ The configuration is the source of truth and must be comfortable to edit by hand
       still accepted because the YAML parser parses JSON. This phase adds no `config migrate` command.
 - [x] Add `gcb config check`.
 - [x] Add `gcb config edit` (`$VISUAL`/`$EDITOR`, validated on save).
+- [x] Add `gcb config allow add|remove` for one exact allowlist entry.
 - [x] Update `init`, `compose`, `stage`, and `deployment.ts` to the chosen format.
 
 Proposed YAML surface (subject to Phase 0 naming):

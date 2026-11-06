@@ -374,8 +374,16 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
   if (!isRecord(hostsRaw) || Object.keys(hostsRaw).length === 0) {
     errors.push('hosts must be a non-empty object keyed by host as git reports it (e.g. "github.com")');
   } else {
+    const seenHosts = new Map<string, string>();
     for (const [host, blockRaw] of Object.entries(hostsRaw)) {
       const at = `hosts["${host}"]`;
+      const normalizedHost = host.toLowerCase();
+      const previousHost = seenHosts.get(normalizedHost);
+      if (previousHost !== undefined) {
+        errors.push(`${at} duplicates hosts["${previousHost}"] ignoring case`);
+        continue;
+      }
+      seenHosts.set(normalizedHost, host);
       if (!isRecord(blockRaw)) {
         errors.push(`${at} must be an object`);
         continue;

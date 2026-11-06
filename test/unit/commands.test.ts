@@ -6,7 +6,7 @@
  * a configuration the daemon would reject.
  */
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { generateKeyPairSync } from 'node:crypto';
 import net from 'node:net';
 import fs from 'node:fs';
@@ -28,6 +28,35 @@ import { runAsync } from '../common/run.ts';
 
 /** Scratch space for the whole file. */
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-commands-'));
+
+/** Run one host config command and capture its answer. */
+function runConfigCli(
+  command: string,
+  args: readonly string[],
+  extraEnv: NodeJS.ProcessEnv = {},
+): { status: number; stdout: string; stderr: string } {
+  try {
+    const stdout = execFileSync(
+      'node',
+      ['--conditions=development', 'packages/host/bin/gcb.js', 'config', command, ...args],
+      {
+        cwd: path.resolve('.'),
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, ...extraEnv },
+      },
+    );
+    return { status: 0, stdout, stderr: '' };
+  } catch (error) {
+    const failed = error as { status?: number | null; stdout?: string; stderr?: string };
+    return {
+      status: failed.status ?? -1,
+      stdout: String(failed.stdout ?? ''),
+      stderr: String(failed.stderr ?? ''),
+    };
+  }
+}
+
 after(() => fs.rmSync(scratch, { recursive: true, force: true }));
 
 /**
@@ -980,65 +1009,407 @@ describe('host flag validation at the CLI boundary', () => {
   }
 });
 
-describe('gcb config check', () => {
-  const run = (
-    command: 'check' | 'edit',
-    args: readonly string[],
-    extraEnv: NodeJS.ProcessEnv = {},
-  ): { status: number; stdout: string; stderr: string } => {
-    try {
-      const stdout = execFileSync(
-        'node',
-        ['--conditions=development', 'packages/host/bin/gcb.js', 'config', command, ...args],
-        { cwd: path.resolve('.'), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...extraEnv } },
-      );
-      return { status: 0, stdout, stderr: '' };
-    } catch (error) {
-      const failed = error as { status?: number | null; stdout?: string; stderr?: string };
-      return { status: failed.status ?? -1, stdout: String(failed.stdout ?? ''), stderr: String(failed.stderr ?? '') };
-    }
+describe('gcb config allow', () => {
+  const runAllow = (args: readonly string[]) => runConfigCli('allow', args);
+
+  const fixture = (): { dir: string; file: string; original: string } => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-'));
+    const file = path.join(dir, 'broker.config.yml');
+    const original = [
+      '# keep this comment',
+      'socketPath: /run/gcb.sock',
+      'hosts:',
+      '  github.com:',
+      '    provider: static',
+      '    password: p',
+      '    allow:',
+      '      - acme/widget # keep this too',
+      '      - acme/other',
+      '      - " acme/padded "',
+      '',
+    ].join('\n');
+    fs.writeFileSync(file, original);
+    if (process.platform !== 'win32') fs.chmodSync(file, 0o660);
+    return { dir, file, original };
   };
 
+  it('adds then removes one entry without disturbing comments or formatting', () => {
+    const { dir, file, original } = fixture();
+    const inode = process.platform === 'win32' ? undefined : fs.statSync(file).ino;
+    try {
+      const added = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(added.status, 0);
+      assert.match(added.stdout, /allow add github\.com acme\/new: written/u);
+      assert.match(added.stdout, /entry=acme\/new reload=unconfirmed signal=unavailable/u);
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u);
+      assert.match(fs.readFileSync(file, 'utf8'), /# keep this too/u);
+      if (process.platform !== 'win32') {
+        assert.equal(fs.statSync(file).mode & 0o777, 0o660, 'add keeps the mode');
+        assert.notEqual(fs.statSync(file).ino, inode, 'add replaces the inode');
+      }
+
+      const checked = execFileSync('node', ['--conditions=development', 'packages/host/bin/gcb.js', 'config', 'check', '--config', file], {
+        cwd: path.resolve('.'),
+        encoding: 'utf8',
+      });
+      assert.match(checked, /ok: /u);
+
+      const beforeRemove = process.platform === 'win32' ? undefined : fs.statSync(file).ino;
+      const removed = runAllow(['remove', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(removed.status, 0);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+      if (process.platform !== 'win32') {
+        assert.equal(fs.statSync(file).mode & 0o777, 0o660, 'remove keeps the mode');
+        assert.notEqual(fs.statSync(file).ino, beforeRemove, 'remove replaces the inode');
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves CRLF line endings through add and remove', () => {
+    const { dir, file, original } = fixture();
+    const crlf = original.replaceAll('\n', '\r\n');
+    fs.writeFileSync(file, crlf);
+    try {
+      assert.equal(runAllow(['add', 'github.com', 'acme/new', '--config', file]).status, 0);
+      assert.match(fs.readFileSync(file, 'utf8'), /\r\n/u);
+      assert.equal(runAllow(['remove', 'github.com', 'acme/new', '--config', file]).status, 0);
+      assert.equal(fs.readFileSync(file, 'utf8'), crlf);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses mixed line endings instead of normalizing them', () => {
+    const { dir, file, original } = fixture();
+    const mixed = original.replaceAll('\n', '\r\n').replace('socketPath: /run/gcb.sock\r\n', 'socketPath: /run/gcb.sock\n');
+    fs.writeFileSync(file, mixed);
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /mixed line endings/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), mixed);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('finds a host key regardless of case', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-host-'));
+    const file = path.join(dir, 'broker.config.yml');
+    fs.writeFileSync(
+      file,
+      'socketPath: /run/gcb.sock\nhosts:\n  GitHub.com:\n    provider: static\n    password: p\n    allow:\n      - acme/widget\n',
+    );
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(result.status, 0);
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a duplicate add and a missing remove without writing', () => {
+    const { dir, file, original } = fixture();
+    try {
+      const duplicate = runAllow(['add', 'github.com', 'acme/widget', '--config', file]);
+      const padded = runAllow(['add', 'github.com', 'acme/padded', '--config', file]);
+      assert.equal(padded.status, 1);
+      assert.match(padded.stderr, /already in/u);
+      assert.equal(duplicate.status, 1);
+      assert.match(duplicate.stderr, /already in github\.com\.allow/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+
+      const missing = runAllow(['remove', 'github.com', 'acme/absent', '--config', file]);
+      assert.equal(missing.status, 1);
+      assert.match(missing.stderr, /not in github\.com\.allow/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+
+      const removePadded = runAllow(['remove', 'github.com', 'acme/padded', '--config', file]);
+      assert.equal(removePadded.status, 0);
+      assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /padded/u);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses malformed repositories and unknown hosts before writing', () => {
+    const { dir, file, original } = fixture();
+    try {
+      for (const bad of ['acme', 'acme/widget/extra', 'https://github.com/acme/widget', 'acme/*', '']) {
+        const result = runAllow(['add', 'github.com', bad, '--config', file]);
+        assert.equal(result.status, 1, bad);
+        assert.match(result.stderr, /one exact owner\/name/u);
+      }
+      const host = runAllow(['add', 'gitlab.com', 'acme/widget', '--config', file]);
+      assert.equal(host.status, 1);
+      assert.match(host.stderr, /no host "gitlab\.com"/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a case-variant duplicate and an extra positional', () => {
+    const { dir, file, original } = fixture();
+    try {
+      const duplicate = runAllow(['add', 'github.com', 'ACME/Widget', '--config', file]);
+      assert.equal(duplicate.status, 1);
+      assert.match(duplicate.stderr, /already in github\.com\.allow/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+
+      const extra = runAllow(['add', 'github.com', 'acme/new', 'oops', '--config', file]);
+      assert.equal(extra.status, 1);
+      assert.match(extra.stderr, /usage: gcb config allow/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+
+      const spaces = runAllow(['add', 'github.com', ' acme/spaced ', '--config', file]);
+      assert.equal(spaces.status, 0);
+      assert.match(fs.readFileSync(file, 'utf8'), /- acme\/spaced/u);
+      const spacesAgain = runAllow(['add', 'github.com', 'acme/spaced', '--config', file]);
+      assert.equal(spacesAgain.status, 1);
+      assert.match(spacesAgain.stderr, /already in/u);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a .git suffix and a malformed existing entry', () => {
+    const { dir, file, original } = fixture();
+    try {
+      const dotGit = runAllow(['add', 'github.com', 'acme/widget.git', '--config', file]);
+      assert.equal(dotGit.status, 1);
+      assert.match(dotGit.stderr, /without a wildcard or \.git/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    const badDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-loader-'));
+    const badFile = path.join(badDir, 'broker.config.yml');
+    const bad = 'socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow:\n      - acme/wid*\n';
+    fs.writeFileSync(badFile, bad);
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', badFile]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /not a valid "owner\/repo" pattern/u);
+      assert.equal(fs.readFileSync(badFile, 'utf8'), bad);
+    } finally {
+      fs.rmSync(badDir, { recursive: true, force: true });
+    }
+  });
+
+  it('follows a symlinked config instead of replacing the link', () => {
+    const { dir, file } = fixture();
+    const link = path.join(dir, 'link.yml');
+    fs.symlinkSync(file, link);
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', link]);
+      assert.equal(result.status, 0);
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u);
+      assert.equal(fs.lstatSync(link).isSymbolicLink(), true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('removes every case-variant match but keeps the last entry rule', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-dup-'));
+    const file = path.join(dir, 'broker.config.yml');
+    const body = (entries: string): string =>
+      `socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow:\n${entries}`;
+    fs.writeFileSync(file, body('      - acme/widget\n      - ACME/Widget\n      - acme/other\n'));
+    try {
+      const removed = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
+      assert.equal(removed.status, 0);
+      const text = fs.readFileSync(file, 'utf8');
+      assert.doesNotMatch(text, /widget/iu);
+      assert.match(text, /acme\/other/u);
+
+      fs.writeFileSync(file, body('      - ACME/Widget\n      - acme/other\n'));
+      const upper = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
+      assert.equal(upper.status, 0);
+      assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /widget/iu);
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/other/u);
+
+      fs.writeFileSync(file, body('      - acme/widget\n      - ACME/Widget\n'));
+      const last = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
+      assert.equal(last.status, 1);
+      assert.match(last.stderr, /allowlist empty/u);
+      assert.match(fs.readFileSync(file, 'utf8'), /ACME\/Widget/u);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses to remove the last entry', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-last-'));
+    const file = path.join(dir, 'broker.config.yml');
+    fs.writeFileSync(
+      file,
+      'socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow:\n      - acme/widget\n',
+    );
+    try {
+      const result = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /allowlist empty/u);
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/widget/u);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('waits for an empty lock instead of calling it stale', async () => {
+    const { dir, file } = fixture();
+    fs.writeFileSync(`${file}.lock`, '');
+    const child = spawn(
+      process.execPath,
+      [
+        '--conditions=development',
+        'packages/host/bin/gcb.js',
+        'config',
+        'allow',
+        'add',
+        'github.com',
+        'acme/late',
+        '--config',
+        file,
+      ],
+      { cwd: path.resolve('.'), stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      assert.equal(child.exitCode, null, 'the child waits instead of failing on an empty lock');
+      fs.writeFileSync(`${file}.lock`, String(process.pid));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      fs.rmSync(`${file}.lock`);
+      const code = await new Promise<number | null>((resolve) => child.on('exit', resolve));
+      assert.equal(code, 0);
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/late/u);
+    } finally {
+      child.kill();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not steal an old lock from a live process', () => {
+    const { dir, file, original } = fixture();
+    fs.writeFileSync(`${file}.lock`, String(process.pid));
+    const old = new Date(Date.now() - 31_000);
+    fs.utimesSync(`${file}.lock`, old, old);
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /another gcb command is updating/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+      assert.equal(fs.existsSync(`${file}.lock`), true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed on a fresh lock whose pid has exited', () => {
+    const { dir, file, original } = fixture();
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    assert.ok(dead.pid !== undefined);
+    fs.writeFileSync(`${file}.lock`, String(dead.pid));
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /stale lock .*; remove it/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+      assert.equal(fs.existsSync(`${file}.lock`), true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a missing config with the config path', () => {
+    const result = runAllow(['add', 'github.com', 'acme/new', '--config', '/definitely/not/here.yml']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /cannot read config \/definitely\/not\/here\.yml/u);
+  });
+
+  it('fails closed on a stale lock left by a dead process', () => {
+    const { dir, file, original } = fixture();
+    fs.writeFileSync(`${file}.lock`, String(Number.MAX_SAFE_INTEGER));
+    const old = new Date(Date.now() - 31_000);
+    fs.utimesSync(`${file}.lock`, old, old);
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /stale lock .*; remove it/u);
+      assert.equal(fs.readFileSync(file, 'utf8'), original);
+      assert.equal(fs.existsSync(`${file}.lock`), true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a non-list allow field', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-bad-'));
+    const file = path.join(dir, 'broker.config.yml');
+    fs.writeFileSync(file, 'socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow: acme/widget\n');
+    try {
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /allow must be a list/u);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('gcb config check', () => {
   it('validates a real configuration and prints its mode and hosts', () => {
-    const result = run('check', ['--config', path.resolve('examples/broker.config.example.yml')]);
+    const result = runConfigCli('check', ['--config', path.resolve('examples/broker.config.example.yml')]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /ok: .* \(host\)/);
     assert.match(result.stdout, /hosts: github\.com/);
   });
 
   it('refuses a missing file, a bare --config and an extra positional', () => {
-    const missing = run('check', ['--config', '/definitely/not/here.yml']);
+    const missing = runConfigCli('check', ['--config', '/definitely/not/here.yml']);
     assert.equal(missing.status, 1);
     assert.match(missing.stderr, /cannot read config/);
 
-    const bare = run('check', ['--config']);
+    const bare = runConfigCli('check', ['--config']);
     assert.equal(bare.status, 1);
     assert.match(bare.stderr, /--config may only be given once/);
 
-    const repeated = run('check', ['--config', 'a.yml', '--config', 'b.yml']);
+    const repeated = runConfigCli('check', ['--config', 'a.yml', '--config', 'b.yml']);
     assert.equal(repeated.status, 1);
     assert.match(repeated.stderr, /--config may only be given once/);
 
-    const oneMissing = run('check', ['--config', 'a.yml', '--config']);
+    const oneMissing = runConfigCli('check', ['--config', 'a.yml', '--config']);
     assert.equal(oneMissing.status, 1);
     assert.match(oneMissing.stderr, /--config may only be given once/);
 
-    const misspelled = run('check', ['--confg', 'x']);
+    const misspelled = runConfigCli('check', ['--confg', 'x']);
     assert.equal(misspelled.status, 1);
     assert.match(misspelled.stderr, /unknown option --confg/);
 
-    const extra = run('check', ['extra']);
+    const extra = runConfigCli('check', ['extra']);
     assert.equal(extra.status, 1);
     assert.match(extra.stderr, /usage: gcb config check/);
   });
 
   it('opens the config in the editor and validates it', () => {
-    const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
-      VISUAL: 'true',
-      EDITOR: 'true',
-    });
-    assert.equal(result.status, 0);
-    assert.match(result.stdout, /ok: .* \(host\)/);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-open-'));
+    const config = path.join(directory, 'broker.config.yml');
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
+    try {
+      const result = runConfigCli('edit', ['--config', config], {
+        VISUAL: 'true',
+        EDITOR: 'true',
+      });
+      assert.equal(result.status, 0);
+      assert.match(result.stdout, /ok: .* \(host\)/);
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('passes the path as one argument to an editor command with arguments', () => {
@@ -1046,7 +1417,7 @@ describe('gcb config check', () => {
     const config = path.join(dir, 'broker.config.yml');
     fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
     try {
-      const result = run('edit', ['--config', config], {
+      const result = runConfigCli('edit', ['--config', config], {
         VISUAL: 'printf [%s]\\n',
         EDITOR: 'printf [%s]\\n',
       });
@@ -1058,13 +1429,21 @@ describe('gcb config check', () => {
   });
 
   it('stops when the editor fails', () => {
-    const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
-      VISUAL: 'false',
-      EDITOR: 'false',
-    });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /editor exited with status 1/);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-fail-'));
+    const config = path.join(dir, 'broker.config.yml');
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
+    try {
+      const result = runConfigCli('edit', ['--config', config], {
+        VISUAL: 'false',
+        EDITOR: 'false',
+      });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /editor exited with status 1/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
+
 
   it('validates the file the editor saved, not the one it opened', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-'));
@@ -1073,7 +1452,7 @@ describe('gcb config check', () => {
     const editor = path.join(dir, 'editor.sh');
     fs.writeFileSync(editor, '#!/bin/sh\nprintf \'hosts: [\' > "$1"\n', { mode: 0o755 });
     try {
-      const result = run('edit', ['--config', config], { VISUAL: editor, EDITOR: editor });
+      const result = runConfigCli('edit', ['--config', config], { VISUAL: editor, EDITOR: editor });
       assert.equal(result.status, 1);
       assert.match(result.stderr, /not valid YAML/);
     } finally {
@@ -1082,16 +1461,23 @@ describe('gcb config check', () => {
   });
 
   it('reports an editor killed by a signal', () => {
-    const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
-      VISUAL: 'kill -KILL $$',
-      EDITOR: 'kill -KILL $$',
-    });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /editor exited with signal SIGKILL/);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-signal-'));
+    const config = path.join(directory, 'broker.config.yml');
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
+    try {
+      const result = runConfigCli('edit', ['--config', config], {
+        VISUAL: 'kill -KILL $$',
+        EDITOR: 'kill -KILL $$',
+      });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /editor exited with signal SIGKILL/);
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('refuses config edit without an editor', () => {
-    const result = run('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
+    const result = runConfigCli('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
       VISUAL: '',
       EDITOR: '',
     });
@@ -1100,7 +1486,7 @@ describe('gcb config check', () => {
   });
 
   it('prints help before rejecting unknown options', () => {
-    const result = run('check', ['--help', '--bogus']);
+    const result = runConfigCli('check', ['--help', '--bogus']);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /Usage: gcb config check/);
   });
