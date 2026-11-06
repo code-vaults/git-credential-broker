@@ -252,6 +252,18 @@ describe('the host request channel', () => {
     assert.equal(readResult(dir, id), undefined);
   });
 
+  it('ignores a malformed reclaim counter', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    assert.ok(dead.pid !== undefined);
+    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
+    writeFileSync(join(dir, `${id}.reclaims`), JSON.stringify('not-a-number'));
+    assert.deepEqual(reclaimAbandoned(dir), [id]);
+    assert.ok(listRequests(dir).includes(id));
+    removeRequest(dir, id);
+  });
+
   it('resets a requeued request to eligible age', () => {
     const id = writeRequest(dir, GOOD);
     const old = new Date(Date.now() - 10 * 60_000);
