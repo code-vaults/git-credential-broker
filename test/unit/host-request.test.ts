@@ -50,6 +50,18 @@ describe('what the channel refuses to read', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it('refuses a request larger than the body budget', () => {
+    const root = mkdtempSync(join(tmpdir(), 'channel-oversized-'));
+    const channel = channelDir(join(root, '.git'));
+    mkdirSync(channel, { recursive: true });
+    writeFileSync(
+      join(channel, 'oversized.json'),
+      JSON.stringify({ kind: 'edit', repo: 'acme/widget', number: 1, body: 'x'.repeat(300_000) }),
+    );
+    assert.equal(readRequest(channel, 'oversized'), undefined);
+    rmSync(root, { recursive: true, force: true });
+  });
+
   it('does not treat a symlinked .git as a checkout, because the container can make one', () => {
     const root = mkdtempSync(join(tmpdir(), 'channel-link-'));
     const target = mkdtempSync(join(tmpdir(), 'channel-target-'));

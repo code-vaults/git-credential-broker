@@ -21,6 +21,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -1020,8 +1021,17 @@ function readJson(file: string): unknown {
       fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0),
     );
     const stat = fstatSync(fd);
-    if (!stat.isFile() || stat.size > MAX_BODY_CHARS * 4) return undefined;
-    return JSON.parse(readFileSync(fd, 'utf8'));
+    const limit = MAX_BODY_CHARS * 4;
+    if (!stat.isFile() || stat.size > limit) return undefined;
+    const buffer = Buffer.allocUnsafe(limit + 1);
+    let bytesRead = 0;
+    while (bytesRead < buffer.length) {
+      const count = readSync(fd, buffer, bytesRead, buffer.length - bytesRead, null);
+      if (count === 0) break;
+      bytesRead += count;
+    }
+    if (bytesRead > limit) return undefined;
+    return JSON.parse(buffer.toString('utf8', 0, bytesRead));
   } catch {
     return undefined;
   } finally {
