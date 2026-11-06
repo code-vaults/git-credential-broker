@@ -1150,6 +1150,8 @@ describe('gcb config allow', () => {
   it('ignores a stale lock left by a dead process', () => {
     const { dir, file } = fixture();
     fs.writeFileSync(`${file}.lock`, String(Number.MAX_SAFE_INTEGER));
+    const old = new Date(Date.now() - 31_000);
+    fs.utimesSync(`${file}.lock`, old, old);
     try {
       const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
       assert.equal(result.status, 0);

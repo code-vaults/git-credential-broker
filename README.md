@@ -318,7 +318,7 @@ it runs wherever the pusher runs.
 deployment mode and hosts without starting the broker or reading the key. `config edit` opens the
 existing file in `$VISUAL`/`$EDITOR` (it does not create a missing one; run `init` first) and
 validates it after the editor exits. `config allow add|remove <host> <owner/name>` changes one exact
-allowlist entry, preserving comments and the rest of the document, validates the result, and replaces
+allowlist entry (no glob, URL, wildcard or `.git`), preserving comments and the rest of the document, validates the result, and replaces
 the file atomically. The output says the reload is unconfirmed: the running daemon watches the
 config directory, but the command does not signal it, and `socketPath`/`socketMode`/`auditPath`
 still need a restart.

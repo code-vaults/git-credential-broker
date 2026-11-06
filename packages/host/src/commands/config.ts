@@ -2,7 +2,7 @@
  * `config` — inspect, edit and validate the broker configuration.
  */
 import { spawnSync } from 'node:child_process';
-import { chmodSync, closeSync, existsSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, chownSync, closeSync, existsSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { parseDocument, isMap, isScalar, isSeq } from 'yaml';
 
@@ -16,8 +16,8 @@ Validate or edit the broker configuration, or change one allowlist entry.
 
   check                       Validate the file without changing it
   edit                        Open it in $VISUAL/$EDITOR and validate the saved file
-  allow add <host> <repo>     Append one exact owner/name entry (no glob, URL or wildcard)
-  allow remove <host> <repo>  Remove one exact owner/name entry (no glob, URL or wildcard)
+  allow add <host> <repo>     Append one exact owner/name entry (no glob, URL, wildcard or .git)
+  allow remove <host> <repo>  Remove one exact owner/name entry (no glob, URL, wildcard or .git)
   --config <path>             Config file (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   -h, --help                  Show this help
 `;
@@ -126,17 +126,25 @@ function withConfigLock<T>(path: string, fn: () => T): T {
       break;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      let stale = true;
+      let stale = false;
       try {
-        const pid = Number(readFileSync(lock, 'utf8'));
+        const age = Date.now() - statSync(lock).mtimeMs;
+        let pid: number | undefined;
+        try {
+          pid = Number(readFileSync(lock, 'utf8'));
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        }
         stale =
-          !Number.isInteger(pid) ||
-          pid <= 0 ||
-          pid > 0x7fffffff ||
-          !pidAlive(pid) ||
-          Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS;
-      } catch {
-        stale = true;
+          age > LOCK_STALE_MS ||
+          (pid !== undefined &&
+            Number.isInteger(pid) &&
+            pid > 0 &&
+            pid <= 0x7fffffff &&
+            !pidAlive(pid));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        stale = false;
       }
       if (stale) {
         rmSync(lock, { force: true });
@@ -221,7 +229,8 @@ function changeAllow(path: string, positionals: readonly string[]): void {
 
     const after = document.toString();
     loadConfigText(after, path);
-    const mode = statSync(target).mode & 0o777;
+    const original = statSync(target);
+    const mode = original.mode & 0o777;
     const temporary = `${target}.${String(process.pid)}.${randomUUID()}.tmp`;
     try {
       const fd = openSync(temporary, 'wx', mode);
@@ -232,6 +241,12 @@ function changeAllow(path: string, positionals: readonly string[]): void {
       }
       // Write an exact mode: the create mode is filtered by umask on some shares.
       chmodSync(temporary, mode);
+      try {
+        chownSync(temporary, original.uid, original.gid);
+      } catch (error) {
+        // A non-owner cannot restore a group; the mode is still right.
+        if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
+      }
       renameSync(temporary, target);
     } finally {
       rmSync(temporary, { force: true });
