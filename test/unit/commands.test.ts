@@ -1184,6 +1184,12 @@ describe('gcb config allow', () => {
       assert.doesNotMatch(text, /widget/iu);
       assert.match(text, /acme\/other/u);
 
+      fs.writeFileSync(file, body('      - ACME/Widget\n      - acme/other\n'));
+      const upper = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
+      assert.equal(upper.status, 0);
+      assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /widget/iu);
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/other/u);
+
       fs.writeFileSync(file, body('      - acme/widget\n      - ACME/Widget\n'));
       const last = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
       assert.equal(last.status, 1);
