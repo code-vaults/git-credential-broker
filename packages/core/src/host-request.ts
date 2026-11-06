@@ -968,7 +968,12 @@ export function reclaimAbandoned(dir: string): string[] {
       const count =
         typeof rawCount === 'number' && Number.isInteger(rawCount) && rawCount >= 0 ? rawCount : 0;
       if (count >= 1) {
-        writeResult(dir, id, { error: `request ${id} was reclaimed twice; not retrying` });
+        try {
+          writeResult(dir, id, { error: `request ${id} was reclaimed twice; not retrying` });
+        } catch {
+          // Leave the claim and counter for the next sweep; one failed answer must not abort the queue.
+          continue;
+        }
         removeRequest(dir, id);
         reclaimed.push(id);
         continue;
