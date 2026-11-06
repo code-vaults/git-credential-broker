@@ -1167,6 +1167,29 @@ describe('gcb config allow', () => {
     }
   });
 
+  it('removes every case-variant match but keeps the last entry rule', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-dup-'));
+    const file = path.join(dir, 'broker.config.yml');
+    const body = (entries: string): string =>
+      `socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow:\n${entries}`;
+    fs.writeFileSync(file, body('      - acme/widget\n      - ACME/Widget\n      - acme/other\n'));
+    try {
+      const removed = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
+      assert.equal(removed.status, 0);
+      const text = fs.readFileSync(file, 'utf8');
+      assert.doesNotMatch(text, /widget/iu);
+      assert.match(text, /acme\/other/u);
+
+      fs.writeFileSync(file, body('      - acme/widget\n      - ACME/Widget\n'));
+      const last = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
+      assert.equal(last.status, 1);
+      assert.match(last.stderr, /last allowlist entry/u);
+      assert.match(fs.readFileSync(file, 'utf8'), /ACME\/Widget/u);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('refuses to remove the last entry', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-last-'));
     const file = path.join(dir, 'broker.config.yml');

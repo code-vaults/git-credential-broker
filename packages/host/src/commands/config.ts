@@ -252,10 +252,12 @@ function changeAllow(path: string, positionals: readonly string[]): void {
       }
     } else {
       if (index === -1 || !isSeq(allowNode)) throw new Error(`${repository} is not in ${host}.allow`);
-      if (entries.length === 1) {
+      const target = repository.toLowerCase();
+      const kept = allowNode.items.filter((_item, position) => entries[position]?.trim().toLowerCase() !== target);
+      if (kept.length === 0) {
         throw new Error(`refusing to remove the last allowlist entry for ${host}`);
       }
-      allowNode.items.splice(index, 1);
+      allowNode.items = kept;
     }
 
     const after = document.toString();
