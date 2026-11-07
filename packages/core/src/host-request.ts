@@ -749,6 +749,37 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
 }
 
 /**
+ * Report requests left behind by a host that exited after claiming them.
+ *
+ * A working file is never executed again: the host may have run the action before it died, so the
+ * only safe outcome is an explicit unknown-outcome error for the caller to retry manually.
+ *
+ * @param dir - the channel directory.
+ * @returns the ids that were retired.
+ */
+export function reclaimAbandoned(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  const retired: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.json.working')) continue;
+    const id = entry.name.slice(0, -'.json.working'.length);
+    if (readResult(dir, id) === undefined) {
+      try {
+        writeResult(dir, id, {
+          error: `request ${id} was left by a host that exited; outcome unknown; run it again`,
+        });
+      } catch {
+        // Leave the working file for the next sweep rather than aborting the queue.
+        continue;
+      }
+    }
+    removeRequest(dir, id);
+    retired.push(id);
+  }
+  return retired;
+}
+
+/**
  * Remove a request, once it has been answered.
  *
  * @param dir - the channel directory.

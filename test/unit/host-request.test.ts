@@ -24,6 +24,7 @@ import {
   readHostBroker,
   readRequest,
   readResult,
+  reclaimAbandoned,
   removeRequest,
   removeResult,
   requestProblems,
@@ -212,6 +213,26 @@ describe('the host request channel', () => {
     assert.equal(read?.kind, 'fork');
     assert.equal(read !== undefined && read.kind === 'fork' ? read.repo : undefined, 'acme/widget');
     removeRequest(dir, id);
+  });
+
+  it('retires a claimed request with an unknown-outcome error', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    assert.deepEqual(reclaimAbandoned(dir), [id]);
+    assert.equal(listRequests(dir).includes(id), false);
+    assert.match(readResult(dir, id)?.error ?? '', /outcome unknown/u);
+    removeRequest(dir, id);
+    removeResult(dir, id);
+  });
+
+  it('keeps an existing answer when retiring the working copy', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    writeResult(dir, id, { stdout: 'ok', stderr: '', code: 0 });
+    assert.deepEqual(reclaimAbandoned(dir), [id]);
+    assert.equal(listRequests(dir).includes(id), false);
+    assert.equal(readResult(dir, id)?.stdout, 'ok');
+    removeResult(dir, id);
   });
 
   it('names a request after the clock, with something to break a tie', () => {
