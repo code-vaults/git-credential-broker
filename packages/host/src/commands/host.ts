@@ -329,7 +329,8 @@ async function sweep(
   blockFor: (host: string) => ReturnType<typeof hostConfig>,
 ): Promise<number> {
   let answered = 0;
-  for (const id of reclaimAbandoned(dir)) {
+  const reclaimed = reclaimAbandoned(dir);
+  for (const id of reclaimed.unknown) {
     warn(`reclaimed ${id}: outcome unknown; the request was left by a host that exited`);
   }
   for (const id of listRequests(dir)) {

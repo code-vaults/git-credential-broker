@@ -52,6 +52,7 @@ describe('the host broker, once', () => {
       values: { number: 7 },
     });
     assert.ok(claimRequest(dir, id));
+    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: 0x7fffffff, at: Date.now() }));
     assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--once']), 0);
     assert.match(readResult(dir, id)?.error ?? '', /outcome unknown/u);
     assert.equal(existsSync(argvFile), false, 'the program did not run');

@@ -12,10 +12,15 @@
  * another appearing back.
  */
 import {
+  closeSync,
+  constants as fsConstants,
   existsSync,
+  fstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
+  readSync,
   renameSync,
   rmSync,
   statSync,
@@ -690,12 +695,39 @@ export function writeResult(dir: string, id: string, result: HostResult): void {
  * @param id - the request id.
  * @returns the request, or undefined when it was gone or is already claimed.
  */
+/** How long a claim may stay live before a recovery sweep treats it as abandoned. */
+const CLAIM_MAX_AGE_MS = 60 * 60_000;
+
+/** The sidecar recording which process claimed a request. */
+function claimFile(dir: string, id: string): string {
+  return join(dir, `${id}.claim`);
+}
+
+/** Whether a pid is still alive; EPERM and other errors count as alive. */
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
+
 export function claimRequest(dir: string, id: string): HostRequest | undefined {
   const claimed = join(dir, `${id}.json.working`);
   try {
     renameSync(join(dir, `${id}.json`), claimed);
   } catch {
     return undefined;
+  }
+  try {
+    rmSync(claimFile(dir, id), { force: true, recursive: true });
+    writeFileSync(claimFile(dir, id), JSON.stringify({ pid: process.pid, at: Date.now() }), {
+      mode: 0o600,
+      flag: 'wx',
+    });
+  } catch {
+    // An unrecorded claim is left until the working file is old enough.
   }
   const request = readJson(claimed) as HostRequest | undefined;
   // The channel is written by the container, so the shape is not a given: the host broker's own checks run on
@@ -748,35 +780,57 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
   return request;
 }
 
+/** Recovered requests, split by whether their outcome is unknown. */
+export interface ReclaimedRequests {
+  readonly unknown: string[];
+  readonly answered: string[];
+}
+
 /**
  * Report requests left behind by a host that exited after claiming them.
  *
  * A working file is never executed again: the host may have run the action before it died, so the
- * only safe outcome is an explicit unknown-outcome error for the caller to retry manually.
+ * only safe outcome is an explicit unknown-outcome error for the caller to retry manually. A live
+ * claim within the backstop is left alone.
  *
  * @param dir - the channel directory.
- * @returns the ids that were retired.
+ * @returns the retired ids, split into unknown and already-answered.
  */
-export function reclaimAbandoned(dir: string): string[] {
-  if (!existsSync(dir)) return [];
-  const retired: string[] = [];
+export function reclaimAbandoned(dir: string): ReclaimedRequests {
+  const result: ReclaimedRequests = { unknown: [], answered: [] };
+  if (!existsSync(dir)) return result;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith('.json.working')) continue;
     const id = entry.name.slice(0, -'.json.working'.length);
-    if (readResult(dir, id) === undefined) {
-      try {
-        writeResult(dir, id, {
-          error: `request ${id} was left by a host that exited; outcome unknown; run it again`,
-        });
-      } catch {
-        // Leave the working file for the next sweep rather than aborting the queue.
-        continue;
-      }
+    const claim = readJson(claimFile(dir, id)) as { pid?: unknown; at?: unknown } | undefined;
+    const pid =
+      typeof claim?.pid === 'number' &&
+      Number.isInteger(claim.pid) &&
+      claim.pid > 0 &&
+      claim.pid <= 0x7fffffff
+        ? claim.pid
+        : undefined;
+    const at = typeof claim?.at === 'number' ? claim.at : undefined;
+    const age = at === undefined ? Date.now() - statSync(join(dir, entry.name)).mtimeMs : Date.now() - at;
+    if (pid !== undefined && pidAlive(pid) && age <= CLAIM_MAX_AGE_MS) continue;
+    if (pid === undefined && age <= CLAIM_MAX_AGE_MS) continue;
+    if (readResult(dir, id) !== undefined) {
+      removeRequest(dir, id);
+      result.answered.push(id);
+      continue;
+    }
+    try {
+      writeResult(dir, id, {
+        error: `request ${id} was left by a host that exited; outcome unknown; run it again`,
+      });
+    } catch {
+      // Leave the working file for the next sweep rather than aborting the queue.
+      continue;
     }
     removeRequest(dir, id);
-    retired.push(id);
+    result.unknown.push(id);
   }
-  return retired;
+  return result;
 }
 
 /**
@@ -792,6 +846,7 @@ export function removeRequest(dir: string, id: string): void {
   // directory, and nothing ever removed it.
   rmSync(join(dir, `${id}.json`), { force: true, recursive: true });
   rmSync(join(dir, `${id}.json.working`), { force: true, recursive: true });
+  rmSync(claimFile(dir, id), { force: true, recursive: true });
 }
 
 /**
@@ -835,14 +890,28 @@ export async function waitForResult(
  * @returns the parsed value, or `undefined`.
  */
 function readJson(file: string): unknown {
+  let fd: number | undefined;
   try {
-    const stat = lstatSync(file);
-    // lstat on purpose: a symlink is not a request, and following one would read a file outside the
-    // channel. A FIFO would block here forever, with no error and no log line to explain it.
-    if (!stat.isFile() || stat.size > MAX_BODY_CHARS * 4) return undefined;
-    return JSON.parse(readFileSync(file, 'utf8'));
+    fd = openSync(
+      file,
+      fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0),
+    );
+    const stat = fstatSync(fd);
+    const limit = MAX_BODY_CHARS * 4;
+    if (!stat.isFile() || stat.size > limit) return undefined;
+    const buffer = Buffer.allocUnsafe(stat.size + 1);
+    let bytesRead = 0;
+    while (bytesRead < buffer.length) {
+      const count = readSync(fd, buffer, bytesRead, buffer.length - bytesRead, null);
+      if (count === 0) break;
+      bytesRead += count;
+    }
+    if (bytesRead > stat.size) return undefined;
+    return JSON.parse(buffer.toString('utf8', 0, bytesRead));
   } catch {
     return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 
