@@ -742,8 +742,7 @@ describe('the host action route', () => {
         repo: 'acme/widget',
         values: { number: 7 },
       });
-      const old = new Date(Date.now() - 10 * 60_000);
-      utimesSync(join(dir, `${id}.json`), old, old);
+      writeFileSync(join(dir, `${id}.deadline`), JSON.stringify({ at: Date.now() - 1_000 }));
       assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
       assert.equal(existsSync(marker), false);
       assert.match(readResult(dir, id)?.error ?? '', /expired/u);

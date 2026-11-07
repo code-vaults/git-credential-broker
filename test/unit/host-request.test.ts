@@ -277,6 +277,19 @@ describe('the host request channel', () => {
     assert.equal(readResult(dir, id), undefined);
   });
 
+  it('does not recover a claim after the caller deadline', async () => {
+    const id = writeRequest(dir, GOOD, 10);
+    assert.ok(claimRequest(dir, id));
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    assert.ok(dead.pid !== undefined);
+    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.deepEqual(reclaimAbandoned(dir), [id]);
+    assert.equal(listRequests(dir).includes(id), false);
+    assert.match(readResult(dir, id)?.error ?? '', /expired/u);
+    removeRequest(dir, id);
+  });
+
   it('does not retry a claim whose action already started', () => {
     const id = writeRequest(dir, GOOD);
     assert.ok(claimRequest(dir, id));

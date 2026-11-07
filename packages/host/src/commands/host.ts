@@ -25,6 +25,7 @@ import {
   listRequests,
   markRequestStarted,
   reclaimAbandoned,
+  requestExpired,
   readHostBroker,
   claimRequest,
   removeRequest,
@@ -33,7 +34,6 @@ import {
   writeResult,
   HOST,
   REPOSITORY,
-  ANSWER_TIMEOUT_MS,
   type HostRequest,
   type HostResult,
   buildGhArgv,
@@ -349,7 +349,7 @@ async function sweep(
         warn(`skipped ${id}: unreadable, or another host broker has it`);
       continue;
     }
-    if (requestAge > ANSWER_TIMEOUT_MS) {
+    if (requestExpired(dir, id, requestAge)) {
       writeResult(dir, id, { error: `request ${id} expired before the host claimed it` });
       removeRequest(dir, id);
       warn(`refused ${id}: it expired before the host claimed it`);

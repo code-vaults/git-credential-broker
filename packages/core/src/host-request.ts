@@ -465,13 +465,37 @@ export function requestProblems(request: HostRequest): string[] {
  * @returns the identifier the answer will carry.
  * @throws {Error} when the request is not one the host broker would accept.
  */
-export function writeRequest(dir: string, request: HostRequest): string {
+export function writeRequest(
+  dir: string,
+  request: HostRequest,
+  timeoutMs: number = ANSWER_TIMEOUT_MS,
+): string {
   const problems = requestProblems(request);
   if (problems.length > 0) throw new Error(problems.join('; '));
   mkdirSync(dir, { recursive: true });
   const id = newId();
   writeJsonAtomic(join(dir, `${id}.json`), { v: 1, id, createdAt: new Date().toISOString(), ...request });
+  try {
+    writeJsonAtomic(deadlineFile(dir, id), { at: Date.now() + timeoutMs });
+  } catch (error) {
+    rmSync(join(dir, `${id}.json`), { force: true, recursive: true });
+    throw error;
+  }
   return id;
+}
+
+/**
+ * Whether a request has outlived the caller's deadline.
+ *
+ * @param dir - the channel directory.
+ * @param id - the request id.
+ * @param fallbackAge - age to use for a request written before the sidecar existed.
+ * @returns true when the caller has stopped waiting.
+ */
+export function requestExpired(dir: string, id: string, fallbackAge: number): boolean {
+  const deadline = readJson(deadlineFile(dir, id)) as { at?: unknown } | undefined;
+  if (typeof deadline?.at === 'number') return Date.now() > deadline.at;
+  return fallbackAge > ANSWER_TIMEOUT_MS;
 }
 
 /**
@@ -724,6 +748,11 @@ function doneFile(dir: string, id: string): string {
   return join(dir, `${id}.done`);
 }
 
+/** The caller's queue deadline, so a late recovery cannot run after it gave up. */
+function deadlineFile(dir: string, id: string): string {
+  return join(dir, `${id}.deadline`);
+}
+
 /** The marker written immediately before a claimed request may execute. */
 function startedFile(dir: string, id: string): string {
   return join(dir, `${id}.started`);
@@ -950,6 +979,12 @@ export function reclaimAbandoned(dir: string): string[] {
         stale = !pidAlive(pid) || (at !== undefined && Date.now() - at > CLAIM_MAX_AGE_MS);
       }
       if (!stale) continue;
+      if (requestExpired(dir, id, Date.now() - statSync(claimed).mtimeMs)) {
+        writeResult(dir, id, { error: `request ${id} expired before it could be recovered` });
+        removeRequest(dir, id);
+        reclaimed.push(id);
+        continue;
+      }
       if (markerPresent(startedFile(dir, id))) {
         try {
           writeResult(dir, id, {
@@ -1021,6 +1056,7 @@ export function removeRequest(dir: string, id: string): void {
   rmSync(join(dir, `${id}.reclaims`), { force: true, recursive: true });
   rmSync(doneFile(dir, id), { force: true, recursive: true });
   rmSync(startedFile(dir, id), { force: true, recursive: true });
+  rmSync(deadlineFile(dir, id), { force: true, recursive: true });
 }
 
 /**

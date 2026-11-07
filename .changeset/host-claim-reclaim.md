@@ -11,3 +11,6 @@ the result, a malformed reclaim counter cannot bypass the retry cap, and a faile
 back to the writable request's age; the unrecorded fallback is one hour, covering run:watch.
 A request recorded as started is never retried after an unknown broker death: recovery returns an
 error result instead of risking a duplicate write.
+A request records its caller deadline, and recovery refuses to run it after that deadline or after a
+.started marker exists, so a late or competing recovery cannot produce work the caller stopped
+waiting for.

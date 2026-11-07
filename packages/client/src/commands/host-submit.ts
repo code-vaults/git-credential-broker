@@ -83,16 +83,16 @@ async function exchange(
     fail(`the host broker does not advertise ${needed} support; restart it from this gcb-host version`);
   }
 
-  let id: string;
-  try {
-    id = writeRequest(dir, request);
-  } catch (error) {
-    fail((error as Error).message);
-  }
   const configured = Number(process.env['GCB_HOST_TIMEOUT_MS']);
   if (Number.isInteger(configured) && configured > 0) {
     timeoutMs = configured;
     if (claimedTimeoutMs !== undefined) claimedTimeoutMs = Math.min(claimedTimeoutMs, configured);
+  }
+  let id: string;
+  try {
+    id = writeRequest(dir, request, timeoutMs);
+  } catch (error) {
+    fail((error as Error).message);
   }
   let answer = await waitForAnswer(dir, id, timeoutMs, claimedTimeoutMs);
   if (answer === undefined) answer = await waitForResult(dir, id, 300, 50);
