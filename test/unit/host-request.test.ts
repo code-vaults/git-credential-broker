@@ -270,6 +270,17 @@ describe('the host request channel', () => {
     removeResult(dir, id);
   });
 
+  it('keeps the working file when an existing result is unreadable', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: 0x7fffffff, at: Date.now() }));
+    mkdirSync(join(dir, `${id}.result.json`));
+    assert.deepEqual(reclaimAbandoned(dir), { unknown: [], answered: [] });
+    assert.ok(existsSync(join(dir, `${id}.json.working`)));
+    removeRequest(dir, id);
+    rmSync(join(dir, `${id}.result.json`), { recursive: true, force: true });
+  });
+
   it('keeps an existing answer when retiring the working copy', () => {
     const id = writeRequest(dir, GOOD);
     assert.ok(claimRequest(dir, id));
