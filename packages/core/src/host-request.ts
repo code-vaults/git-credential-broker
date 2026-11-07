@@ -12,16 +12,9 @@
  * another appearing back.
  */
 import {
-  closeSync,
-  constants as fsConstants,
   existsSync,
-  fstatSync,
-  futimesSync,
-  linkSync,
   mkdirSync,
-  openSync,
   readFileSync,
-  readSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -32,8 +25,6 @@ import {
 import { realpathSync } from 'node:fs';
 import { lstatSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
-
-import { randomUUID } from 'node:crypto';
 
 import { canonicalPath } from './paths.ts';
 
@@ -465,37 +456,13 @@ export function requestProblems(request: HostRequest): string[] {
  * @returns the identifier the answer will carry.
  * @throws {Error} when the request is not one the host broker would accept.
  */
-export function writeRequest(
-  dir: string,
-  request: HostRequest,
-  timeoutMs: number = ANSWER_TIMEOUT_MS,
-): string {
+export function writeRequest(dir: string, request: HostRequest): string {
   const problems = requestProblems(request);
   if (problems.length > 0) throw new Error(problems.join('; '));
   mkdirSync(dir, { recursive: true });
   const id = newId();
   writeJsonAtomic(join(dir, `${id}.json`), { v: 1, id, createdAt: new Date().toISOString(), ...request });
-  try {
-    writeJsonAtomic(deadlineFile(dir, id), { at: Date.now() + timeoutMs });
-  } catch (error) {
-    rmSync(join(dir, `${id}.json`), { force: true, recursive: true });
-    throw error;
-  }
   return id;
-}
-
-/**
- * Whether a request has outlived the caller's deadline.
- *
- * @param dir - the channel directory.
- * @param id - the request id.
- * @param fallbackAge - age to use for a request written before the sidecar existed.
- * @returns true when the caller has stopped waiting.
- */
-export function requestExpired(dir: string, id: string, fallbackAge: number): boolean {
-  const deadline = readJson(deadlineFile(dir, id)) as { at?: unknown } | undefined;
-  if (typeof deadline?.at === 'number') return Date.now() > deadline.at;
-  return fallbackAge > ANSWER_TIMEOUT_MS;
 }
 
 /**
@@ -710,96 +677,6 @@ export function writeResult(dir: string, id: string, result: HostResult): void {
     ...(typeof result.stderr === 'string' ? { stderr: clampJsonStream(result.stderr) } : {}),
   };
   writeJsonAtomic(join(dir, `${id}.result.json`), { v: 1, id, ...bounded });
-  try {
-    writeJsonAtomic(doneFile(dir, id), { at: Date.now() });
-  } catch {
-    // The result is already published; a missing marker must not keep the claim alive.
-  }
-}
-
-/** The rename→record window; longer than run:watch's 3,300 s timeout plus setup/termination. */
-const CLAIM_NO_RECORD_MS = 3_600_000;
-
-/** A backstop for a reboot that reused the recorded pid. Longer than the longest catalogued timeout. */
-const CLAIM_MAX_AGE_MS = 2 * 60 * 60_000;
-
-/** The sidecar recording who claimed a request. */
-/**
- * Whether a marker path exists, treating a path that exists but cannot be inspected as present.
- *
- * @param file - the marker path.
- * @returns true for present or unreadable; false only for ENOENT.
- */
-function markerPresent(file: string): boolean {
-  try {
-    lstatSync(file);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ENOENT';
-  }
-}
-
-function claimFile(dir: string, id: string): string {
-  return join(dir, `${id}.claim`);
-}
-
-/** Evidence that the work finished, kept until the host removes the request. */
-function doneFile(dir: string, id: string): string {
-  return join(dir, `${id}.done`);
-}
-
-/** The caller's queue deadline, so a late recovery cannot run after it gave up. */
-function deadlineFile(dir: string, id: string): string {
-  return join(dir, `${id}.deadline`);
-}
-
-/** The marker written immediately before a claimed request may execute. */
-function startedFile(dir: string, id: string): string {
-  return join(dir, `${id}.started`);
-}
-
-/**
- * Refresh a regular file's timestamps without following a symlink or blocking on a FIFO.
- *
- * @param file - the path to touch.
- */
-function touchRegular(file: string): void {
-  let fd: number | undefined;
-  try {
-    fd = openSync(
-      file,
-      fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0),
-    );
-    if (!fstatSync(fd).isFile()) return;
-    const now = new Date();
-    futimesSync(fd, now, now);
-  } catch {
-    // A missing or replaced file simply keeps its old age; recovery stays fail-safe.
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
-}
-
-/**
- * Whether a process is still alive.
- *
- * @param pid - the pid to probe.
- * @returns true when the process exists and this user may signal it.
- */
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
-  }
-}
-
-/** A pid a signal can name: positive, integer, and inside the OS range. */
-function usablePid(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= 0x7fffffff
-    ? value
-    : undefined;
 }
 
 /**
@@ -814,229 +691,92 @@ function usablePid(value: unknown): number | undefined {
  * @returns the request, or undefined when it was gone or is already claimed.
  */
 export function claimRequest(dir: string, id: string): HostRequest | undefined {
-  let lock: string | undefined;
+  const claimed = join(dir, `${id}.json.working`);
   try {
-    lock = acquireReclaimLock(dir, id);
+    renameSync(join(dir, `${id}.json`), claimed);
   } catch {
     return undefined;
   }
-  if (lock === undefined) return undefined;
-  try {
-    const claimed = join(dir, `${id}.json.working`);
-    try {
-      renameSync(join(dir, `${id}.json`), claimed);
-    } catch {
-      return undefined;
-    }
-    try {
-      const claim = claimFile(dir, id);
-      rmSync(claim, { force: true, recursive: true });
-      writeFileSync(claim, JSON.stringify({ pid: process.pid, at: Date.now() }), {
-        mode: 0o600,
-        flag: 'wx',
-      });
-    } catch {
-      // The claim is only needed to reclaim a crashed claim; an unrecorded claim falls back to mtime.
-    }
-    touchRegular(claimed);
-    const request = readJson(claimed) as HostRequest | undefined;
-    const shaped =
-      request !== undefined &&
-      (request.account === undefined || typeof request.account === 'string') &&
-      (request.kind === 'action'
-        ? typeof request.repo === 'string' &&
-          REPOSITORY.test(request.repo) &&
-          typeof request.action === 'string' &&
-          request.values !== null &&
-          typeof request.values === 'object' &&
-          !Array.isArray(request.values)
-        : request.kind === 'edit'
-        ? typeof request.repo === 'string' &&
-          REPOSITORY.test(request.repo) &&
-          Number.isInteger(request.number) &&
-          (request.title === undefined || typeof request.title === 'string') &&
-          (request.body === undefined || typeof request.body === 'string') &&
-          (request.base === undefined || typeof request.base === 'string') &&
-          (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
-        : request.kind === 'review'
-        ? typeof request.repo === 'string' &&
-          REPOSITORY.test(request.repo) &&
-          typeof request.body === 'string' &&
-          Number.isInteger(request.number) &&
-          (request.event === 'approve' || request.event === 'request-changes' || request.event === 'comment') &&
-          (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
-        : request.kind === 'reply'
-        ? typeof request.repo === 'string' &&
-          REPOSITORY.test(request.repo) &&
-          typeof request.body === 'string' &&
-          Number.isInteger(request.number) &&
-          Number.isInteger(request.commentId) &&
-          (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
-        : request.kind === 'fork'
-        ? typeof request.repo === 'string' &&
-          REPOSITORY.test(request.repo) &&
-          (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
-        : typeof request.title === 'string' &&
-          typeof request.body === 'string' &&
-          typeof request.head === 'string' &&
-          typeof request.base === 'string');
-    if (!shaped) {
-      rmSync(claimed, { force: true, recursive: true });
-      rmSync(claimFile(dir, id), { force: true, recursive: true });
-      return undefined;
-    }
-    return request;
-  } finally {
-    rmSync(lock, { force: true, recursive: true });
-  }
-}
-
-/** A reclaim marker older than this is assumed to belong to a crashed reclaimer. */
-const RECLAIM_LOCK_STALE_MS = 5 * 60_000;
-
-/**
- * Take the per-request reclaim lock, so two sweeps cannot requeue the same claim.
- *
- * @param dir - the channel directory.
- * @param id - the request id.
- * @returns the lock path, or undefined when another sweep owns it.
- */
-function acquireReclaimLock(dir: string, id: string): string | undefined {
-  const lock = join(dir, `${id}.reclaim`);
-  const temporary = `${lock}.${String(process.pid)}.${randomUUID()}.tmp`;
-  try {
-    writeFileSync(temporary, String(process.pid), { mode: 0o600, flag: 'wx' });
-    linkSync(temporary, lock);
-    return lock;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    try {
-      if (Date.now() - statSync(lock).mtimeMs > RECLAIM_LOCK_STALE_MS)
-        rmSync(lock, { force: true, recursive: true });
-    } catch {
-      // A vanished lock is retried on the next sweep.
-    }
+  const request = readJson(claimed) as HostRequest | undefined;
+  // The channel is written by the container, so the shape is not a given: the host broker's own checks run on
+  // this next, and a request missing a string field would make them index undefined and take it down.
+  const shaped =
+    request !== undefined &&
+    // Untyped JSON: the file can spell account as an array or a number even though the type cannot.
+    (request.account === undefined || typeof request.account === 'string') &&
+    (request.kind === 'action'
+      ? typeof request.repo === 'string' &&
+        REPOSITORY.test(request.repo) &&
+        typeof request.action === 'string' &&
+        request.values !== null &&
+        typeof request.values === 'object' &&
+        !Array.isArray(request.values)
+      : request.kind === 'edit'
+      ? typeof request.repo === 'string' &&
+        REPOSITORY.test(request.repo) &&
+        Number.isInteger(request.number) &&
+        (request.title === undefined || typeof request.title === 'string') &&
+        (request.body === undefined || typeof request.body === 'string') &&
+        (request.base === undefined || typeof request.base === 'string') &&
+        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
+      : request.kind === 'review'
+      ? typeof request.repo === 'string' &&
+        REPOSITORY.test(request.repo) &&
+        typeof request.body === 'string' &&
+        Number.isInteger(request.number) &&
+        (request.event === 'approve' || request.event === 'request-changes' || request.event === 'comment') &&
+        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
+      : request.kind === 'reply'
+      ? typeof request.repo === 'string' &&
+        REPOSITORY.test(request.repo) &&
+        typeof request.body === 'string' &&
+        Number.isInteger(request.number) &&
+        Number.isInteger(request.commentId) &&
+        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
+      : request.kind === 'fork'
+      ? typeof request.repo === 'string' &&
+        REPOSITORY.test(request.repo) &&
+        (request.host === undefined || (typeof request.host === 'string' && HOST.test(request.host)))
+      : typeof request.title === 'string' &&
+        typeof request.body === 'string' &&
+        typeof request.head === 'string' &&
+        typeof request.base === 'string');
+  if (!shaped) {
+    rmSync(claimed, { force: true, recursive: true });
     return undefined;
-  } finally {
-    rmSync(temporary, { force: true, recursive: true });
   }
+  return request;
 }
 
 /**
- * Record that a claimed request is about to execute.
+ * Report requests left behind by a host that exited after claiming them.
+ *
+ * A working file is never executed again: the host may have run the action before it died, so the
+ * only safe outcome is an explicit unknown-outcome error for the caller to retry manually.
  *
  * @param dir - the channel directory.
- * @param id - the request id.
- */
-export function markRequestStarted(dir: string, id: string): void {
-  writeJsonAtomic(startedFile(dir, id), { at: Date.now() });
-}
-
-/**
- * Put claims abandoned by a crashed host broker back in the queue.
- *
- * The rename in {@link claimRequest} makes exactly one opener win, but a crash after it leaves only a
- * `.working` file. A live claim is left alone; a dead one is renamed back, and a claim with no
- * readable record falls back to the file's age. An answer already written means the work finished and
- * the claim is simply removed, not retried.
- *
- * @param dir - the channel directory.
- * @returns the ids that were reclaimed.
+ * @returns the ids that were retired.
  */
 export function reclaimAbandoned(dir: string): string[] {
   if (!existsSync(dir)) return [];
-  const reclaimed: string[] = [];
+  const retired: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith('.json.working')) continue;
     const id = entry.name.slice(0, -'.json.working'.length);
-    const claimed = join(dir, entry.name);
-    let lock: string | undefined;
-    try {
-      lock = acquireReclaimLock(dir, id);
-    } catch {
-      continue;
-    }
-    if (lock === undefined) continue;
-    try {
-      if (readResult(dir, id) !== undefined || readJson(doneFile(dir, id)) !== undefined) {
-        removeRequest(dir, id);
-        reclaimed.push(id);
-        continue;
-      }
-      const claim = readJson(claimFile(dir, id)) as { pid?: unknown; at?: unknown } | undefined;
-      const pid = usablePid(claim?.pid);
-      const at = typeof claim?.at === 'number' ? claim.at : undefined;
-      let stale: boolean;
-      if (pid === undefined) {
-        let age: number;
-        try {
-          age = Date.now() - statSync(claimed).mtimeMs;
-        } catch {
-          continue;
-        }
-        stale = age >= CLAIM_NO_RECORD_MS;
-      } else {
-        stale = !pidAlive(pid) || (at !== undefined && Date.now() - at > CLAIM_MAX_AGE_MS);
-      }
-      if (!stale) continue;
-      if (requestExpired(dir, id, Date.now() - statSync(claimed).mtimeMs)) {
-        writeResult(dir, id, { error: `request ${id} expired before it could be recovered` });
-        removeRequest(dir, id);
-        reclaimed.push(id);
-        continue;
-      }
-      if (markerPresent(startedFile(dir, id))) {
-        try {
-          writeResult(dir, id, {
-            error: `request ${id} started before its broker exited; outcome unknown, not retrying`,
-          });
-        } catch {
-          // Keep the started claim for the next sweep rather than losing the evidence.
-          continue;
-        }
-        removeRequest(dir, id);
-        reclaimed.push(id);
-        continue;
-      }
-      const countFile = join(dir, `${id}.reclaims`);
-      const rawCount = readJson(countFile);
-      const count =
-        typeof rawCount === 'number' && Number.isInteger(rawCount) && rawCount >= 0 ? rawCount : 0;
-      if (count >= 1) {
-        try {
-          writeResult(dir, id, { error: `request ${id} was reclaimed twice; not retrying` });
-        } catch {
-          // Leave the claim and counter for the next sweep; one failed answer must not abort the queue.
-          continue;
-        }
-        removeRequest(dir, id);
-        reclaimed.push(id);
-        continue;
-      }
+    if (readResult(dir, id) === undefined) {
       try {
-        renameSync(claimed, join(dir, `${id}.json`));
+        writeResult(dir, id, {
+          error: `request ${id} was left by a host that exited; outcome unknown; run it again`,
+        });
       } catch {
+        // Leave the working file for the next sweep rather than aborting the queue.
         continue;
       }
-      // The reclaim lock excludes a new claimant, so the old sidecar can be removed after the
-      // rename; a failed rename keeps it for the next recovery attempt.
-      rmSync(claimFile(dir, id), { force: true, recursive: true });
-      touchRegular(join(dir, `${id}.json`));
-      try {
-        rmSync(countFile, { force: true, recursive: true });
-        writeFileSync(countFile, JSON.stringify(count + 1), { mode: 0o600, flag: 'wx' });
-      } catch {
-        writeResult(dir, id, { error: `could not record the retry count for ${id}` });
-        removeRequest(dir, id);
-        reclaimed.push(id);
-        continue;
-      }
-      reclaimed.push(id);
-    } finally {
-      rmSync(lock, { force: true, recursive: true });
     }
+    removeRequest(dir, id);
+    retired.push(id);
   }
-  return reclaimed;
+  return retired;
 }
 
 /**
@@ -1052,11 +792,6 @@ export function removeRequest(dir: string, id: string): void {
   // directory, and nothing ever removed it.
   rmSync(join(dir, `${id}.json`), { force: true, recursive: true });
   rmSync(join(dir, `${id}.json.working`), { force: true, recursive: true });
-  rmSync(claimFile(dir, id), { force: true, recursive: true });
-  rmSync(join(dir, `${id}.reclaims`), { force: true, recursive: true });
-  rmSync(doneFile(dir, id), { force: true, recursive: true });
-  rmSync(startedFile(dir, id), { force: true, recursive: true });
-  rmSync(deadlineFile(dir, id), { force: true, recursive: true });
 }
 
 /**
@@ -1066,15 +801,6 @@ export function removeRequest(dir: string, id: string): void {
  * @param id - the identifier.
  */
 export function removeResult(dir: string, id: string): void {
-  // If the host has not retired the claim yet, leave completion evidence: the client may consume
-  // the result before the host's own done marker is written.
-  if (existsSync(join(dir, `${id}.json`)) || existsSync(join(dir, `${id}.json.working`))) {
-    try {
-      writeJsonAtomic(doneFile(dir, id), { at: Date.now() });
-    } catch {
-      return;
-    }
-  }
   rmSync(join(dir, `${id}.result.json`), { force: true });
 }
 
@@ -1109,32 +835,14 @@ export async function waitForResult(
  * @returns the parsed value, or `undefined`.
  */
 function readJson(file: string): unknown {
-  let fd: number | undefined;
   try {
-    // Open without following a symlink and without blocking on a FIFO; lstat+read leaves a window
-    // in which the container can replace the entry. The platform may not define O_NOFOLLOW; the
-    // fstat check below still rejects anything that is not a regular file.
-    fd = openSync(
-      file,
-      fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0),
-    );
-    const stat = fstatSync(fd);
-    const limit = MAX_BODY_CHARS * 4;
-    if (!stat.isFile() || stat.size > limit) return undefined;
-    // One byte past the checked size both catches growth and keeps sidecar reads proportional.
-    const buffer = Buffer.allocUnsafe(stat.size + 1);
-    let bytesRead = 0;
-    while (bytesRead < buffer.length) {
-      const count = readSync(fd, buffer, bytesRead, buffer.length - bytesRead, null);
-      if (count === 0) break;
-      bytesRead += count;
-    }
-    if (bytesRead > stat.size) return undefined;
-    return JSON.parse(buffer.toString('utf8', 0, bytesRead));
+    const stat = lstatSync(file);
+    // lstat on purpose: a symlink is not a request, and following one would read a file outside the
+    // channel. A FIFO would block here forever, with no error and no log line to explain it.
+    if (!stat.isFile() || stat.size > MAX_BODY_CHARS * 4) return undefined;
+    return JSON.parse(readFileSync(file, 'utf8'));
   } catch {
     return undefined;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
   }
 }
 

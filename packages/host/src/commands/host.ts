@@ -23,9 +23,7 @@ import {
   discoverCheckouts,
   findGitDir,
   listRequests,
-  markRequestStarted,
   reclaimAbandoned,
-  requestExpired,
   readHostBroker,
   claimRequest,
   removeRequest,
@@ -34,6 +32,7 @@ import {
   writeResult,
   HOST,
   REPOSITORY,
+  ANSWER_TIMEOUT_MS,
   type HostRequest,
   type HostResult,
   buildGhArgv,
@@ -331,7 +330,7 @@ async function sweep(
 ): Promise<number> {
   let answered = 0;
   for (const id of reclaimAbandoned(dir)) {
-    warn(`reclaimed ${id}: its claim was recovered`);
+    warn(`reclaimed ${id}: outcome unknown; the request was left by a host that exited`);
   }
   for (const id of listRequests(dir)) {
     // Claimed, not read: two host brokers — a service and a hand-run --once — would otherwise both act on the
@@ -349,7 +348,7 @@ async function sweep(
         warn(`skipped ${id}: unreadable, or another host broker has it`);
       continue;
     }
-    if (requestExpired(dir, id, requestAge)) {
+    if (requestAge > ANSWER_TIMEOUT_MS) {
       writeResult(dir, id, { error: `request ${id} expired before the host claimed it` });
       removeRequest(dir, id);
       warn(`refused ${id}: it expired before the host claimed it`);
@@ -370,19 +369,6 @@ async function sweep(
       writeResult(dir, id, { error: 'invalid proxy in the request' });
       removeRequest(dir, id);
       warn(`refused ${id}: invalid proxy`);
-      answered += 1;
-      continue;
-    }
-    try {
-      markRequestStarted(dir, id);
-    } catch (error) {
-      try {
-        writeResult(dir, id, { error: `could not record that the request started: ${(error as Error).message}` });
-      } catch {
-        warn(`refused ${id}: could not record its execution start or the error result`);
-      }
-      removeRequest(dir, id);
-      warn(`refused ${id}: could not record its execution start`);
       answered += 1;
       continue;
     }

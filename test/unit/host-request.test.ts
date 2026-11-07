@@ -6,8 +6,7 @@
  * while it waits.
  */
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,16 +16,15 @@ import { pullRequestUrl } from '../../packages/host/src/commands/host.ts';
 import {
   channelDir,
   claimRequest,
-  reclaimAbandoned,
   clearHostBroker,
   discoverCheckouts,
   findGitDir,
   listRequests,
-  markRequestStarted,
   newId,
   readHostBroker,
   readRequest,
   readResult,
+  reclaimAbandoned,
   removeRequest,
   removeResult,
   requestProblems,
@@ -44,22 +42,10 @@ describe('what the channel refuses to read', () => {
     const root = mkdtempSync(join(tmpdir(), 'channel-kind-'));
     const dir = channelDir(join(root, '.git'));
     mkdirSync(dir, { recursive: true });
-    // A directory is the non-regular file a test can make without blocking; readJson now rejects it
-    // after an O_NONBLOCK, O_NOFOLLOW open rather than by lstat.
+    // A directory is the non-regular file a test can make without blocking; the guard is the same lstat
+    // check that a FIFO needs, and a FIFO would block open(2) before any assertion ran.
     mkdirSync(join(dir, 'host-broker.json'), { recursive: true });
     assert.equal(readHostBroker(dir), undefined, 'a directory is not a marker');
-    rmSync(root, { recursive: true, force: true });
-  });
-
-  it('refuses a request larger than the body budget', () => {
-    const root = mkdtempSync(join(tmpdir(), 'channel-oversized-'));
-    const channel = channelDir(join(root, '.git'));
-    mkdirSync(channel, { recursive: true });
-    writeFileSync(
-      join(channel, 'oversized.json'),
-      JSON.stringify({ kind: 'edit', repo: 'acme/widget', number: 1, body: 'x'.repeat(300_000) }),
-    );
-    assert.equal(readRequest(channel, 'oversized'), undefined);
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -229,186 +215,22 @@ describe('the host request channel', () => {
     removeRequest(dir, id);
   });
 
-  it('reclaims a claim whose process is gone', () => {
+  it('retires a claimed request with an unknown-outcome error', () => {
     const id = writeRequest(dir, GOOD);
     assert.ok(claimRequest(dir, id));
-    const dead = spawnSync(process.execPath, ['-e', '']);
-    assert.ok(dead.pid !== undefined);
-    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
-    assert.deepEqual(reclaimAbandoned(dir), [id]);
-    assert.ok(listRequests(dir).includes(id), 'the request is back in the queue');
-    assert.equal(existsSync(join(dir, `${id}.json.working`)), false);
-    removeRequest(dir, id);
-  });
-
-  it('leaves a claim alone while another reclaimer holds the lock', () => {
-    const id = writeRequest(dir, GOOD);
-    assert.ok(claimRequest(dir, id));
-    const dead = spawnSync(process.execPath, ['-e', '']);
-    assert.ok(dead.pid !== undefined);
-    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
-    writeFileSync(join(dir, `${id}.reclaim`), String(process.pid));
-    assert.deepEqual(reclaimAbandoned(dir), []);
-    assert.equal(existsSync(join(dir, `${id}.json.working`)), true);
-    rmSync(join(dir, `${id}.reclaim`));
-    assert.deepEqual(reclaimAbandoned(dir), [id]);
-    removeRequest(dir, id);
-  });
-
-  it('writes completion evidence when the client consumes a result without a done marker', () => {
-    const id = writeRequest(dir, GOOD);
-    assert.ok(claimRequest(dir, id));
-    writeResult(dir, id, { stdout: 'ok', stderr: '', code: 0 });
-    rmSync(join(dir, `${id}.done`));
-    removeResult(dir, id);
-    assert.ok(existsSync(join(dir, `${id}.done`)));
-    assert.deepEqual(reclaimAbandoned(dir), [id]);
-    assert.equal(listRequests(dir).includes(id), false);
-    removeRequest(dir, id);
-  });
-
-  it('does not requeue a completed request after the client consumed the result', () => {
-    const id = writeRequest(dir, GOOD);
-    assert.ok(claimRequest(dir, id));
-    writeResult(dir, id, { stdout: 'ok', stderr: '', code: 0 });
-    removeResult(dir, id);
-    assert.deepEqual(reclaimAbandoned(dir), [id]);
-    assert.equal(listRequests(dir).includes(id), false);
-    assert.equal(readResult(dir, id), undefined);
-  });
-
-  it('does not recover a claim after the caller deadline', async () => {
-    const id = writeRequest(dir, GOOD, 10);
-    assert.ok(claimRequest(dir, id));
-    const dead = spawnSync(process.execPath, ['-e', '']);
-    assert.ok(dead.pid !== undefined);
-    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
-    await new Promise((resolve) => setTimeout(resolve, 25));
-    assert.deepEqual(reclaimAbandoned(dir), [id]);
-    assert.equal(listRequests(dir).includes(id), false);
-    assert.match(readResult(dir, id)?.error ?? '', /expired/u);
-    removeRequest(dir, id);
-  });
-
-  it('does not retry a claim whose action already started', () => {
-    const id = writeRequest(dir, GOOD);
-    assert.ok(claimRequest(dir, id));
-    markRequestStarted(dir, id);
-    const dead = spawnSync(process.execPath, ['-e', '']);
-    assert.ok(dead.pid !== undefined);
-    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
     assert.deepEqual(reclaimAbandoned(dir), [id]);
     assert.equal(listRequests(dir).includes(id), false);
     assert.match(readResult(dir, id)?.error ?? '', /outcome unknown/u);
     removeRequest(dir, id);
-  });
-
-  it('treats an unreadable started marker as started', () => {
-    const id = writeRequest(dir, GOOD);
-    assert.ok(claimRequest(dir, id));
-    mkdirSync(join(dir, `${id}.started`));
-    const dead = spawnSync(process.execPath, ['-e', '']);
-    assert.ok(dead.pid !== undefined);
-    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
-    assert.deepEqual(reclaimAbandoned(dir), [id]);
-    assert.equal(listRequests(dir).includes(id), false);
-    assert.match(readResult(dir, id)?.error ?? '', /outcome unknown/u);
-    removeRequest(dir, id);
-  });
-
-  it('ignores a malformed reclaim counter', () => {
-    const id = writeRequest(dir, GOOD);
-    assert.ok(claimRequest(dir, id));
-    const dead = spawnSync(process.execPath, ['-e', '']);
-    assert.ok(dead.pid !== undefined);
-    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
-    writeFileSync(join(dir, `${id}.reclaims`), JSON.stringify('5'));
-    assert.deepEqual(reclaimAbandoned(dir), [id]);
-    assert.ok(listRequests(dir).includes(id));
-    removeRequest(dir, id);
-  });
-
-  it('starts the no-record age at the claim, not at the original request', () => {
-    const id = writeRequest(dir, GOOD);
-    const old = new Date(Date.now() - 61 * 60_000);
-    utimesSync(join(dir, `${id}.json`), old, old);
-    assert.ok(claimRequest(dir, id));
-    rmSync(join(dir, `${id}.claim`));
-    assert.deepEqual(reclaimAbandoned(dir), []);
-    removeRequest(dir, id);
-  });
-
-  it('does not reclaim a young claim whose sidecar is missing', () => {
-    const id = writeRequest(dir, GOOD);
-    assert.ok(claimRequest(dir, id));
-    rmSync(join(dir, `${id}.claim`));
-    assert.deepEqual(reclaimAbandoned(dir), []);
-    assert.ok(existsSync(join(dir, `${id}.json.working`)));
-    removeRequest(dir, id);
-  });
-
-  it('does not write through a symlinked claim sidecar', () => {
-    const id = writeRequest(dir, GOOD);
-    const target = join(dir, 'target.txt');
-    writeFileSync(target, 'untouched');
-    symlinkSync(target, join(dir, `${id}.claim`));
-    assert.ok(claimRequest(dir, id));
-    assert.equal(readFileSync(target, 'utf8'), 'untouched');
-    removeRequest(dir, id);
-    rmSync(target, { force: true });
-  });
-
-  it('resets a requeued request to eligible age', () => {
-    const id = writeRequest(dir, GOOD);
-    assert.ok(claimRequest(dir, id));
-    const old = new Date(Date.now() - 10 * 60_000);
-    utimesSync(join(dir, `${id}.json.working`), old, old);
-    const dead = spawnSync(process.execPath, ['-e', '']);
-    assert.ok(dead.pid !== undefined);
-    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
-    assert.deepEqual(reclaimAbandoned(dir), [id]);
-    assert.ok(Date.now() - statSync(join(dir, `${id}.json`)).mtimeMs < 2_000);
-    removeRequest(dir, id);
-  });
-
-  it('reclaims an unrecorded claim once it is old enough', () => {
-    const id = writeRequest(dir, GOOD);
-    assert.ok(claimRequest(dir, id));
-    rmSync(join(dir, `${id}.claim`));
-    const old = new Date(Date.now() - 3_601_000);
-    utimesSync(join(dir, `${id}.json.working`), old, old);
-    assert.deepEqual(reclaimAbandoned(dir), [id]);
-    removeRequest(dir, id);
-  });
-
-  it('reclaims an old claim even when its pid is alive, and stops after two', () => {
-    const id = writeRequest(dir, GOOD);
-    assert.ok(claimRequest(dir, id));
-    writeFileSync(
-      join(dir, `${id}.claim`),
-      JSON.stringify({ pid: process.pid, at: Date.now() - 2 * 60 * 60_000 - 1 }),
-    );
-    assert.deepEqual(reclaimAbandoned(dir), [id]);
-
-    assert.ok(claimRequest(dir, id));
-    const dead = spawnSync(process.execPath, ['-e', '']);
-    assert.ok(dead.pid !== undefined);
-    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: dead.pid, at: Date.now() }));
-    assert.deepEqual(reclaimAbandoned(dir), [id]);
-    assert.match(readResult(dir, id)?.error ?? '', /reclaimed twice/u);
-    assert.equal(listRequests(dir).includes(id), false);
     removeResult(dir, id);
   });
 
-  it('leaves a live claim alone and retires an answered one', () => {
+  it('keeps an existing answer when retiring the working copy', () => {
     const id = writeRequest(dir, GOOD);
     assert.ok(claimRequest(dir, id));
-    assert.deepEqual(reclaimAbandoned(dir), [], 'the claimant is this process');
-    assert.ok(existsSync(join(dir, `${id}.json.working`)));
-
     writeResult(dir, id, { stdout: 'ok', stderr: '', code: 0 });
     assert.deepEqual(reclaimAbandoned(dir), [id]);
-    assert.equal(existsSync(join(dir, `${id}.json.working`)), false);
+    assert.equal(listRequests(dir).includes(id), false);
     assert.equal(readResult(dir, id)?.stdout, 'ok');
     removeResult(dir, id);
   });
