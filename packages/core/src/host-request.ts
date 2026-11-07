@@ -16,6 +16,7 @@ import {
   constants as fsConstants,
   existsSync,
   fstatSync,
+  linkSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -30,6 +31,8 @@ import {
 import { realpathSync } from 'node:fs';
 import { lstatSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
+
+import { randomUUID } from 'node:crypto';
 
 import { canonicalPath } from './paths.ts';
 
@@ -811,37 +814,55 @@ export function reclaimAbandoned(dir: string): ReclaimedRequests {
       claim.pid <= 0x7fffffff
         ? claim.pid
         : undefined;
-    const at = typeof claim?.at === 'number' ? claim.at : undefined;
-    let age: number;
-    if (at === undefined) {
+    if (pid !== undefined) {
+      if (pidAlive(pid)) continue;
+    } else {
+      let age: number;
       try {
         age = Date.now() - statSync(join(dir, entry.name)).mtimeMs;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
         throw error;
       }
-    } else {
-      age = Date.now() - at;
-    }
-    if (pid !== undefined && pidAlive(pid) && age <= CLAIM_MAX_AGE_MS) continue;
-    if (pid === undefined && age <= CLAIM_MAX_AGE_MS) continue;
-    if (readResult(dir, id) !== undefined) {
-      removeRequest(dir, id);
-      result.answered.push(id);
-      continue;
+      if (age <= CLAIM_MAX_AGE_MS) continue;
     }
     try {
-      writeResult(dir, id, {
+      const wrote = writeResultIfAbsent(dir, id, {
         error: `request ${id} was left by a host that exited; outcome unknown; run it again`,
       });
+      removeRequest(dir, id);
+      (wrote ? result.unknown : result.answered).push(id);
     } catch {
       // Leave the working file for the next sweep rather than aborting the queue.
       continue;
     }
-    removeRequest(dir, id);
-    result.unknown.push(id);
   }
   return result;
+}
+
+/**
+ * Publish a result only when no answer exists yet.
+ *
+ * @param dir - the channel directory.
+ * @param id - the request id.
+ * @param result - the answer to publish.
+ * @returns true when this write won; false when a genuine answer was already there.
+ */
+function writeResultIfAbsent(dir: string, id: string, result: HostResult): boolean {
+  const path = join(dir, `${id}.result.json`);
+  mkdirSync(dir, { recursive: true });
+  const payload = `${JSON.stringify({ v: 1, id, ...result }, null, 2)}\n`;
+  const temporary = `${path}.${String(process.pid)}.${randomUUID()}.tmp`;
+  writeFileSync(temporary, payload, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+  try {
+    linkSync(temporary, path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw error;
+  } finally {
+    rmSync(temporary, { force: true, recursive: true });
+  }
 }
 
 /**

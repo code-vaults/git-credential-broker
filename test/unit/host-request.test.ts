@@ -215,6 +215,18 @@ describe('the host request channel', () => {
     removeRequest(dir, id);
   });
 
+  it('never retires a claim whose owner is still alive, even when old', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    writeFileSync(
+      join(dir, `${id}.claim`),
+      JSON.stringify({ pid: process.pid, at: Date.now() - 2 * 60 * 60_000 }),
+    );
+    assert.deepEqual(reclaimAbandoned(dir), { unknown: [], answered: [] });
+    assert.ok(existsSync(join(dir, `${id}.json.working`)));
+    removeRequest(dir, id);
+  });
+
   it('retires an unrecorded claim only after the backstop', () => {
     const id = writeRequest(dir, GOOD);
     assert.ok(claimRequest(dir, id));
