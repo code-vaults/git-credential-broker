@@ -775,6 +775,7 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
         typeof request.base === 'string');
   if (!shaped) {
     rmSync(claimed, { force: true, recursive: true });
+    rmSync(claimFile(dir, id), { force: true, recursive: true });
     return undefined;
   }
   return request;
@@ -811,7 +812,17 @@ export function reclaimAbandoned(dir: string): ReclaimedRequests {
         ? claim.pid
         : undefined;
     const at = typeof claim?.at === 'number' ? claim.at : undefined;
-    const age = at === undefined ? Date.now() - statSync(join(dir, entry.name)).mtimeMs : Date.now() - at;
+    let age: number;
+    if (at === undefined) {
+      try {
+        age = Date.now() - statSync(join(dir, entry.name)).mtimeMs;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        throw error;
+      }
+    } else {
+      age = Date.now() - at;
+    }
     if (pid !== undefined && pidAlive(pid) && age <= CLAIM_MAX_AGE_MS) continue;
     if (pid === undefined && age <= CLAIM_MAX_AGE_MS) continue;
     if (readResult(dir, id) !== undefined) {

@@ -6,7 +6,7 @@
  * while it waits.
  */
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -213,6 +213,18 @@ describe('the host request channel', () => {
     assert.equal(read?.kind, 'fork');
     assert.equal(read !== undefined && read.kind === 'fork' ? read.repo : undefined, 'acme/widget');
     removeRequest(dir, id);
+  });
+
+  it('retires an unrecorded claim only after the backstop', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    rmSync(join(dir, `${id}.claim`), { force: true });
+    assert.deepEqual(reclaimAbandoned(dir), { unknown: [], answered: [] });
+    const old = new Date(Date.now() - 2 * 60 * 60_000);
+    utimesSync(join(dir, `${id}.json.working`), old, old);
+    assert.deepEqual(reclaimAbandoned(dir).unknown, [id]);
+    removeRequest(dir, id);
+    removeResult(dir, id);
   });
 
   it('leaves a working request alone while its claim owner is alive', () => {
