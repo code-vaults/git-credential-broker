@@ -853,8 +853,8 @@ function writeResultIfAbsent(dir: string, id: string, result: HostResult): boole
   mkdirSync(dir, { recursive: true });
   const payload = `${JSON.stringify({ v: 1, id, ...result }, null, 2)}\n`;
   const temporary = `${path}.${String(process.pid)}.${randomUUID()}.tmp`;
-  writeFileSync(temporary, payload, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
   try {
+    writeFileSync(temporary, payload, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
     linkSync(temporary, path);
     return true;
   } catch (error) {
