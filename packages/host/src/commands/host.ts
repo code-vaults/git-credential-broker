@@ -333,6 +333,9 @@ async function sweep(
   for (const id of reclaimed.unknown) {
     warn(`reclaimed ${id}: outcome unknown; the request was left by a host that exited`);
   }
+  for (const id of reclaimed.answered) {
+    warn(`recovered ${id}: an answer was already present`);
+  }
   for (const id of listRequests(dir)) {
     // Claimed, not read: two host brokers — a service and a hand-run --once — would otherwise both act on the
     // same request and each create it, under the person's name.

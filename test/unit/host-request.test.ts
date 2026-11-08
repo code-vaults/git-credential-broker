@@ -6,7 +6,7 @@
  * while it waits.
  */
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -218,10 +218,10 @@ describe('the host request channel', () => {
   it('never retires a claim whose owner is still alive, even when old', () => {
     const id = writeRequest(dir, GOOD);
     assert.ok(claimRequest(dir, id));
-    writeFileSync(
-      join(dir, `${id}.claim`),
-      JSON.stringify({ pid: process.pid, at: Date.now() - 2 * 60 * 60_000 }),
-    );
+    const record = JSON.parse(readFileSync(join(dir, `${id}.claim`), 'utf8')) as { pid: number };
+    assert.equal(record.pid, process.pid);
+    const old = new Date(Date.now() - 2 * 60 * 60_000);
+    utimesSync(join(dir, `${id}.json.working`), old, old);
     assert.deepEqual(reclaimAbandoned(dir), { unknown: [], answered: [] });
     assert.ok(existsSync(join(dir, `${id}.json.working`)));
     removeRequest(dir, id);

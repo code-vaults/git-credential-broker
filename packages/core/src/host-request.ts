@@ -687,18 +687,7 @@ export function writeResult(dir: string, id: string, result: HostResult): void {
   writeJsonAtomic(join(dir, `${id}.result.json`), { v: 1, id, ...bounded });
 }
 
-/**
- * Take a request, so that nobody else can act on it.
- *
- * Acting first and removing it afterwards is not enough: opening a pull request is not idempotent, and the
- * window between the two is as long as the program takes. The rename is atomic, so exactly one caller wins,
- * and a claimed name is not a request id, so a sweep in another process does not see it again.
- *
- * @param dir - the channel directory.
- * @param id - the request id.
- * @returns the request, or undefined when it was gone or is already claimed.
- */
-/** How long a claim may stay live before a recovery sweep treats it as abandoned. */
+/** How long an unrecorded claim may sit before a recovery sweep reports it as abandoned. */
 const CLAIM_MAX_AGE_MS = 60 * 60_000;
 
 /** The sidecar recording which process claimed a request. */
@@ -716,6 +705,17 @@ function pidAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Take a request, so that nobody else can act on it.
+ *
+ * Acting first and removing it afterwards is not enough: opening a pull request is not idempotent, and the
+ * window between the two is as long as the program takes. The rename is atomic, so exactly one caller wins,
+ * and a claimed name is not a request id, so a sweep in another process does not see it again.
+ *
+ * @param dir - the channel directory.
+ * @param id - the request id.
+ * @returns the request, or undefined when it was gone or is already claimed.
+ */
 export function claimRequest(dir: string, id: string): HostRequest | undefined {
   const claimed = join(dir, `${id}.json.working`);
   try {
@@ -725,7 +725,7 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
   }
   try {
     rmSync(claimFile(dir, id), { force: true, recursive: true });
-    writeFileSync(claimFile(dir, id), JSON.stringify({ pid: process.pid, at: Date.now() }), {
+    writeFileSync(claimFile(dir, id), JSON.stringify({ pid: process.pid }), {
       mode: 0o600,
       flag: 'wx',
     });
@@ -794,8 +794,8 @@ export interface ReclaimedRequests {
  * Report requests left behind by a host that exited after claiming them.
  *
  * A working file is never executed again: the host may have run the action before it died, so the
- * only safe outcome is an explicit unknown-outcome error for the caller to retry manually. A live
- * claim within the backstop is left alone.
+ * only safe outcome is an explicit unknown-outcome error for the caller to verify. A live claim is
+ * left alone at any age; the backstop applies only when no pid was recorded.
  *
  * @param dir - the channel directory.
  * @returns the retired ids, split into unknown and already-answered.
@@ -806,7 +806,7 @@ export function reclaimAbandoned(dir: string): ReclaimedRequests {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith('.json.working')) continue;
     const id = entry.name.slice(0, -'.json.working'.length);
-    const claim = readJson(claimFile(dir, id)) as { pid?: unknown; at?: unknown } | undefined;
+    const claim = readJson(claimFile(dir, id)) as { pid?: unknown } | undefined;
     const pid =
       typeof claim?.pid === 'number' &&
       Number.isInteger(claim.pid) &&
@@ -927,6 +927,9 @@ export async function waitForResult(
 function readJson(file: string): unknown {
   let fd: number | undefined;
   try {
+    // Open without following a symlink and without blocking on a FIFO; lstat+read leaves a window
+    // in which the container can replace the entry. The platform may not define O_NOFOLLOW; the
+    // fstat check below still rejects anything that is not a regular file.
     fd = openSync(
       file,
       fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0),
@@ -934,6 +937,7 @@ function readJson(file: string): unknown {
     const stat = fstatSync(fd);
     const limit = MAX_BODY_CHARS * 4;
     if (!stat.isFile() || stat.size > limit) return undefined;
+    // One byte past the checked size both catches growth and keeps sidecar reads proportional.
     const buffer = Buffer.allocUnsafe(stat.size + 1);
     let bytesRead = 0;
     while (bytesRead < buffer.length) {
