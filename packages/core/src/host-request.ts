@@ -19,7 +19,6 @@ import {
   linkSync,
   mkdirSync,
   openSync,
-  readFileSync,
   readdirSync,
   readSync,
   renameSync,
@@ -206,24 +205,58 @@ export function findGitDir(from: string): string | undefined {
  * @param dir - the directory to look in, and not above.
  * @returns the git directory, or `undefined`.
  */
+/** How many bytes a .git pointer may contain. */
+const MAX_GIT_POINTER_BYTES = 4096;
+
+/**
+ * Read a .git pointer without following a symlink or blocking on a special file.
+ *
+ * @param file - the pointer path.
+ * @returns its text, or undefined when it is not a readable regular file.
+ */
+function readGitPointer(file: string): string | undefined {
+  let fd: number | undefined;
+  try {
+    fd = openSync(
+      file,
+      fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0),
+    );
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > MAX_GIT_POINTER_BYTES) return undefined;
+    const buffer = Buffer.allocUnsafe(stat.size + 1);
+    let bytesRead = 0;
+    while (bytesRead < buffer.length) {
+      const count = readSync(fd, buffer, bytesRead, buffer.length - bytesRead, null);
+      if (count === 0) break;
+      bytesRead += count;
+    }
+    if (bytesRead > stat.size) return undefined;
+    return buffer.toString('utf8', 0, bytesRead);
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
 function gitDirAt(dir: string): string | undefined {
   const candidate = join(dir, '.git');
-  if (!existsSync(candidate)) return undefined;
-  // A symlinked .git is not a thing git makes: a submodule and a worktree use a file.
-  if (lstatSync(candidate).isSymbolicLink()) return undefined;
-  if (statSync(candidate).isDirectory()) {
-    // Followed by statSync on purpose, and then checked: a symlink to any directory was a way to publish
-    // a container-chosen path as a channel. A git directory has a HEAD; anything else is not one.
-    return existsSync(join(candidate, 'HEAD')) ? candidate : undefined;
-  }
-  // A worktree or submodule records its real git directory in a file.
-  let text: string;
+  let entry;
   try {
-    // Written by the container, so it can be unreadable, or gone between the check above and here.
-    text = readFileSync(candidate, 'utf8');
+    entry = lstatSync(candidate);
   } catch {
     return undefined;
   }
+  // A symlinked .git is not a thing git makes: a submodule and a worktree use a file.
+  if (entry.isSymbolicLink()) return undefined;
+  if (entry.isDirectory()) {
+    // A git directory has a HEAD; anything else is not one.
+    return existsSync(join(candidate, 'HEAD')) ? candidate : undefined;
+  }
+  // A worktree or submodule records its real git directory in a file. Open it once, without following
+  // a symlink or blocking on a FIFO.
+  const text = readGitPointer(candidate);
+  if (text === undefined) return undefined;
   const match = /^gitdir:\s*(.+)$/m.exec(text);
   const pointed = match?.[1]?.trim();
   if (pointed === undefined) return undefined;

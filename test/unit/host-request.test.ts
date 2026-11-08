@@ -6,6 +6,7 @@
  * while it waits.
  */
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -46,6 +47,15 @@ describe('what the channel refuses to read', () => {
     // check that a FIFO needs, and a FIFO would block open(2) before any assertion ran.
     mkdirSync(join(dir, 'host-broker.json'), { recursive: true });
     assert.equal(readHostBroker(dir), undefined, 'a directory is not a marker');
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('does not block on a FIFO .git pointer', { skip: process.platform === 'win32' }, () => {
+    const root = mkdtempSync(join(tmpdir(), 'channel-fifo-'));
+    const fifo = join(root, '.git');
+    const made = spawnSync('mkfifo', [fifo]);
+    assert.equal(made.status, 0, String(made.stderr));
+    assert.equal(findGitDir(root), undefined);
     rmSync(root, { recursive: true, force: true });
   });
 
