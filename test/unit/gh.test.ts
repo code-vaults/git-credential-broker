@@ -79,8 +79,12 @@ describe('runGhAction', { skip: onWindows }, () => {
       fs.writeFileSync(release, '');
       while (!fs.existsSync(actionStarted)) await new Promise(setImmediate);
       mock.timers.tick(100);
-      const result = await Promise.race([pending, delay(1_000).then(() => 'still-running')]);
-      assert.notEqual(result, 'still-running', 'the action must use the remaining 100 ms');
+      const result = await Promise.race([
+        pending,
+        delay(1_000).then(() => {
+          throw new Error('the action must use the remaining 100 ms');
+        }),
+      ]);
       assert.equal(result.timedOut, true);
       assert.equal(fs.existsSync(actionStarted), true, 'the probe succeeded before the action started');
     } finally {
