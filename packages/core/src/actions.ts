@@ -411,6 +411,9 @@ const ISSUE_COMMENT_EDIT: GhAction = {
   },
 };
 
+// GitHub: PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}; a PR conversation comment is an issue comment
+const PR_COMMENT_EDIT: GhAction = { ...ISSUE_COMMENT_EDIT, name: 'pr:comment-edit' };
+
 // GitHub: GET /repos/{owner}/{repo}/issues/{issue_number}
 const ISSUE_VIEW: GhAction = {
   name: 'issue:view',
@@ -670,6 +673,7 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:checks': PR_CHECKS,
   'pr:status': PR_STATUS,
   'pr:comment': PR_COMMENT,
+  'pr:comment-edit': PR_COMMENT_EDIT,
   'pr:review': PR_REVIEW,
   'pr:review-by-id': PR_REVIEW_BY_ID,
   'issue:create': ISSUE_CREATE,

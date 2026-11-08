@@ -801,6 +801,7 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr checks` | `pull_requests: read`, `checks: read`, `statuses: read` |
 | `pr status` | `pull_requests: read`, `checks: read`, `statuses: read` |
 | `pr comment` | `pull_requests: write` |
+| `api` | `issues: write` |
 | `pr review` | `pull_requests: write` |
 | `pr review --id` (`pr:review-by-id`) | `pull_requests: read` |
 | `issue create` | `issues: write` |
