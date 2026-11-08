@@ -132,6 +132,8 @@ describe('runGhAction', { skip: onWindows }, () => {
     for (const env of [
       { PATH: process.env.PATH, HTTPS_PROXY: 'http://user:secret@proxy.example:8080' },
       { PATH: process.env.PATH, HTTPS_PROXY: 'user:secret@proxy.example:8080' },
+      { PATH: process.env.PATH, HTTPS_PROXY: 'proxy:port with space' },
+      { PATH: process.env.PATH, http_proxy: 'http://user:secret@proxy.example:8080' },
     ]) {
       await assert.rejects(
         runGhAction({
@@ -157,6 +159,17 @@ describe('runGhAction', { skip: onWindows }, () => {
       }),
       /--jq is unavailable.*credentials/u,
     );
+    const allowed = shim('echo jq-ok');
+    const result = await runGhAction({
+      action: 'pr:view',
+      values: { number: 7, jq: '.body' },
+      repo: 'acme/widget',
+      token: 'app-token',
+      ghPath: allowed,
+      env: { PATH: process.env.PATH, HTTPS_PROXY: 'http://proxy.example:8080' },
+    });
+    assert.equal(result.code, 0);
+    assert.equal(result.stdout, 'jq-ok\n');
   });
 
   it('still runs a non-jq action through a credentialed proxy', async () => {

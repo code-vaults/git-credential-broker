@@ -170,21 +170,28 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   const host = options.host?.toLowerCase() ?? 'github.com';
   const usesJq = options.values['jq'] !== undefined;
   const source = options.env ?? process.env;
-  if (usesJq) {
-    const probe: NodeJS.ProcessEnv = {};
-    for (const key of PROXY_ENV_KEYS) {
-      const value = source[key];
-      if (value !== undefined && value !== '') probe[key] = value;
-    }
-    applyProxyChoice(probe, options.proxy);
-    if (proxyUrlHasCredentials(probe)) {
-      throw new Error(
-        '--jq is unavailable when the proxy URL contains credentials; drop it and filter the JSON locally (--json selects fields where supported)',
-      );
-    }
+  const env: NodeJS.ProcessEnv = {
+    GH_HOST: host,
+    NO_COLOR: '1',
+    GH_PROMPT_DISABLED: '1',
+    GH_NO_UPDATE_NOTIFIER: '1',
+    GIT_TERMINAL_PROMPT: '0',
+    PATH: source['PATH'] ?? '',
+  };
+  for (const key of PROXY_ENV_KEYS) {
+    const value = source[key];
+    if (value !== undefined && value !== '') env[key] = value;
+  }
+  applyProxyChoice(env, options.proxy);
+  if (usesJq && proxyUrlHasCredentials(env)) {
+    throw new Error(
+      '--jq is unavailable when the proxy URL contains credentials; drop it and filter the JSON locally (--json selects fields where supported)',
+    );
   }
   const home = mkdtempSync(path.join(tmpdir(), 'gcb-gh-'));
   const configDir = path.join(home, 'gh');
+  env.HOME = home;
+  env.GH_CONFIG_DIR = configDir;
   mkdirSync(configDir, { recursive: true });
   if (usesJq) {
     // gh runs --jq in the same process, so a caller expression could print GH_TOKEN via env.
@@ -200,22 +207,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
       throw error;
     }
   }
-  const env: NodeJS.ProcessEnv = {
-    HOME: home,
-    GH_CONFIG_DIR: configDir,
-    GH_HOST: host,
-    NO_COLOR: '1',
-    GH_PROMPT_DISABLED: '1',
-    GH_NO_UPDATE_NOTIFIER: '1',
-    GIT_TERMINAL_PROMPT: '0',
-    PATH: source['PATH'] ?? '',
-  };
-  for (const key of PROXY_ENV_KEYS) {
-    const value = source[key];
-    if (value !== undefined && value !== '') env[key] = value;
-  }
   if (!usesJq) env.GH_TOKEN = options.token;
-  applyProxyChoice(env, options.proxy);
 
   const action = getGhAction(options.action);
   const timeoutMs = options.timeoutMs ?? action.timeoutSeconds * 1000;
