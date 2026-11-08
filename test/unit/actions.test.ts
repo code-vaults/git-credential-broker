@@ -32,6 +32,7 @@ describe('gh action catalog', () => {
       'issue:create',
       'issue:edit',
       'issue:comment',
+      'issue:comment-edit',
       'issue:close',
       'issue:reopen',
       'issue:lock',
@@ -90,6 +91,8 @@ describe('gh action catalog', () => {
     });
     assert.deepEqual(getGhAction('issue:view').permissions, { issues: 'read' });
     assert.deepEqual(getGhAction('issue:list').permissions, { issues: 'read' });
+    assert.deepEqual(getGhAction('issue:comment-edit').permissions, { issues: 'write' });
+    assert.equal(getGhAction('issue:comment-edit').appUser, true);
     assert.deepEqual(getGhAction('release:list').permissions, { contents: 'read' });
     assert.deepEqual(getGhAction('release:view').permissions, { contents: 'read' });
     assert.deepEqual(getGhAction('workflow:list').permissions, { actions: 'read' });
@@ -206,6 +209,15 @@ describe('buildGhArgv', () => {
       buildGhArgv('workflow:view', { workflow: 'ci.yml', ref: 'main', yaml: true }, 'acme/widget'),
       ['workflow', 'view', '--ref', 'main', '--yaml', '--repo', 'acme/widget', '--', 'ci.yml'],
     );
+    assert.deepEqual(
+      buildGhArgv('issue:comment-edit', { commentId: 123, body: 'secret' }, 'acme/widget', '/tmp/body.json'),
+      ['api', '--method', 'PATCH', 'repos/acme/widget/issues/comments/123', '--input', '/tmp/body.json'],
+    );
+    assert.deepEqual(
+      buildGhArgv('issue:comment-edit', { commentId: 123, body: 'secret' }, 'acme/widget'),
+      ['api', '--method', 'PATCH', 'repos/acme/widget/issues/comments/123'],
+    );
+
     assert.deepEqual(buildGhArgv('workflow:list', { all: true, limit: 10 }, 'acme/widget'), [
       'workflow',
       'list',

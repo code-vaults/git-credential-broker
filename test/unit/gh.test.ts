@@ -186,6 +186,22 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.equal(result.stdout, 'ok\n');
   });
 
+  it('passes an issue-comment edit body through an input file', async () => {
+    const gh = shim('printf "ARGS=%s\n" "$*"; while [ "$#" -gt 0 ]; do if [ "$1" = "--input" ]; then cat "$2"; fi; shift; done');
+    const result = await runGhAction({
+      action: 'issue:comment-edit',
+      values: { commentId: 123, body: 'secret edit' },
+      repo: 'acme/widget',
+      token: 'app-token',
+      ghPath: gh,
+      env: { PATH: process.env.PATH },
+    });
+    assert.equal(result.code, 0);
+    assert.match(result.stdout, /api --method PATCH repos\/acme\/widget\/issues\/comments\/123 --input/u);
+    assert.match(result.stdout, /"body":"secret edit"/u);
+    assert.doesNotMatch(result.stdout, /ARGS=.*secret edit/u);
+  });
+
   it('SIGKILLs after the grace period when the process ignores SIGTERM', async () => {
     const timeoutMs = 2_000;
     const gh = shim('trap "" TERM; while :; do sleep 1; done');

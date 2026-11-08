@@ -806,6 +806,7 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `issue create` | `issues: write` |
 | `issue edit` | `issues: write` |
 | `issue comment` | `issues: write` |
+| `api` | `issues: write` |
 | `issue close` | `issues: write` |
 | `issue reopen` | `issues: write` |
 | `issue lock` | `issues: write` |

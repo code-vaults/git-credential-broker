@@ -44,8 +44,10 @@ export interface FlagSpec {
 
 /** A fixed `gh api` request, with only typed values substituted. */
 export interface ApiSpec {
-  readonly method: 'GET';
+  readonly method: 'GET' | 'PATCH';
   readonly endpoint: string;
+  /** When set, the action sends `{ body }` as JSON through gh api --input. */
+  readonly body?: 'issue-comment';
 }
 
 /** One allowed `gh` action. */
@@ -393,6 +395,22 @@ const ISSUE_REOPEN: GhAction = {
   target: 'issue',
 };
 
+// GitHub: PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
+const ISSUE_COMMENT_EDIT: GhAction = {
+  name: 'issue:comment-edit',
+  command: ['api'],
+  positionals: [{ name: 'commentId', type: 'number', required: true }],
+  flags: [{ name: 'body', type: 'string', required: true, nonEmpty: true }],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+  api: {
+    method: 'PATCH',
+    endpoint: 'repos/{owner}/{repo}/issues/comments/{commentId}',
+    body: 'issue-comment',
+  },
+};
+
 // GitHub: GET /repos/{owner}/{repo}/issues/{issue_number}
 const ISSUE_VIEW: GhAction = {
   name: 'issue:view',
@@ -657,6 +675,7 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'issue:create': ISSUE_CREATE,
   'issue:edit': ISSUE_EDIT,
   'issue:comment': ISSUE_COMMENT,
+  'issue:comment-edit': ISSUE_COMMENT_EDIT,
   'issue:close': ISSUE_CLOSE,
   'issue:reopen': ISSUE_REOPEN,
   'issue:lock': ISSUE_LOCK,
@@ -803,6 +822,16 @@ export function buildGhArgv(
       continue;
     }
 
+    if (flag.name === 'body' && action.api?.body !== undefined) {
+      const text = asString(value, flag.name);
+      if (flag.nonEmpty === true && text.trim() === '') {
+        throw new ActionError(`${name} needs a non-empty --${flag.name}`);
+      }
+      if (bodyFile !== undefined) argv.push('--input', bodyFile);
+      present.add(flag.name);
+      provided.add(flag.name);
+      continue;
+    }
     if (flag.name === 'body' && bodyFile !== undefined) {
       const text = asString(value, flag.name);
       if (flag.nonEmpty === true && text.trim() === '') {

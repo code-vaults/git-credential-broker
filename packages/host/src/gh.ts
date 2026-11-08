@@ -231,8 +231,10 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
     // argv, so this is about the free-form body rather than everything the person wrote.
     let bodyFile: string | undefined;
     if (typeof options.values['body'] === 'string') {
-      bodyFile = path.join(home, 'body.md');
-      writeFileSync(bodyFile, options.values['body'], { mode: 0o600 });
+      const apiBody = action.api?.body !== undefined;
+      bodyFile = path.join(home, apiBody ? 'body.json' : 'body.md');
+      const content = apiBody ? JSON.stringify({ body: options.values['body'] }) : options.values['body'];
+      writeFileSync(bodyFile, content, { mode: 0o600 });
     }
     const argv = buildGhArgv(action.name, options.values, options.repo, bodyFile);
     return await new Promise<GhRunResult>((resolve) => {

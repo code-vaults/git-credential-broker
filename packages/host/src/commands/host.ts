@@ -643,7 +643,18 @@ async function openOne(
         });
         return result;
       };
-      return body === undefined ? invoke() : withBodyFile(body, invoke);
+      if (body === undefined) return invoke();
+      if (action.api?.body !== undefined) {
+        const scratch = mkdtempSync(join(tmpdir(), 'gcb-api-body-'));
+        try {
+          const bodyFile = join(scratch, 'body.json');
+          writeFileSync(bodyFile, JSON.stringify({ body }), { mode: 0o600 });
+          return await invoke(bodyFile);
+        } finally {
+          rmSync(scratch, { recursive: true, force: true });
+        }
+      }
+      return withBodyFile(body, invoke);
     };
 
     let hostBlock: ReturnType<typeof blockFor>;
