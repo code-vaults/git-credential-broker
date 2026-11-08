@@ -822,7 +822,7 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `release list` | `contents: read` |
 | `release view` | `contents: read` |
 | `workflow list` | `actions: read` |
-| `workflow view` | `actions: read` |
+| `workflow view` | `actions: read`, `contents: read` |
 <!-- action-permissions:end -->
 
 `pr status` with `--repo` reports the app identity's relevant pull requests and review requests

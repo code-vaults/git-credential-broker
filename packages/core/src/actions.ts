@@ -63,6 +63,8 @@ export interface GhAction {
   readonly bodyRequiredWith?: readonly string[];
   /** Flag pairs that may not be present together. */
   readonly conflicts?: readonly (readonly [string, string])[];
+  /** When the first flag is present, the second must be present too. */
+  readonly requires?: readonly (readonly [string, string])[];
   /** This action only reads; publicRead may run it on a verified public repository with the route's public-read token. */
   readonly readOnly?: boolean;
   readonly permissions: Readonly<Partial<Record<GhPermission, PermissionLevel>>>;
@@ -564,7 +566,7 @@ const RUN_LIST: GhAction = {
   appUser: true,
 };
 
-/** GitHub: GET /repos/{owner}/{repo}/releases */
+// GitHub: GET /repos/{owner}/{repo}/releases
 const RELEASE_LIST: GhAction = {
   name: 'release:list',
   command: ['release', 'list'],
@@ -584,7 +586,7 @@ const RELEASE_LIST: GhAction = {
   appUser: true,
 };
 
-/** GitHub: GET /repos/{owner}/{repo}/releases/tags/{tag} */
+// GitHub: GET /repos/{owner}/{repo}/releases/tags/{tag}
 const RELEASE_VIEW: GhAction = {
   name: 'release:view',
   command: ['release', 'view'],
@@ -593,7 +595,6 @@ const RELEASE_VIEW: GhAction = {
     { name: 'json', type: 'string' },
     { name: 'jq', type: 'string' },
     { name: 'template', type: 'string' },
-    { name: 'web', type: 'boolean' },
   ],
   permissions: { contents: 'read' },
   timeoutSeconds: 120,
@@ -601,7 +602,7 @@ const RELEASE_VIEW: GhAction = {
   appUser: true,
 };
 
-/** GitHub: GET /repos/{owner}/{repo}/actions/workflows */
+// GitHub: GET /repos/{owner}/{repo}/actions/workflows
 const WORKFLOW_LIST: GhAction = {
   name: 'workflow:list',
   command: ['workflow', 'list'],
@@ -619,17 +620,17 @@ const WORKFLOW_LIST: GhAction = {
   appUser: true,
 };
 
-/** GitHub: GET /repos/{owner}/{repo}/actions/workflows/{workflow_id} */
+// GitHub: GET /repos/{owner}/{repo}/actions/workflows/{workflow_id} (and contents for --yaml/--ref)
 const WORKFLOW_VIEW: GhAction = {
   name: 'workflow:view',
   command: ['workflow', 'view'],
-  positionals: [{ name: 'workflow', type: 'string' }],
+  positionals: [{ name: 'workflow', type: 'string', required: true }],
   flags: [
     { name: 'ref', type: 'string' },
-    { name: 'web', type: 'boolean' },
     { name: 'yaml', type: 'boolean' },
   ],
-  permissions: { actions: 'read' },
+  requires: [['ref', 'yaml']],
+  permissions: { actions: 'read', contents: 'read' },
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
@@ -850,6 +851,11 @@ export function buildGhArgv(
   for (const [left, right] of action.conflicts ?? []) {
     if (present.has(left) && present.has(right)) {
       throw new ActionError(`${name} does not allow --${left} with --${right}`);
+    }
+  }
+  for (const [left, right] of action.requires ?? []) {
+    if (present.has(left) && !present.has(right)) {
+      throw new ActionError(`${name} needs --${right} with --${left}`);
     }
   }
 
