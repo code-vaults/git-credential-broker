@@ -7,7 +7,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -395,7 +395,7 @@ describe('finding the checkouts to serve', () => {
     );
     assert.equal(
       found.find((entry) => entry.repo.endsWith('/shell'))?.dir,
-      channelDir(join(root, 'parent', '.git', 'modules', 'shell')),
+      channelDir(realpathSync(join(root, 'parent', '.git', 'modules', 'shell'))),
     );
     rmSync(root, { recursive: true, force: true });
   });

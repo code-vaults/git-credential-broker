@@ -449,7 +449,7 @@ actions include issue create/edit/comment/close/reopen and pull request close/re
 merge action. For `repo fork`, review replies, reviews, pull request edit, issue edit/comment and any
 request that names `--repo` explicitly — every review always carries its repository, even when
 derived from origin — it checks the repository against the broker config's allowlist (pass
-`--config`), except a `readOnly` action with `allowPublicRead` on a verified public repository, or a catalogued action on the parent of an allowlisted fork with `allowFork`. An
+`--config`), except a `readOnly` action with `allowPublicRead`, or a catalogued action on the parent of an allowlisted fork with `allowFork` (see the configuration table). An
 explicit `--repo` needs no checkout of that repository; without it, the checkout decides.
 `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
