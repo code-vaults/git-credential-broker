@@ -808,7 +808,8 @@ function pullRequestNumber(value: unknown): number | undefined {
         const credential: Credential = {
           username: 'x-access-token',
           password: person,
-          expiresAt: now() + 3_600_000,
+          // personalToken() cached this token with the expiry GitHub returned; do not invent one.
+          expiresAt: cachedPersonToken?.until ?? now() + 3_600_000,
         };
         tokens.set(request.full, credential);
         return { ...credential, cached: false };
