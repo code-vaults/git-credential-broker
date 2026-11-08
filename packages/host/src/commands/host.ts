@@ -674,7 +674,7 @@ async function openOne(
       }
     }
 
-    return personRun(host, request.repo, allowed, async (host) =>
+    return personRun(host, request.repo, allowedByFork ? () => true : allowed, async (host) =>
       runAction(forkEnv(request.proxy, request.account, host)),
     );
   }
