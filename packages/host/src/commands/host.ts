@@ -596,6 +596,14 @@ async function openOne(
       return { error: (error as Error).message };
     }
 
+    if (request.values['jq'] !== undefined) {
+      return {
+        error:
+          '--jq is unavailable through the host broker; drop it and filter the JSON locally ' +
+          '(--json selects fields where supported)',
+      };
+    }
+
     const runAction = async (env: NodeJS.ProcessEnv): Promise<HostResult> => {
       const deadline = Date.now() + action.timeoutSeconds * 1_000;
       if (action.target === 'issue') {

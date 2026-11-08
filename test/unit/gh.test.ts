@@ -127,6 +127,65 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.match(result.stdout, /github\.com:\n    oauth_token: app-token/);
   });
 
+  it('refuses jq when the proxy URL carries credentials, including scheme-less URLs', async () => {
+    const gh = shim('echo SHOULD_NOT_RUN');
+    for (const env of [
+      { PATH: process.env.PATH, HTTPS_PROXY: 'http://user:secret@proxy.example:8080' },
+      { PATH: process.env.PATH, HTTPS_PROXY: 'user:secret@proxy.example:8080' },
+      { PATH: process.env.PATH, HTTPS_PROXY: 'proxy:port with space' },
+      { PATH: process.env.PATH, http_proxy: 'http://user:secret@proxy.example:8080' },
+    ]) {
+      await assert.rejects(
+        runGhAction({
+          action: 'pr:view',
+          values: { number: 7, jq: '.body' },
+          repo: 'acme/widget',
+          token: 'app-token',
+          ghPath: gh,
+          env,
+        }),
+        /--jq is unavailable.*credentials/u,
+      );
+    }
+    await assert.rejects(
+      runGhAction({
+        action: 'pr:view',
+        values: { number: 7, jq: '.body' },
+        repo: 'acme/widget',
+        token: 'app-token',
+        ghPath: gh,
+        proxy: 'http://user:secret@proxy.example:8080',
+        env: { PATH: process.env.PATH },
+      }),
+      /--jq is unavailable.*credentials/u,
+    );
+    const allowed = shim('echo jq-ok');
+    const result = await runGhAction({
+      action: 'pr:view',
+      values: { number: 7, jq: '.body' },
+      repo: 'acme/widget',
+      token: 'app-token',
+      ghPath: allowed,
+      env: { PATH: process.env.PATH, HTTPS_PROXY: 'http://proxy.example:8080' },
+    });
+    assert.equal(result.code, 0);
+    assert.equal(result.stdout, 'jq-ok\n');
+  });
+
+  it('still runs a non-jq action through a credentialed proxy', async () => {
+    const gh = shim('echo ok');
+    const result = await runGhAction({
+      action: 'pr:view',
+      values: { number: 7 },
+      repo: 'acme/widget',
+      token: 'app-token',
+      ghPath: gh,
+      env: { PATH: process.env.PATH, HTTPS_PROXY: 'http://user:secret@proxy.example:8080' },
+    });
+    assert.equal(result.code, 0);
+    assert.equal(result.stdout, 'ok\n');
+  });
+
   it('SIGKILLs after the grace period when the process ignores SIGTERM', async () => {
     const timeoutMs = 2_000;
     const gh = shim('trap "" TERM; while :; do sleep 1; done');

@@ -69,6 +69,11 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 
 ## Rules that are not obvious from the code
 
+- **`--jq` is caller code running inside gh, so it can read gh's environment.** The token is kept in
+  the isolated config when jq is present. The app route refuses `--jq` when a proxy URL carries a
+  username or password; the host action route refuses it outright because it runs gh with the
+  selected account environment. Do not "fix" either side by adding one variable at a time.
+
 - **Only cover the deployment shapes this project actually supports.** The supported shapes are
   the installed `gcb-client` in the container, the installed `gcb-host` (or a staged commit with
   its production dependencies) on the host, the rendered sidecar, and a source checkout with a
