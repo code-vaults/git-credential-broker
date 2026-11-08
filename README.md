@@ -646,6 +646,7 @@ Per host, keyed exactly as git reports it (`github.com`, or `host:port` for othe
 | `allowInsecureHttp` | Default `false`. Permit a plaintext `http` remote for this host. |
 | `allowPublicRead` | Default `false`. Let explicit `readOnly` actions run on a repository verified public without an allowlist entry, on both the app and host routes. The app identity uses a metadata-only token and requires the App to be installed with metadata read. Bare `--as-user` uses the authorized person token; `--as-user <login>` uses the host account token. Both may have private access; an exhausted 403/429 is reported as a rate limit, a plain 403 as a refusal, never as a private repository. |
 | `allowForkPush` | Default `false`. Mint a credential for a **public** fork whose parent/source is an allowlisted repository. The App must be installed on the fork owner. |
+| `allowFork` | Default `false`. Allow a catalogued action on the parent/source of an allowlisted fork, after GitHub confirms the relationship. This lets a fork entry authorize an upstream issue or pull request without listing the upstream separately. |
 
 `github-app`: `clientId` (preferred `iss`), `appId` (fallback), `privateKeyPath` or `privateKeyPem`,
 `permissions`, `apiBaseUrl` (GitHub Enterprise, must be HTTPS), `apiVersion`, `installationCacheSeconds`,

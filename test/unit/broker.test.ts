@@ -42,7 +42,7 @@ function makeHarness(
   providerOverride?: Provider,
   allowInsecureHttp?: boolean,
   auditPath: string | null = null,
-  options: { allowPublicRead?: boolean; allowForkPush?: boolean } = {},
+  options: { allowPublicRead?: boolean; allowForkPush?: boolean; allowFork?: boolean } = {},
 ): Harness {
   const block: StaticHostConfig = {
     provider: 'static',
@@ -828,6 +828,30 @@ describe('broker actions', () => {
     });
     assert.equal(response.ok, false);
     assert.equal(calls, 0);
+  });
+
+  it('allows an action on the parent of an allowlisted fork', async () => {
+    let called = false;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      isForkOf: async (owner, repo, bases) =>
+        owner === 'alice' && repo === 'widget' && bases.includes('acme/widget'),
+      runAction: async () => {
+        called = true;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(['alice/widget'], provider, false, null, { allowFork: true });
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'pr:view',
+      values: { number: 7 },
+    });
+    assert.equal(response.ok, true);
+    assert.equal(called, true);
   });
 
   it('does not let a fork credential opt-in authorize catalog actions', async () => {

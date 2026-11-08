@@ -629,12 +629,43 @@ function pullRequestNumber(value: unknown): number | undefined {
   return Number.isInteger(number) && number > 0 ? number : undefined;
 }
 
+  /**
+   * Whether this app is installed on a specific repository.
+   *
+   * @param owner - the repository owner.
+   * @param repo - the repository name.
+   * @returns true when GitHub reports an installation for the repository.
+   */
+  async function isRepositoryInstalled(owner: string, repo: string): Promise<boolean> {
+    const jwt = signAppJwt({ privateKeyPem: keyPem, iss, nowMs: now() });
+    const response = await fetchImpl(`${api}/repos/${owner}/${repo}/installation`, {
+      method: 'GET',
+      headers: {
+        accept: 'application/vnd.github+json',
+        authorization: `Bearer ${jwt}`,
+        'x-github-api-version': apiVersion,
+        'user-agent': 'gcb',
+      },
+    });
+    if (response.status === 404) return false;
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`GitHub API GET /repos/${owner}/${repo}/installation failed with ${response.status}: ${text.slice(0, 200)}`);
+    }
+    return true;
+  }
+
   return {
     name: 'github-app',
 
     async runAction(request) {
       const spec = getGhAction(request.action);
       const identity = request.identity ?? 'app';
+      if (identity === 'app' && !(await isRepositoryInstalled(request.owner, request.repo))) {
+        throw new ProviderConfigError(
+          `the app is not installed on ${request.owner}/${request.repo}; use --as-user, or install the app there`,
+        );
+      }
       let token = '';
       let minted = false;
       if (request.publicRead === true && identity === 'user') {

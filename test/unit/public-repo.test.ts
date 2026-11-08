@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { isPublicRepository, withRepositoryResponse } from '../../packages/host/src/public-repo.ts';
+import { isForkOfRepository, isPublicRepository, withRepositoryResponse } from '../../packages/host/src/public-repo.ts';
 import { ProviderConfigError } from '../../packages/core/src/errors.ts';
 
 /** Build the small response shape the check consumes. */
@@ -32,6 +32,32 @@ describe('the unauthenticated public repository check', () => {
     assert.equal(result, true);
     assert.equal(requested, 'https://ghe.example/api/v3/repos/acme/widget');
     assert.equal(version, '2022-11-28');
+  });
+
+  it('confirms a fork relationship through parent or source', async () => {
+    const body = { fork: true, parent: { full_name: 'Upstream/Widget' }, source: { full_name: 'Upstream/Widget' } };
+    assert.equal(
+      await isForkOfRepository(async () => response(200, body), 'https://api.github.com', 'alice/widget', 'upstream/widget'),
+      true,
+    );
+    assert.equal(
+      await isForkOfRepository(
+        async () => response(200, { fork: false, parent: { full_name: 'upstream/widget' } }),
+        'https://api.github.com',
+        'alice/widget',
+        'upstream/widget',
+      ),
+      false,
+    );
+    assert.equal(
+      await isForkOfRepository(
+        async () => response(200, { fork: true, parent: { full_name: 'other/widget' } }),
+        'https://api.github.com',
+        'alice/widget',
+        'upstream/widget',
+      ),
+      false,
+    );
   });
 
   it('returns false for a private or missing repository', async () => {
