@@ -54,6 +54,29 @@ export interface GhRunOptions {
  * @param options - action, values, repository and token.
  * @returns the bounded process result.
  */
+/**
+ * Whether any proxy URL in an environment carries a username or password.
+ *
+ * jq can read the environment, so a credentialed proxy URL would expose its secret to the expression.
+ *
+ * @param env - the environment gh will receive.
+ * @returns true when a proxy URL has credentials.
+ */
+function proxyUrlHasCredentials(env: NodeJS.ProcessEnv): boolean {
+  for (const key of PROXY_ENV_KEYS) {
+    if (key === 'NODE_USE_ENV_PROXY' || key.toLowerCase() === 'no_proxy') continue;
+    const value = env[key];
+    if (value === undefined || value === '') continue;
+    try {
+      const url = new URL(value);
+      if (url.username !== '' || url.password !== '') return true;
+    } catch {
+      // Not a URL we can inspect; gh will report the proxy failure itself.
+    }
+  }
+  return false;
+}
+
 /** Run the issue-target probe with a process-group deadline. */
 function probeIssueTarget(
   command: string,
@@ -177,6 +200,10 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   }
   if (!usesJq) env.GH_TOKEN = options.token;
   applyProxyChoice(env, options.proxy);
+  if (usesJq && proxyUrlHasCredentials(env)) {
+    rmSync(home, { recursive: true, force: true });
+    throw new Error('--jq is unavailable when the proxy URL contains credentials; use --json and filter locally');
+  }
 
   const action = getGhAction(options.action);
   const timeoutMs = options.timeoutMs ?? action.timeoutSeconds * 1000;

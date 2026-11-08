@@ -152,6 +152,10 @@ used when available, and `github.com` is the fallback.
 Inside a checkout, `--repo` can be omitted only when `origin` names a usable GitHub repository whose
 host matches `--host`; otherwise pass `--repo`, or the matching `--host`.
 
+`--jq` is evaluated inside gh, so the broker keeps the token in the isolated gh config instead of the
+environment. If a proxy URL carries a username or password, `--jq` is refused because the expression
+could read `HTTPS_PROXY`; use `--json` and filter locally in that case.
+
 The exact command, flags and required values come from
 [`packages/core/src/actions.ts`](packages/core/src/actions.ts); `gcb gh --help` renders that catalog.
 

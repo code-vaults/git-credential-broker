@@ -127,6 +127,21 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.match(result.stdout, /github\.com:\n    oauth_token: app-token/);
   });
 
+  it('refuses jq when the proxy URL carries credentials', async () => {
+    const gh = shim('echo SHOULD_NOT_RUN');
+    await assert.rejects(
+      runGhAction({
+        action: 'pr:view',
+        values: { number: 7, jq: '.body' },
+        repo: 'acme/widget',
+        token: 'app-token',
+        ghPath: gh,
+        env: { PATH: process.env.PATH, HTTPS_PROXY: 'http://user:secret@proxy.example:8080' },
+      }),
+      /--jq is unavailable.*credentials/u,
+    );
+  });
+
   it('SIGKILLs after the grace period when the process ignores SIGTERM', async () => {
     const timeoutMs = 2_000;
     const gh = shim('trap "" TERM; while :; do sleep 1; done');
