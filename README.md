@@ -449,7 +449,7 @@ actions include issue create/edit/comment/close/reopen and pull request close/re
 merge action. For `repo fork`, review replies, reviews, pull request edit, issue edit/comment and any
 request that names `--repo` explicitly — every review always carries its repository, even when
 derived from origin — it checks the repository against the broker config's allowlist (pass
-`--config`), except a `readOnly` action with `allowPublicRead` on a verified public repository. An
+`--config`), except a `readOnly` action with `allowPublicRead` on a verified public repository, or a catalogued action on the parent of an allowlisted fork with `allowFork`. An
 explicit `--repo` needs no checkout of that repository; without it, the checkout decides.
 `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
@@ -646,7 +646,7 @@ Per host, keyed exactly as git reports it (`github.com`, or `host:port` for othe
 | `allowInsecureHttp` | Default `false`. Permit a plaintext `http` remote for this host. |
 | `allowPublicRead` | Default `false`. Let explicit `readOnly` actions run on a repository verified public without an allowlist entry, on both the app and host routes. The app identity uses a metadata-only token and requires the App to be installed with metadata read. Bare `--as-user` uses the authorized person token; `--as-user <login>` uses the host account token. Both may have private access; an exhausted 403/429 is reported as a rate limit, a plain 403 as a refusal, never as a private repository. |
 | `allowForkPush` | Default `false`. Mint a credential for a **public** fork whose parent/source is an allowlisted repository. The App must be installed on the fork owner. |
-| `allowFork` | Default `false`. Allow a catalogued action on the parent/source of an allowlisted fork, after GitHub confirms the relationship. This lets a fork entry authorize an upstream issue or pull request without listing the upstream separately. |
+| `allowFork` | Default `false`. Allow a **catalogued action** (`gcb gh …`, `gcb issue …`) on the public parent/source of an allowlisted **public** fork, after GitHub confirms the relationship. Wildcard entries are not used for inference. It does not cover the lifecycle `gcb pr create` path; that still needs the target repository in `allow` (or `allowForkPush` for the credential). |
 
 `github-app`: `clientId` (preferred `iss`), `appId` (fallback), `privateKeyPath` or `privateKeyPem`,
 `permissions`, `apiBaseUrl` (GitHub Enterprise, must be HTTPS), `apiVersion`, `installationCacheSeconds`,

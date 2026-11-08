@@ -300,7 +300,7 @@ export function createRequestHandler(
           if (error instanceof ProviderConfigError) {
             return deny(context, CODES.PROVIDER_ERROR, error.message, error.message, undefined, auditEvent);
           }
-          break;
+          continue;
         }
       }
     }
@@ -418,6 +418,7 @@ export function createRequestHandler(
           permissions: spec.permissions,
           identity: identity ?? 'app',
           public_read: publicRead,
+          fork_action: forkAction,
           duration_ms: Date.now() - startedAt,
           token_fingerprint: result.tokenFingerprint,
           exit_code: result.code,

@@ -445,6 +445,7 @@ describe('createGithubAppProvider', () => {
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
+      repoInstalled: false,
     });
     try {
       const result = await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }, gh).runAction?.({

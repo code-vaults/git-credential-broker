@@ -62,6 +62,16 @@ describe('what the channel refuses to read', () => {
     }
   });
 
+  it('refuses an oversized .git pointer', () => {
+    const root = mkdtempSync(join(tmpdir(), 'channel-pointer-size-'));
+    try {
+      writeFileSync(join(root, '.git'), 'gitdir: ' + 'x'.repeat(5000));
+      assert.equal(findGitDir(root), undefined);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('does not treat a symlinked .git as a checkout, because the container can make one', () => {
     const root = mkdtempSync(join(tmpdir(), 'channel-link-'));
     const target = mkdtempSync(join(tmpdir(), 'channel-target-'));
@@ -378,10 +388,15 @@ describe('finding the checkouts to serve', () => {
     writeFileSync(join(root, 'parent', '.git', 'modules', 'shell', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     writeFileSync(join(root, 'parent', 'shell', '.git'), 'gitdir: ../.git/modules/shell\n', 'utf8');
 
-    const repos = discoverCheckouts(root, 4)
-      .map((found) => found.repo.slice(root.length + 1))
-      .sort();
-    assert.deepEqual(repos, ['parent', 'parent/shell']);
+    const found = discoverCheckouts(root, 4);
+    assert.deepEqual(
+      found.map((entry) => entry.repo.slice(root.length + 1)).sort(),
+      ['parent', 'parent/shell'],
+    );
+    assert.equal(
+      found.find((entry) => entry.repo.endsWith('/shell'))?.dir,
+      channelDir(join(root, 'parent', '.git', 'modules', 'shell')),
+    );
     rmSync(root, { recursive: true, force: true });
   });
 

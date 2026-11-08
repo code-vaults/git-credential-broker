@@ -199,12 +199,6 @@ export function findGitDir(from: string): string | undefined {
   }
 }
 
-/**
- * The git directory directly inside a directory, if there is one.
- *
- * @param dir - the directory to look in, and not above.
- * @returns the git directory, or `undefined`.
- */
 /** How many bytes a .git pointer may contain. */
 const MAX_GIT_POINTER_BYTES = 4096;
 
@@ -239,6 +233,12 @@ function readGitPointer(file: string): string | undefined {
   }
 }
 
+/**
+ * The git directory directly inside a directory, if there is one.
+ *
+ * @param dir - the directory to look in, and not above.
+ * @returns the git directory, or `undefined`.
+ */
 function gitDirAt(dir: string): string | undefined {
   const candidate = join(dir, '.git');
   let entry;
@@ -289,7 +289,8 @@ const SKIP = new Set(['.git', 'node_modules', '@eaDir', '#recycle', '$RECYCLE.BI
  * The host broker is meant to be started once for a machine, so it is given roots rather than one
  * repository: every checkout below them is served, including ones created later. Dotted
  * directories are *not* skipped — a repository whose name begins with a dot is a checkout like any
- * other. A directory holding a checkout is not descended into, which keeps the walk cheap.
+ * other. A directory holding a checkout is checked one level down for nested submodules, but is not
+ * walked recursively, which keeps the sweep bounded.
  *
  * @param root - where to start.
  * @param maxDepth - how many levels below the root to look.
@@ -311,8 +312,25 @@ export function discoverCheckouts(root: string, maxDepth = 4): { repo: string; d
       if (canonicalPath(gitDir).startsWith(`${realRoot}${sep}`)) {
         found.push({ repo: current, dir: channelDir(gitDir) });
       }
-      // Keep walking: a submodule is a nested checkout, and its git directory is the parent's
-      // .git/modules/<name>, which is still under the root even though the working tree is nested.
+      // A submodule is a nested checkout whose working tree is one level down and whose git directory
+      // is the parent's .git/modules/<name>. Scan that one level only; walking every directory under a
+      // checkout made the sweep cost several times the interval on a normal tree.
+      if (depth >= maxDepth) return;
+      let children: Dirent[] = [];
+      try {
+        children = readdirSync(current, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of children) {
+        if (!entry.isDirectory() || SKIP.has(entry.name)) continue;
+        const child = join(current, entry.name);
+        const childGit = gitDirAt(child);
+        if (childGit !== undefined && canonicalPath(childGit).startsWith(`${realRoot}${sep}`)) {
+          found.push({ repo: child, dir: channelDir(childGit) });
+        }
+      }
+      return;
     }
     if (depth >= maxDepth) return;
     let entries: Dirent[] = [];
