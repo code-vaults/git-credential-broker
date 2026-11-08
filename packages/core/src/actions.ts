@@ -743,6 +743,7 @@ export function buildGhArgv(
   }
 
   let argv: string[];
+  const trailingPositionals: string[] = [];
   if (action.api !== undefined) {
     const substitutions: Record<string, string> = {
       owner,
@@ -776,7 +777,7 @@ export function buildGhArgv(
       if (positional.type === 'number') {
         argv.push(String(asNumber(value, positional.name)));
       } else {
-        argv.push(asString(value, positional.name));
+        trailingPositionals.push(asString(value, positional.name));
       }
     }
   }
@@ -871,7 +872,13 @@ export function buildGhArgv(
     throw new ActionError(`the body must be at most ${MAX_BODY_CHARS} characters`);
   }
 
-  if (action.api === undefined) argv.push('--repo', repo);
+  if (action.api === undefined) {
+    argv.push('--repo', repo);
+    if (trailingPositionals.length > 0) {
+      // Keep caller-controlled strings after -- so a tag or workflow name cannot become a flag.
+      argv.push('--', ...trailingPositionals);
+    }
+  }
   return argv;
 }
 

@@ -196,11 +196,16 @@ describe('buildGhArgv', () => {
     assert.deepEqual(buildGhArgv('workflow:view', { workflow: 'ci.yml', yaml: true }, 'acme/widget'), [
       'workflow',
       'view',
-      'ci.yml',
       '--yaml',
       '--repo',
       'acme/widget',
+      '--',
+      'ci.yml',
     ]);
+    assert.deepEqual(
+      buildGhArgv('workflow:view', { workflow: 'ci.yml', ref: 'main', yaml: true }, 'acme/widget'),
+      ['workflow', 'view', '--ref', 'main', '--yaml', '--repo', 'acme/widget', '--', 'ci.yml'],
+    );
     assert.deepEqual(buildGhArgv('workflow:list', { all: true, limit: 10 }, 'acme/widget'), [
       'workflow',
       'list',
@@ -213,12 +218,15 @@ describe('buildGhArgv', () => {
     assert.deepEqual(buildGhArgv('release:view', { tag: 'v1.0.0', json: 'tagName' }, 'acme/widget'), [
       'release',
       'view',
-      'v1.0.0',
       '--json',
       'tagName',
       '--repo',
       'acme/widget',
+      '--',
+      'v1.0.0',
     ]);
+    const injected = buildGhArgv('release:view', { tag: '--web' }, 'acme/widget');
+    assert.deepEqual(injected.slice(-2), ['--', '--web']);
     assert.throws(() => buildGhArgv('workflow:view', {}, 'acme/widget'), /needs workflow/u);
     assert.throws(
       () => buildGhArgv('workflow:view', { workflow: 'ci.yml', ref: 'main' }, 'acme/widget'),
