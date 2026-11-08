@@ -61,9 +61,10 @@ describe('runGhAction', { skip: onWindows }, () => {
     const release = path.join(root, 'release');
     const actionStarted = path.join(root, 'action-started');
     const gh = shim(
-      `if [ "$1" = "api" ]; then touch ${probeStarted}; i=0; while [ ! -f ${release} ] && [ "$i" -lt 200 ]; do i=$((i+1)); sleep 0.01; done; echo false; else touch ${actionStarted}; sleep 10; fi`,
+      `if [ "$1" = "api" ]; then touch ${probeStarted}; while [ ! -f ${release} ]; do sleep 0.01; done; echo false; else touch ${actionStarted}; sleep 10; fi`,
     );
     mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    assert.equal(Date.now(), 0, 'the mocked clock must be the one the test advances');
     let failure: unknown;
     try {
       const pending = runGhAction({
@@ -89,7 +90,6 @@ describe('runGhAction', { skip: onWindows }, () => {
       };
       await waitFor(probeStarted);
       mock.timers.tick(400);
-      assert.equal(Date.now(), 400);
       fs.writeFileSync(release, '');
       await waitFor(actionStarted);
       mock.timers.tick(100);
