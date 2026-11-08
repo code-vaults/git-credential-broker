@@ -629,12 +629,55 @@ function pullRequestNumber(value: unknown): number | undefined {
   return Number.isInteger(number) && number > 0 ? number : undefined;
 }
 
+  /**
+   * The installation ID GitHub reports for a specific repository.
+   *
+   * @param owner - the repository owner.
+   * @param repo - the repository name.
+   * @returns the installation id, or undefined when the app is not installed there.
+   */
+  async function repositoryInstallation(owner: string, repo: string): Promise<number | undefined> {
+    const jwt = signAppJwt({ privateKeyPem: keyPem, iss, nowMs: now() });
+    const response = await fetchImpl(`${api}/repos/${owner}/${repo}/installation`, {
+      method: 'GET',
+      headers: {
+        accept: 'application/vnd.github+json',
+        authorization: `Bearer ${jwt}`,
+        'x-github-api-version': apiVersion,
+        'user-agent': 'gcb',
+      },
+    });
+    if (response.status === 404) return undefined;
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`GitHub API GET /repos/${owner}/${repo}/installation failed with ${response.status}: ${text.slice(0, 200)}`);
+    }
+    const body = JSON.parse(await response.text()) as { id?: unknown } | null;
+    return typeof body?.id === 'number' && Number.isInteger(body.id) && body.id > 0 ? body.id : undefined;
+  }
+
   return {
     name: 'github-app',
 
     async runAction(request) {
       const spec = getGhAction(request.action);
       const identity = request.identity ?? 'app';
+      if (identity === 'app') {
+        const installationId = await repositoryInstallation(request.owner, request.repo);
+        if (installationId === undefined) {
+          throw new ProviderConfigError(
+            `the app is not installed on ${request.owner}/${request.repo}; use --as-user, or install the app there`,
+          );
+        }
+        const key = request.owner.toLowerCase();
+        const cached = installations.get(key);
+        if (cached?.id !== installationId) {
+          installations.set(key, { id: installationId, expiresAt: now() + installationTtlMs });
+          for (const permissionKey of permissionsChecked.keys()) {
+            if (permissionKey.startsWith(`${key}|`)) permissionsChecked.delete(permissionKey);
+          }
+        }
+      }
       let token = '';
       let minted = false;
       if (request.publicRead === true && identity === 'user') {

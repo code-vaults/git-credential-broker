@@ -189,6 +189,8 @@ export interface BaseHostConfig {
   readonly allowPublicRead?: boolean;
   /** Allow git credentials for a fork whose source is an allowlisted repository. */
   readonly allowForkPush?: boolean;
+  /** Allow actions on a repository whose fork is allowlisted, after verifying the fork relationship. */
+  readonly allowFork?: boolean;
 }
 
 /** Host block backed by one fixed username/password pair. */

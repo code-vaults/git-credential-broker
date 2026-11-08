@@ -154,6 +154,7 @@ function createStubFetch(options: {
   logText?: string;
   jobMissing?: boolean;
   fork?: { full_name: string; html_url: string };
+  repoInstalled?: boolean;
   threadsResponse?: unknown;
 }): { calls: RecordedCall[]; fetchImpl: FetchLike } {
   const {
@@ -184,6 +185,9 @@ function createStubFetch(options: {
       );
     }
     if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
+    if (/\/repos\/[^/]+\/[^/]+\/installation$/.test(url)) {
+      return Promise.resolve(jsonResponse(options.repoInstalled === false ? { message: 'Not Found' } : { id: 42 }, options.repoInstalled === false ? 404 : 200));
+    }
     if (url.includes('/app/installations?')) return Promise.resolve(jsonResponse(installations));
     if (url.endsWith('/forks')) {
       return Promise.resolve(jsonResponse(options.fork ?? { full_name: 'me/widget', html_url: 'https://github.com/me/widget' }));
@@ -400,6 +404,38 @@ describe('createGithubAppProvider', () => {
     assert.ok(logs.some((line) => line.includes('could not revoke the action token')));
   });
 
+  it('refuses an app action when the app is not installed on the repository', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-action-not-installed-'));
+    const gh = join(dir, 'gh');
+    writeFileSync(gh, '#!/bin/sh\nexit 0\n');
+    chmodSync(gh, 0o755);
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'Acme' } }],
+      nowMs,
+      repoInstalled: false,
+    });
+    try {
+      await assert.rejects(
+        providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }, gh).runAction?.({
+          host: 'github.com',
+          owner: 'acme',
+          repo: 'widget',
+          full: 'acme/widget',
+          action: 'issue:create',
+          values: { title: 't', body: 'b' },
+        }) ?? Promise.resolve(undefined),
+        /not installed/u,
+      );
+      assert.equal(
+        stub.calls.some((call) => call.url.includes('/access_tokens')),
+        false,
+        'no installation token is minted when the app is not installed',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('runs an action with the authorized user token', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'gcb-action-user-'));
     const gh = join(dir, 'gh');
@@ -409,6 +445,7 @@ describe('createGithubAppProvider', () => {
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
+      repoInstalled: false,
     });
     try {
       const result = await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }, gh).runAction?.({

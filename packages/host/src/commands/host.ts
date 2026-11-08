@@ -42,8 +42,8 @@ import {
 import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
 import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts';
 import { loadConfig, resolveConfigPath } from '../config.ts';
-import { hostConfig, repoAllowed } from '../policy.ts';
-import { isPublicRepository } from '../public-repo.ts';
+import { hostConfig, parseAllowEntry, repoAllowed } from '../policy.ts';
+import { isForkOfRepository, isPublicRepository } from '../public-repo.ts';
 
 const run = promisify(execFile);
 
@@ -457,6 +457,41 @@ async function repoIsPublic(
 }
 
 /**
+ * Whether an allowlisted fork's parent is the requested repository.
+ *
+ * @param host - the forge host.
+ * @param allow - the configured allowlist entries.
+ * @param repository - the requested parent repository.
+ * @param proxy - the proxy choice for the check.
+ * @param apiBaseUrl - an optional API base.
+ * @param apiVersion - the API version header.
+ * @returns true when one allowlisted fork names the repository as its parent.
+ */
+async function forkAllows(
+  host: string,
+  allow: readonly string[],
+  repository: string,
+  proxy: ProxyChoice,
+  apiBaseUrl?: string,
+  apiVersion = '2022-11-28',
+): Promise<boolean> {
+  const base =
+    apiBaseUrl ?? (host.toLowerCase() === 'github.com' ? 'https://api.github.com' : `https://${host}/api/v3`);
+  for (const raw of allow) {
+    const entry = parseAllowEntry(raw);
+    if (!entry || entry.owner === '*' || entry.repo === '*') continue;
+    const fork = `${entry.owner}/${entry.repo}`;
+    if (fork === repository.toLowerCase()) continue;
+    try {
+      if (await isForkOfRepository(fetcherFor(proxy), base, fork, repository, apiVersion)) return true;
+    } catch {
+      // A failed check is not evidence of a relationship; keep looking, then fail closed.
+    }
+  }
+  return false;
+}
+
+/**
  * Run one person operation: check the allowlist, then call the program and turn its failure into a result.
  *
  * The typed routes differ only in the argv they build, so the check and the catch live here once
@@ -612,7 +647,13 @@ async function openOne(
     if (hostBlock === null) {
       return { error: `no configuration for ${host}` };
     }
-    if (!repoAllowed(hostBlock.allow, request.repo)) {
+    let allowedByFork = false;
+    if (!repoAllowed(hostBlock.allow, request.repo) && hostBlock.allowFork === true) {
+      const apiBaseUrl = 'apiBaseUrl' in hostBlock ? hostBlock.apiBaseUrl : undefined;
+      const apiVersion = 'apiVersion' in hostBlock ? hostBlock.apiVersion : undefined;
+      allowedByFork = await forkAllows(host, hostBlock.allow, request.repo, request.proxy, apiBaseUrl, apiVersion);
+    }
+    if (!repoAllowed(hostBlock.allow, request.repo) && !allowedByFork) {
       const allowedPublic = action.readOnly === true && hostBlock.allowPublicRead === true;
       if (!allowedPublic) {
         return { error: `repository ${request.repo} is not in the allowlist for ${host}` };
@@ -633,7 +674,7 @@ async function openOne(
       }
     }
 
-    return personRun(host, request.repo, allowed, async (host) =>
+    return personRun(host, request.repo, allowedByFork ? () => true : allowed, async (host) =>
       runAction(forkEnv(request.proxy, request.account, host)),
     );
   }

@@ -19,7 +19,6 @@ import {
   linkSync,
   mkdirSync,
   openSync,
-  readFileSync,
   readdirSync,
   readSync,
   renameSync,
@@ -200,6 +199,40 @@ export function findGitDir(from: string): string | undefined {
   }
 }
 
+/** How many bytes a .git pointer may contain. */
+const MAX_GIT_POINTER_BYTES = 4096;
+
+/**
+ * Read a .git pointer without following a symlink or blocking on a special file.
+ *
+ * @param file - the pointer path.
+ * @returns its text, or undefined when it is not a readable regular file.
+ */
+function readGitPointer(file: string): string | undefined {
+  let fd: number | undefined;
+  try {
+    fd = openSync(
+      file,
+      fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0),
+    );
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > MAX_GIT_POINTER_BYTES) return undefined;
+    const buffer = Buffer.allocUnsafe(stat.size + 1);
+    let bytesRead = 0;
+    while (bytesRead < buffer.length) {
+      const count = readSync(fd, buffer, bytesRead, buffer.length - bytesRead, null);
+      if (count === 0) break;
+      bytesRead += count;
+    }
+    if (bytesRead > stat.size) return undefined;
+    return buffer.toString('utf8', 0, bytesRead);
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
 /**
  * The git directory directly inside a directory, if there is one.
  *
@@ -208,22 +241,22 @@ export function findGitDir(from: string): string | undefined {
  */
 function gitDirAt(dir: string): string | undefined {
   const candidate = join(dir, '.git');
-  if (!existsSync(candidate)) return undefined;
-  // A symlinked .git is not a thing git makes: a submodule and a worktree use a file.
-  if (lstatSync(candidate).isSymbolicLink()) return undefined;
-  if (statSync(candidate).isDirectory()) {
-    // Followed by statSync on purpose, and then checked: a symlink to any directory was a way to publish
-    // a container-chosen path as a channel. A git directory has a HEAD; anything else is not one.
-    return existsSync(join(candidate, 'HEAD')) ? candidate : undefined;
-  }
-  // A worktree or submodule records its real git directory in a file.
-  let text: string;
+  let entry;
   try {
-    // Written by the container, so it can be unreadable, or gone between the check above and here.
-    text = readFileSync(candidate, 'utf8');
+    entry = lstatSync(candidate);
   } catch {
     return undefined;
   }
+  // A symlinked .git is not a thing git makes: a submodule and a worktree use a file.
+  if (entry.isSymbolicLink()) return undefined;
+  if (entry.isDirectory()) {
+    // A git directory has a HEAD; anything else is not one.
+    return existsSync(join(candidate, 'HEAD')) ? candidate : undefined;
+  }
+  // A worktree or submodule records its real git directory in a file. Open it once, without following
+  // a symlink or blocking on a FIFO.
+  const text = readGitPointer(candidate);
+  if (text === undefined) return undefined;
   const match = /^gitdir:\s*(.+)$/m.exec(text);
   const pointed = match?.[1]?.trim();
   if (pointed === undefined) return undefined;
@@ -256,7 +289,8 @@ const SKIP = new Set(['.git', 'node_modules', '@eaDir', '#recycle', '$RECYCLE.BI
  * The host broker is meant to be started once for a machine, so it is given roots rather than one
  * repository: every checkout below them is served, including ones created later. Dotted
  * directories are *not* skipped — a repository whose name begins with a dot is a checkout like any
- * other. A directory holding a checkout is not descended into, which keeps the walk cheap.
+ * other. A directory holding a checkout is checked one level down for nested submodules, but is not
+ * walked recursively, which keeps the sweep bounded.
  *
  * @param root - where to start.
  * @param maxDepth - how many levels below the root to look.
@@ -277,6 +311,24 @@ export function discoverCheckouts(root: string, maxDepth = 4): { repo: string; d
       // the same root.
       if (canonicalPath(gitDir).startsWith(`${realRoot}${sep}`)) {
         found.push({ repo: current, dir: channelDir(gitDir) });
+      }
+      // A submodule working tree may be one level down, with its git directory under the parent's
+      // .git/modules/<name>. Scan that one level only; deeper submodule paths are not served, and
+      // walking every directory under a checkout made the sweep cost several times its interval.
+      if (depth >= maxDepth) return;
+      let children: Dirent[] = [];
+      try {
+        children = readdirSync(current, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of children) {
+        if (!entry.isDirectory() || SKIP.has(entry.name)) continue;
+        const child = join(current, entry.name);
+        const childGit = gitDirAt(child);
+        if (childGit !== undefined && canonicalPath(childGit).startsWith(`${realRoot}${sep}`)) {
+          found.push({ repo: child, dir: channelDir(childGit) });
+        }
       }
       return;
     }

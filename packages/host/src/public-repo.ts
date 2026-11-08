@@ -94,3 +94,48 @@ export async function isPublicRepository(
     },
   );
 }
+
+/**
+ * Check whether a public repository is a fork of another, with no credential.
+ *
+ * @param fetchImpl - the transport for this host's proxy choice.
+ * @param apiBaseUrl - the API base, without a trailing path.
+ * @param repository - the possible fork, `owner/name`.
+ * @param parent - the possible parent/source, `owner/name`.
+ * @param apiVersion - GitHub API version header.
+ * @param timeoutMs - whole-request deadline.
+ * @returns true only when GitHub confirms the fork relationship.
+ */
+export async function isForkOfRepository(
+  fetchImpl: FetchLike,
+  apiBaseUrl: string,
+  repository: string,
+  parent: string,
+  apiVersion = '2022-11-28',
+  timeoutMs = CHECK_TIMEOUT_MS,
+): Promise<boolean> {
+  return withRepositoryResponse(
+    fetchImpl,
+    apiBaseUrl,
+    repository,
+    { apiVersion, timeoutMs, label: 'fork' },
+    async (response) => {
+      if (!response.ok) return false;
+      const text = await response.text();
+      try {
+        const body = JSON.parse(text) as {
+          fork?: unknown;
+          parent?: { full_name?: unknown } | null;
+          source?: { full_name?: unknown } | null;
+        } | null;
+        if (body?.fork !== true) return false;
+        const names = [body.parent?.full_name, body.source?.full_name]
+          .filter((name): name is string => typeof name === 'string')
+          .map((name) => name.toLowerCase());
+        return names.includes(parent.toLowerCase());
+      } catch {
+        return false;
+      }
+    },
+  );
+}

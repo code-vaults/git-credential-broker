@@ -6,7 +6,8 @@
  * while it waits.
  */
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -47,6 +48,31 @@ describe('what the channel refuses to read', () => {
     mkdirSync(join(dir, 'host-broker.json'), { recursive: true });
     assert.equal(readHostBroker(dir), undefined, 'a directory is not a marker');
     rmSync(root, { recursive: true, force: true });
+  });
+
+  it('does not block on a FIFO .git pointer', { skip: process.platform === 'win32' }, () => {
+    const root = mkdtempSync(join(tmpdir(), 'channel-fifo-'));
+    try {
+      const fifo = join(root, '.git');
+      const made = spawnSync('mkfifo', [fifo]);
+      assert.equal(made.status, 0, String(made.stderr));
+      assert.equal(findGitDir(root), undefined);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses an oversized .git pointer', () => {
+    const root = mkdtempSync(join(tmpdir(), 'channel-pointer-size-'));
+    try {
+      const target = join(root, 'gitdir');
+      mkdirSync(target, { recursive: true });
+      writeFileSync(join(target, 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+      writeFileSync(join(root, '.git'), `gitdir: ${target}\n${'x'.repeat(5000)}`);
+      assert.equal(findGitDir(root), undefined);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('does not treat a symlinked .git as a checkout, because the container can make one', () => {
@@ -353,6 +379,27 @@ describe('finding the checkouts to serve', () => {
       .sort();
     assert.deepEqual(repos, ['.hidden', 'plain', 'trees/one', 'trees/two/deep']);
 
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('serves a submodule checkout nested inside a parent checkout', () => {
+    const root = mkdtempSync(join(tmpdir(), 'discover-submodule-'));
+    mkdirSync(join(root, 'parent', '.git'), { recursive: true });
+    writeFileSync(join(root, 'parent', '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    mkdirSync(join(root, 'parent', 'shell'), { recursive: true });
+    mkdirSync(join(root, 'parent', '.git', 'modules', 'shell'), { recursive: true });
+    writeFileSync(join(root, 'parent', '.git', 'modules', 'shell', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    writeFileSync(join(root, 'parent', 'shell', '.git'), 'gitdir: ../.git/modules/shell\n', 'utf8');
+
+    const found = discoverCheckouts(root, 4);
+    assert.deepEqual(
+      found.map((entry) => entry.repo.slice(root.length + 1)).sort(),
+      ['parent', 'parent/shell'],
+    );
+    assert.equal(
+      found.find((entry) => entry.repo.endsWith('/shell'))?.dir,
+      channelDir(realpathSync(join(root, 'parent', '.git', 'modules', 'shell'))),
+    );
     rmSync(root, { recursive: true, force: true });
   });
 

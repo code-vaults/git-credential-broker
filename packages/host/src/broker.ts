@@ -38,7 +38,7 @@ import {
 import net from 'node:net';
 import path from 'node:path';
 
-import { hostConfig, normalizeRepoPath, repoAllowed } from './policy.ts';
+import { hostConfig, normalizeRepoPath, parseAllowEntry, repoAllowed } from './policy.ts';
 import type { ActionValues, AuditSink, BrokerConfig, Provider, WireResponse } from 'gcb-core';
 
 /** Reported by the `ping` operation so the container side can prove what it reached. */
@@ -279,17 +279,44 @@ export function createRequestHandler(
         // The action branch reports the bad action name; this is only the allowlist test.
       }
     }
-    if (!allowedRepo && !publicAction) {
+    let forkAction = false;
+    let forkCheckError: ProviderConfigError | undefined;
+    if (
+      !allowedRepo &&
+      message['op'] === 'action' &&
+      block.allowFork === true &&
+      provider.isForkOf !== undefined
+    ) {
+      for (const raw of block.allow) {
+        const entry = parseAllowEntry(raw);
+        if (!entry || entry.owner === '*' || entry.repo === '*') continue;
+        const fork = `${entry.owner}/${entry.repo}`;
+        if (fork === repo.full) continue;
+        try {
+          if (await provider.isForkOf(entry.owner, entry.repo, [repo.full])) {
+            forkAction = true;
+            break;
+          }
+        } catch (error) {
+          if (error instanceof ProviderConfigError) forkCheckError = error;
+          continue;
+        }
+      }
+    }
+    if (forkCheckError !== undefined && !forkAction && !publicAction) {
+      return deny(context, CODES.PROVIDER_ERROR, forkCheckError.message, forkCheckError.message, undefined, auditEvent);
+    }
+    if (!allowedRepo && !publicAction && !forkAction) {
       if (message['op'] === 'credential' && block.allowForkPush === true && provider.isForkOf !== undefined) {
         let fork = false;
-        let forkError: unknown;
+        let forkCredentialError: unknown;
         try {
           fork = await provider.isForkOf(repo.owner, repo.repo, block.allow);
         } catch (error) {
-          forkError = error;
+          forkCredentialError = error;
         }
-        if (forkError instanceof ProviderConfigError) {
-          return deny(context, CODES.PROVIDER_ERROR, forkError.message, forkError.message, undefined, auditEvent);
+        if (forkCredentialError instanceof ProviderConfigError) {
+          return deny(context, CODES.PROVIDER_ERROR, forkCredentialError.message, forkCredentialError.message, undefined, auditEvent);
         }
         if (!fork) {
           return deny(
@@ -348,7 +375,7 @@ export function createRequestHandler(
         );
       }
       let publicRead = false;
-      if (!allowedRepo) {
+      if (!allowedRepo && !forkAction) {
         if (provider.isPublicRepository === undefined) {
           return denyAction(CODES.REPO_NOT_ALLOWED, 'provider cannot verify public repositories', 'repository is not allowlisted');
         }
@@ -363,6 +390,9 @@ export function createRequestHandler(
           return denyAction(CODES.PROVIDER_ERROR, publicError.message, publicError.message);
         }
         if (!publicRepo) {
+          if (forkCheckError !== undefined) {
+            return denyAction(CODES.PROVIDER_ERROR, forkCheckError.message, forkCheckError.message);
+          }
           return denyAction(CODES.REPO_NOT_ALLOWED, 'repository is not public', 'repository is not allowlisted');
         }
         publicRead = true;
@@ -393,6 +423,7 @@ export function createRequestHandler(
           permissions: spec.permissions,
           identity: identity ?? 'app',
           public_read: publicRead,
+          fork_action: forkAction,
           duration_ms: Date.now() - startedAt,
           token_fingerprint: result.tokenFingerprint,
           exit_code: result.code,
