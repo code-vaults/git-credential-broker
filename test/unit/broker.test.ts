@@ -854,6 +854,35 @@ describe('broker actions', () => {
     assert.equal(called, true);
   });
 
+  it('falls back to public read when the fork check fails', async () => {
+    let called = false;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      isForkOf: async () => {
+        throw new ProviderConfigError('GitHub rate-limited the fork check');
+      },
+      isPublicRepository: async () => true,
+      runAction: async () => {
+        called = true;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(['alice/widget'], provider, false, null, {
+      allowFork: true,
+      allowPublicRead: true,
+    });
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/public',
+      ghAction: 'pr:view',
+      values: { number: 7 },
+    });
+    assert.equal(response.ok, true);
+    assert.equal(called, true);
+  });
+
   it('does not let a fork credential opt-in authorize catalog actions', async () => {
     let calls = 0;
     const provider: Provider = {

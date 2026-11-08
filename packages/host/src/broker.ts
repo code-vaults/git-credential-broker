@@ -280,6 +280,7 @@ export function createRequestHandler(
       }
     }
     let forkAction = false;
+    let forkError: ProviderConfigError | undefined;
     if (
       !allowedRepo &&
       message['op'] === 'action' &&
@@ -297,12 +298,13 @@ export function createRequestHandler(
             break;
           }
         } catch (error) {
-          if (error instanceof ProviderConfigError) {
-            return deny(context, CODES.PROVIDER_ERROR, error.message, error.message, undefined, auditEvent);
-          }
+          if (error instanceof ProviderConfigError) forkError = error;
           continue;
         }
       }
+    }
+    if (forkError !== undefined && !publicAction) {
+      return deny(context, CODES.PROVIDER_ERROR, forkError.message, forkError.message, undefined, auditEvent);
     }
     if (!allowedRepo && !publicAction && !forkAction) {
       if (message['op'] === 'credential' && block.allowForkPush === true && provider.isForkOf !== undefined) {
@@ -388,6 +390,9 @@ export function createRequestHandler(
           return denyAction(CODES.PROVIDER_ERROR, publicError.message, publicError.message);
         }
         if (!publicRepo) {
+          if (forkError !== undefined) {
+            return denyAction(CODES.PROVIDER_ERROR, forkError.message, forkError.message);
+          }
           return denyAction(CODES.REPO_NOT_ALLOWED, 'repository is not public', 'repository is not allowlisted');
         }
         publicRead = true;
