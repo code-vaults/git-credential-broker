@@ -55,31 +55,31 @@ describe('runGhAction', { skip: onWindows }, () => {
   });
 
   it('charges the issue-target probe to the action deadline', async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-probe-'));
-    const release = path.join(root, 'release');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-probe-deadline-'));
+    const actionMarker = path.join(root, 'action-ran');
     const gh = shim(
-      `while [ ! -f ${release} ]; do sleep 0.1; done; if [ "$1" = "api" ]; then echo false; else sleep 10; fi`,
+      `if [ "$1" = "api" ]; then while :; do sleep 0.1; done; else touch ${actionMarker}; fi`,
     );
     try {
       const started = Date.now();
-      const pending = runGhAction({
-        action: 'issue:close',
-        values: { number: 7 },
-        repo: 'acme/widget',
-        token: 'app-token',
-        ghPath: gh,
-        timeoutMs: 1_000,
-        env: { PATH: process.env.PATH },
-      });
-      setTimeout(() => fs.writeFileSync(release, ''), 100);
-      const result = await pending;
-      assert.equal(result.timedOut, true);
-      assert.ok(Date.now() - started < 4_500, 'the probe and action share one deadline');
+      await assert.rejects(
+        runGhAction({
+          action: 'issue:close',
+          values: { number: 7 },
+          repo: 'acme/widget',
+          token: 'app-token',
+          ghPath: gh,
+          timeoutMs: 500,
+          env: { PATH: process.env.PATH },
+        }),
+        /could not verify that #7 is an issue: issue-target probe timed out/u,
+      );
+      assert.equal(fs.existsSync(actionMarker), false, 'the action must not run after the probe times out');
+      assert.ok(Date.now() - started < 3_000, 'the probe must stop at the action deadline');
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
-
   it('refuses when the issue-target probe fails', async () => {
     const gh = shim('if [ "$1" = "api" ]; then echo boom >&2; exit 1; fi; echo SHOULD_NOT_RUN');
     await assert.rejects(
