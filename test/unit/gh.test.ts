@@ -61,7 +61,9 @@ describe('runGhAction', { skip: onWindows }, () => {
       `if [ "$1" = "api" ]; then while :; do sleep 0.1; done; else touch ${actionMarker}; fi`,
     );
     try {
-      const started = Date.now();
+      // This pins the probe to the action deadline. It cannot distinguish a separate action budget
+      // without reintroducing the wall-clock race this test exists to remove; the action timeout
+      // itself is covered by the dedicated timeout tests below.
       await assert.rejects(
         runGhAction({
           action: 'issue:close',
@@ -75,7 +77,6 @@ describe('runGhAction', { skip: onWindows }, () => {
         /could not verify that #7 is an issue: issue-target probe timed out/u,
       );
       assert.equal(fs.existsSync(actionMarker), false, 'the action must not run after the probe times out');
-      assert.ok(Date.now() - started < 3_000, 'the probe must stop at the action deadline');
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
