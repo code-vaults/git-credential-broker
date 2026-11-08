@@ -828,7 +828,7 @@ export function reclaimAbandoned(dir: string): ReclaimedRequests {
     }
     try {
       const wrote = writeResultIfAbsent(dir, id, {
-        error: `request ${id} was left by a host that exited; outcome unknown; run it again`,
+        error: `request ${id} was left by a host that exited; outcome unknown; verify before retrying`,
       });
       // Invariant: retire the working file only when an answer is readable, or when this sweep
       // published one. An unreadable pre-existing result stays pending for a later sweep.
