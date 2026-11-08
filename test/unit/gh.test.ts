@@ -61,7 +61,7 @@ describe('runGhAction', { skip: onWindows }, () => {
     const release = path.join(root, 'release');
     const actionStarted = path.join(root, 'action-started');
     const gh = shim(
-      `if [ "$1" = "api" ]; then touch ${probeStarted}; while [ ! -f ${release} ]; do sleep 0.01; done; echo false; else touch ${actionStarted}; sleep 10; fi`,
+      `if [ "$1" = "api" ]; then touch ${probeStarted}; i=0; while [ ! -f ${release} ] && [ "$i" -lt 200 ]; do i=$((i+1)); sleep 0.01; done; echo false; else touch ${actionStarted}; sleep 10; fi`,
     );
     mock.timers.enable({ apis: ['setTimeout', 'Date'] });
     let failure: unknown;
@@ -101,6 +101,12 @@ describe('runGhAction', { skip: onWindows }, () => {
       ]);
       assert.equal(result.timedOut, true);
     } finally {
+      // Release a probe that is still waiting, even when an assertion failed before the normal release.
+      try {
+        fs.writeFileSync(release, '');
+      } catch {
+        // The fixture may already be gone on an early failure.
+      }
       mock.timers.reset();
       fs.rmSync(root, { recursive: true, force: true });
     }
