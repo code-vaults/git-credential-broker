@@ -55,19 +55,29 @@ describe('runGhAction', { skip: onWindows }, () => {
   });
 
   it('charges the issue-target probe to the action deadline', async () => {
-    const gh = shim('sleep 2; if [ "$1" = "api" ]; then echo false; fi');
-    const started = Date.now();
-    const result = await runGhAction({
-      action: 'issue:close',
-      values: { number: 7 },
-      repo: 'acme/widget',
-      token: 'app-token',
-      ghPath: gh,
-      timeoutMs: 3_000,
-      env: { PATH: process.env.PATH },
-    });
-    assert.equal(result.timedOut, true);
-    assert.ok(Date.now() - started < 4_500, 'the probe and action share one deadline');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-probe-'));
+    const release = path.join(root, 'release');
+    const gh = shim(
+      `while [ ! -f ${release} ]; do sleep 0.1; done; if [ "$1" = "api" ]; then echo false; else sleep 10; fi`,
+    );
+    try {
+      const started = Date.now();
+      const pending = runGhAction({
+        action: 'issue:close',
+        values: { number: 7 },
+        repo: 'acme/widget',
+        token: 'app-token',
+        ghPath: gh,
+        timeoutMs: 1_000,
+        env: { PATH: process.env.PATH },
+      });
+      setTimeout(() => fs.writeFileSync(release, ''), 100);
+      const result = await pending;
+      assert.equal(result.timedOut, true);
+      assert.ok(Date.now() - started < 4_500, 'the probe and action share one deadline');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('refuses when the issue-target probe fails', async () => {
