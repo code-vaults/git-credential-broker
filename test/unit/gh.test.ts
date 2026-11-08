@@ -78,6 +78,7 @@ describe('runGhAction', { skip: onWindows }, () => {
       void pending.catch((error: unknown) => {
         failure = error;
       });
+      // performance.now() must stay real while Date is mocked; using Date.now() would freeze the bound.
       const waitFor = async (file: string): Promise<void> => {
         const deadline = performance.now() + 2_000;
         while (!fs.existsSync(file)) {
@@ -87,7 +88,8 @@ describe('runGhAction', { skip: onWindows }, () => {
         }
       };
       await waitFor(probeStarted);
-      mock.timers.setTime(400);
+      mock.timers.tick(400);
+      assert.equal(Date.now(), 400);
       fs.writeFileSync(release, '');
       await waitFor(actionStarted);
       mock.timers.tick(100);
@@ -98,9 +100,7 @@ describe('runGhAction', { skip: onWindows }, () => {
         }),
       ]);
       assert.equal(result.timedOut, true);
-      assert.equal(fs.existsSync(actionStarted), true, 'the probe succeeded before the action started');
     } finally {
-      if (failure !== undefined) mock.timers.tick(10_000);
       mock.timers.reset();
       fs.rmSync(root, { recursive: true, force: true });
     }
