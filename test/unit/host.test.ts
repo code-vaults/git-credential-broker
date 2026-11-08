@@ -408,6 +408,32 @@ describe('edit routes outside the allowlist', () => {
 });
 
 describe('the host action route', () => {
+  it('refuses jq on the host route instead of exposing the host environment', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-jq-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const marker = join(root, 'ran');
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\ntouch ' + marker + '\n', 'utf8');
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:view',
+        repo: 'acme/widget',
+        values: { number: 7, jq: '.number' },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.match(readResult(dir, id)?.error ?? '', /--jq is unavailable through the host broker/u);
+      assert.equal(existsSync(marker), false, 'the host program must not run');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('runs a catalogued action and returns its output', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-action-'));
     const repo = join(root, 'checkout');

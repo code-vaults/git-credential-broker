@@ -49,12 +49,6 @@ export interface GhRunOptions {
 }
 
 /**
- * Run one allowed action.
- *
- * @param options - action, values, repository and token.
- * @returns the bounded process result.
- */
-/**
  * Whether any proxy URL in an environment carries a username or password.
  *
  * jq can read the environment, so a credentialed proxy URL would expose its secret to the expression.
@@ -68,10 +62,13 @@ function proxyUrlHasCredentials(env: NodeJS.ProcessEnv): boolean {
     const value = env[key];
     if (value === undefined || value === '') continue;
     try {
-      const url = new URL(value);
+      // Go prefixes a scheme-less value with http://, so `user:pass@host:3128` reaches the proxy
+      // with credentials even though URL would read `user:` as the scheme.
+      const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`);
       if (url.username !== '' || url.password !== '') return true;
     } catch {
-      // Not a URL we can inspect; gh will report the proxy failure itself.
+      // Still unparseable: Node's parser is not gh's, so fail closed.
+      return true;
     }
   }
   return false;
@@ -159,16 +156,36 @@ async function assertIssueTarget(
   }
 }
 
+/**
+ * Run one allowed action.
+ *
+ * @param options - action, values, repository and token.
+ * @returns the bounded process result.
+ */
 export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   const maxBytes = options.maxOutputBytes ?? DEFAULT_GH_OUTPUT_BYTES;
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
     throw new Error('maxOutputBytes must be a non-negative safe integer');
   }
+  const host = options.host?.toLowerCase() ?? 'github.com';
+  const usesJq = options.values['jq'] !== undefined;
+  const source = options.env ?? process.env;
+  if (usesJq) {
+    const probe: NodeJS.ProcessEnv = {};
+    for (const key of PROXY_ENV_KEYS) {
+      const value = source[key];
+      if (value !== undefined && value !== '') probe[key] = value;
+    }
+    applyProxyChoice(probe, options.proxy);
+    if (proxyUrlHasCredentials(probe)) {
+      throw new Error(
+        '--jq is unavailable when the proxy URL contains credentials; drop it and filter the JSON locally (--json selects fields where supported)',
+      );
+    }
+  }
   const home = mkdtempSync(path.join(tmpdir(), 'gcb-gh-'));
   const configDir = path.join(home, 'gh');
   mkdirSync(configDir, { recursive: true });
-  const host = options.host?.toLowerCase() ?? 'github.com';
-  const usesJq = options.values['jq'] !== undefined;
   if (usesJq) {
     // gh runs --jq in the same process, so a caller expression could print GH_TOKEN via env.
     // Keep the token in the isolated config file instead when jq is present.
@@ -183,7 +200,6 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
       throw error;
     }
   }
-  const source = options.env ?? process.env;
   const env: NodeJS.ProcessEnv = {
     HOME: home,
     GH_CONFIG_DIR: configDir,
@@ -200,10 +216,6 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
   }
   if (!usesJq) env.GH_TOKEN = options.token;
   applyProxyChoice(env, options.proxy);
-  if (usesJq && proxyUrlHasCredentials(env)) {
-    rmSync(home, { recursive: true, force: true });
-    throw new Error('--jq is unavailable when the proxy URL contains credentials; use --json and filter locally');
-  }
 
   const action = getGhAction(options.action);
   const timeoutMs = options.timeoutMs ?? action.timeoutSeconds * 1000;
