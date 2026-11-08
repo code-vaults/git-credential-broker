@@ -280,7 +280,7 @@ export function createRequestHandler(
       }
     }
     let forkAction = false;
-    let forkError: ProviderConfigError | undefined;
+    let forkCheckError: ProviderConfigError | undefined;
     if (
       !allowedRepo &&
       message['op'] === 'action' &&
@@ -298,25 +298,25 @@ export function createRequestHandler(
             break;
           }
         } catch (error) {
-          if (error instanceof ProviderConfigError) forkError = error;
+          if (error instanceof ProviderConfigError) forkCheckError = error;
           continue;
         }
       }
     }
-    if (forkError !== undefined && !publicAction) {
-      return deny(context, CODES.PROVIDER_ERROR, forkError.message, forkError.message, undefined, auditEvent);
+    if (forkCheckError !== undefined && !forkAction && !publicAction) {
+      return deny(context, CODES.PROVIDER_ERROR, forkCheckError.message, forkCheckError.message, undefined, auditEvent);
     }
     if (!allowedRepo && !publicAction && !forkAction) {
       if (message['op'] === 'credential' && block.allowForkPush === true && provider.isForkOf !== undefined) {
         let fork = false;
-        let forkError: unknown;
+        let forkCredentialError: unknown;
         try {
           fork = await provider.isForkOf(repo.owner, repo.repo, block.allow);
         } catch (error) {
-          forkError = error;
+          forkCredentialError = error;
         }
-        if (forkError instanceof ProviderConfigError) {
-          return deny(context, CODES.PROVIDER_ERROR, forkError.message, forkError.message, undefined, auditEvent);
+        if (forkCredentialError instanceof ProviderConfigError) {
+          return deny(context, CODES.PROVIDER_ERROR, forkCredentialError.message, forkCredentialError.message, undefined, auditEvent);
         }
         if (!fork) {
           return deny(
@@ -390,8 +390,8 @@ export function createRequestHandler(
           return denyAction(CODES.PROVIDER_ERROR, publicError.message, publicError.message);
         }
         if (!publicRepo) {
-          if (forkError !== undefined) {
-            return denyAction(CODES.PROVIDER_ERROR, forkError.message, forkError.message);
+          if (forkCheckError !== undefined) {
+            return denyAction(CODES.PROVIDER_ERROR, forkCheckError.message, forkCheckError.message);
           }
           return denyAction(CODES.REPO_NOT_ALLOWED, 'repository is not public', 'repository is not allowlisted');
         }

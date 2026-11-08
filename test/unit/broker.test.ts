@@ -854,6 +854,33 @@ describe('broker actions', () => {
     assert.equal(called, true);
   });
 
+  it('lets a later fork entry win after an earlier check fails', async () => {
+    let called = false;
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      isForkOf: async (owner) => {
+        if (owner === 'alice') throw new ProviderConfigError('GitHub timed out during the fork check');
+        return true;
+      },
+      runAction: async () => {
+        called = true;
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const harness = makeHarness(['alice/widget', 'bob/widget'], provider, false, null, { allowFork: true });
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'pr:view',
+      values: { number: 7 },
+    });
+    assert.equal(response.ok, true);
+    assert.equal(called, true);
+    assert.equal(harness.events.at(-1)?.['fork_action'], true);
+  });
+
   it('falls back to public read when the fork check fails', async () => {
     let called = false;
     const provider: Provider = {
@@ -881,6 +908,32 @@ describe('broker actions', () => {
     });
     assert.equal(response.ok, true);
     assert.equal(called, true);
+  });
+
+  it('keeps the fork-check error when the public fallback also fails', async () => {
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      isForkOf: async () => {
+        throw new ProviderConfigError('GitHub timed out during the fork check');
+      },
+      isPublicRepository: async () => false,
+      runAction: async () => ({ stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }),
+    };
+    const harness = makeHarness(['alice/widget'], provider, false, null, {
+      allowFork: true,
+      allowPublicRead: true,
+    });
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/public',
+      ghAction: 'pr:view',
+      values: { number: 7 },
+    });
+    assert.equal(response.ok, false);
+    assert.equal(response.code, CODES.PROVIDER_ERROR);
+    assert.match(String(response.reason), /timed out during the fork check/u);
   });
 
   it('does not let a fork credential opt-in authorize catalog actions', async () => {

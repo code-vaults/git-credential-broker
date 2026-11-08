@@ -312,9 +312,9 @@ export function discoverCheckouts(root: string, maxDepth = 4): { repo: string; d
       if (canonicalPath(gitDir).startsWith(`${realRoot}${sep}`)) {
         found.push({ repo: current, dir: channelDir(gitDir) });
       }
-      // A submodule is a nested checkout whose working tree is one level down and whose git directory
-      // is the parent's .git/modules/<name>. Scan that one level only; walking every directory under a
-      // checkout made the sweep cost several times the interval on a normal tree.
+      // A submodule working tree may be one level down, with its git directory under the parent's
+      // .git/modules/<name>. Scan that one level only; deeper submodule paths are not served, and
+      // walking every directory under a checkout made the sweep cost several times its interval.
       if (depth >= maxDepth) return;
       let children: Dirent[] = [];
       try {

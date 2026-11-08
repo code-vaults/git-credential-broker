@@ -65,7 +65,10 @@ describe('what the channel refuses to read', () => {
   it('refuses an oversized .git pointer', () => {
     const root = mkdtempSync(join(tmpdir(), 'channel-pointer-size-'));
     try {
-      writeFileSync(join(root, '.git'), 'gitdir: ' + 'x'.repeat(5000));
+      const target = join(root, 'gitdir');
+      mkdirSync(target, { recursive: true });
+      writeFileSync(join(target, 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+      writeFileSync(join(root, '.git'), `gitdir: ${target}\n${'x'.repeat(5000)}`);
       assert.equal(findGitDir(root), undefined);
     } finally {
       rmSync(root, { recursive: true, force: true });
