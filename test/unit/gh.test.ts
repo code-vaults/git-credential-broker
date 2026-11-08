@@ -3,7 +3,8 @@ import { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, it } from 'node:test';
+import { describe, it, mock } from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { KILL_GRACE_MS, runGhAction } from '../../packages/host/src/gh.ts';
 
@@ -56,28 +57,34 @@ describe('runGhAction', { skip: onWindows }, () => {
 
   it('charges the issue-target probe to the action deadline', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-probe-deadline-'));
-    const actionMarker = path.join(root, 'action-ran');
+    const probeStarted = path.join(root, 'probe-started');
+    const release = path.join(root, 'release');
+    const actionStarted = path.join(root, 'action-started');
     const gh = shim(
-      `if [ "$1" = "api" ]; then while :; do sleep 0.1; done; else touch ${actionMarker}; fi`,
+      `if [ "$1" = "api" ]; then touch ${probeStarted}; while [ ! -f ${release} ]; do sleep 0.01; done; echo false; else touch ${actionStarted}; sleep 10; fi`,
     );
+    mock.timers.enable({ apis: ['setTimeout', 'Date'] });
     try {
-      // This pins the probe to the action deadline. It cannot distinguish a separate action budget
-      // without reintroducing the wall-clock race this test exists to remove; the action timeout
-      // itself is covered by the dedicated timeout tests below.
-      await assert.rejects(
-        runGhAction({
-          action: 'issue:close',
-          values: { number: 7 },
-          repo: 'acme/widget',
-          token: 'app-token',
-          ghPath: gh,
-          timeoutMs: 500,
-          env: { PATH: process.env.PATH },
-        }),
-        /could not verify that #7 is an issue: issue-target probe timed out/u,
-      );
-      assert.equal(fs.existsSync(actionMarker), false, 'the action must not run after the probe times out');
+      const pending = runGhAction({
+        action: 'issue:close',
+        values: { number: 7 },
+        repo: 'acme/widget',
+        token: 'app-token',
+        ghPath: gh,
+        timeoutMs: 500,
+        env: { PATH: process.env.PATH },
+      });
+      while (!fs.existsSync(probeStarted)) await new Promise(setImmediate);
+      mock.timers.setTime(400);
+      fs.writeFileSync(release, '');
+      while (!fs.existsSync(actionStarted)) await new Promise(setImmediate);
+      mock.timers.tick(100);
+      const result = await Promise.race([pending, delay(1_000).then(() => 'still-running')]);
+      assert.notEqual(result, 'still-running', 'the action must use the remaining 100 ms');
+      assert.equal(result.timedOut, true);
+      assert.equal(fs.existsSync(actionStarted), true, 'the probe succeeded before the action started');
     } finally {
+      mock.timers.reset();
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
