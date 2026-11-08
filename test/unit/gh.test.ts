@@ -54,7 +54,7 @@ describe('runGhAction', { skip: onWindows }, () => {
     );
   });
 
-  it('charges the issue-target probe to the action deadline', async () => {
+  it('times out an issue action after the probe', async () => {
     const gh = shim('sleep 0.5; if [ "$1" = "api" ]; then echo false; else sleep 10; fi');
     const started = Date.now();
     const result = await runGhAction({
