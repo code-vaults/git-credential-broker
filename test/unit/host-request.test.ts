@@ -52,11 +52,14 @@ describe('what the channel refuses to read', () => {
 
   it('does not block on a FIFO .git pointer', { skip: process.platform === 'win32' }, () => {
     const root = mkdtempSync(join(tmpdir(), 'channel-fifo-'));
-    const fifo = join(root, '.git');
-    const made = spawnSync('mkfifo', [fifo]);
-    assert.equal(made.status, 0, String(made.stderr));
-    assert.equal(findGitDir(root), undefined);
-    rmSync(root, { recursive: true, force: true });
+    try {
+      const fifo = join(root, '.git');
+      const made = spawnSync('mkfifo', [fifo]);
+      assert.equal(made.status, 0, String(made.stderr));
+      assert.equal(findGitDir(root), undefined);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('does not treat a symlinked .git as a checkout, because the container can make one', () => {
