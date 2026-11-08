@@ -45,6 +45,10 @@ describe('gh action catalog', () => {
       'run:watch',
       'run:cancel',
       'run:rerun',
+      'release:list',
+      'release:view',
+      'workflow:list',
+      'workflow:view',
     ]);
     assert.equal('pr:merge' in GH_ACTIONS, false);
     assert.equal(getGhAction('pr:create').command.join(' '), 'pr create');
@@ -86,6 +90,10 @@ describe('gh action catalog', () => {
     });
     assert.deepEqual(getGhAction('issue:view').permissions, { issues: 'read' });
     assert.deepEqual(getGhAction('issue:list').permissions, { issues: 'read' });
+    assert.deepEqual(getGhAction('release:list').permissions, { contents: 'read' });
+    assert.deepEqual(getGhAction('release:view').permissions, { contents: 'read' });
+    assert.deepEqual(getGhAction('workflow:list').permissions, { actions: 'read' });
+    assert.deepEqual(getGhAction('workflow:view').permissions, { actions: 'read', contents: 'read' });
     assert.equal(getGhAction('pr:checks').timeoutSeconds, 300);
   });
 
@@ -111,6 +119,10 @@ describe('gh action catalog', () => {
       'run:view',
       'run:list',
       'run:watch',
+      'release:list',
+      'release:view',
+      'workflow:list',
+      'workflow:view',
     ]) {
       assert.equal(getGhAction(name).readOnly, true, name);
       assert.equal(getGhAction(name).appUser, true, name);
@@ -170,6 +182,58 @@ describe('gh action catalog', () => {
 });
 
 describe('buildGhArgv', () => {
+  it('builds release and workflow read argv', () => {
+    assert.deepEqual(buildGhArgv('release:list', { limit: 5, json: 'tagName' }, 'acme/widget'), [
+      'release',
+      'list',
+      '--json',
+      'tagName',
+      '--limit',
+      '5',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('workflow:view', { workflow: 'ci.yml', yaml: true }, 'acme/widget'), [
+      'workflow',
+      'view',
+      '--yaml',
+      '--repo',
+      'acme/widget',
+      '--',
+      'ci.yml',
+    ]);
+    assert.deepEqual(
+      buildGhArgv('workflow:view', { workflow: 'ci.yml', ref: 'main', yaml: true }, 'acme/widget'),
+      ['workflow', 'view', '--ref', 'main', '--yaml', '--repo', 'acme/widget', '--', 'ci.yml'],
+    );
+    assert.deepEqual(buildGhArgv('workflow:list', { all: true, limit: 10 }, 'acme/widget'), [
+      'workflow',
+      'list',
+      '--all',
+      '--limit',
+      '10',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('release:view', { tag: 'v1.0.0', json: 'tagName' }, 'acme/widget'), [
+      'release',
+      'view',
+      '--json',
+      'tagName',
+      '--repo',
+      'acme/widget',
+      '--',
+      'v1.0.0',
+    ]);
+    const injected = buildGhArgv('release:view', { tag: '--web' }, 'acme/widget');
+    assert.deepEqual(injected.slice(-2), ['--', '--web']);
+    assert.throws(() => buildGhArgv('workflow:view', {}, 'acme/widget'), /needs workflow/u);
+    assert.throws(
+      () => buildGhArgv('workflow:view', { workflow: 'ci.yml', ref: 'main' }, 'acme/widget'),
+      /needs --yaml with --ref/u,
+    );
+  });
+
   it('rebuilds the canonical argv and injects the repository', () => {
     assert.deepEqual(
       buildGhArgv(

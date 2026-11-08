@@ -63,6 +63,8 @@ export interface GhAction {
   readonly bodyRequiredWith?: readonly string[];
   /** Flag pairs that may not be present together. */
   readonly conflicts?: readonly (readonly [string, string])[];
+  /** When the first flag is present, the second must be present too. */
+  readonly requires?: readonly (readonly [string, string])[];
   /** This action only reads; publicRead may run it on a verified public repository with the route's public-read token. */
   readonly readOnly?: boolean;
   readonly permissions: Readonly<Partial<Record<GhPermission, PermissionLevel>>>;
@@ -564,6 +566,76 @@ const RUN_LIST: GhAction = {
   appUser: true,
 };
 
+// GitHub: GET /repos/{owner}/{repo}/releases
+const RELEASE_LIST: GhAction = {
+  name: 'release:list',
+  command: ['release', 'list'],
+  positionals: [],
+  flags: [
+    { name: 'exclude-drafts', type: 'boolean' },
+    { name: 'exclude-pre-releases', type: 'boolean' },
+    { name: 'json', type: 'string' },
+    { name: 'jq', type: 'string' },
+    { name: 'limit', type: 'number' },
+    { name: 'order', type: 'string' },
+    { name: 'template', type: 'string' },
+  ],
+  permissions: { contents: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+};
+
+// GitHub: GET /repos/{owner}/{repo}/releases/tags/{tag}
+const RELEASE_VIEW: GhAction = {
+  name: 'release:view',
+  command: ['release', 'view'],
+  positionals: [{ name: 'tag', type: 'string' }],
+  flags: [
+    { name: 'json', type: 'string' },
+    { name: 'jq', type: 'string' },
+    { name: 'template', type: 'string' },
+  ],
+  permissions: { contents: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+};
+
+// GitHub: GET /repos/{owner}/{repo}/actions/workflows
+const WORKFLOW_LIST: GhAction = {
+  name: 'workflow:list',
+  command: ['workflow', 'list'],
+  positionals: [],
+  flags: [
+    { name: 'all', type: 'boolean' },
+    { name: 'json', type: 'string' },
+    { name: 'jq', type: 'string' },
+    { name: 'limit', type: 'number' },
+    { name: 'template', type: 'string' },
+  ],
+  permissions: { actions: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+};
+
+// GitHub: GET /repos/{owner}/{repo}/actions/workflows/{workflow_id} (and contents for --yaml/--ref)
+const WORKFLOW_VIEW: GhAction = {
+  name: 'workflow:view',
+  command: ['workflow', 'view'],
+  positionals: [{ name: 'workflow', type: 'string', required: true }],
+  flags: [
+    { name: 'ref', type: 'string' },
+    { name: 'yaml', type: 'boolean' },
+  ],
+  requires: [['ref', 'yaml']],
+  permissions: { actions: 'read', contents: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+};
+
 /** Every built-in action, keyed by its action name. */
 export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:view': PR_VIEW,
@@ -598,6 +670,10 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'run:watch': RUN_WATCH,
   'run:cancel': RUN_CANCEL,
   'run:rerun': RUN_RERUN,
+  'release:list': RELEASE_LIST,
+  'release:view': RELEASE_VIEW,
+  'workflow:list': WORKFLOW_LIST,
+  'workflow:view': WORKFLOW_VIEW,
 });
 
 /** The built-in action names, in a stable order. */
@@ -667,6 +743,7 @@ export function buildGhArgv(
   }
 
   let argv: string[];
+  const trailingPositionals: string[] = [];
   if (action.api !== undefined) {
     const substitutions: Record<string, string> = {
       owner,
@@ -700,7 +777,7 @@ export function buildGhArgv(
       if (positional.type === 'number') {
         argv.push(String(asNumber(value, positional.name)));
       } else {
-        argv.push(asString(value, positional.name));
+        trailingPositionals.push(asString(value, positional.name));
       }
     }
   }
@@ -777,6 +854,11 @@ export function buildGhArgv(
       throw new ActionError(`${name} does not allow --${left} with --${right}`);
     }
   }
+  for (const [left, right] of action.requires ?? []) {
+    if (present.has(left) && !present.has(right)) {
+      throw new ActionError(`${name} needs --${right} with --${left}`);
+    }
+  }
 
   if (typeof values['title'] === 'string') {
     if (values['title'].trim() === '') {
@@ -790,7 +872,13 @@ export function buildGhArgv(
     throw new ActionError(`the body must be at most ${MAX_BODY_CHARS} characters`);
   }
 
-  if (action.api === undefined) argv.push('--repo', repo);
+  if (action.api === undefined) {
+    argv.push('--repo', repo);
+    if (trailingPositionals.length > 0) {
+      // Keep caller-controlled strings after -- so a tag or workflow name cannot become a flag.
+      argv.push('--', ...trailingPositionals);
+    }
+  }
   return argv;
 }
 
