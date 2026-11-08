@@ -12,10 +12,16 @@
  * another appearing back.
  */
 import {
+  closeSync,
+  constants as fsConstants,
   existsSync,
+  fstatSync,
+  linkSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
+  readSync,
   renameSync,
   rmSync,
   statSync,
@@ -25,6 +31,8 @@ import {
 import { realpathSync } from 'node:fs';
 import { lstatSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
+
+import { randomUUID } from 'node:crypto';
 
 import { canonicalPath } from './paths.ts';
 
@@ -679,6 +687,24 @@ export function writeResult(dir: string, id: string, result: HostResult): void {
   writeJsonAtomic(join(dir, `${id}.result.json`), { v: 1, id, ...bounded });
 }
 
+/** How long an unrecorded claim may sit before a recovery sweep reports it as abandoned. */
+const CLAIM_MAX_AGE_MS = 60 * 60_000;
+
+/** The sidecar recording which process claimed a request. */
+function claimFile(dir: string, id: string): string {
+  return join(dir, `${id}.claim`);
+}
+
+/** Whether a pid is still alive; EPERM and other errors count as alive. */
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
+
 /**
  * Take a request, so that nobody else can act on it.
  *
@@ -696,6 +722,15 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
     renameSync(join(dir, `${id}.json`), claimed);
   } catch {
     return undefined;
+  }
+  try {
+    rmSync(claimFile(dir, id), { force: true, recursive: true });
+    writeFileSync(claimFile(dir, id), JSON.stringify({ pid: process.pid }), {
+      mode: 0o600,
+      flag: 'wx',
+    });
+  } catch {
+    // An unrecorded claim is left until the working file is old enough.
   }
   const request = readJson(claimed) as HostRequest | undefined;
   // The channel is written by the container, so the shape is not a given: the host broker's own checks run on
@@ -743,9 +778,94 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
         typeof request.base === 'string');
   if (!shaped) {
     rmSync(claimed, { force: true, recursive: true });
+    rmSync(claimFile(dir, id), { force: true, recursive: true });
     return undefined;
   }
   return request;
+}
+
+/** Recovered requests, split by whether their outcome is unknown. */
+export interface ReclaimedRequests {
+  readonly unknown: string[];
+  readonly answered: string[];
+}
+
+/**
+ * Report requests left behind by a host that exited after claiming them.
+ *
+ * A working file is never executed again: the host may have run the action before it died, so the
+ * only safe outcome is an explicit unknown-outcome error for the caller to verify. A live claim is
+ * left alone at any age; the backstop applies only when no pid was recorded.
+ *
+ * @param dir - the channel directory.
+ * @returns the retired ids, split into unknown and already-answered.
+ */
+export function reclaimAbandoned(dir: string): ReclaimedRequests {
+  const result: ReclaimedRequests = { unknown: [], answered: [] };
+  if (!existsSync(dir)) return result;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith('.json.working')) continue;
+    const id = entry.name.slice(0, -'.json.working'.length);
+    const claim = readJson(claimFile(dir, id)) as { pid?: unknown } | undefined;
+    const pid =
+      typeof claim?.pid === 'number' &&
+      Number.isInteger(claim.pid) &&
+      claim.pid > 0 &&
+      claim.pid <= 0x7fffffff
+        ? claim.pid
+        : undefined;
+    if (pid !== undefined) {
+      if (pidAlive(pid)) continue;
+    } else {
+      let age: number;
+      try {
+        age = Date.now() - statSync(join(dir, entry.name)).mtimeMs;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        throw error;
+      }
+      if (age <= CLAIM_MAX_AGE_MS) continue;
+    }
+    try {
+      const wrote = writeResultIfAbsent(dir, id, {
+        error: `request ${id} was left by a host that exited; outcome unknown; verify before retrying`,
+      });
+      // Invariant: retire the working file only when an answer is readable, or when this sweep
+      // published one. An unreadable pre-existing result stays pending for a later sweep.
+      if (!wrote && readResult(dir, id) === undefined) continue;
+      removeRequest(dir, id);
+      (wrote ? result.unknown : result.answered).push(id);
+    } catch {
+      // Leave the working file for the next sweep rather than aborting the queue.
+      continue;
+    }
+  }
+  return result;
+}
+
+/**
+ * Publish a result only when no answer exists yet.
+ *
+ * @param dir - the channel directory.
+ * @param id - the request id.
+ * @param result - the answer to publish.
+ * @returns true when this write won; false when a genuine answer was already there.
+ */
+function writeResultIfAbsent(dir: string, id: string, result: HostResult): boolean {
+  const path = join(dir, `${id}.result.json`);
+  mkdirSync(dir, { recursive: true });
+  const payload = `${JSON.stringify({ v: 1, id, ...result }, null, 2)}\n`;
+  const temporary = `${path}.${String(process.pid)}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, payload, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    linkSync(temporary, path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw error;
+  } finally {
+    rmSync(temporary, { force: true, recursive: true });
+  }
 }
 
 /**
@@ -761,6 +881,7 @@ export function removeRequest(dir: string, id: string): void {
   // directory, and nothing ever removed it.
   rmSync(join(dir, `${id}.json`), { force: true, recursive: true });
   rmSync(join(dir, `${id}.json.working`), { force: true, recursive: true });
+  rmSync(claimFile(dir, id), { force: true, recursive: true });
 }
 
 /**
@@ -804,14 +925,32 @@ export async function waitForResult(
  * @returns the parsed value, or `undefined`.
  */
 function readJson(file: string): unknown {
+  let fd: number | undefined;
   try {
-    const stat = lstatSync(file);
-    // lstat on purpose: a symlink is not a request, and following one would read a file outside the
-    // channel. A FIFO would block here forever, with no error and no log line to explain it.
-    if (!stat.isFile() || stat.size > MAX_BODY_CHARS * 4) return undefined;
-    return JSON.parse(readFileSync(file, 'utf8'));
+    // Open without following a symlink and without blocking on a FIFO; lstat+read leaves a window
+    // in which the container can replace the entry. The platform may not define O_NOFOLLOW; the
+    // fstat check below still rejects anything that is not a regular file.
+    fd = openSync(
+      file,
+      fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0) | (fsConstants.O_NONBLOCK ?? 0),
+    );
+    const stat = fstatSync(fd);
+    const limit = MAX_BODY_CHARS * 4;
+    if (!stat.isFile() || stat.size > limit) return undefined;
+    // One byte past the checked size both catches growth and keeps sidecar reads proportional.
+    const buffer = Buffer.allocUnsafe(stat.size + 1);
+    let bytesRead = 0;
+    while (bytesRead < buffer.length) {
+      const count = readSync(fd, buffer, bytesRead, buffer.length - bytesRead, null);
+      if (count === 0) break;
+      bytesRead += count;
+    }
+    if (bytesRead > stat.size) return undefined;
+    return JSON.parse(buffer.toString('utf8', 0, bytesRead));
   } catch {
     return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 

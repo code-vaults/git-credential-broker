@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 
 import { runBounded, runHostBroker } from '../../packages/host/src/commands/host.ts';
-import { channelDir, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
+import { channelDir, claimRequest, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 
 describe('the host broker, once', () => {
   let root = '';
@@ -41,6 +41,22 @@ describe('the host broker, once', () => {
 
   after(() => {
     rmSync(root, { recursive: true, force: true });
+  });
+
+  it('refuses to execute a request left in a working file', async () => {
+    rmSync(argvFile, { force: true });
+    const id = writeRequest(dir, {
+      kind: 'action',
+      action: 'pr:view',
+      repo: 'acme/widget',
+      values: { number: 7 },
+    });
+    assert.ok(claimRequest(dir, id));
+    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: 0x7fffffff, at: Date.now() }));
+    assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--once']), 0);
+    assert.match(readResult(dir, id)?.error ?? '', /outcome unknown/u);
+    assert.equal(existsSync(argvFile), false, 'the program did not run');
+    assert.equal(listRequests(dir).includes(id), false);
   });
 
   it('fulfils a request, records the answer, and passes on what it was asked to', async () => {

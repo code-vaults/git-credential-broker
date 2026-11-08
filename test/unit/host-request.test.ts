@@ -6,7 +6,7 @@
  * while it waits.
  */
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,6 +24,7 @@ import {
   readHostBroker,
   readRequest,
   readResult,
+  reclaimAbandoned,
   removeRequest,
   removeResult,
   requestProblems,
@@ -212,6 +213,83 @@ describe('the host request channel', () => {
     assert.equal(read?.kind, 'fork');
     assert.equal(read !== undefined && read.kind === 'fork' ? read.repo : undefined, 'acme/widget');
     removeRequest(dir, id);
+  });
+
+  it('never retires a claim whose owner is still alive, even when old', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    const record = JSON.parse(readFileSync(join(dir, `${id}.claim`), 'utf8')) as { pid: number };
+    assert.equal(record.pid, process.pid);
+    const old = new Date(Date.now() - 2 * 60 * 60_000);
+    utimesSync(join(dir, `${id}.json.working`), old, old);
+    assert.deepEqual(reclaimAbandoned(dir), { unknown: [], answered: [] });
+    assert.ok(existsSync(join(dir, `${id}.json.working`)));
+    removeRequest(dir, id);
+  });
+
+  it('retires an unrecorded claim only after the backstop', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    rmSync(join(dir, `${id}.claim`), { force: true });
+    assert.deepEqual(reclaimAbandoned(dir), { unknown: [], answered: [] });
+    const old = new Date(Date.now() - 2 * 60 * 60_000);
+    utimesSync(join(dir, `${id}.json.working`), old, old);
+    assert.deepEqual(reclaimAbandoned(dir).unknown, [id]);
+    removeRequest(dir, id);
+    removeResult(dir, id);
+  });
+
+  it('leaves a working request alone while its claim owner is alive', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    assert.deepEqual(reclaimAbandoned(dir), { unknown: [], answered: [] });
+    assert.ok(existsSync(join(dir, `${id}.json.working`)));
+    removeRequest(dir, id);
+  });
+
+  it('refuses a request larger than the body budget', () => {
+    const root = mkdtempSync(join(tmpdir(), 'channel-oversized-'));
+    const channel = channelDir(join(root, '.git'));
+    mkdirSync(channel, { recursive: true });
+    writeFileSync(
+      join(channel, 'oversized.json'),
+      JSON.stringify({ kind: 'edit', repo: 'acme/widget', number: 1, body: 'x'.repeat(300_000) }),
+    );
+    assert.equal(readRequest(channel, 'oversized'), undefined);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('retires a claimed request with an unknown-outcome error', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: 0x7fffffff, at: Date.now() }));
+    assert.deepEqual(reclaimAbandoned(dir).unknown, [id]);
+    assert.equal(listRequests(dir).includes(id), false);
+    assert.match(readResult(dir, id)?.error ?? '', /outcome unknown/u);
+    removeRequest(dir, id);
+    removeResult(dir, id);
+  });
+
+  it('keeps the working file when an existing result is unreadable', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: 0x7fffffff, at: Date.now() }));
+    mkdirSync(join(dir, `${id}.result.json`));
+    assert.deepEqual(reclaimAbandoned(dir), { unknown: [], answered: [] });
+    assert.ok(existsSync(join(dir, `${id}.json.working`)));
+    removeRequest(dir, id);
+    rmSync(join(dir, `${id}.result.json`), { recursive: true, force: true });
+  });
+
+  it('keeps an existing answer when retiring the working copy', () => {
+    const id = writeRequest(dir, GOOD);
+    assert.ok(claimRequest(dir, id));
+    writeResult(dir, id, { stdout: 'ok', stderr: '', code: 0 });
+    writeFileSync(join(dir, `${id}.claim`), JSON.stringify({ pid: 0x7fffffff, at: Date.now() }));
+    assert.deepEqual(reclaimAbandoned(dir).answered, [id]);
+    assert.equal(listRequests(dir).includes(id), false);
+    assert.equal(readResult(dir, id)?.stdout, 'ok');
+    removeResult(dir, id);
   });
 
   it('names a request after the clock, with something to break a tie', () => {
