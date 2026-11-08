@@ -191,6 +191,8 @@ export interface BaseHostConfig {
   readonly allowForkPush?: boolean;
   /** Allow actions on a repository whose fork is allowlisted, after verifying the fork relationship. */
   readonly allowFork?: boolean;
+  /** Use the owner's userTokens entry as a git credential when the App is not installed. */
+  readonly allowUserCredential?: boolean;
 }
 
 /** Host block backed by one fixed username/password pair. */

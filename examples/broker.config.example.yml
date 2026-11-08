@@ -53,6 +53,7 @@ hosts:
     # Public forks of an allowlisted repo; the App must be installed on the fork.
     allowForkPush: false
     allowFork: false
+    allowUserCredential: false
 
   # A host:port key must be quoted so YAML does not read the colon as a mapping separator.
   "git.example.internal:8443":

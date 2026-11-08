@@ -545,6 +545,16 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
   async function personTokenFor(owner: string): Promise<string | undefined> {
     const personal = await personalToken();
     if (personal !== undefined) return personal;
+    return ownerTokenFor(owner);
+  }
+
+  /**
+   * The fine-grained token configured for one owner, without the global OAuth fallback.
+   *
+   * @param owner - the repository owner.
+   * @returns the token, or undefined when none is configured.
+   */
+  async function ownerTokenFor(owner: string): Promise<string | undefined> {
     const file = cfg.userTokens?.[owner];
     if (file === undefined) return undefined;
     const token = readFileSync(file, 'utf8').trim();
@@ -782,9 +792,35 @@ function pullRequestNumber(value: unknown): number | undefined {
         return { ...cached, cached: true };
       }
 
+      const installationId = await repositoryInstallation(request.owner, request.repo);
+      if (installationId === undefined) {
+        if (cfg.allowUserCredential !== true) {
+          throw new ProviderConfigError(
+            `the app is not installed on ${request.owner}/${request.repo}; install it, or configure userTokens and allowUserCredential`,
+          );
+        }
+        const person = await ownerTokenFor(request.owner);
+        if (person === undefined) {
+          throw new ProviderConfigError(`no userTokens entry for ${request.owner}; add one or install the app`);
+        }
+        const credential: Credential = {
+          username: 'x-access-token',
+          password: person,
+          expiresAt: now() + 3_600_000,
+        };
+        tokens.set(request.full, credential);
+        return { ...credential, cached: false };
+      }
+      const ownerKey = request.owner.toLowerCase();
+      if (installations.get(ownerKey)?.id !== installationId) {
+        installations.set(ownerKey, { id: installationId, expiresAt: now() + installationTtlMs });
+        for (const permissionKey of permissionsChecked.keys()) {
+          if (permissionKey.startsWith(`${ownerKey}|`)) permissionsChecked.delete(permissionKey);
+        }
+      }
       await ensurePermissions(request.owner);
-      const installationId = await resolveInstallationId(request.owner);
-      const { json } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
+      const currentInstallation = await resolveInstallationId(request.owner);
+      const { json } = await call('POST', `${api}/app/installations/${currentInstallation}/access_tokens`, {
         repositories: [request.repo],
         permissions,
       });

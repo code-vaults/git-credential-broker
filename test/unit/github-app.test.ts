@@ -186,7 +186,16 @@ function createStubFetch(options: {
     }
     if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
     if (/\/repos\/[^/]+\/[^/]+\/installation$/.test(url)) {
-      return Promise.resolve(jsonResponse(options.repoInstalled === false ? { message: 'Not Found' } : { id: 42 }, options.repoInstalled === false ? 404 : 200));
+      const owner = url.split('/repos/')[1]?.split('/')[0]?.toLowerCase();
+      const found = Array.isArray(installations)
+        ? (installations as Array<{ id?: number; account?: { login?: string } }>).find(
+            (entry) => entry.account?.login?.toLowerCase() === owner,
+          )
+        : undefined;
+      if (options.repoInstalled === false || found?.id === undefined) {
+        return Promise.resolve(jsonResponse({ message: 'Not Found' }, 404));
+      }
+      return Promise.resolve(jsonResponse({ id: found.id }));
     }
     if (url.includes('/app/installations?')) return Promise.resolve(jsonResponse(installations));
     if (url.endsWith('/forks')) {
@@ -626,6 +635,62 @@ describe('createGithubAppProvider', () => {
     }
   });
 
+  it('uses the owner token as a credential when the app is not installed', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-user-credential-'));
+    const tokenPath = join(dir, 'mdx-js.token');
+    writeFileSync(tokenPath, 'github_pat_owner_token\n', 'utf8');
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      repoInstalled: false,
+    });
+    try {
+      const provider = providerFor(stub, {
+        allowUserCredential: true,
+        userTokens: { 'mdx-js': tokenPath },
+      });
+      const credential = await provider.getCredential({
+        host: 'github.com',
+        owner: 'mdx-js',
+        repo: 'eslint-mdx',
+        full: 'mdx-js/eslint-mdx',
+      });
+      assert.equal(credential.password, 'github_pat_owner_token');
+      assert.equal(
+        stub.calls.some((call) => call.url.includes('/access_tokens')),
+        false,
+        'no installation token is minted when the app is not installed',
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses the owner-token fallback without the config opt-in', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-user-credential-off-'));
+    const tokenPath = join(dir, 'mdx-js.token');
+    writeFileSync(tokenPath, 'github_pat_owner_token\n', 'utf8');
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      repoInstalled: false,
+    });
+    try {
+      const provider = providerFor(stub, { userTokens: { 'mdx-js': tokenPath } });
+      await assert.rejects(
+        provider.getCredential({
+          host: 'github.com',
+          owner: 'mdx-js',
+          repo: 'eslint-mdx',
+          full: 'mdx-js/eslint-mdx',
+        }),
+        /not installed/u,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('resolves the installation by account login and scopes the token to one named repository', async () => {
     const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'Acme' } }], nowMs });
     const provider = providerFor(stub);
@@ -638,9 +703,9 @@ describe('createGithubAppProvider', () => {
     const appCall = stub.calls.find((call) => call.url.endsWith('/app'));
     const lookup = stub.calls.find((call) => call.url.includes('/app/installations?'));
     const mint = stub.calls.find((call) => call.method === 'POST');
-    assert.ok(appCall && lookup && mint, 'the pre-flight, the lookup and the mint must all happen');
-    assert.match(lookup.url, /\/app\/installations\?per_page=100$/);
-    assert.match(lookup.authorization ?? '', /^Bearer eyJ/, 'the app JWT authenticates the lookup');
+    assert.ok(appCall && mint, 'the permission pre-flight and the mint must both happen');
+    assert.ok(stub.calls.some((call) => call.url.endsWith('/repos/acme/widget/installation')));
+    if (lookup) assert.match(lookup.authorization ?? '', /^Bearer eyJ/, 'the app JWT authenticates the lookup');
 
     assert.match(mint.url, /\/app\/installations\/42\/access_tokens$/);
     assert.deepEqual(
@@ -714,7 +779,7 @@ describe('createGithubAppProvider', () => {
     const provider = providerFor(stub);
     await assert.rejects(
       () => provider.getCredential({ host: 'github.com', owner: 'acme', repo: 'widget', full: 'acme/widget' }),
-      /no installation.*acme/,
+      /not installed.*acme/,
     );
   });
 
@@ -752,6 +817,7 @@ describe('createGithubAppProvider', () => {
         raw: init.body ?? '',
       });
       if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
+      if (url.endsWith('/repos/acme/widget/installation')) return Promise.resolve(jsonResponse({ id: 42 }));
       if (url.includes('/app/installations?')) {
         return Promise.resolve(jsonResponse([{ id: 42, account: { login: 'acme' } }]));
       }
