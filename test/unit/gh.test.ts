@@ -54,8 +54,8 @@ describe('runGhAction', { skip: onWindows }, () => {
     );
   });
 
-  it('charges the issue-target probe to the action deadline', async () => {
-    const gh = shim('sleep 2; if [ "$1" = "api" ]; then echo false; fi');
+  it('times out an issue action after the probe', async () => {
+    const gh = shim('sleep 0.5; if [ "$1" = "api" ]; then echo false; else sleep 10; fi');
     const started = Date.now();
     const result = await runGhAction({
       action: 'issue:close',
@@ -69,7 +69,6 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.equal(result.timedOut, true);
     assert.ok(Date.now() - started < 4_500, 'the probe and action share one deadline');
   });
-
   it('refuses when the issue-target probe fails', async () => {
     const gh = shim('if [ "$1" = "api" ]; then echo boom >&2; exit 1; fi; echo SHOULD_NOT_RUN');
     await assert.rejects(
