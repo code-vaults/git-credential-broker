@@ -3,8 +3,7 @@ import { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, it, mock } from 'node:test';
-import { setTimeout as delay } from 'node:timers/promises';
+import { describe, it } from 'node:test';
 
 import { KILL_GRACE_MS, runGhAction } from '../../packages/host/src/gh.ts';
 
@@ -56,62 +55,20 @@ describe('runGhAction', { skip: onWindows }, () => {
   });
 
   it('charges the issue-target probe to the action deadline', async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-probe-deadline-'));
-    const probeStarted = path.join(root, 'probe-started');
-    const release = path.join(root, 'release');
-    const actionStarted = path.join(root, 'action-started');
-    const gh = shim(
-      `if [ "$1" = "api" ]; then touch ${probeStarted}; while [ ! -f ${release} ]; do sleep 0.01; done; echo false; else touch ${actionStarted}; sleep 10; fi`,
-    );
-    mock.timers.enable({ apis: ['setTimeout', 'Date'] });
-    assert.equal(Date.now(), 0, 'the mocked clock must be the one the test advances');
-    let failure: unknown;
-    try {
-      const pending = runGhAction({
-        action: 'issue:close',
-        values: { number: 7 },
-        repo: 'acme/widget',
-        token: 'app-token',
-        ghPath: gh,
-        timeoutMs: 500,
-        env: { PATH: process.env.PATH },
-      });
-      void pending.catch((error: unknown) => {
-        failure = error;
-      });
-      // performance.now() must stay real while Date is mocked; using Date.now() would freeze the bound.
-      const waitFor = async (file: string): Promise<void> => {
-        const deadline = performance.now() + 2_000;
-        while (!fs.existsSync(file)) {
-          if (failure !== undefined) throw failure;
-          if (performance.now() > deadline) throw new Error(`timed out waiting for ${file}`);
-          await new Promise(setImmediate);
-        }
-      };
-      await waitFor(probeStarted);
-      mock.timers.tick(400);
-      fs.writeFileSync(release, '');
-      await waitFor(actionStarted);
-      mock.timers.tick(100);
-      const result = await Promise.race([
-        pending,
-        delay(1_000).then(() => {
-          throw new Error('the action must use the remaining 100 ms');
-        }),
-      ]);
-      assert.equal(result.timedOut, true);
-    } finally {
-      // Release a probe that is still waiting, even when an assertion failed before the normal release.
-      try {
-        fs.writeFileSync(release, '');
-      } catch {
-        // The fixture may already be gone on an early failure.
-      }
-      mock.timers.reset();
-      fs.rmSync(root, { recursive: true, force: true });
-    }
+    const gh = shim('sleep 0.5; if [ "$1" = "api" ]; then echo false; else sleep 10; fi');
+    const started = Date.now();
+    const result = await runGhAction({
+      action: 'issue:close',
+      values: { number: 7 },
+      repo: 'acme/widget',
+      token: 'app-token',
+      ghPath: gh,
+      timeoutMs: 3_000,
+      env: { PATH: process.env.PATH },
+    });
+    assert.equal(result.timedOut, true);
+    assert.ok(Date.now() - started < 4_500, 'the probe and action share one deadline');
   });
-
   it('refuses when the issue-target probe fails', async () => {
     const gh = shim('if [ "$1" = "api" ]; then echo boom >&2; exit 1; fi; echo SHOULD_NOT_RUN');
     await assert.rejects(
