@@ -64,6 +64,7 @@ describe('runGhAction', { skip: onWindows }, () => {
       `if [ "$1" = "api" ]; then touch ${probeStarted}; while [ ! -f ${release} ]; do sleep 0.01; done; echo false; else touch ${actionStarted}; sleep 10; fi`,
     );
     mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+    let failure: unknown;
     try {
       const pending = runGhAction({
         action: 'issue:close',
@@ -74,10 +75,21 @@ describe('runGhAction', { skip: onWindows }, () => {
         timeoutMs: 500,
         env: { PATH: process.env.PATH },
       });
-      while (!fs.existsSync(probeStarted)) await new Promise(setImmediate);
+      void pending.catch((error: unknown) => {
+        failure = error;
+      });
+      const waitFor = async (file: string): Promise<void> => {
+        const deadline = performance.now() + 2_000;
+        while (!fs.existsSync(file)) {
+          if (failure !== undefined) throw failure;
+          if (performance.now() > deadline) throw new Error(`timed out waiting for ${file}`);
+          await new Promise(setImmediate);
+        }
+      };
+      await waitFor(probeStarted);
       mock.timers.setTime(400);
       fs.writeFileSync(release, '');
-      while (!fs.existsSync(actionStarted)) await new Promise(setImmediate);
+      await waitFor(actionStarted);
       mock.timers.tick(100);
       const result = await Promise.race([
         pending,
@@ -88,10 +100,12 @@ describe('runGhAction', { skip: onWindows }, () => {
       assert.equal(result.timedOut, true);
       assert.equal(fs.existsSync(actionStarted), true, 'the probe succeeded before the action started');
     } finally {
+      if (failure !== undefined) mock.timers.tick(10_000);
       mock.timers.reset();
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
   it('refuses when the issue-target probe fails', async () => {
     const gh = shim('if [ "$1" = "api" ]; then echo boom >&2; exit 1; fi; echo SHOULD_NOT_RUN');
     await assert.rejects(
