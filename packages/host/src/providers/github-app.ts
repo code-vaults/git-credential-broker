@@ -811,7 +811,7 @@ function pullRequestNumber(value: unknown): number | undefined {
           // personalToken() cached this token with the expiry GitHub returned; do not invent one.
           expiresAt: cachedPersonToken?.until ?? now() + 3_600_000,
         };
-        tokens.set(request.full, credential);
+        // Do not cache: a new gcb authorize or a revoked grant must take effect on the next request.
         return { ...credential, cached: false };
       }
       const ownerKey = request.owner.toLowerCase();

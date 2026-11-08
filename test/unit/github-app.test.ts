@@ -653,6 +653,32 @@ describe('createGithubAppProvider', () => {
     );
   });
 
+  it('names authorize when the credential fallback has no person token', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-user-credential-missing-'));
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      repoInstalled: false,
+    });
+    try {
+      const provider = providerFor(stub, {
+        allowUserCredential: true,
+        privateKeyPath: join(dir, 'app.pem'),
+      });
+      await assert.rejects(
+        provider.getCredential({
+          host: 'github.com',
+          owner: 'mdx-js',
+          repo: 'eslint-mdx',
+          full: 'mdx-js/eslint-mdx',
+        }),
+        /no authorized user token.*gcb authorize/u,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('reuses the authorized person token for a credential fallback', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'gcb-user-credential-oauth-'));
     writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
@@ -693,11 +719,11 @@ describe('createGithubAppProvider', () => {
     assert.equal(credential.password, 'ghs_stub_token_value');
 
     const appCall = stub.calls.find((call) => call.url.endsWith('/app'));
-    const lookup = stub.calls.find((call) => call.url.includes('/app/installations?'));
     const mint = stub.calls.find((call) => call.method === 'POST');
+    const installationCall = stub.calls.find((call) => call.url.endsWith('/repos/acme/widget/installation'));
     assert.ok(appCall && mint, 'the permission pre-flight and the mint must both happen');
-    assert.ok(stub.calls.some((call) => call.url.endsWith('/repos/acme/widget/installation')));
-    if (lookup) assert.match(lookup.authorization ?? '', /^Bearer eyJ/, 'the app JWT authenticates the lookup');
+    assert.ok(installationCall, 'the repository installation lookup must happen');
+    assert.match(installationCall.authorization ?? '', /^Bearer eyJ/, 'the app JWT authenticates the lookup');
 
     assert.match(mint.url, /\/app\/installations\/42\/access_tokens$/);
     assert.deepEqual(
