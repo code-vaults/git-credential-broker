@@ -356,6 +356,22 @@ describe('finding the checkouts to serve', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it('serves a submodule checkout nested inside a parent checkout', () => {
+    const root = mkdtempSync(join(tmpdir(), 'discover-submodule-'));
+    mkdirSync(join(root, 'parent', '.git'), { recursive: true });
+    writeFileSync(join(root, 'parent', '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    mkdirSync(join(root, 'parent', 'shell'), { recursive: true });
+    mkdirSync(join(root, 'parent', '.git', 'modules', 'shell'), { recursive: true });
+    writeFileSync(join(root, 'parent', '.git', 'modules', 'shell', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    writeFileSync(join(root, 'parent', 'shell', '.git'), 'gitdir: ../.git/modules/shell\n', 'utf8');
+
+    const repos = discoverCheckouts(root, 4)
+      .map((found) => found.repo.slice(root.length + 1))
+      .sort();
+    assert.deepEqual(repos, ['parent', 'parent/shell']);
+    rmSync(root, { recursive: true, force: true });
+  });
+
   it('serves a worktree whose git directory is spelled through an alias of the root', () => {
     // The root can be one name for a directory the filesystem knows by another ($HOME on the host this was
     // found on), and a worktree records its git directory under the real one. Comparing the raw spellings
