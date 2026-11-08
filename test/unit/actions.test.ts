@@ -45,6 +45,10 @@ describe('gh action catalog', () => {
       'run:watch',
       'run:cancel',
       'run:rerun',
+      'release:list',
+      'release:view',
+      'workflow:list',
+      'workflow:view',
     ]);
     assert.equal('pr:merge' in GH_ACTIONS, false);
     assert.equal(getGhAction('pr:create').command.join(' '), 'pr create');
@@ -86,6 +90,10 @@ describe('gh action catalog', () => {
     });
     assert.deepEqual(getGhAction('issue:view').permissions, { issues: 'read' });
     assert.deepEqual(getGhAction('issue:list').permissions, { issues: 'read' });
+    assert.deepEqual(getGhAction('release:list').permissions, { contents: 'read' });
+    assert.deepEqual(getGhAction('release:view').permissions, { contents: 'read' });
+    assert.deepEqual(getGhAction('workflow:list').permissions, { actions: 'read' });
+    assert.deepEqual(getGhAction('workflow:view').permissions, { actions: 'read' });
     assert.equal(getGhAction('pr:checks').timeoutSeconds, 300);
   });
 
@@ -111,6 +119,10 @@ describe('gh action catalog', () => {
       'run:view',
       'run:list',
       'run:watch',
+      'release:list',
+      'release:view',
+      'workflow:list',
+      'workflow:view',
     ]) {
       assert.equal(getGhAction(name).readOnly, true, name);
       assert.equal(getGhAction(name).appUser, true, name);
@@ -170,6 +182,27 @@ describe('gh action catalog', () => {
 });
 
 describe('buildGhArgv', () => {
+  it('builds release and workflow read argv', () => {
+    assert.deepEqual(buildGhArgv('release:list', { limit: 5, json: 'tagName' }, 'acme/widget'), [
+      'release',
+      'list',
+      '--json',
+      'tagName',
+      '--limit',
+      '5',
+      '--repo',
+      'acme/widget',
+    ]);
+    assert.deepEqual(buildGhArgv('workflow:view', { workflow: 'ci.yml', yaml: true }, 'acme/widget'), [
+      'workflow',
+      'view',
+      'ci.yml',
+      '--yaml',
+      '--repo',
+      'acme/widget',
+    ]);
+  });
+
   it('rebuilds the canonical argv and injects the repository', () => {
     assert.deepEqual(
       buildGhArgv(

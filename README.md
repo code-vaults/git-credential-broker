@@ -819,6 +819,10 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `run watch` | `actions: read`, `checks: read` |
 | `run cancel` | `actions: write` |
 | `run rerun` | `actions: write` |
+| `release list` | `contents: read` |
+| `release view` | `contents: read` |
+| `workflow list` | `actions: read` |
+| `workflow view` | `actions: read` |
 <!-- action-permissions:end -->
 
 `pr status` with `--repo` reports the app identity's relevant pull requests and review requests

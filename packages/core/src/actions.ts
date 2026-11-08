@@ -564,6 +564,77 @@ const RUN_LIST: GhAction = {
   appUser: true,
 };
 
+/** GitHub: GET /repos/{owner}/{repo}/releases */
+const RELEASE_LIST: GhAction = {
+  name: 'release:list',
+  command: ['release', 'list'],
+  positionals: [],
+  flags: [
+    { name: 'exclude-drafts', type: 'boolean' },
+    { name: 'exclude-pre-releases', type: 'boolean' },
+    { name: 'json', type: 'string' },
+    { name: 'jq', type: 'string' },
+    { name: 'limit', type: 'number' },
+    { name: 'order', type: 'string' },
+    { name: 'template', type: 'string' },
+  ],
+  permissions: { contents: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+};
+
+/** GitHub: GET /repos/{owner}/{repo}/releases/tags/{tag} */
+const RELEASE_VIEW: GhAction = {
+  name: 'release:view',
+  command: ['release', 'view'],
+  positionals: [{ name: 'tag', type: 'string' }],
+  flags: [
+    { name: 'json', type: 'string' },
+    { name: 'jq', type: 'string' },
+    { name: 'template', type: 'string' },
+    { name: 'web', type: 'boolean' },
+  ],
+  permissions: { contents: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+};
+
+/** GitHub: GET /repos/{owner}/{repo}/actions/workflows */
+const WORKFLOW_LIST: GhAction = {
+  name: 'workflow:list',
+  command: ['workflow', 'list'],
+  positionals: [],
+  flags: [
+    { name: 'all', type: 'boolean' },
+    { name: 'json', type: 'string' },
+    { name: 'jq', type: 'string' },
+    { name: 'limit', type: 'number' },
+    { name: 'template', type: 'string' },
+  ],
+  permissions: { actions: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+};
+
+/** GitHub: GET /repos/{owner}/{repo}/actions/workflows/{workflow_id} */
+const WORKFLOW_VIEW: GhAction = {
+  name: 'workflow:view',
+  command: ['workflow', 'view'],
+  positionals: [{ name: 'workflow', type: 'string' }],
+  flags: [
+    { name: 'ref', type: 'string' },
+    { name: 'web', type: 'boolean' },
+    { name: 'yaml', type: 'boolean' },
+  ],
+  permissions: { actions: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+};
+
 /** Every built-in action, keyed by its action name. */
 export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:view': PR_VIEW,
@@ -598,6 +669,10 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'run:watch': RUN_WATCH,
   'run:cancel': RUN_CANCEL,
   'run:rerun': RUN_RERUN,
+  'release:list': RELEASE_LIST,
+  'release:view': RELEASE_VIEW,
+  'workflow:list': WORKFLOW_LIST,
+  'workflow:view': WORKFLOW_VIEW,
 });
 
 /** The built-in action names, in a stable order. */
