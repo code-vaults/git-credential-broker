@@ -796,12 +796,14 @@ function pullRequestNumber(value: unknown): number | undefined {
       if (installationId === undefined) {
         if (cfg.allowUserCredential !== true) {
           throw new ProviderConfigError(
-            `the app is not installed on ${request.owner}/${request.repo}; install it, or configure userTokens and allowUserCredential`,
+            `the app is not installed on ${request.owner}/${request.repo}; install it, or set allowUserCredential and run gcb authorize`,
           );
         }
-        const person = await ownerTokenFor(request.owner);
+        const person = await personalToken();
         if (person === undefined) {
-          throw new ProviderConfigError(`no userTokens entry for ${request.owner}; add one or install the app`);
+          throw new ProviderConfigError(
+            `no authorized user token for ${request.owner}; run gcb authorize, or install the app`,
+          );
         }
         const credential: Credential = {
           username: 'x-access-token',

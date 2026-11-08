@@ -635,10 +635,27 @@ describe('createGithubAppProvider', () => {
     }
   });
 
-  it('uses the owner token as a credential when the app is not installed', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'gcb-user-credential-'));
-    const tokenPath = join(dir, 'mdx-js.token');
-    writeFileSync(tokenPath, 'github_pat_owner_token\n', 'utf8');
+  it('refuses the credential fallback without the config opt-in', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      repoInstalled: false,
+    });
+    const provider = providerFor(stub);
+    await assert.rejects(
+      provider.getCredential({
+        host: 'github.com',
+        owner: 'mdx-js',
+        repo: 'eslint-mdx',
+        full: 'mdx-js/eslint-mdx',
+      }),
+      /not installed/u,
+    );
+  });
+
+  it('reuses the authorized person token for a credential fallback', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-user-credential-oauth-'));
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
@@ -647,7 +664,7 @@ describe('createGithubAppProvider', () => {
     try {
       const provider = providerFor(stub, {
         allowUserCredential: true,
-        userTokens: { 'mdx-js': tokenPath },
+        privateKeyPath: join(dir, 'app.pem'),
       });
       const credential = await provider.getCredential({
         host: 'github.com',
@@ -655,36 +672,11 @@ describe('createGithubAppProvider', () => {
         repo: 'eslint-mdx',
         full: 'mdx-js/eslint-mdx',
       });
-      assert.equal(credential.password, 'github_pat_owner_token');
+      assert.equal(credential.password, 'person-token');
       assert.equal(
         stub.calls.some((call) => call.url.includes('/access_tokens')),
         false,
-        'no installation token is minted when the app is not installed',
-      );
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('refuses the owner-token fallback without the config opt-in', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'gcb-user-credential-off-'));
-    const tokenPath = join(dir, 'mdx-js.token');
-    writeFileSync(tokenPath, 'github_pat_owner_token\n', 'utf8');
-    const stub = createStubFetch({
-      installations: [{ id: 42, account: { login: 'acme' } }],
-      nowMs,
-      repoInstalled: false,
-    });
-    try {
-      const provider = providerFor(stub, { userTokens: { 'mdx-js': tokenPath } });
-      await assert.rejects(
-        provider.getCredential({
-          host: 'github.com',
-          owner: 'mdx-js',
-          repo: 'eslint-mdx',
-          full: 'mdx-js/eslint-mdx',
-        }),
-        /not installed/u,
+        'the fallback must not mint an installation token',
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });
