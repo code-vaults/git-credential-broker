@@ -277,7 +277,16 @@ describe('buildGhArgv', () => {
         'bug',
       ],
     );
-    for (const query of ['repo:other/repo bug', 'org:other bug', 'user:other bug', '-repo:other/repo']) {
+    for (const query of [
+      'repo:other/repo bug',
+      'org:other bug',
+      'user:other bug',
+      '-repo:other/repo',
+      'bug org:other',
+      '(repo:other/repo)',
+      '(org:other)',
+      '(user:other)',
+    ]) {
       assert.throws(
         () => buildGhArgv('search:issues', { query }, 'acme/widget'),
         /cannot contain repo:, org: or user:/u,

@@ -1056,7 +1056,7 @@ export function buildGhArgv(
   if (
     action.command[0] === 'search' &&
     typeof values['query'] === 'string' &&
-    /(?:^|\s)-?(?:repo|org|user):/iu.test(values['query'])
+    /(?:^|[\s(])-?(?:repo|org|user):/iu.test(values['query'])
   ) {
     throw new ActionError(
       'search query cannot contain repo:, org: or user:; the broker scopes it to --repo',
