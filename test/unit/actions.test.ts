@@ -93,8 +93,10 @@ describe('gh action catalog', () => {
     assert.deepEqual(getGhAction('issue:view').permissions, { issues: 'read' });
     assert.deepEqual(getGhAction('issue:list').permissions, { issues: 'read' });
     assert.deepEqual(getGhAction('issue:comment-edit').permissions, { issues: 'write' });
+    assert.equal(getGhAction('issue:comment-edit').command.join(' '), 'issue comment-edit');
     assert.deepEqual(getGhAction('pr:comment-edit').permissions, { issues: 'write' });
     assert.equal(getGhAction('pr:comment-edit').appUser, true);
+    assert.equal(getGhAction('pr:comment-edit').command.join(' '), 'pr comment-edit');
     assert.equal(getGhAction('issue:comment-edit').appUser, true);
     assert.deepEqual(getGhAction('release:list').permissions, { contents: 'read' });
     assert.deepEqual(getGhAction('release:view').permissions, { contents: 'read' });

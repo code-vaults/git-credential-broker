@@ -398,7 +398,7 @@ const ISSUE_REOPEN: GhAction = {
 // GitHub: PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
 const ISSUE_COMMENT_EDIT: GhAction = {
   name: 'issue:comment-edit',
-  command: ['api'],
+  command: ['issue', 'comment-edit'],
   positionals: [{ name: 'commentId', type: 'number', required: true }],
   flags: [{ name: 'body', type: 'string', required: true, nonEmpty: true }],
   permissions: { issues: 'write' },
@@ -412,7 +412,11 @@ const ISSUE_COMMENT_EDIT: GhAction = {
 };
 
 // GitHub: PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}; a PR conversation comment is an issue comment
-const PR_COMMENT_EDIT: GhAction = { ...ISSUE_COMMENT_EDIT, name: 'pr:comment-edit' };
+const PR_COMMENT_EDIT: GhAction = {
+  ...ISSUE_COMMENT_EDIT,
+  name: 'pr:comment-edit',
+  command: ['pr', 'comment-edit'],
+};
 
 // GitHub: GET /repos/{owner}/{repo}/issues/{issue_number}
 const ISSUE_VIEW: GhAction = {
