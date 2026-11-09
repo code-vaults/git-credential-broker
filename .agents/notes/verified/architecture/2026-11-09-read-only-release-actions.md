@@ -28,7 +28,7 @@ separate decision for it.
 
 ## Consequences
 
-- The generated permission table continues to be the source of truth for the
-  action permissions.
+- The action catalog remains the source of truth for broker permissions; the
+  generated README permission table is documentation derived from it.
 - Any future release write action needs a new decision and roadmap update; it is not
   opened by this note.
