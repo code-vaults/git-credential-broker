@@ -300,6 +300,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     if (config === undefined) {
       try {
         config = loadConfig(resolveConfigPath(configPath));
+        loadedConfig = resolvedConfig;
         writeStatus();
       } catch (error) {
         throw new Error(
