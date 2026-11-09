@@ -1,28 +1,28 @@
-import { ProviderConfigError } from 'gcb-core';
-import type { FetchLike, FetchResponseLike } from 'gcb-core';
+import { ProviderConfigError } from 'gcb-core'
+import type { FetchLike, FetchResponseLike } from 'gcb-core'
 
 /** How long one visibility check may take, including the body. */
-const CHECK_TIMEOUT_MS = 10_000;
+const CHECK_TIMEOUT_MS = 10_000
 
 /** Options shared by the unauthenticated repository checks. */
 export interface RepositoryCheckOptions {
   /** GitHub API version header; defaults to 2022-11-28. */
-  readonly apiVersion?: string;
+  readonly apiVersion?: string
   /** Whole-request deadline, including the body; defaults to 10 seconds. */
-  readonly timeoutMs?: number;
+  readonly timeoutMs?: number
   /** Name used in the timeout and rate-limit messages. */
-  readonly label?: string;
+  readonly label?: string
 }
 
 /**
  * Run one unauthenticated repository request with a deadline and no redirects.
  *
- * @param fetchImpl - the transport for this host's proxy choice.
- * @param apiBaseUrl - the API base, without a trailing path.
+ * @param fetchImpl - The transport for this host's proxy choice.
+ * @param apiBaseUrl - The API base, without a trailing path.
  * @param repository - `owner/name`.
  * @param options - API version, deadline and a label for the timeout message.
- * @param handle - reads the response while the deadline is still active.
- * @returns whatever the handler returns.
+ * @param handle - Reads the response while the deadline is still active.
+ * @returns Whatever the handler returns.
  */
 export async function withRepositoryResponse<T>(
   fetchImpl: FetchLike,
@@ -31,8 +31,8 @@ export async function withRepositoryResponse<T>(
   options: RepositoryCheckOptions,
   handle: (response: FetchResponseLike) => Promise<T>,
 ): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? CHECK_TIMEOUT_MS);
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? CHECK_TIMEOUT_MS)
   try {
     const response = await fetchImpl(`${apiBaseUrl}/repos/${repository}`, {
       method: 'GET',
@@ -43,29 +43,29 @@ export async function withRepositoryResponse<T>(
       },
       signal: controller.signal,
       redirect: 'error',
-    });
+    })
     if (response.status === 403 || response.status === 429) {
       const exhausted =
         response.status === 429 ||
         response.headers.get('x-ratelimit-remaining') === '0' ||
-        response.headers.get('retry-after') !== null;
-      const label = options.label ?? 'repository';
+        response.headers.get('retry-after') !== null
+      const label = options.label ?? 'repository'
       throw new ProviderConfigError(
         exhausted
           ? `GitHub rate-limited the unauthenticated ${label} check; retry later or allowlist the repository`
           : `GitHub refused the unauthenticated ${label} check; check the access policy or allowlist the repository`,
-      );
+      )
     }
-    return await handle(response);
+    return await handle(response)
   } catch (error) {
     if (controller.signal.aborted) {
       throw new ProviderConfigError(
         `GitHub timed out during the ${options.label ?? 'repository'} check; retry later`,
-      );
+      )
     }
-    throw error;
+    throw error
   } finally {
-    clearTimeout(timer);
+    clearTimeout(timer)
   }
 }
 
@@ -82,29 +82,31 @@ export async function isPublicRepository(
     apiBaseUrl,
     repository,
     { apiVersion, timeoutMs, label: 'public-repository' },
-    async (response) => {
-      if (!response.ok) return false;
-      const text = await response.text();
+    async response => {
+      if (!response.ok) {
+        return false
+      }
+      const text = await response.text()
       try {
-        const body = JSON.parse(text) as { private?: unknown } | null;
-        return body?.private === false;
+        const body = JSON.parse(text) as { private?: unknown } | null
+        return body?.private === false
       } catch {
-        return false;
+        return false
       }
     },
-  );
+  )
 }
 
 /**
  * Check whether a public repository is a fork of another, with no credential.
  *
- * @param fetchImpl - the transport for this host's proxy choice.
- * @param apiBaseUrl - the API base, without a trailing path.
- * @param repository - the possible fork, `owner/name`.
- * @param parent - the possible parent/source, `owner/name`.
+ * @param fetchImpl - The transport for this host's proxy choice.
+ * @param apiBaseUrl - The API base, without a trailing path.
+ * @param repository - The possible fork, `owner/name`.
+ * @param parent - The possible parent/source, `owner/name`.
  * @param apiVersion - GitHub API version header.
- * @param timeoutMs - whole-request deadline.
- * @returns true only when GitHub confirms the fork relationship.
+ * @param timeoutMs - Whole-request deadline.
+ * @returns True only when GitHub confirms the fork relationship.
  */
 export async function isForkOfRepository(
   fetchImpl: FetchLike,
@@ -119,23 +121,27 @@ export async function isForkOfRepository(
     apiBaseUrl,
     repository,
     { apiVersion, timeoutMs, label: 'fork' },
-    async (response) => {
-      if (!response.ok) return false;
-      const text = await response.text();
+    async response => {
+      if (!response.ok) {
+        return false
+      }
+      const text = await response.text()
       try {
         const body = JSON.parse(text) as {
-          fork?: unknown;
-          parent?: { full_name?: unknown } | null;
-          source?: { full_name?: unknown } | null;
-        } | null;
-        if (body?.fork !== true) return false;
+          fork?: unknown
+          parent?: { full_name?: unknown } | null
+          source?: { full_name?: unknown } | null
+        } | null
+        if (body?.fork !== true) {
+          return false
+        }
         const names = [body.parent?.full_name, body.source?.full_name]
           .filter((name): name is string => typeof name === 'string')
-          .map((name) => name.toLowerCase());
-        return names.includes(parent.toLowerCase());
+          .map(name => name.toLowerCase())
+        return names.includes(parent.toLowerCase())
       } catch {
-        return false;
+        return false
       }
     },
-  );
+  )
 }

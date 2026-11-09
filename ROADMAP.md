@@ -91,11 +91,7 @@ The configuration is the source of truth and must be comfortable to edit by hand
 
 - [x] Use YAML. `yaml` is the parser: `parseDocument` preserves comments and formatting, it is pure
       JavaScript, and the Document API is what lets `init` update one value without rewriting the file.
-- [x] Split the repository into Yarn workspaces under `packages/`:
-      - `gcb-core`: shared argument parsing, help, protocol and types; no `yaml`;
-      - `gcb-client`: container side; depends on `gcb-core`; no host dependencies;
-      - `gcb-host`: host side; depends on `gcb-core` and `yaml`;
-      - both client and host expose the same `gcb` bin; only one is installed per environment.
+- [x] Split the repository into Yarn workspaces under `packages/`: - `gcb-core`: shared argument parsing, help, protocol and types; no `yaml`; - `gcb-client`: container side; depends on `gcb-core`; no host dependencies; - `gcb-host`: host side; depends on `gcb-core` and `yaml`; - both client and host expose the same `gcb` bin; only one is installed per environment.
 - [x] Do **not** bundle. npm installs dependencies; remove esbuild and the staged bundle build.
       `stage`, if kept, exports a commit and does not build a self-contained artifact.
 - [x] Decide the global-install shape: `gcb` installed globally (`npm i -g` / `corepack`) is the
@@ -104,44 +100,26 @@ The configuration is the source of truth and must be comfortable to edit by hand
       `GCB_DEV=1` plus `~/.config/gcb/dev.json`, written by `gcb dev use <checkout>`) and re-execs
       the development entry with the same argv. Production ignores the pointer. The dev path never
       changes the socket, token, or host paths unless the developer sets them.
-- [ ] Define config v1:
-      - top-level `version`;
-      - hosts keyed by git host;
-      - reusable named `groups` with `repos` globs, `actions` allow/deny, optional advisory
-        `branches`, and per-action `timeouts`;
-      - effective repos = union of host entries and selected groups; **deny always wins**;
-      - owner/repo matching case-insensitive; branch matching case-sensitive; `*` one segment,
-        `**` multiple segments;
-      - unknown keys, unknown actions, unknown groups, malformed globs: refuse at load time.
-- [ ] Config-defined actions and built-in overrides:
-      - `[actions."<name>"]` declares `command`, optional `positional`, a `flags` whitelist, and
-        `permissions`; the broker rebuilds a canonical argv from those values, never forwards raw
-        argv and never uses a shell;
-      - the built-in hard-deny list applies to configured actions too; unknown flags and undeclared
-        positionals are refused;
-      - configured permissions must be a subset of the host's `max_permissions` ceiling;
-      - a built-in action may be overridden only to `enabled = false`, `deny = true`, or a narrower
-        permission set. Changing its command, flags, or widening permissions is refused; add a new
-        action name instead;
-      - `gcb actions list|describe|check|discover` reports built-in and configured actions, validates
-        them, and lists gh commands that are not yet covered without enabling them.
-- [ ] Live reload (no restart):
-      - [x] watch the configuration **directory**, not a single file, with `fs.watch`; debounce
-        300ms; an unavailable watch falls back to polling;
-      - [x] poll every 5 seconds and compare a content hash alongside `fs.watch`; events have been
-        observed to be missed, so the poll is the safety net rather than the primary trigger;
-      - [x] read the whole file, parse, validate, then atomically swap a frozen snapshot. Any parse or
-        validation failure keeps the last good snapshot, logs and audits `config reload failed`,
-        and leaves the service running;
-      - [x] `SIGHUP` forces a reload;
-      - [x] reload applies the fields that exist today (allowlists, timeouts, token/account settings);
-        provider/key changes rebuild providers; in-flight requests keep their snapshot; already-issued
-        git tokens are not revoked. Groups/actions reload when those configuration features land;
-      - [x] deployment mounts the config **directory** into a container, not the file, so a host-side
-        atomic replace is visible;
-      - [x] `gcb doctor` reports the config file digest and the last reload result, including whether
-        that digest matches the last accepted reload;
-        `gcb config check` is the one-shot validation.
+- [ ] Define config v1: - top-level `version`; - hosts keyed by git host; - reusable named `groups` with `repos` globs, `actions` allow/deny, optional advisory
+      `branches`, and per-action `timeouts`; - effective repos = union of host entries and selected groups; **deny always wins**; - owner/repo matching case-insensitive; branch matching case-sensitive; `*` one segment,
+      `**` multiple segments; - unknown keys, unknown actions, unknown groups, malformed globs: refuse at load time.
+- [ ] Config-defined actions and built-in overrides: - `[actions."<name>"]` declares `command`, optional `positional`, a `flags` whitelist, and
+      `permissions`; the broker rebuilds a canonical argv from those values, never forwards raw
+      argv and never uses a shell; - the built-in hard-deny list applies to configured actions too; unknown flags and undeclared
+      positionals are refused; - configured permissions must be a subset of the host's `max_permissions` ceiling; - a built-in action may be overridden only to `enabled = false`, `deny = true`, or a narrower
+      permission set. Changing its command, flags, or widening permissions is refused; add a new
+      action name instead; - `gcb actions list|describe|check|discover` reports built-in and configured actions, validates
+      them, and lists gh commands that are not yet covered without enabling them.
+- [ ] Live reload (no restart): - [x] watch the configuration **directory**, not a single file, with `fs.watch`; debounce
+      300ms; an unavailable watch falls back to polling; - [x] poll every 5 seconds and compare a content hash alongside `fs.watch`; events have been
+      observed to be missed, so the poll is the safety net rather than the primary trigger; - [x] read the whole file, parse, validate, then atomically swap a frozen snapshot. Any parse or
+      validation failure keeps the last good snapshot, logs and audits `config reload failed`,
+      and leaves the service running; - [x] `SIGHUP` forces a reload; - [x] reload applies the fields that exist today (allowlists, timeouts, token/account settings);
+      provider/key changes rebuild providers; in-flight requests keep their snapshot; already-issued
+      git tokens are not revoked. Groups/actions reload when those configuration features land; - [x] deployment mounts the config **directory** into a container, not the file, so a host-side
+      atomic replace is visible; - [x] `gcb doctor` reports the config file digest and the last reload result, including whether
+      that digest matches the last accepted reload;
+      `gcb config check` is the one-shot validation.
 - [x] One-time migration: convert an existing `broker.config.json` to YAML before upgrade. The
       old `broker.config.json` filename is no longer discovered; an explicitly passed JSON file is
       still accepted because the YAML parser parses JSON. This phase adds no `config migrate` command.
@@ -169,17 +147,17 @@ hosts:
 
 groups:
   maintainer:
-    repos: ["acme/*", "code-vaults/git-*"]
+    repos: ['acme/*', 'code-vaults/git-*']
     actions: [pr:view, pr:create, pr:comment, pr:review]
     deny: [pr:merge]
     timeouts:
       default: 120
-      "pr:create": 180
-      "logs:read": 300
+      'pr:create': 180
+      'logs:read': 300
     branches:
-      advisory_push: ["agent/*"]   # not enforced by the broker; the dsh plugin may use it
+      advisory_push: ['agent/*'] # not enforced by the broker; the dsh plugin may use it
   reviewer:
-    repos: ["upstream/*"]
+    repos: ['upstream/*']
     actions: [pr:view, pr:review, pr:comment]
 
 actions:
@@ -202,21 +180,13 @@ host_broker:
 
 ## Phase 2 — `gcb gh` core
 
-- [ ] CLI dispatch:
-      - built-ins first (`setup`, `init`, `stage`, `compose`, `probe`, `diagnose`, `authorize`,
-        `app`, `host`, `config`, `version`, `help`);
-      - `gcb gh …` explicit;
-      - `gcb pr view …`, `gcb run view …`, `gcb issue create …` etc. resolve to the `gh`
-        subcommand. (Wired: any `pr` subcommand the catalog has, plus `run` and `issue`; the
-        flag-only `gcb pr` stays for the lifecycle `gh` cannot express, and `--close` refuses with a
-        pointer at `gcb gh pr close`.)
+- [ ] CLI dispatch: - built-ins first (`setup`, `init`, `stage`, `compose`, `probe`, `diagnose`, `authorize`,
+      `app`, `host`, `config`, `version`, `help`); - `gcb gh …` explicit; - `gcb pr view …`, `gcb run view …`, `gcb issue create …` etc. resolve to the `gh`
+      subcommand. (Wired: any `pr` subcommand the catalog has, plus `run` and `issue`; the
+      flag-only `gcb pr` stays for the lifecycle `gh` cannot express, and `--close` refuses with a
+      pointer at `gcb gh pr close`.)
 - [ ] Remove the built-in `pr` and `logs` commands. `gcb run view --job <id> --log` replaces `logs`.
-- [x] Build the command table. Every entry has:
-      - canonical subcommand (no aliases, no abbreviations);
-      - allowed flags and their types;
-      - required fields;
-      - action name and permission set;
-      - whether host-user execution is possible.
+- [x] Build the command table. Every entry has: - canonical subcommand (no aliases, no abbreviations); - allowed flags and their types; - required fields; - action name and permission set; - whether host-user execution is possible.
 - [x] Rebuild the argv from parsed values; never forward the caller's argv.
 - [ ] Deny rules evaluated before allow. Unknown command, unknown flag, or missing whitelist entry
       is refused.
@@ -224,34 +194,16 @@ host_broker:
       `secret`, `repo delete`, `release create/edit/upload/download/delete`, `gist`, `ssh-key`, `gpg-key`, `codespace`,
       `run download`, `workflow run`, `pr checkout`, `pr merge`; flags `--web`, `--hostname`,
       `--input`, `--template-file`, `--body-file` (the client converts a body file to `--body`).
-- [ ] Resolve the repository:
-      - from the container checkout's remotes, or an explicit `-R`;
-      - the broker validates it against the effective allowlist and injects `--repo`;
-      - `--hostname` is rejected; `GH_HOST` comes from the broker.
-- [ ] Creation permission preflight (issues and pull requests):
-      - resolve the App installation for the repository; if there is none, refuse **before** `gh`
-        runs and name `--as-user`;
-      - check the action's full permission set from the single action catalog: `pr:create` is
-        `pull_requests: write` + `contents: read`; `issue:create` is `issues: write`;
-      - the action catalog is the one source for the preflight, token mint, command table and the
-        table below; a test asserts they do not drift;
-      - this is a minimum-permission check, not an audit of the App's full grant list;
-      - record the refusal in the audit log. Never create an object the acting identity cannot
-        manage.
-- [ ] Host execution:
-      - run `gh` from a temporary `HOME` and `GH_CONFIG_DIR`;
-      - minimal environment: `PATH`, proxy variables, `GH_TOKEN`, `GH_HOST`, `NO_COLOR`;
-      - no shell, no `--body-file` host reads;
-      - capture stdout/stderr with a hard cap;
-      - per-action total timeout, `SIGTERM` then `SIGKILL`, kill the process group;
-      - no automatic retry. A timed-out write reports that it may have completed. (The timeout
-        starts after preflight/token mint, so the total exceeds the catalogued value by however long
-        those take.)
-- [x] Token lifecycle:
-      - mint per action with only that action's permissions;
-      - never cache;
-      - `finally`-revoke on success, failure, and timeout;
-      - if revoke fails, log host-side and report that the token expires on its own.
+- [ ] Resolve the repository: - from the container checkout's remotes, or an explicit `-R`; - the broker validates it against the effective allowlist and injects `--repo`; - `--hostname` is rejected; `GH_HOST` comes from the broker.
+- [ ] Creation permission preflight (issues and pull requests): - resolve the App installation for the repository; if there is none, refuse **before** `gh`
+      runs and name `--as-user`; - check the action's full permission set from the single action catalog: `pr:create` is
+      `pull_requests: write` + `contents: read`; `issue:create` is `issues: write`; - the action catalog is the one source for the preflight, token mint, command table and the
+      table below; a test asserts they do not drift; - this is a minimum-permission check, not an audit of the App's full grant list; - record the refusal in the audit log. Never create an object the acting identity cannot
+      manage.
+- [ ] Host execution: - run `gh` from a temporary `HOME` and `GH_CONFIG_DIR`; - minimal environment: `PATH`, proxy variables, `GH_TOKEN`, `GH_HOST`, `NO_COLOR`; - no shell, no `--body-file` host reads; - capture stdout/stderr with a hard cap; - per-action total timeout, `SIGTERM` then `SIGKILL`, kill the process group; - no automatic retry. A timed-out write reports that it may have completed. (The timeout
+      starts after preflight/token mint, so the total exceeds the catalogued value by however long
+      those take.)
+- [x] Token lifecycle: - mint per action with only that action's permissions; - never cache; - `finally`-revoke on success, failure, and timeout; - if revoke fails, log host-side and report that the token expires on its own.
 - [ ] Single-source action catalog (table below): one declarative table drives the permission
       preflight, token mint, command table and docs; configured actions extend it under the Phase 1
       rules. A test rejects drift between catalog, preflight, mint and docs, and rejects any built-in
@@ -260,20 +212,21 @@ host_broker:
       list. (Built-ins are covered; configured actions and permission-widening checks are Phase 1.)
 - [ ] Action permissions (initial table):
 
-  | Action | Command | Permissions |
-  |---|---|---|
-  | `pr:view` | `gh pr view` | `pull_requests: read`, `contents: read`, `checks: read`, `statuses: read` |
-  | `pr:list` | `gh pr list` | `pull_requests: read` |
-  | `pr:diff` | `gh pr diff` | `pull_requests: read`, `contents: read` |
-  | `pr:create` | `gh pr create` | `pull_requests: write`, `contents: read` |
-  | `pr:close` | `gh pr close` | `pull_requests: write` |
-  | `pr:comment` | `gh pr comment` | `pull_requests: write` |
-  | `pr:review` | `gh pr review` | `pull_requests: write` |
-  | `issue:create` | `gh issue create` | `issues: write` |
-  | `run:view` | `gh run view` | `actions: read` |
-  | `run:list` | `gh run list` | `actions: read` |
+  | Action         | Command           | Permissions                                                               |
+  | -------------- | ----------------- | ------------------------------------------------------------------------- |
+  | `pr:view`      | `gh pr view`      | `pull_requests: read`, `contents: read`, `checks: read`, `statuses: read` |
+  | `pr:list`      | `gh pr list`      | `pull_requests: read`                                                     |
+  | `pr:diff`      | `gh pr diff`      | `pull_requests: read`, `contents: read`                                   |
+  | `pr:create`    | `gh pr create`    | `pull_requests: write`, `contents: read`                                  |
+  | `pr:close`     | `gh pr close`     | `pull_requests: write`                                                    |
+  | `pr:comment`   | `gh pr comment`   | `pull_requests: write`                                                    |
+  | `pr:review`    | `gh pr review`    | `pull_requests: write`                                                    |
+  | `issue:create` | `gh issue create` | `issues: write`                                                           |
+  | `run:view`     | `gh run view`     | `actions: read`                                                           |
+  | `run:list`     | `gh run list`     | `actions: read`                                                           |
 
   Add rows only with the GitHub endpoint documentation for that command in the commit or note.
+
 - [x] Audit: action, repo, command, permissions, duration, exit status, truncated flag, fingerprint.
       Never output contents, never a token.
 - [ ] Error boundary: provider response bodies stay in the host log; only broker-composed errors
@@ -324,6 +277,7 @@ Account selection:
   The host broker sets `GH_CONFIG_DIR` from the request's `--as-user`; no switch, no shared state. The
   same pattern is what a host-side independent agent should use, so it becomes a skill rather than
   only a host broker detail.
+
 - `gh pr create` prompts to push or fork only when it has to infer the head from a local branch.
   The host broker runs from a temporary directory, so the canonical command always passes `--head`
   (resolved by the client from the checkout, or required as a flag), `--title` and `--body`;
@@ -362,35 +316,19 @@ Account selection:
       host broker over a host-local channel. The host broker's socket is not mounted into the agent
       container.
 - [ ] `--as-user` is valid only on commands the host broker supports; elsewhere it is refused.
-- [ ] The host broker supports multiple accounts:
-      - per-account `GH_CONFIG_DIR` (shown in Phase 1), **not** `gh auth switch`;
-      - `gh auth switch` is global mutable state and races concurrent requests;
-      - a request names the account; the host broker refuses an unknown account and lists the configured
-        ones.
-- [x] Extend host broker operations beyond `pr create`:
-      - `pr review` (approve / request changes / comment);
-      - `pr edit` (title / body / base);
-      - `issue edit` / `issue comment`;
-      - `issue create`;
-      - `pr comment` if the per-user identity matters.
+- [ ] The host broker supports multiple accounts: - per-account `GH_CONFIG_DIR` (shown in Phase 1), **not** `gh auth switch`; - `gh auth switch` is global mutable state and races concurrent requests; - a request names the account; the host broker refuses an unknown account and lists the configured
+      ones.
+- [x] Extend host broker operations beyond `pr create`: - `pr review` (approve / request changes / comment); - `pr edit` (title / body / base); - `issue edit` / `issue comment`; - `issue create`; - `pr comment` if the per-user identity matters.
       Each operation is a typed request with a host-side command table, canonical argv, repo
       binding, and no shell.
-- [ ] Repositories without the GitHub App:
-      - `--as-user` works because it uses the host user's own credentials, subject to the same
-        allowlist;
-      - an App action on an uninstalled repository returns a clear error that names `--as-user`;
-      - never silently fall back from App to person.
+- [ ] Repositories without the GitHub App: - `--as-user` works because it uses the host user's own credentials, subject to the same
+      allowlist; - an App action on an uninstalled repository returns a clear error that names `--as-user`; - never silently fall back from App to person.
 - [ ] Audit the host-user action with `as_user`, repo, operation, and outcome; never the token.
 - [ ] Concurrency: the host broker serves one request per account at a time only if the underlying `gh`
       state requires it; per-account config directories make parallel accounts safe.
-- [ ] `pr create` head handling:
-      - no raw gh prompt: canonical args include `--head`, `--title` and `--body`; no preflight.
-      - GitHub decides whether the head exists. The broker does not compare SHAs, check ancestry,
-        classify freshness, or map a failure to `head-not-pushed`.
-      - a failure returns a sanitized `pr-create-failed`, with the provider detail on the host log.
-      - `pr create` never pushes, forks, or asks for push/fork; a later `git push` updates the PR.
-      - tests: failure returns `pr-create-failed`; no SHA inputs are required; the broker never
-        pushes or forks.
+- [ ] `pr create` head handling: - no raw gh prompt: canonical args include `--head`, `--title` and `--body`; no preflight. - GitHub decides whether the head exists. The broker does not compare SHAs, check ancestry,
+      classify freshness, or map a failure to `head-not-pushed`. - a failure returns a sanitized `pr-create-failed`, with the provider detail on the host log. - `pr create` never pushes, forks, or asks for push/fork; a later `git push` updates the PR. - tests: failure returns `pr-create-failed`; no SHA inputs are required; the broker never
+      pushes or forks.
 
 **Done when:** a PR created with `--as-user agent` is authored by that account, a review and an issue
 also work, concurrent requests for two accounts do not interfere, an uninstalled repo gets an
@@ -399,25 +337,12 @@ actionable error, and a failed `pr create` returns `pr-create-failed` without a 
 ## Phase 4 — dsh integration and skills (owned by `../idsh`)
 
 - [ ] File the issue/roadmap item in `../idsh`; do not implement the plugin here.
-- [ ] Plugin (working name `@idsh/git-guard`) on the host side:
-      - listen to `tools/pre-execute`;
-      - parse `bash`/shell calls for `git` intent; if parsing is ambiguous, fail closed to `ask`;
-      - classify: `git push` (force, delete, protected branch), `reset --hard`, `clean -fdx`,
-        `branch -D`, `tag -d`, history rewrites;
-      - return `{ kind: 'ask', reason, displayReason }`, which the registry resolves through
-        `ctx.approval` (one-shot `allowed-once`, `reject`, `cancelled`, `unavailable`);
-      - `reason` names the operation, repository/branch, the permission needed, and the risk;
-      - configuration for branch globs and command classes; advisory only, not a server-side
-        boundary.
-- [ ] Container-facing skills, one directory per skill under `.agents/skills/<name>/SKILL.md`:
-      - `gcb-gh`: what is allowed, what is denied, the shorthand, body-file behaviour;
-      - `gcb-host-user`: `--as-user`, when to use it, what it means for authorship;
-      - `gcb-git`: credential helper boundaries (no branch enforcement), when to ask a human.
-- [ ] Host-side skill (may live in `../idsh` or the host dotfiles): `gh-multi-account`:
-      - one `GH_CONFIG_DIR` per account, `gh auth login` once in each;
-      - `GH_CONFIG_DIR=… gh …` for non-interactive use;
-      - `gh auth switch` only for an interactive single-user shell, with a lock if shared;
-      - how to list accounts (`gh auth status` in each directory) and how to rotate one.
+- [ ] Plugin (working name `@idsh/git-guard`) on the host side: - listen to `tools/pre-execute`; - parse `bash`/shell calls for `git` intent; if parsing is ambiguous, fail closed to `ask`; - classify: `git push` (force, delete, protected branch), `reset --hard`, `clean -fdx`,
+      `branch -D`, `tag -d`, history rewrites; - return `{ kind: 'ask', reason, displayReason }`, which the registry resolves through
+      `ctx.approval` (one-shot `allowed-once`, `reject`, `cancelled`, `unavailable`); - `reason` names the operation, repository/branch, the permission needed, and the risk; - configuration for branch globs and command classes; advisory only, not a server-side
+      boundary.
+- [ ] Container-facing skills, one directory per skill under `.agents/skills/<name>/SKILL.md`: - `gcb-gh`: what is allowed, what is denied, the shorthand, body-file behaviour; - `gcb-host-user`: `--as-user`, when to use it, what it means for authorship; - `gcb-git`: credential helper boundaries (no branch enforcement), when to ask a human.
+- [ ] Host-side skill (may live in `../idsh` or the host dotfiles): `gh-multi-account`: - one `GH_CONFIG_DIR` per account, `gh auth login` once in each; - `GH_CONFIG_DIR=… gh …` for non-interactive use; - `gh auth switch` only for an interactive single-user shell, with a lock if shared; - how to list accounts (`gh auth status` in each directory) and how to rotate one.
 - [ ] Keep `AGENTS.md` current: every phase updates the rules, the layout table, and the skill list.
 
 ## Phase 5 — operations and hardening
@@ -428,18 +353,10 @@ actionable error, and a failed `pr create` returns `pr-create-failed` without a 
 - [ ] Timeout and output-cap defaults validated against a slow proxy; document how to raise them.
 - [ ] Remove or make opt-in the old App-permission pre-flight (`verifyAppPermissions`) on the
       runtime path. `diagnose` may still report what the App sees.
-- [ ] Commit signing without a private key in the container (non-blocking; low priority):
-      - `git commit -S` needs a signer, and the key must not be copied into the agent container;
-      - options: forward the host's `gpg-agent` extra socket, forward an SSH agent for
-        `gpg.format=ssh`, or add a narrow host-side signing request to the host broker;
-      - whichever is chosen, document that any process able to reach the signing socket can request
-        signatures, and that the key itself never leaves the host;
-      - decide later; it does not block the action or credential work.
-- [ ] Deferred, not planned:
-      - ruleset/bypass verification (needs `administration: read`);
-      - pre-push hook;
-      - Git proxy for ref-level enforcement;
-      - `glab`/GitLab provider.
+- [ ] Commit signing without a private key in the container (non-blocking; low priority): - `git commit -S` needs a signer, and the key must not be copied into the agent container; - options: forward the host's `gpg-agent` extra socket, forward an SSH agent for
+      `gpg.format=ssh`, or add a narrow host-side signing request to the host broker; - whichever is chosen, document that any process able to reach the signing socket can request
+      signatures, and that the key itself never leaves the host; - decide later; it does not block the action or credential work.
+- [ ] Deferred, not planned: - ruleset/bypass verification (needs `administration: read`); - pre-push hook; - Git proxy for ref-level enforcement; - `glab`/GitLab provider.
 
 ## Handoff rules
 

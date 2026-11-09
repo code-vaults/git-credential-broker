@@ -1,22 +1,31 @@
 /**
  * `init` — create or update the broker configuration, on the host.
  *
- * The configuration file is the source of truth: the daemon only ever reads it, it is meant to
- * be reviewed and kept, and it can be edited by hand. This command therefore **merges** into an
- * existing file instead of rewriting it: only the flags you pass change anything, and anything
- * else — including edits you made yourself — is preserved.
+ * The configuration file is the source of truth: the daemon only ever reads it, it is meant to be
+ * reviewed and kept, and it can be edited by hand. This command therefore **merges** into an
+ * existing file instead of rewriting it: only the flags you pass change anything, and anything else
+ * — including edits you made yourself — is preserved.
  *
- * That matters most for the allowlist, the thing people actually iterate on. Adding one
- * repository used to mean re-supplying every flag, and `--force` then silently *replaced* the
- * list, so adding `b/two` could quietly drop `a/one`. Now `--allow b/two` adds it and nothing
- * else moves.
+ * That matters most for the allowlist, the thing people actually iterate on. Adding one repository
+ * used to mean re-supplying every flag, and `--force` then silently _replaced_ the list, so adding
+ * `b/two` could quietly drop `a/one`. Now `--allow b/two` adds it and nothing else moves.
  *
  * `--force` still exists, for regenerating from flags when the file is beyond editing.
  */
-import fs from 'node:fs';
-import path from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
-import { parseDocument, stringify } from 'yaml';
+import fs from 'node:fs'
+import path from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
+
+import type { BrokerConfig, GithubAppHostConfig } from 'gcb-core'
+import {
+  fail,
+  insideMountedPath,
+  isInsideContainer,
+  parseArgs,
+  say,
+  writeSecretFile,
+} from 'gcb-core'
+import { parseDocument, stringify } from 'yaml'
 
 import {
   deploymentDir,
@@ -26,145 +35,144 @@ import {
   SIDECAR,
   validateConfig,
   type DeploymentMode,
-} from '../config.ts';
-import { parseAllowEntry } from '../policy.ts';
-
-import type { BrokerConfig, GithubAppHostConfig } from 'gcb-core';
+} from '../config.ts'
+import { parseAllowEntry } from '../policy.ts'
 import {
   brokerPaths,
   DEPLOYMENT_MODES,
   hostArtifacts,
   HOST_SOCKET_PATH_DEFAULT,
   requireFixedInSidecar,
-} from './deployment.ts';
-import type { BrokerPaths } from './deployment.ts';
-import { fail, insideMountedPath, isInsideContainer, parseArgs, say, writeSecretFile } from 'gcb-core';
+} from './deployment.ts'
+import type { BrokerPaths } from './deployment.ts'
 
 /** Quote one value as a single shell word, including paths with spaces. */
 function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
+  return `'${value.replaceAll("'", "'\\''")}'`
 }
 
 /** The environment `init` reasons about, injectable so the guard rails can be tested. */
 export interface InitEnvironment {
   /** Whether this process is inside the container. */
-  readonly isInsideContainer?: () => boolean;
+  readonly isInsideContainer?: () => boolean
   /** The home directory whose mounts must not contain the key. */
-  readonly home?: string;
+  readonly home?: string
   /** The directories the container shares, when the caller already has them. */
-  readonly mounts?: readonly string[];
+  readonly mounts?: readonly string[]
 }
 
 /** Everything `init` needs, resolved. */
 export interface InitInput {
   /** The private key GitHub gave you. Required on the first run; optional afterwards. */
-  readonly cert?: string;
+  readonly cert?: string
   /** Where the key, config and audit log live on the host. Must be outside every container mount. */
-  readonly dir: string;
+  readonly dir: string
   /** The configuration file itself. Defaults to `<dir>/broker.config.yml`. */
-  readonly configPath?: string;
+  readonly configPath?: string
   /** Repositories to ensure are in the allowlist. */
-  readonly allow?: readonly string[];
+  readonly allow?: readonly string[]
   /** Repositories to remove from the allowlist. */
-  readonly removeAllow?: readonly string[];
+  readonly removeAllow?: readonly string[]
   /** Replace the allowlist with `allow` instead of adding to it. */
-  readonly replaceAllow?: boolean;
+  readonly replaceAllow?: boolean
   /**
-   * Socket path a host process should use. Optional: omitted in sidecar mode, and left as-is in
-   * an existing host config unless you pass it. Supplying a conflicting value in sidecar mode is
-   * an error rather than ignored.
+   * Socket path a host process should use. Optional: omitted in sidecar mode, and left as-is in an
+   * existing host config unless you pass it. Supplying a conflicting value in sidecar mode is an
+   * error rather than ignored.
    */
-  readonly hostSocketPath?: string;
+  readonly hostSocketPath?: string
   /** Which deployment the recorded paths must suit. Must match an existing config. */
-  readonly mode?: DeploymentMode;
+  readonly mode?: DeploymentMode
   /** App client ID; required on the first run. */
-  readonly clientId?: string;
+  readonly clientId?: string
   /** App ID; required on the first run. */
-  readonly appId?: number;
+  readonly appId?: number
   /** Permission map; left as-is unless given. */
-  readonly permissions?: Readonly<Record<string, string>>;
+  readonly permissions?: Readonly<Record<string, string>>
   /** Audit log path override, `host` mode only. */
-  readonly auditPath?: string;
+  readonly auditPath?: string
   /** Regenerate from these flags, discarding the existing file. */
-  readonly force: boolean;
+  readonly force: boolean
   /** Injectable environment; defaults to the real one. */
-  readonly env?: InitEnvironment;
+  readonly env?: InitEnvironment
 }
 
 /** What `init` produced. */
 export interface InitResult {
   /** Host path of the installed key. */
-  readonly keyPath: string;
+  readonly keyPath: string
   /** Host path of the written config. */
-  readonly configPath: string;
-  readonly config: BrokerConfig;
-  readonly mode: DeploymentMode;
+  readonly configPath: string
+  readonly config: BrokerConfig
+  readonly mode: DeploymentMode
   /** The configuration that was replaced, when this was an update. */
-  readonly previous?: BrokerConfig;
+  readonly previous?: BrokerConfig
 }
 
 /**
  * The github-app block of a configuration.
  *
- * @param config - a validated configuration.
- * @returns the block for github.com.
- * @throws {Error} when there is none, which means the file is not one of ours.
+ * @param config - A validated configuration.
+ * @returns The block for github.com.
+ * @throws {Error} When there is none, which means the file is not one of ours.
  */
 export function appBlock(config: BrokerConfig): GithubAppHostConfig {
-  const block = config.hosts['github.com'];
+  const block = config.hosts['github.com']
   if (block?.provider !== 'github-app') {
-    throw new Error('the configuration has no github-app block for github.com');
+    throw new Error('the configuration has no github-app block for github.com')
   }
-  return block;
+  return block
 }
 
 /**
  * Compute the new allowlist from the existing one and the flags given.
  *
- * @param existing - the current entries.
- * @param input - the resolved options.
- * @returns the new entries, order preserved, additions deduplicated case-insensitively.
- * @throws {Error} when a given entry is malformed.
+ * @param existing - The current entries.
+ * @param input - The resolved options.
+ * @returns The new entries, order preserved, additions deduplicated case-insensitively.
+ * @throws {Error} When a given entry is malformed.
  */
 export function mergeAllowList(existing: readonly string[], input: InitInput): string[] {
-  const additions = input.allow ?? [];
+  const additions = input.allow ?? []
   for (const entry of [...additions, ...(input.removeAllow ?? [])]) {
     if (!parseAllowEntry(entry)) {
       throw new Error(
         `--allow ${JSON.stringify(entry)} is not a valid "owner/repo" pattern (a whole segment may be "*")`,
-      );
+      )
     }
   }
 
-  const canonical = (entry: string): string => entry.trim().toLowerCase();
-  const removed = new Set((input.removeAllow ?? []).map(canonical));
-  const kept = input.replaceAllow ? [] : existing.filter((entry) => !removed.has(canonical(entry)));
-  const seen = new Set(kept.map(canonical));
-  const result = [...kept];
+  const canonical = (entry: string): string => entry.trim().toLowerCase()
+  const removed = new Set((input.removeAllow ?? []).map(canonical))
+  const kept = input.replaceAllow ? [] : existing.filter(entry => !removed.has(canonical(entry)))
+  const seen = new Set(kept.map(canonical))
+  const result = [...kept]
   for (const entry of additions) {
-    const key = canonical(entry);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(entry.trim());
+    const key = canonical(entry)
+    if (seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    result.push(entry.trim())
   }
 
   if (result.length === 0) {
     throw new Error(
       'that would leave the allowlist empty; the broker is default-deny, so there would be nothing it could authorize',
-    );
+    )
   }
-  return result;
+  return result
 }
 
 /**
  * Build a fresh configuration from the flags.
  *
- * @param input - the resolved options.
- * @returns the validated configuration.
- * @throws {Error} when the configuration would be rejected by the daemon.
+ * @param input - The resolved options.
+ * @returns The validated configuration.
+ * @throws {Error} When the configuration would be rejected by the daemon.
  */
 export function buildBrokerConfig(input: InitInput): BrokerConfig {
-  const paths = brokerPaths(input.mode ?? 'host', input.dir, input.hostSocketPath);
+  const paths = brokerPaths(input.mode ?? 'host', input.dir, input.hostSocketPath)
   return validateConfig({
     socketPath: paths.socketPath,
     auditPath: input.auditPath ?? paths.auditPath,
@@ -178,7 +186,7 @@ export function buildBrokerConfig(input: InitInput): BrokerConfig {
         permissions: input.permissions,
       } satisfies GithubAppHostConfig,
     },
-  });
+  })
 }
 
 /**
@@ -189,14 +197,18 @@ export function buildBrokerConfig(input: InitInput): BrokerConfig {
  * must not survive. (Carrying the sidecar's auditPath into a host config, for instance, points the
  * daemon at `/var/log/git-cred-broker/` on a host that has no such directory.)
  *
- * @param existing - the configuration on disk.
- * @param input - the resolved options.
- * @param paths - the paths the broker will resolve.
- * @returns the validated configuration to write.
- * @throws {Error} when the result would be rejected by the daemon.
+ * @param existing - The configuration on disk.
+ * @param input - The resolved options.
+ * @param paths - The paths the broker will resolve.
+ * @returns The validated configuration to write.
+ * @throws {Error} When the result would be rejected by the daemon.
  */
-export function mergeBrokerConfig(existing: BrokerConfig, input: InitInput, paths: BrokerPaths): BrokerConfig {
-  const block = appBlock(existing);
+export function mergeBrokerConfig(
+  existing: BrokerConfig,
+  input: InitInput,
+  paths: BrokerPaths,
+): BrokerConfig {
+  const block = appBlock(existing)
   return validateConfig({
     socketPath: paths.socketPath,
     auditPath: paths.auditPath,
@@ -211,30 +223,30 @@ export function mergeBrokerConfig(existing: BrokerConfig, input: InitInput, path
         permissions: input.permissions ?? block.permissions,
       } satisfies GithubAppHostConfig,
     },
-  });
+  })
 }
 
 /**
  * Read and validate an existing configuration.
  *
- * @param path - the config file.
- * @returns the configuration, or null when the file does not exist.
- * @throws {Error} when the file exists but is not a valid configuration.
+ * @param path - The config file.
+ * @returns The configuration, or null when the file does not exist.
+ * @throws {Error} When the file exists but is not a valid configuration.
  */
 /** One path whose value the user explicitly changed. */
 export interface ConfigChange {
-  readonly path: readonly (string | number)[];
-  readonly value: unknown;
+  readonly path: readonly (string | number)[]
+  readonly value: unknown
 }
 
 /**
  * Write a configuration. A fresh file is serialized from the merged object; an existing file is
  * edited only at the paths the user changed, so comments, other hosts and unknown keys survive.
  *
- * @param configPath - the destination.
- * @param config - the configuration to write when the file is new or forced.
- * @param force - replace the file instead of editing it.
- * @param changes - explicit edits for the existing-document path.
+ * @param configPath - The destination.
+ * @param config - The configuration to write when the file is new or forced.
+ * @param force - Replace the file instead of editing it.
+ * @param changes - Explicit edits for the existing-document path.
  */
 function writeConfig(
   configPath: string,
@@ -243,183 +255,214 @@ function writeConfig(
   changes: readonly ConfigChange[],
 ): void {
   if (force || !fs.existsSync(configPath)) {
-    writeSecretFile(configPath, `# Broker configuration for gcb. See README.md.\n${stringify(config, { lineWidth: 0 })}`);
-    return;
+    writeSecretFile(
+      configPath,
+      `# Broker configuration for gcb. See README.md.\n${stringify(config, { lineWidth: 0 })}`,
+    )
+    return
   }
-  if (changes.length === 0) return;
+  if (changes.length === 0) {
+    return
+  }
   const document = parseDocument(fs.readFileSync(configPath, 'utf8'), {
     schema: 'core',
     uniqueKeys: true,
     prettyErrors: true,
-  });
+  })
   if (document.errors.length > 0) {
-    throw new Error(`cannot update ${configPath}: ${document.errors.map((error) => error.message).join('; ')}`);
+    throw new Error(
+      `cannot update ${configPath}: ${document.errors.map(error => error.message).join('; ')}`,
+    )
   }
-  for (const change of changes) document.setIn(change.path, change.value);
-  const text = document.toString();
-  writeSecretFile(configPath, text.endsWith('\n') ? text : `${text}\n`);
+  for (const change of changes) {
+    document.setIn(change.path, change.value)
+  }
+  const text = document.toString()
+  writeSecretFile(configPath, text.endsWith('\n') ? text : `${text}\n`)
 }
 
 function readExistingConfig(path: string): BrokerConfig | null {
-  if (!fs.existsSync(path)) return null;
-  return loadConfig(path);
+  if (!fs.existsSync(path)) {
+    return null
+  }
+  return loadConfig(path)
 }
 
 /**
  * Install the key and create or update the configuration.
  *
- * @param input - the resolved options.
- * @returns where things landed.
- * @throws {Error} for any guard-rail violation.
+ * @param input - The resolved options.
+ * @returns Where things landed.
+ * @throws {Error} For any guard-rail violation.
  */
 export function performInit(input: InitInput): InitResult {
   if (input.mode !== undefined && !DEPLOYMENT_MODES.includes(input.mode)) {
-    throw new Error(`--mode must be one of ${DEPLOYMENT_MODES.join(', ')}; got ${input.mode}`);
+    throw new Error(`--mode must be one of ${DEPLOYMENT_MODES.join(', ')}; got ${input.mode}`)
   }
 
-  const insideContainer = (input.env?.isInsideContainer ?? isInsideContainer)();
+  const insideContainer = (input.env?.isInsideContainer ?? isInsideContainer)()
   if (insideContainer) {
-    throw new Error('this looks like the agent container; the broker must run outside it, on the host');
+    throw new Error(
+      'this looks like the agent container; the broker must run outside it, on the host',
+    )
   }
 
-  const home = input.env?.home ?? (process.env['HOME'] ?? '');
-  const mounted = insideMountedPath(input.dir, home, input.env?.mounts);
+  const home = input.env?.home ?? process.env['HOME'] ?? ''
+  const mounted = insideMountedPath(input.dir, home, input.env?.mounts)
   if (mounted) {
     throw new Error(
       `${input.dir} is inside ${mounted}, which is mounted into the container; the private key must live outside every mount`,
-    );
+    )
   }
 
-  const artifacts = hostArtifacts(input.dir);
-  const configPath = input.configPath ?? artifacts.configPath;
+  const artifacts = hostArtifacts(input.dir)
+  const configPath = input.configPath ?? artifacts.configPath
   // --config may point into a directory that does not exist yet; the deployment directory is
   // created below either way, so do it once here.
-  fs.mkdirSync(deploymentDir(configPath), { recursive: true });
-  const previous = input.force ? null : readExistingConfig(configPath);
+  fs.mkdirSync(deploymentDir(configPath), { recursive: true })
+  const previous = input.force ? null : readExistingConfig(configPath)
 
   // ---------------------------------------------------------------- update in place
   if (previous) {
-    const existingMode = inferMode(previous);
+    const existingMode = inferMode(previous)
     // Switching deployment is allowed, but only when asked for by name. The recorded paths are
     // what decide whether a broker can find its own key, so this must never happen implicitly.
-    const mode = input.mode ?? existingMode;
-    const switching = mode !== existingMode;
+    const mode = input.mode ?? existingMode
+    const switching = mode !== existingMode
 
     if (switching && mode === 'host' && input.hostSocketPath === undefined) {
       throw new Error(
         `${configPath} records the sidecar's socket path (${previous.socketPath}), which a host process cannot bind; ` +
           'pass --socket-path <the path the host process binds and the pusher reaches>',
-      );
+      )
     }
-    requireFixedInSidecar('--socket-path', input.hostSocketPath, SIDECAR.socketPath, mode);
-    requireFixedInSidecar('--audit-path', input.auditPath, SIDECAR.auditPath, mode);
+    requireFixedInSidecar('--socket-path', input.hostSocketPath, SIDECAR.socketPath, mode)
+    requireFixedInSidecar('--audit-path', input.auditPath, SIDECAR.auditPath, mode)
 
     // The key the *host* must have is always <dir>/app.pem. In sidecar mode the config records a
     // different path, because that is where the sidecar sees the same file — checking the
     // recorded path here would fail on every update.
     if (input.cert !== undefined) {
-      writeSecretFile(artifacts.keyPath, readPrivateKey(input.cert));
+      writeSecretFile(artifacts.keyPath, readPrivateKey(input.cert))
     } else if (!fs.existsSync(artifacts.keyPath)) {
-      throw new Error(`${artifacts.keyPath} is missing; pass --cert to install the key`);
+      throw new Error(`${artifacts.keyPath} is missing; pass --cert to install the key`)
     }
 
-    let paths: BrokerPaths;
+    let paths: BrokerPaths
     if (mode === 'sidecar') {
-      paths = brokerPaths('sidecar', input.dir, '');
+      paths = brokerPaths('sidecar', input.dir, '')
     } else {
       // Staying in host mode: keep whatever this deployment chose. Switching *to* host mode: the
       // old socket and audit paths are the sidecar's container-side ones, so carrying them over
       // would produce a config that looks fine and cannot work.
-      const carried = switching ? undefined : previous;
+      const carried = switching ? undefined : previous
       paths = brokerPaths(
         'host',
         input.dir,
         input.hostSocketPath ?? carried?.socketPath ?? HOST_SOCKET_PATH_DEFAULT,
-      );
-      const carriedAudit = carried?.auditPath ?? undefined;
-      if (input.auditPath !== undefined) paths = { ...paths, auditPath: input.auditPath };
-      else if (carriedAudit !== undefined) paths = { ...paths, auditPath: carriedAudit };
+      )
+      const carriedAudit = carried?.auditPath ?? undefined
+      if (input.auditPath !== undefined) {
+        paths = { ...paths, auditPath: input.auditPath }
+      } else if (carriedAudit !== undefined) {
+        paths = { ...paths, auditPath: carriedAudit }
+      }
     }
 
-    const config = mergeBrokerConfig(previous, input, paths);
-    const block = appBlock(previous);
-    const mergedBlock = appBlock(config);
+    const config = mergeBrokerConfig(previous, input, paths)
+    const block = appBlock(previous)
+    const mergedBlock = appBlock(config)
     const allowChanged =
-      (input.allow?.length ?? 0) > 0 || (input.removeAllow?.length ?? 0) > 0 || input.replaceAllow === true;
-    const changes: ConfigChange[] = [];
-    if (paths.socketPath !== previous.socketPath) changes.push({ path: ['socketPath'], value: paths.socketPath });
-    if (paths.auditPath !== previous.auditPath) changes.push({ path: ['auditPath'], value: paths.auditPath });
+      (input.allow?.length ?? 0) > 0 ||
+      (input.removeAllow?.length ?? 0) > 0 ||
+      input.replaceAllow === true
+    const changes: ConfigChange[] = []
+    if (paths.socketPath !== previous.socketPath) {
+      changes.push({ path: ['socketPath'], value: paths.socketPath })
+    }
+    if (paths.auditPath !== previous.auditPath) {
+      changes.push({ path: ['auditPath'], value: paths.auditPath })
+    }
     if (paths.privateKeyPath !== block.privateKeyPath) {
-      changes.push({ path: ['hosts', 'github.com', 'privateKeyPath'], value: paths.privateKeyPath });
+      changes.push({ path: ['hosts', 'github.com', 'privateKeyPath'], value: paths.privateKeyPath })
     }
     if (allowChanged && !isDeepStrictEqual(mergedBlock.allow, block.allow)) {
-      changes.push({ path: ['hosts', 'github.com', 'allow'], value: mergedBlock.allow });
+      changes.push({ path: ['hosts', 'github.com', 'allow'], value: mergedBlock.allow })
     }
     if (input.clientId !== undefined && input.clientId !== block.clientId) {
-      changes.push({ path: ['hosts', 'github.com', 'clientId'], value: input.clientId });
+      changes.push({ path: ['hosts', 'github.com', 'clientId'], value: input.clientId })
     }
     if (input.appId !== undefined && input.appId !== block.appId) {
-      changes.push({ path: ['hosts', 'github.com', 'appId'], value: input.appId });
+      changes.push({ path: ['hosts', 'github.com', 'appId'], value: input.appId })
     }
-    if (input.permissions !== undefined && !isDeepStrictEqual(input.permissions, block.permissions)) {
-      changes.push({ path: ['hosts', 'github.com', 'permissions'], value: input.permissions });
+    if (
+      input.permissions !== undefined &&
+      !isDeepStrictEqual(input.permissions, block.permissions)
+    ) {
+      changes.push({ path: ['hosts', 'github.com', 'permissions'], value: input.permissions })
     }
-    fs.mkdirSync(artifacts.auditDir, { recursive: true });
-    writeConfig(configPath, config, input.force, changes);
-    return { keyPath: artifacts.keyPath, configPath, config, mode, previous };
+    fs.mkdirSync(artifacts.auditDir, { recursive: true })
+    writeConfig(configPath, config, input.force, changes)
+    return { keyPath: artifacts.keyPath, configPath, config, mode, previous }
   }
 
   // ---------------------------------------------------------------- create (or regenerate)
-  const mode = input.mode ?? 'host';
-  const allow = input.allow ?? [];
+  const mode = input.mode ?? 'host'
+  const allow = input.allow ?? []
   if (allow.length === 0) {
     throw new Error(
       'at least one --allow <owner/repo> is required when creating the configuration (the broker is default-deny)',
-    );
+    )
   }
   for (const entry of allow) {
     if (!parseAllowEntry(entry)) {
       throw new Error(
         `--allow ${JSON.stringify(entry)} is not a valid "owner/repo" pattern (a whole segment may be "*")`,
-      );
+      )
     }
   }
   // Captured into locals: narrowing of `input.x` is invalidated by the calls in between, so
   // reading the property again afterwards is `string | undefined` to the compiler.
-  const certPath = input.cert;
-  const clientId = input.clientId;
-  const appId = input.appId;
-  if (certPath === undefined) throw new Error('--cert is required when creating the configuration');
+  const certPath = input.cert
+  const clientId = input.clientId
+  const appId = input.appId
+  if (certPath === undefined) {
+    throw new Error('--cert is required when creating the configuration')
+  }
   if (clientId === undefined || clientId === '') {
-    throw new Error('--client-id is required when creating the configuration');
+    throw new Error('--client-id is required when creating the configuration')
   }
   if (appId === undefined || appId <= 0) {
-    throw new Error('--app-id is required when creating the configuration');
+    throw new Error('--app-id is required when creating the configuration')
   }
 
-  requireFixedInSidecar('--socket-path', input.hostSocketPath, SIDECAR.socketPath, mode);
-  requireFixedInSidecar('--audit-path', input.auditPath, SIDECAR.auditPath, mode);
+  requireFixedInSidecar('--socket-path', input.hostSocketPath, SIDECAR.socketPath, mode)
+  requireFixedInSidecar('--audit-path', input.auditPath, SIDECAR.auditPath, mode)
 
-  const pem = readPrivateKey(certPath);
-  const config = buildBrokerConfig({ ...input, mode, cert: certPath, clientId, appId });
-  writeSecretFile(artifacts.keyPath, pem);
-  fs.mkdirSync(artifacts.auditDir, { recursive: true });
-  writeConfig(configPath, config, input.force, []);
-  return { keyPath: artifacts.keyPath, configPath, config, mode };
+  const pem = readPrivateKey(certPath)
+  const config = buildBrokerConfig({ ...input, mode, cert: certPath, clientId, appId })
+  writeSecretFile(artifacts.keyPath, pem)
+  fs.mkdirSync(artifacts.auditDir, { recursive: true })
+  writeConfig(configPath, config, input.force, [])
+  return { keyPath: artifacts.keyPath, configPath, config, mode }
 }
 
 /**
  * Read and sanity-check a PEM private key.
  *
- * @param cert - the path GitHub gave you.
- * @returns the file contents.
- * @throws {Error} when it is missing or is not a PEM private key.
+ * @param cert - The path GitHub gave you.
+ * @returns The file contents.
+ * @throws {Error} When it is missing or is not a PEM private key.
  */
 function readPrivateKey(cert: string): string {
-  if (!fs.existsSync(cert)) throw new Error(`no such file: ${cert}`);
-  const pem = fs.readFileSync(cert, 'utf8');
-  if (!pem.includes('PRIVATE KEY')) throw new Error(`${cert} does not look like a PEM private key`);
-  return pem;
+  if (!fs.existsSync(cert)) {
+    throw new Error(`no such file: ${cert}`)
+  }
+  const pem = fs.readFileSync(cert, 'utf8')
+  if (!pem.includes('PRIVATE KEY')) {
+    throw new Error(`${cert} does not look like a PEM private key`)
+  }
+  return pem
 }
 
 /** Usage text for `init`. */
@@ -457,26 +500,32 @@ Every run:
 not by this one. In --mode sidecar they are fixed by the compose file (socketPath
 ${SIDECAR.socketPath}, privateKeyPath ${SIDECAR.keyPath}, auditPath ${SIDECAR.auditPath}),
 so a different --socket-path or --audit-path is rejected rather than silently recorded.
-`;
+`
 
 /**
  * Parse `--permissions contents=write,pull_requests=write`.
  *
- * @param raw - the raw flag value, if any.
- * @returns the permission map, or undefined when the flag was not given.
- * @throws {Error} when an entry is not `name=level`.
+ * @param raw - The raw flag value, if any.
+ * @returns The permission map, or undefined when the flag was not given.
+ * @throws {Error} When an entry is not `name=level`.
  */
 export function parsePermissions(raw: string | undefined): Record<string, string> | undefined {
-  if (raw === undefined) return undefined;
-  const out: Record<string, string> = {};
-  for (const pair of raw.split(',')) {
-    const trimmed = pair.trim();
-    if (!trimmed) continue;
-    const equals = trimmed.indexOf('=');
-    if (equals <= 0) throw new Error(`--permissions expects name=level pairs, got ${JSON.stringify(trimmed)}`);
-    out[trimmed.slice(0, equals)] = trimmed.slice(equals + 1);
+  if (raw === undefined) {
+    return undefined
   }
-  return Object.keys(out).length > 0 ? out : undefined;
+  const out: Record<string, string> = {}
+  for (const pair of raw.split(',')) {
+    const trimmed = pair.trim()
+    if (!trimmed) {
+      continue
+    }
+    const equals = trimmed.indexOf('=')
+    if (equals <= 0) {
+      throw new Error(`--permissions expects name=level pairs, got ${JSON.stringify(trimmed)}`)
+    }
+    out[trimmed.slice(0, equals)] = trimmed.slice(equals + 1)
+  }
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 /**
@@ -485,32 +534,32 @@ export function parsePermissions(raw: string | undefined): Record<string, string
  * An absent map means the provider's default, which is `contents=write` — worth printing, because
  * "I did not pass anything" and "I passed something that did not stick" otherwise look identical.
  *
- * @param permissions - the configured map, if any.
- * @returns a `name=level` list.
+ * @param permissions - The configured map, if any.
+ * @returns A `name=level` list.
  */
 function formatPermissions(permissions: Readonly<Record<string, string>> | undefined): string {
-  const effective = permissions ?? { contents: 'write' };
+  const effective = permissions ?? { contents: 'write' }
   return (
     Object.entries(effective)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([name, level]) => `${name}=${level}`)
       .join(' ') || '(none)'
-  );
+  )
 }
 
 /**
  * Split a repeatable, comma-separated flag.
  *
- * @param args - the parsed arguments.
- * @param name - the flag name.
- * @returns the entries.
+ * @param args - The parsed arguments.
+ * @param name - The flag name.
+ * @returns The entries.
  */
 function list(args: ReturnType<typeof parseArgs>, name: string): string[] {
   return args
     .values(name)
-    .flatMap((value) => value.split(','))
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
+    .flatMap(value => value.split(','))
+    .map(entry => entry.trim())
+    .filter(entry => entry.length > 0)
 }
 
 /**
@@ -519,49 +568,49 @@ function list(args: ReturnType<typeof parseArgs>, name: string): string[] {
  * Without --dir, the config is the file the broker reads: --config, else GIT_BROKER_CONFIG, else
  * the default name. With --dir, the default name inside that directory is used.
  *
- * @param args - the two path flags.
- * @param env - the environment, injectable for tests.
- * @returns the directory and, when explicit, the config path.
+ * @param args - The two path flags.
+ * @param env - The environment, injectable for tests.
+ * @returns The directory and, when explicit, the config path.
  */
 export function resolveInitSelection(
   args: { readonly config?: string; readonly dir?: string },
   env: NodeJS.ProcessEnv = process.env,
 ): { readonly dir: string; readonly configPath: string | undefined } {
-  const dir = path.resolve(args.dir ?? deploymentDir(resolveConfigPath(args.config, env)));
+  const dir = path.resolve(args.dir ?? deploymentDir(resolveConfigPath(args.config, env)))
   const configPath =
-    args.config !== undefined
-      ? path.resolve(args.config)
-      : args.dir === undefined
+    args.config === undefined
+      ? args.dir === undefined
         ? resolveConfigPath(undefined, env)
-        : undefined;
-  return { dir, configPath };
+        : undefined
+      : path.resolve(args.config)
+  return { dir, configPath }
 }
 
 /**
  * Run the `init` command.
  *
- * @param argv - arguments after the command name.
- * @returns the process exit code.
+ * @param argv - Arguments after the command name.
+ * @returns The process exit code.
  */
 export async function runInit(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['force', 'replace-allow', 'help'] });
+  const args = parseArgs(argv, { booleans: ['force', 'replace-allow', 'help'] })
   if (args.has('help') || args.has('h')) {
-    say(INIT_USAGE);
-    return 0;
+    say(INIT_USAGE)
+    return 0
   }
 
-  const clientId = args.value('client-id');
-  const appIdRaw = args.value('app-id');
-  const appId = appIdRaw === undefined ? undefined : Number(appIdRaw);
+  const clientId = args.value('client-id')
+  const appIdRaw = args.value('app-id')
+  const appId = appIdRaw === undefined ? undefined : Number(appIdRaw)
   if (appId !== undefined && (!Number.isInteger(appId) || appId <= 0)) {
-    fail('--app-id must be a positive integer');
+    fail('--app-id must be a positive integer')
   }
-  const mode = args.value('mode');
+  const mode = args.value('mode')
   if (mode !== undefined && !DEPLOYMENT_MODES.includes(mode as DeploymentMode)) {
-    fail(`--mode must be one of ${DEPLOYMENT_MODES.join(', ')}`);
+    fail(`--mode must be one of ${DEPLOYMENT_MODES.join(', ')}`)
   }
 
-  const selection = resolveInitSelection({ config: args.value('config'), dir: args.value('dir') });
+  const selection = resolveInitSelection({ config: args.value('config'), dir: args.value('dir') })
   try {
     const result = performInit({
       cert: args.value('cert'),
@@ -577,73 +626,84 @@ export async function runInit(argv: readonly string[]): Promise<number> {
       permissions: parsePermissions(args.value('permissions')),
       auditPath: args.value('audit-path'),
       force: args.has('force'),
-    });
+    })
 
-    const verb = result.previous ? 'updated' : 'created';
-    const wasMode = result.previous ? inferMode(result.previous) : undefined;
-    const modeLabel = wasMode !== undefined && wasMode !== result.mode ? `${wasMode} -> ${result.mode}` : result.mode;
-    say(`mode           : ${modeLabel}`);
-    say(`${verb.padEnd(15)}: ${result.configPath} (mode 600, validation passed)`);
-    say(`installed key  : ${result.keyPath} (mode 600)`);
+    const verb = result.previous ? 'updated' : 'created'
+    const wasMode = result.previous ? inferMode(result.previous) : undefined
+    const modeLabel =
+      wasMode !== undefined && wasMode !== result.mode
+        ? `${wasMode} -> ${result.mode}`
+        : result.mode
+    say(`mode           : ${modeLabel}`)
+    say(`${verb.padEnd(15)}: ${result.configPath} (mode 600, validation passed)`)
+    say(`installed key  : ${result.keyPath} (mode 600)`)
 
-    const block = appBlock(result.config);
+    const block = appBlock(result.config)
     if (result.previous) {
-      const beforeBlock = appBlock(result.previous);
-      say('');
-      say(`allowlist      : ${beforeBlock.allow.join(' ')}`);
-      say(`              -> ${block.allow.join(' ')}`);
+      const beforeBlock = appBlock(result.previous)
+      say('')
+      say(`allowlist      : ${beforeBlock.allow.join(' ')}`)
+      say(`              -> ${block.allow.join(' ')}`)
     } else {
-      say(`allowlist      : ${block.allow.join(' ')}`);
+      say(`allowlist      : ${block.allow.join(' ')}`)
     }
     // Always, not only when it changed: without this, "did --permissions take effect?" could only be
     // answered by re-reading the file, and a run that did nothing looks exactly like one that worked.
-    say(`permissions    : ${formatPermissions(block.permissions)}${block.permissions ? '' : ' (the default)'}`);
+    say(
+      `permissions    : ${formatPermissions(block.permissions)}${block.permissions ? '' : ' (the default)'}`,
+    )
 
-    say('');
-    say('paths inside the configuration, from the broker\'s point of view:');
-    say(`  socketPath     : ${result.config.socketPath}`);
+    say('')
+    say("paths inside the configuration, from the broker's point of view:")
+    say(`  socketPath     : ${result.config.socketPath}`)
     say(
       `  privateKeyPath : ${block.privateKeyPath}${block.privateKeyPath === result.keyPath ? '' : `  (= ${result.keyPath} on the host)`}`,
-    );
-    say(`  auditPath      : ${result.config.auditPath}`);
-    say('');
+    )
+    say(`  auditPath      : ${result.config.auditPath}`)
+    say('')
     if (result.previous) {
-      say('Restart the broker to pick this up:');
+      say('Restart the broker to pick this up:')
       if (result.mode === 'sidecar') {
-        say(`  cd ${shellQuote(path.dirname(result.keyPath))} && docker compose up -d    # sidecar`);
+        say(`  cd ${shellQuote(path.dirname(result.keyPath))} && docker compose up -d    # sidecar`)
       } else {
-        say(`  gcb daemon --config ${result.configPath}    # host process`);
+        say(`  gcb daemon --config ${result.configPath}    # host process`)
       }
       if (wasMode !== undefined && wasMode !== result.mode) {
-        say('');
-        say(`NOTE: the recorded paths changed from the ${wasMode} layout to the ${result.mode} layout.`);
+        say('')
+        say(
+          `NOTE: the recorded paths changed from the ${wasMode} layout to the ${result.mode} layout.`,
+        )
         say(
           result.mode === 'host'
             ? '      Stop the sidecar and start the host process; the socket file is the same one.'
             : '      Stop the host process and start the sidecar; the socket file is the same one.',
-        );
+        )
       }
     } else {
-      say('Two things only you can do:');
-      say('  1. Install the app on the account that owns those repositories, granting access to just them.');
-      say('     A private app owned by an organisation can only be installed on that organisation.');
-      say('  2. Confirm the app grants every permission requested above; the broker checks on first use.');
-      say('');
+      say('Two things only you can do:')
+      say(
+        '  1. Install the app on the account that owns those repositories, granting access to just them.',
+      )
+      say('     A private app owned by an organisation can only be installed on that organisation.')
+      say(
+        '  2. Confirm the app grants every permission requested above; the broker checks on first use.',
+      )
+      say('')
       if (result.mode === 'sidecar') {
-        say('Then start the sidecar, which mounts those paths exactly as recorded:');
+        say('Then start the sidecar, which mounts those paths exactly as recorded:')
         say(
           `  gcb compose --dir ${shellQuote(path.dirname(result.keyPath))} --config ${shellQuote(result.configPath)} --socket-dir <a directory the pusher mounts> --user <pusher uid:gid> \\`,
-        );
-        say(`    > ${shellQuote(path.join(path.dirname(result.keyPath), 'docker-compose.yml'))}`);
-        say(`  cd ${shellQuote(path.dirname(result.keyPath))} && docker compose up -d`);
+        )
+        say(`    > ${shellQuote(path.join(path.dirname(result.keyPath), 'docker-compose.yml'))}`)
+        say(`  cd ${shellQuote(path.dirname(result.keyPath))} && docker compose up -d`)
       } else {
-        say('Then start the broker as a host process:');
-        say(`  gcb daemon --config ${result.configPath} --check   # validate, bind nothing`);
-        say(`  gcb daemon --config ${result.configPath}`);
+        say('Then start the broker as a host process:')
+        say(`  gcb daemon --config ${result.configPath} --check   # validate, bind nothing`)
+        say(`  gcb daemon --config ${result.configPath}`)
       }
     }
-    return 0;
+    return 0
   } catch (error) {
-    fail((error as Error).message);
+    fail((error as Error).message)
   }
 }

@@ -1,23 +1,24 @@
 /**
- * `setup` — configure the git in *this* environment to use the broker.
+ * `setup` — configure the git in _this_ environment to use the broker.
  *
- * This is the container-side half, and it replaces the old `container-setup.sh`. It is written
- * to a git config that belongs to the running user, never to a shared repository or to the
- * host's own configuration.
+ * This is the container-side half, and it replaces the old `container-setup.sh`. It is written to a
+ * git config that belongs to the running user, never to a shared repository or to the host's own
+ * configuration.
  *
  * It does four things, each for a reason that was measured rather than assumed:
- *  - points `credential.helper` at the installed helper and turns on `credential.useHttpPath`,
- *    without which git sends no repository path and the broker can only authorize host-wide;
- *  - rewrites the ssh remote to https *in this environment only*, because an App installation
- *    token cannot be used over ssh and this container has no ssh key at all;
- *  - supplies a CA bundle when the image has none, because git then cannot verify any TLS
- *    certificate while Node still can — a pair of symptoms that looks like an application bug;
- *  - records the socket path in a file as well as in the environment, because git is often
- *    spawned from a non-login shell that never sources a profile.
+ *
+ * - Points `credential.helper` at the installed helper and turns on `credential.useHttpPath`, without
+ *   which git sends no repository path and the broker can only authorize host-wide;
+ * - Rewrites the ssh remote to https _in this environment only_, because an App installation token
+ *   cannot be used over ssh and this container has no ssh key at all;
+ * - Supplies a CA bundle when the image has none, because git then cannot verify any TLS certificate
+ *   while Node still can — a pair of symptoms that looks like an application bug;
+ * - Records the socket path in a file as well as in the environment, because git is often spawned
+ *   from a non-login shell that never sources a profile.
  */
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
 import {
   fail,
@@ -32,55 +33,55 @@ import {
   warn,
   writeNodeCaBundle,
   writeSecretFile,
-} from 'gcb-core';
+} from 'gcb-core'
 
 /** Everything `setup` needs, resolved. */
 export interface SetupInput {
   /** Credential helper command to record. A bare name is resolved by git through PATH. */
-  readonly helper: string;
+  readonly helper: string
   /** Socket path in this environment. */
-  readonly socket: string;
+  readonly socket: string
   /** Git config file to write. */
-  readonly gitconfig: string;
+  readonly gitconfig: string
   /** Shell snippet recording the environment for interactive shells. */
-  readonly envFile: string;
+  readonly envFile: string
   /** Durable socket-path file, read by the helper when the environment carries nothing. */
-  readonly socketFile: string;
+  readonly socketFile: string
   /** Where to write a CA bundle when the image has none. */
-  readonly caBundlePath: string;
+  readonly caBundlePath: string
   /** Host whose ssh remotes are rewritten to https, or null to leave remotes alone. */
-  readonly rewriteSshHost: string | null;
+  readonly rewriteSshHost: string | null
   /** Report what would happen without writing anything. */
-  readonly dryRun: boolean;
+  readonly dryRun: boolean
   /** Home whose mounts the config must not be written into; defaults to the real home. */
-  readonly home?: string;
+  readonly home?: string
   /** The directories the container shares, when the caller already has them. */
-  readonly mounts?: readonly string[];
+  readonly mounts?: readonly string[]
 }
 
 /** What `setup` did. */
 export interface SetupResult {
-  readonly gitconfig: string;
-  readonly entries: readonly string[];
-  readonly caBundle: string | null;
-  readonly socketFile: string;
-  readonly envFile: string;
-  readonly warnings: readonly string[];
+  readonly gitconfig: string
+  readonly entries: readonly string[]
+  readonly caBundle: string | null
+  readonly socketFile: string
+  readonly envFile: string
+  readonly warnings: readonly string[]
 }
 
 /**
  * Apply the configuration.
  *
- * @param input - the resolved options.
- * @returns what was done.
- * @throws {Error} when the target config is a symlink, or inside a directory the container shares.
+ * @param input - The resolved options.
+ * @returns What was done.
+ * @throws {Error} When the target config is a symlink, or inside a directory the container shares.
  */
 export async function performSetup(input: SetupInput): Promise<SetupResult> {
   // Writing through a symlink would edit whatever it points at, and a config that lives in a directory
   // the container shares is one the container can rewrite.
   if (fs.existsSync(input.gitconfig) && fs.lstatSync(input.gitconfig).isSymbolicLink()) {
-    const target = fs.realpathSync(input.gitconfig);
-    throw new Error(`${input.gitconfig} is a symlink to ${target}; refusing to write through it`);
+    const target = fs.realpathSync(input.gitconfig)
+    throw new Error(`${input.gitconfig} is a symlink to ${target}; refusing to write through it`)
   }
   // The config must not be written into any directory the container can rewrite. Canonical, so the
   // host's spelling of a shared directory and the container's spelling of the same one are one place.
@@ -88,62 +89,63 @@ export async function performSetup(input: SetupInput): Promise<SetupResult> {
   // authority. Reading it directly means a container that leaves no marker for `isInsideContainer`
   // (plain containerd, a Kubernetes pod) still gets the right answer instead of hunting for a runtime
   // it does not have.
-  const mounts = input.mounts ?? mountedPaths(input.home, { container: true });
-  const mounted = insideMountedPath(input.gitconfig, input.home, mounts);
+  const mounts = input.mounts ?? mountedPaths(input.home, { container: true })
+  const mounted = insideMountedPath(input.gitconfig, input.home, mounts)
   if (mounted) {
     throw new Error(
       `${input.gitconfig} is inside ${mounted}, which is mounted into the container; refusing to write ` +
         "this environment's git config where the container can rewrite it",
-    );
+    )
   }
 
-  const warnings: string[] = [];
+  const warnings: string[] = []
   if (input.dryRun) {
     return {
       gitconfig: input.gitconfig,
       entries: [
         `credential.helper=${input.helper}`,
         'credential.useHttpPath=true',
-        ...(input.rewriteSshHost ? [`url.https://${input.rewriteSshHost}/.insteadOf=git@${input.rewriteSshHost}:`] : []),
+        ...(input.rewriteSshHost
+          ? [`url.https://${input.rewriteSshHost}/.insteadOf=git@${input.rewriteSshHost}:`]
+          : []),
       ],
       caBundle: findSystemCaBundle() ? null : input.caBundlePath,
       socketFile: input.socketFile,
       envFile: input.envFile,
       warnings,
-    };
+    }
   }
 
-  fs.mkdirSync(path.dirname(input.gitconfig), { recursive: true });
-  gitConfigSet(input.gitconfig, 'credential.helper', input.helper);
-  gitConfigSet(input.gitconfig, 'credential.useHttpPath', 'true');
+  fs.mkdirSync(path.dirname(input.gitconfig), { recursive: true })
+  gitConfigSet(input.gitconfig, 'credential.helper', input.helper)
+  gitConfigSet(input.gitconfig, 'credential.useHttpPath', 'true')
   if (input.rewriteSshHost) {
     gitConfigSet(
       input.gitconfig,
       `url.https://${input.rewriteSshHost}/.insteadOf`,
       `git@${input.rewriteSshHost}:`,
-    );
+    )
   }
 
   // TLS trust. The image may install git with --no-install-recommends and no ca-certificates,
   // in which case every https operation fails with "CAfile: none" while Node keeps working.
-  let caBundle: string | null = null;
-  const systemBundle = findSystemCaBundle();
+  let caBundle: string | null = null
+  const systemBundle = findSystemCaBundle()
   if (systemBundle) {
-    say(`TLS            : using the system CA bundle (${systemBundle})`);
+    say(`TLS            : using the system CA bundle (${systemBundle})`)
   } else {
-    const written = await writeNodeCaBundle(input.caBundlePath);
-    gitConfigSet(input.gitconfig, 'http.sslCAInfo', input.caBundlePath);
-    caBundle = input.caBundlePath;
-    say(`TLS            : no system CA bundle; wrote ${written} roots from Node's store`);
-    say(`                 ${input.caBundlePath} (adding ca-certificates to the image would be better)`);
+    const written = await writeNodeCaBundle(input.caBundlePath)
+    gitConfigSet(input.gitconfig, 'http.sslCAInfo', input.caBundlePath)
+    caBundle = input.caBundlePath
+    say(`TLS            : no system CA bundle; wrote ${written} roots from Node's store`)
+    say(
+      `                 ${input.caBundlePath} (adding ca-certificates to the image would be better)`,
+    )
   }
 
-  fs.chmodSync(input.gitconfig, 0o600);
+  fs.chmodSync(input.gitconfig, 0o600)
 
-  writeSecretFile(
-    input.socketFile,
-    `${input.socket}\n`,
-  );
+  writeSecretFile(input.socketFile, `${input.socket}\n`)
   writeSecretFile(
     input.envFile,
     [
@@ -154,10 +156,12 @@ export async function performSetup(input: SetupInput): Promise<SetupResult> {
       'export GIT_BROKER_REQUIRE=1',
       '',
     ].join('\n'),
-  );
+  )
 
   if (!fs.existsSync(input.socket)) {
-    warnings.push(`no broker socket at ${input.socket} yet; pushes will fail closed until the broker runs`);
+    warnings.push(
+      `no broker socket at ${input.socket} yet; pushes will fail closed until the broker runs`,
+    )
   }
 
   return {
@@ -167,7 +171,7 @@ export async function performSetup(input: SetupInput): Promise<SetupResult> {
     socketFile: input.socketFile,
     envFile: input.envFile,
     warnings,
-  };
+  }
 }
 
 /** Usage text for `setup`. */
@@ -185,23 +189,24 @@ Configure this environment's git to obtain credentials from the broker.
   --ca-bundle <path>   Where to write a CA bundle if the image has none
   --dry-run            Print what would change, write nothing
   -h, --help           Show this help
-`;
+`
 
 /**
  * Run the `setup` command.
  *
- * @param argv - arguments after the command name.
- * @returns the process exit code.
+ * @param argv - Arguments after the command name.
+ * @returns The process exit code.
  */
 export async function runSetup(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['no-rewrite-ssh', 'dry-run', 'help'] });
+  const args = parseArgs(argv, { booleans: ['no-rewrite-ssh', 'dry-run', 'help'] })
   if (args.has('help') || args.has('h')) {
-    say(SETUP_USAGE);
-    return 0;
+    say(SETUP_USAGE)
+    return 0
   }
 
-  const home = os.homedir();
-  const socket = args.value('socket') ?? process.env['GIT_BROKER_SOCKET'] ?? '/run/git-cred-broker/broker.sock';
+  const home = os.homedir()
+  const socket =
+    args.value('socket') ?? process.env['GIT_BROKER_SOCKET'] ?? '/run/git-cred-broker/broker.sock'
   try {
     const result = await performSetup({
       // !gcb is a shell command, so the git process that later runs the helper resolves it
@@ -211,33 +216,47 @@ export async function runSetup(argv: readonly string[]): Promise<number> {
       socket,
       gitconfig: args.value('gitconfig') ?? path.join(home, '.gitconfig'),
       envFile: args.value('env-file') ?? path.join(home, '.git-broker.env'),
-      socketFile: args.value('socket-file') ?? path.join(home, '.config', 'git-credential-broker', 'socket'),
-      caBundlePath: args.value('ca-bundle') ?? path.join(home, '.config', 'git-credential-broker', 'ca-bundle.pem'),
-      rewriteSshHost: args.has('no-rewrite-ssh') ? null : (args.value('rewrite-ssh') ?? 'github.com'),
+      socketFile:
+        args.value('socket-file') ?? path.join(home, '.config', 'git-credential-broker', 'socket'),
+      caBundlePath:
+        args.value('ca-bundle') ??
+        path.join(home, '.config', 'git-credential-broker', 'ca-bundle.pem'),
+      rewriteSshHost: args.has('no-rewrite-ssh')
+        ? null
+        : (args.value('rewrite-ssh') ?? 'github.com'),
       dryRun: args.has('dry-run'),
       home,
-    });
+    })
 
-    say(`git config     : ${result.gitconfig}${args.has('dry-run') ? ' (dry run)' : ''}`);
-    for (const entry of result.entries) say(`  ${entry}`);
-    if (result.caBundle) say(`CA bundle      : ${result.caBundle}`);
-    say(`socket file    : ${result.socketFile}`);
-    say(`env file       : ${result.envFile}`);
-    for (const warning of result.warnings) warn(`warning: ${warning}`);
-    if (args.has('dry-run')) say('dry run: nothing was written');
-    else say('\nnext: start the broker (gcb daemon) and verify with `gcb probe`.');
-    return 0;
+    say(`git config     : ${result.gitconfig}${args.has('dry-run') ? ' (dry run)' : ''}`)
+    for (const entry of result.entries) {
+      say(`  ${entry}`)
+    }
+    if (result.caBundle) {
+      say(`CA bundle      : ${result.caBundle}`)
+    }
+    say(`socket file    : ${result.socketFile}`)
+    say(`env file       : ${result.envFile}`)
+    for (const warning of result.warnings) {
+      warn(`warning: ${warning}`)
+    }
+    if (args.has('dry-run')) {
+      say('dry run: nothing was written')
+    } else {
+      say('\nnext: start the broker (gcb daemon) and verify with `gcb probe`.')
+    }
+    return 0
   } catch (error) {
-    fail((error as Error).message);
+    fail((error as Error).message)
   }
 }
 
 /**
  * Collect the repeatable `--allow` flag; exported so `init` and tests share one implementation.
  *
- * @param args - the parsed arguments.
- * @returns the entries.
+ * @param args - The parsed arguments.
+ * @returns The entries.
  */
 export function allowList(args: ReturnType<typeof parseArgs>): string[] {
-  return listFlag(args, 'allow');
+  return listFlag(args, 'allow')
 }

@@ -1,33 +1,52 @@
 /**
  * Tests for the management commands.
  *
- * These are the operations that used to be shell scripts, so the cases that matter are the
- * guard rails: writing through a symlink, putting a key inside a container mount, and deploying
- * a configuration the daemon would reject.
+ * These are the operations that used to be shell scripts, so the cases that matter are the guard
+ * rails: writing through a symlink, putting a key inside a container mount, and deploying a
+ * configuration the daemon would reject.
  */
-import assert from 'node:assert/strict';
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { generateKeyPairSync } from 'node:crypto';
-import net from 'node:net';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { after, describe, it } from 'node:test';
-import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import assert from 'node:assert/strict'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { generateKeyPairSync } from 'node:crypto'
+import fs from 'node:fs'
+import net from 'node:net'
+import os from 'node:os'
+import path from 'node:path'
+import { after, describe, it } from 'node:test'
 
-import { renderCompose, runCompose } from '../../packages/host/src/commands/compose.ts';
-import { runDiagnose } from '../../packages/host/src/commands/diagnose.ts';
-import { SIDECAR, loadConfig, resolveConfigPath, deploymentDir } from '../../packages/host/src/config.ts';
-import { appBlock, buildBrokerConfig, mergeAllowList, parsePermissions, performInit, resolveInitSelection } from '../../packages/host/src/commands/init.ts';
-import { parseArgs, listFlag, insideMountedPath, mountedPaths, helpRequested } from '../../packages/core/src/support.ts';
-import { performSetup } from '../../packages/client/src/commands/setup.ts';
-import type { BrokerConfig, GithubAppHostConfig } from '../../packages/core/src/types.ts';
-import { runProbe } from '../../packages/client/src/commands/probe.ts';
-import { encodeMessage, parseMessage } from '../../packages/core/src/socket-protocol.ts';
-import { runAsync } from '../common/run.ts';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
+
+import { runProbe } from '../../packages/client/src/commands/probe.ts'
+import { performSetup } from '../../packages/client/src/commands/setup.ts'
+import { encodeMessage, parseMessage } from '../../packages/core/src/socket-protocol.ts'
+import {
+  parseArgs,
+  listFlag,
+  insideMountedPath,
+  mountedPaths,
+  helpRequested,
+} from '../../packages/core/src/support.ts'
+import type { BrokerConfig, GithubAppHostConfig } from '../../packages/core/src/types.ts'
+import { renderCompose, runCompose } from '../../packages/host/src/commands/compose.ts'
+import { runDiagnose } from '../../packages/host/src/commands/diagnose.ts'
+import {
+  appBlock,
+  buildBrokerConfig,
+  mergeAllowList,
+  parsePermissions,
+  performInit,
+  resolveInitSelection,
+} from '../../packages/host/src/commands/init.ts'
+import {
+  SIDECAR,
+  loadConfig,
+  resolveConfigPath,
+  deploymentDir,
+} from '../../packages/host/src/config.ts'
+import { runAsync } from '../common/run.ts'
 
 /** Scratch space for the whole file. */
-const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-commands-'));
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-commands-'))
 
 /** Run one host config command and capture its answer. */
 function runConfigCli(
@@ -45,142 +64,151 @@ function runConfigCli(
         stdio: ['ignore', 'pipe', 'pipe'],
         env: { ...process.env, ...extraEnv },
       },
-    );
-    return { status: 0, stdout, stderr: '' };
+    )
+    return { status: 0, stdout, stderr: '' }
   } catch (error) {
-    const failed = error as { status?: number | null; stdout?: string; stderr?: string };
+    const failed = error as { status?: number | null; stdout?: string; stderr?: string }
     return {
       status: failed.status ?? -1,
       stdout: String(failed.stdout ?? ''),
       stderr: String(failed.stderr ?? ''),
-    };
+    }
   }
 }
 
-after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+after(() => fs.rmSync(scratch, { recursive: true, force: true }))
 
 /**
  * A throwaway directory under the scratch root.
  *
- * @param name - a label for the directory.
- * @returns the absolute path, created.
+ * @param name - A label for the directory.
+ * @returns The absolute path, created.
  */
 function dir(name: string): string {
-  const target = path.join(scratch, name);
-  fs.mkdirSync(target, { recursive: true });
-  return target;
+  const target = path.join(scratch, name)
+  fs.mkdirSync(target, { recursive: true })
+  return target
 }
 
 /**
  * Write a throwaway RSA private key.
  *
- * @param target - where to write it.
- * @returns the path.
+ * @param target - Where to write it.
+ * @returns The path.
  */
 function writeKey(target: string): string {
-  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-  fs.writeFileSync(target, privateKey.export({ type: 'pkcs1', format: 'pem' }));
-  return target;
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  fs.writeFileSync(target, privateKey.export({ type: 'pkcs1', format: 'pem' }))
+  return target
 }
 
 /**
  * Read a git config file's entries.
  *
- * @param file - the config file.
+ * @param file - The config file.
  * @returns `key=value` lines.
  */
 function gitEntries(file: string): string[] {
-  const output = execFileSync('git', ['config', '--file', file, '--list'], { encoding: 'utf8' });
-  return output.split('\n').filter((line) => line.length > 0);
+  const output = execFileSync('git', ['config', '--file', file, '--list'], { encoding: 'utf8' })
+  return output.split('\n').filter(line => line.length > 0)
 }
 
 /**
  * The github-app host block of a config, narrowed past the provider union.
  *
- * @param config - a validated configuration.
- * @returns the host block.
+ * @param config - A validated configuration.
+ * @returns The host block.
  */
 function appHost(config: BrokerConfig): GithubAppHostConfig {
-  const block = config.hosts['github.com'];
-  if (block?.provider !== 'github-app') throw new Error('expected a github-app host block');
-  return block;
+  const block = config.hosts['github.com']
+  if (block?.provider !== 'github-app') {
+    throw new Error('expected a github-app host block')
+  }
+  return block
 }
 
 describe('parseArgs', () => {
   it('reads values, repeated flags and booleans', () => {
-    const args = parseArgs(['--allow', 'a/b', '--allow', 'c/d', '--force', '--dir=/tmp/x', 'positional'], {
-      booleans: ['force'],
-    });
-    assert.deepEqual(args.values('allow'), ['a/b', 'c/d']);
-    assert.equal(args.value('dir'), '/tmp/x');
-    assert.equal(args.has('force'), true);
-    assert.deepEqual(args.positionals, ['positional']);
-  });
+    const args = parseArgs(
+      ['--allow', 'a/b', '--allow', 'c/d', '--force', '--dir=/tmp/x', 'positional'],
+      {
+        booleans: ['force'],
+      },
+    )
+    assert.deepEqual(args.values('allow'), ['a/b', 'c/d'])
+    assert.equal(args.value('dir'), '/tmp/x')
+    assert.equal(args.has('force'), true)
+    assert.deepEqual(args.positionals, ['positional'])
+  })
 
   it('splits comma-separated list flags', () => {
-    const args = parseArgs(['--allow', 'a/b,c/d', '--allow', 'e/f']);
-    assert.deepEqual(listFlag(args, 'allow'), ['a/b', 'c/d', 'e/f']);
-  });
+    const args = parseArgs(['--allow', 'a/b,c/d', '--allow', 'e/f'])
+    assert.deepEqual(listFlag(args, 'allow'), ['a/b', 'c/d', 'e/f'])
+  })
 
   it('distinguishes a missing operand from an optional value', () => {
-    const missing = parseArgs(['--body']);
-    assert.equal(missing.has('body'), true);
-    assert.equal(missing.missing('body'), true);
+    const missing = parseArgs(['--body'])
+    assert.equal(missing.has('body'), true)
+    assert.equal(missing.missing('body'), true)
 
-    const bare = parseArgs(['--as-user'], { optionalValues: ['as-user'] });
-    assert.equal(bare.has('as-user'), true);
-    assert.equal(bare.missing('as-user'), false);
+    const bare = parseArgs(['--as-user'], { optionalValues: ['as-user'] })
+    assert.equal(bare.has('as-user'), true)
+    assert.equal(bare.missing('as-user'), false)
 
-    const valued = parseArgs(['--as-user', 'alice'], { optionalValues: ['as-user'] });
-    assert.equal(valued.value('as-user'), 'alice');
-    assert.equal(valued.missing('as-user'), false);
-  });
+    const valued = parseArgs(['--as-user', 'alice'], { optionalValues: ['as-user'] })
+    assert.equal(valued.value('as-user'), 'alice')
+    assert.equal(valued.missing('as-user'), false)
+  })
 
   it('decides help from raw values while leaving body data alone', () => {
-    assert.equal(helpRequested(parseArgs(['--help']), ['--help']), true);
-    assert.equal(helpRequested(parseArgs(['--title', '-h']), ['--title', '-h']), true);
-    assert.equal(helpRequested(parseArgs(['-title', '-h']), ['-title', '-h']), true);
-    assert.equal(helpRequested(parseArgs(['--title=-h']), ['--title=-h']), false);
-    assert.equal(helpRequested(parseArgs(['--body', '--help']), ['--body', '--help']), false);
-  });
+    assert.equal(helpRequested(parseArgs(['--help']), ['--help']), true)
+    assert.equal(helpRequested(parseArgs(['--title', '-h']), ['--title', '-h']), true)
+    assert.equal(helpRequested(parseArgs(['-title', '-h']), ['-title', '-h']), true)
+    assert.equal(helpRequested(parseArgs(['--title=-h']), ['--title=-h']), false)
+    assert.equal(helpRequested(parseArgs(['--body', '--help']), ['--body', '--help']), false)
+  })
 
   it('treats a flag followed by another flag as a boolean, not a value', () => {
-    const args = parseArgs(['--force', '--dir', '/tmp']);
-    assert.equal(args.has('force'), true);
-    assert.equal(args.value('dir'), '/tmp');
-  });
-});
+    const args = parseArgs(['--force', '--dir', '/tmp'])
+    assert.equal(args.has('force'), true)
+    assert.equal(args.value('dir'), '/tmp')
+  })
+})
 
 describe('mounted path detection', () => {
   /** A home and a shared-directory list stated here, so no case reads the machine's own mount table. */
-  const home = '/home/u';
-  const mounts = ['/home/u/shared', '/home/u/cache', '/home/u/notes'];
+  const home = '/home/u'
+  const mounts = ['/home/u/shared', '/home/u/cache', '/home/u/notes']
 
   it('is inside a shared directory, and not a sibling that merely starts the same', () => {
-    assert.equal(insideMountedPath('/home/u/shared/x', home, mounts), '/home/u/shared');
-    assert.equal(insideMountedPath('/home/u/cache/git-broker', home, mounts), '/home/u/cache');
-    assert.equal(insideMountedPath('/srv/other', home, mounts), null);
-    assert.equal(insideMountedPath('/home/u/shared-evil', home, mounts), null, 'must not prefix-match a sibling');
-  });
+    assert.equal(insideMountedPath('/home/u/shared/x', home, mounts), '/home/u/shared')
+    assert.equal(insideMountedPath('/home/u/cache/git-broker', home, mounts), '/home/u/cache')
+    assert.equal(insideMountedPath('/srv/other', home, mounts), null)
+    assert.equal(
+      insideMountedPath('/home/u/shared-evil', home, mounts),
+      null,
+      'must not prefix-match a sibling',
+    )
+  })
 
   it('reads them from the container mount table', () => {
     const table = [
       `675 573 0:36 /x ${home}/shared rw - btrfs /dev/x rw`,
       `676 573 0:36 /y ${home}/with\\040space rw - btrfs /dev/x rw`,
       '677 573 0:36 /z /somewhere/else rw - btrfs /dev/x rw',
-    ].join('\n');
+    ].join('\n')
     assert.deepEqual(mountedPaths(home, { mountinfo: table, container: true }), [
       `${home}/shared`,
       `${home}/with space`,
-    ]);
-  });
+    ])
+  })
 
   it('asks the container runtime on the host, and keeps the bind mounts that touch the home', () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-inspect-'));
-    const inside = path.join(base, 'shared');
-    const deeper = path.join(base, 'sub', 'deep');
-    fs.mkdirSync(inside, { recursive: true });
-    fs.mkdirSync(deeper, { recursive: true });
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-inspect-'))
+    const inside = path.join(base, 'shared')
+    const deeper = path.join(base, 'sub', 'deep')
+    fs.mkdirSync(inside, { recursive: true })
+    fs.mkdirSync(deeper, { recursive: true })
     const inspect = [
       JSON.stringify([
         { Type: 'bind', Source: inside, Destination: '/home/u/shared' },
@@ -188,76 +216,86 @@ describe('mounted path detection', () => {
         { Type: 'volume', Source: path.join(base, 'volume'), Destination: '/vol' },
         { Type: 'bind', Source: '/srv/elsewhere', Destination: '/srv/elsewhere' },
       ]),
-    ].join('\n');
+    ].join('\n')
     try {
       const got = mountedPaths(base, { container: false, inspect })
-        .map((entry) => fs.realpathSync(entry))
-        .sort();
+        .map(entry => fs.realpathSync(entry))
+        .sort()
       assert.deepEqual(
         got,
-        [inside, deeper].map((entry) => fs.realpathSync(entry)).sort(),
+        [inside, deeper].map(entry => fs.realpathSync(entry)).sort(),
         'a volume and an unrelated path are not shared directories',
-      );
+      )
     } finally {
-      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(base, { recursive: true, force: true })
     }
-  });
+  })
 
   it('asks for every container, not only the running ones', () => {
     // A stopped container still has its bind mounts configured, and can be started again at any time.
     // `init` runs on a fresh host and from boot scripts, which is exactly when a running-only list is
     // blind. Regression: an empty runtime answer used to be trusted as "nothing is shared".
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-runtime-'));
-    const inside = path.join(base, 'shared');
-    fs.mkdirSync(inside, { recursive: true });
-    const calls: string[][] = [];
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-runtime-'))
+    const inside = path.join(base, 'shared')
+    fs.mkdirSync(inside, { recursive: true })
+    const calls: string[][] = []
     const exec = (cli: string, args: readonly string[]): string => {
-      calls.push([cli, ...args]);
-      if (args[0] === 'ps') return 'b3f1c2d4e5f6\n';
-      return JSON.stringify([{ Type: 'bind', Source: inside, Destination: '/home/u/shared' }]);
-    };
+      calls.push([cli, ...args])
+      if (args[0] === 'ps') {
+        return 'b3f1c2d4e5f6\n'
+      }
+      return JSON.stringify([{ Type: 'bind', Source: inside, Destination: '/home/u/shared' }])
+    }
     try {
       assert.deepEqual(
-        mountedPaths(base, { container: false, exec }).map((entry) => fs.realpathSync(entry)),
+        mountedPaths(base, { container: false, exec }).map(entry => fs.realpathSync(entry)),
         [fs.realpathSync(inside)],
         'a stopped container is still a container that can rewrite the staged code',
-      );
-      assert.equal(calls[0]?.includes('--all'), true, 'ps must include the containers that are not running');
+      )
+      assert.equal(
+        calls[0]?.includes('--all'),
+        true,
+        'ps must include the containers that are not running',
+      )
     } finally {
-      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(base, { recursive: true, force: true })
     }
-  });
+  })
 
   it('counts a mount that contains the home, not only ones under it', () => {
     // A container that binds the home's parent can rewrite everything in the home.
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-ancestor-'));
-    const homeDir = path.join(base, 'u');
-    fs.mkdirSync(homeDir, { recursive: true });
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-ancestor-'))
+    const homeDir = path.join(base, 'u')
+    fs.mkdirSync(homeDir, { recursive: true })
     const exec = (_cli: string, args: readonly string[]): string =>
-      args[0] === 'ps' ? 'b3f1c2d4e5f6\n' : JSON.stringify([{ Type: 'bind', Source: base, Destination: '/mnt' }]);
+      args[0] === 'ps'
+        ? 'b3f1c2d4e5f6\n'
+        : JSON.stringify([{ Type: 'bind', Source: base, Destination: '/mnt' }])
     try {
       assert.deepEqual(
-        mountedPaths(homeDir, { container: false, exec }).map((entry) => fs.realpathSync(entry)),
+        mountedPaths(homeDir, { container: false, exec }).map(entry => fs.realpathSync(entry)),
         [fs.realpathSync(base)],
-      );
+      )
     } finally {
-      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(base, { recursive: true, force: true })
     }
-  });
+  })
 
   it('counts a container that binds the host root, which contains everything', () => {
     // The root is where the prefix test used to fail: `'/'.startsWith('//')` is false, so a bind of
     // the host root was dropped even though such a container can rewrite every path on the host.
-    const root = path.parse(path.resolve(path.sep)).root;
+    const root = path.parse(path.resolve(path.sep)).root
     const exec = (_cli: string, args: readonly string[]): string =>
-      args[0] === 'ps' ? 'b3f1c2d4e5f6\n' : JSON.stringify([{ Type: 'bind', Source: root, Destination: '/host' }]);
-    assert.deepEqual(mountedPaths(home, { container: false, exec }), [root]);
+      args[0] === 'ps'
+        ? 'b3f1c2d4e5f6\n'
+        : JSON.stringify([{ Type: 'bind', Source: root, Destination: '/host' }])
+    assert.deepEqual(mountedPaths(home, { container: false, exec }), [root])
     assert.equal(
       insideMountedPath(`${home}/Workspaces/x`, home, [root]),
       root,
       'and the guard refuses a target under it, rather than matching nothing',
-    );
-  });
+    )
+  })
 
   it("ignores the container's own root filesystem, which the image made", () => {
     // Every mount table lists it. Counting it would put every path inside a mount and refuse `setup`
@@ -265,112 +303,130 @@ describe('mounted path detection', () => {
     const table = [
       '675 573 0:36 / / rw,relatime - overlay overlay rw',
       `676 573 0:36 /x ${home}/shared rw - btrfs /dev/x rw`,
-    ].join('\n');
-    assert.deepEqual(mountedPaths(home, { mountinfo: table, container: true }), [`${home}/shared`]);
-  });
+    ].join('\n')
+    assert.deepEqual(mountedPaths(home, { mountinfo: table, container: true }), [`${home}/shared`])
+  })
 
   it('refuses when the runtime knows of no container at all', () => {
     // Installed but empty is not "nothing is shared": it is the state in which the check is blind.
-    const exec = (_cli: string, args: readonly string[]): string => (args[0] === 'ps' ? '' : '[]');
+    const exec = (_cli: string, args: readonly string[]): string => (args[0] === 'ps' ? '' : '[]')
     assert.throws(
       () => mountedPaths(home, { container: false, exec }),
       /could be asked, or none knows of a container/,
-    );
-  });
+    )
+  })
 
   it('treats a missing runtime as absent, but an installed failing one as a blind spot', () => {
-    const failure = (code: string): NodeJS.ErrnoException => Object.assign(new Error(code), { code });
+    const failure = (code: string): NodeJS.ErrnoException =>
+      Object.assign(new Error(code), { code })
     const one = (cli: string, args: readonly string[]): string => {
-      if (cli !== 'podman') throw failure('ENOENT');
-      return args[0] === 'ps' ? 'id-1\n' : JSON.stringify([{ Type: 'bind', Source: '/srv', Destination: '/srv' }]);
-    };
+      if (cli !== 'podman') {
+        throw failure('ENOENT')
+      }
+      return args[0] === 'ps'
+        ? 'id-1\n'
+        : JSON.stringify([{ Type: 'bind', Source: '/srv', Destination: '/srv' }])
+    }
     assert.deepEqual(
       mountedPaths('/srv/u', { container: false, exec: one }),
       ['/srv'],
       'a host with one runtime must not be refused because the others are not installed',
-    );
+    )
     const unreachable = (cli: string, args: readonly string[]): string => {
-      if (cli === 'docker') throw failure('ECONNREFUSED');
-      return one(cli, args);
-    };
+      if (cli === 'docker') {
+        throw failure('ECONNREFUSED')
+      }
+      return one(cli, args)
+    }
     assert.throws(
       () => mountedPaths('/srv/u', { container: false, exec: unreachable }),
       /could be asked, or none knows of a container/,
       'a runtime that is installed but unreachable hides its containers, so another list cannot cover for it',
-    );
-  });
+    )
+  })
 
   it('refuses rather than guess when nothing can answer', () => {
     assert.throws(
       () => mountedPaths(home, { container: false, inspect: null }),
       /refusing rather than guessing/,
-    );
-  });
+    )
+  })
 
   it('resolves the aliases of one directory instead of trusting the spelling', () => {
     // One shared directory can have two spellings — a symlinked home, a bind mount reached two ways —
     // so a lexical prefix check calls a path inside it outside, which is how `stage` wrote the broker's
     // code into a directory the agent can rewrite.
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-mount-alias-'));
-    const real = path.join(root, 'real');
-    fs.mkdirSync(path.join(real, 'data'), { recursive: true });
-    const alias = path.join(root, 'alias');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-mount-alias-'))
+    const real = path.join(root, 'real')
+    fs.mkdirSync(path.join(real, 'data'), { recursive: true })
+    const alias = path.join(root, 'alias')
     // 'junction' so the case also runs on Windows, where a plain symlink needs a privilege; the type is
     // ignored on the platforms that have no junctions.
-    fs.symlinkSync(real, alias, 'junction');
+    fs.symlinkSync(real, alias, 'junction')
     try {
-      const mounted = path.join(alias, 'data');
-      const shared = [mounted];
+      const mounted = path.join(alias, 'data')
+      const shared = [mounted]
       assert.equal(
         insideMountedPath(path.join(real, 'data', 'x'), alias, shared),
         mounted,
         'real target, aliased mount',
-      );
-      assert.equal(insideMountedPath(path.join(real, 'data'), alias, shared), mounted, 'and the mount itself');
-      assert.equal(insideMountedPath(path.join(real, 'elsewhere'), alias, shared), null, 'a sibling is still outside');
+      )
+      assert.equal(
+        insideMountedPath(path.join(real, 'data'), alias, shared),
+        mounted,
+        'and the mount itself',
+      )
+      assert.equal(
+        insideMountedPath(path.join(real, 'elsewhere'), alias, shared),
+        null,
+        'a sibling is still outside',
+      )
       assert.equal(
         insideMountedPath(path.join(alias, 'data', 'y'), real, [path.join(real, 'data')]),
         path.join(real, 'data'),
         'and the reverse spelling',
-      );
+      )
     } finally {
-      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(root, { recursive: true, force: true })
     }
-  });
+  })
 
   it('canonicalizes a mount that does not exist yet, which is the path stage is asked to create', () => {
     // `stage --to` is normally a directory that is not there yet, so the mount's own path may not exist
     // either. The nearest existing ancestor has to be resolved on both sides or the spellings differ.
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-mount-missing-'));
-    const real = path.join(root, 'real');
-    fs.mkdirSync(real, { recursive: true });
-    const alias = path.join(root, 'alias');
-    fs.symlinkSync(real, alias, 'junction');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-mount-missing-'))
+    const real = path.join(root, 'real')
+    fs.mkdirSync(real, { recursive: true })
+    const alias = path.join(root, 'alias')
+    fs.symlinkSync(real, alias, 'junction')
     try {
-      const mounted = path.join(alias, 'data');
-      const shared = [mounted];
-      assert.equal(insideMountedPath(path.join(real, 'data', 'new', 'deep'), alias, shared), mounted);
-      assert.equal(insideMountedPath(path.join(real, 'data'), alias, shared), mounted);
+      const mounted = path.join(alias, 'data')
+      const shared = [mounted]
+      assert.equal(
+        insideMountedPath(path.join(real, 'data', 'new', 'deep'), alias, shared),
+        mounted,
+      )
+      assert.equal(insideMountedPath(path.join(real, 'data'), alias, shared), mounted)
       assert.equal(
         insideMountedPath(path.join(real, 'data-evil'), alias, shared),
         null,
         'a sibling is not inside, with the mount missing too',
-      );
+      )
     } finally {
-      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(root, { recursive: true, force: true })
     }
-  });
-});
+  })
+})
 
 describe('setup', () => {
   /**
    * Build setup input pointing at scratch paths.
    *
-   * @param overrides - fields to replace.
-   * @returns the input.
+   * @param overrides - Fields to replace.
+   * @returns The input.
    */
   function setupInput(overrides: Partial<Parameters<typeof performSetup>[0]> = {}) {
-    const base = dir(`setup-${Math.random().toString(36).slice(2)}`);
+    const base = dir(`setup-${Math.random().toString(36).slice(2)}`)
     return {
       helper: '/opt/git-credential-broker/packages/client/bin/gcb.js',
       socket: '/run/git-cred-broker/broker.sock',
@@ -383,73 +439,91 @@ describe('setup', () => {
       // Stated, so the shared-directory resolution does not read this machine's mount table.
       mounts: [],
       ...overrides,
-    };
+    }
   }
 
   it('writes the three settings git needs, and both socket-path records', async () => {
-    const input = setupInput();
-    const result = await performSetup(input);
+    const input = setupInput()
+    const result = await performSetup(input)
 
-    const entries = gitEntries(input.gitconfig);
-    assert.equal(entries.includes(`credential.helper=${input.helper}`), true);
-    assert.equal(entries.includes('credential.usehttppath=true'), true);
-    assert.equal(entries.includes('url.https://github.com/.insteadof=git@github.com:'), true);
+    const entries = gitEntries(input.gitconfig)
+    assert.equal(entries.includes(`credential.helper=${input.helper}`), true)
+    assert.equal(entries.includes('credential.usehttppath=true'), true)
+    assert.equal(entries.includes('url.https://github.com/.insteadof=git@github.com:'), true)
 
-    assert.equal(fs.readFileSync(input.socketFile, 'utf8').trim(), input.socket);
-    assert.match(fs.readFileSync(input.envFile, 'utf8'), /GIT_BROKER_REQUIRE=1/);
-    assert.equal(fs.statSync(input.gitconfig).mode & 0o777, 0o600);
-    assert.equal(result.warnings.some((warning) => warning.includes('no broker socket')), true);
-  });
+    assert.equal(fs.readFileSync(input.socketFile, 'utf8').trim(), input.socket)
+    assert.match(fs.readFileSync(input.envFile, 'utf8'), /GIT_BROKER_REQUIRE=1/)
+    assert.equal(fs.statSync(input.gitconfig).mode & 0o777, 0o600)
+    assert.equal(
+      result.warnings.some(warning => warning.includes('no broker socket')),
+      true,
+    )
+  })
 
   it('writes nothing on a dry run', async () => {
-    const input = setupInput({ dryRun: true });
-    const result = await performSetup(input);
-    assert.equal(fs.existsSync(input.gitconfig), false);
-    assert.equal(result.entries.length > 0, true, 'but still reports what it would do');
-  });
+    const input = setupInput({ dryRun: true })
+    const result = await performSetup(input)
+    assert.equal(fs.existsSync(input.gitconfig), false)
+    assert.equal(result.entries.length > 0, true, 'but still reports what it would do')
+  })
 
   it('refuses to write through a symlink', async () => {
-    const base = dir(`setup-link-${Math.random().toString(36).slice(2)}`);
-    const real = path.join(base, 'real-gitconfig');
-    fs.writeFileSync(real, '[user]\n\tname = host\n');
-    const link = path.join(base, '.gitconfig');
-    fs.symlinkSync(real, link);
+    const base = dir(`setup-link-${Math.random().toString(36).slice(2)}`)
+    const real = path.join(base, 'real-gitconfig')
+    fs.writeFileSync(real, '[user]\n\tname = host\n')
+    const link = path.join(base, '.gitconfig')
+    fs.symlinkSync(real, link)
 
-    await assert.rejects(() => performSetup(setupInput({ gitconfig: link })), /symlink/);
-    assert.equal(fs.readFileSync(real, 'utf8'), '[user]\n\tname = host\n', 'the target must be untouched');
-  });
+    await assert.rejects(() => performSetup(setupInput({ gitconfig: link })), /symlink/)
+    assert.equal(
+      fs.readFileSync(real, 'utf8'),
+      '[user]\n\tname = host\n',
+      'the target must be untouched',
+    )
+  })
 
   it('can leave ssh remotes alone', async () => {
-    const input = setupInput({ rewriteSshHost: null });
-    await performSetup(input);
-    assert.equal(gitEntries(input.gitconfig).some((entry) => entry.includes('insteadof')), false);
-  });
+    const input = setupInput({ rewriteSshHost: null })
+    await performSetup(input)
+    assert.equal(
+      gitEntries(input.gitconfig).some(entry => entry.includes('insteadof')),
+      false,
+    )
+  })
 
   it('refuses a config inside a container mount, whatever the mount is spelled', async () => {
     // One shared directory can have two spellings (a symlinked home, a bind mount). The check this
     // replaced compared spellings, so the container's was accepted and the host's own git config would
     // be written where the container can rewrite it.
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'setup-mount-alias-'));
-    const real = path.join(base, 'real');
-    fs.mkdirSync(path.join(real, 'shared'), { recursive: true });
-    const alias = path.join(base, 'alias');
-    fs.symlinkSync(real, alias, 'junction');
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'setup-mount-alias-'))
+    const real = path.join(base, 'real')
+    fs.mkdirSync(path.join(real, 'shared'), { recursive: true })
+    const alias = path.join(base, 'alias')
+    fs.symlinkSync(real, alias, 'junction')
     try {
-      const gitconfig = path.join(real, 'shared', 'gitconfig');
+      const gitconfig = path.join(real, 'shared', 'gitconfig')
       await assert.rejects(
-        () => performSetup(setupInput({ gitconfig, home: alias, mounts: [path.join(alias, 'shared')], dryRun: true })),
+        () =>
+          performSetup(
+            setupInput({
+              gitconfig,
+              home: alias,
+              mounts: [path.join(alias, 'shared')],
+              dryRun: true,
+            }),
+          ),
         /mounted into the container/,
-      );
-      assert.equal(fs.existsSync(gitconfig), false, 'and nothing was written');
+      )
+      assert.equal(fs.existsSync(gitconfig), false, 'and nothing was written')
     } finally {
-      fs.rmSync(base, { recursive: true, force: true });
+      fs.rmSync(base, { recursive: true, force: true })
     }
-  });
-});
+  })
+})
 
 describe('init', () => {
   /** A fake home, so the mount checks are hermetic rather than dependent on the machine. */
-  const fakeHome = dir('init-home');
+  const fakeHome = dir('init-home')
   const baseInput = {
     allow: ['acme/widget'],
     hostSocketPath: '/run/git-cred-broker/broker.sock',
@@ -460,30 +534,30 @@ describe('init', () => {
     // This suite runs inside the very container init refuses to run in, so the detected
     // environment is injected. The guard itself is exercised by the tests below.
     env: { isInsideContainer: () => false, home: fakeHome, mounts: [] },
-  };
+  }
 
   it('installs the key 0600 and writes a config the daemon accepts', () => {
-    const root = dir(`init-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    const root = dir(`init-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
 
-    const result = performInit({ ...baseInput, cert, dir: path.join(root, 'deploy') });
+    const result = performInit({ ...baseInput, cert, dir: path.join(root, 'deploy') })
 
-    assert.equal(fs.statSync(result.keyPath).mode & 0o777, 0o600);
-    assert.equal(fs.statSync(result.configPath).mode & 0o777, 0o600);
-    assert.equal(result.config.hosts['github.com']?.allow[0], 'acme/widget');
-    assert.equal(result.config.socketPath, baseInput.hostSocketPath);
-    assert.equal(result.mode, 'host');
-  });
+    assert.equal(fs.statSync(result.keyPath).mode & 0o777, 0o600)
+    assert.equal(fs.statSync(result.configPath).mode & 0o777, 0o600)
+    assert.equal(result.config.hosts['github.com']?.allow[0], 'acme/widget')
+    assert.equal(result.config.socketPath, baseInput.hostSocketPath)
+    assert.equal(result.mode, 'host')
+  })
 
   it('records host paths in host mode and sidecar paths in sidecar mode', () => {
-    const root = dir(`init-modes-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
-    const dir0 = path.join(root, 'deploy');
+    const root = dir(`init-modes-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
+    const dir0 = path.join(root, 'deploy')
 
-    const hostMode = performInit({ ...baseInput, cert, dir: dir0 });
-    const hostKey = appHost(hostMode.config).privateKeyPath;
-    assert.equal(hostKey, path.join(dir0, 'app.pem'), 'a host process reads the host path');
-    assert.equal(hostMode.config.auditPath, path.join(dir0, 'log', 'audit.jsonl'));
+    const hostMode = performInit({ ...baseInput, cert, dir: dir0 })
+    const hostKey = appHost(hostMode.config).privateKeyPath
+    assert.equal(hostKey, path.join(dir0, 'app.pem'), 'a host process reads the host path')
+    assert.equal(hostMode.config.auditPath, path.join(dir0, 'log', 'audit.jsonl'))
 
     // Omitted entirely: a plain `init --mode sidecar` must not be rejected for a flag it does
     // not need, which is exactly the bug this covers.
@@ -494,17 +568,17 @@ describe('init', () => {
       dir: dir0,
       mode: 'sidecar',
       force: true,
-    });
-    assert.equal(appHost(sidecarMode.config).privateKeyPath, SIDECAR.keyPath);
-    assert.equal(sidecarMode.config.socketPath, SIDECAR.socketPath);
-    assert.equal(sidecarMode.config.auditPath, SIDECAR.auditPath);
+    })
+    assert.equal(appHost(sidecarMode.config).privateKeyPath, SIDECAR.keyPath)
+    assert.equal(sidecarMode.config.socketPath, SIDECAR.socketPath)
+    assert.equal(sidecarMode.config.auditPath, SIDECAR.auditPath)
     // The key itself is still a host file in both modes; only what the config records differs.
-    assert.equal(sidecarMode.keyPath, path.join(dir0, 'app.pem'));
-  });
+    assert.equal(sidecarMode.keyPath, path.join(dir0, 'app.pem'))
+  })
 
   it('rejects an override that the sidecar deployment fixes, instead of ignoring it', () => {
-    const root = dir(`init-fixed-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    const root = dir(`init-fixed-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
     assert.throws(
       () =>
         performInit({
@@ -515,12 +589,12 @@ describe('init', () => {
           hostSocketPath: '/somewhere/else.sock',
         }),
       /must be \/run\/git-broker\/broker\.sock with --mode sidecar/,
-    );
-  });
+    )
+  })
 
   it('refuses to run inside the container', () => {
-    const root = dir(`init-container-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    const root = dir(`init-container-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
     assert.throws(
       () =>
         performInit({
@@ -530,13 +604,13 @@ describe('init', () => {
           env: { ...baseInput.env, isInsideContainer: () => true },
         }),
       /must run outside it/,
-    );
-  });
+    )
+  })
 
   it('refuses a key inside a container mount', () => {
-    const root = dir(`init-mount-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
-    const mounted = path.join(fakeHome, 'shared', 'somewhere');
+    const root = dir(`init-mount-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
+    const mounted = path.join(fakeHome, 'shared', 'somewhere')
     assert.throws(
       () =>
         performInit({
@@ -547,42 +621,45 @@ describe('init', () => {
         }),
       /mounted into the container/,
       'the private key must never live where the container can read it',
-    );
-  });
+    )
+  })
 
   it('refuses a malformed allowlist entry rather than writing a config that matches nothing', () => {
-    const root = dir(`init-allow-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
+    const root = dir(`init-allow-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
     for (const bad of ['acme', 'acme/wid*', 'acme/other/extra']) {
       assert.throws(
         () => performInit({ ...baseInput, cert, dir: path.join(root, 'deploy'), allow: [bad] }),
         /not a valid/,
         `expected ${bad} to be rejected`,
-      );
+      )
     }
-  });
+  })
 
   it('refuses a file that is not a private key, and an empty allowlist', () => {
-    const root = dir(`init-cert-${Math.random().toString(36).slice(2)}`);
-    const notAKey = path.join(root, 'not-a-key.pem');
-    fs.writeFileSync(notAKey, 'hello\n');
-    assert.throws(() => performInit({ ...baseInput, cert: notAKey, dir: path.join(root, 'a') }), /PEM private key/);
+    const root = dir(`init-cert-${Math.random().toString(36).slice(2)}`)
+    const notAKey = path.join(root, 'not-a-key.pem')
+    fs.writeFileSync(notAKey, 'hello\n')
+    assert.throws(
+      () => performInit({ ...baseInput, cert: notAKey, dir: path.join(root, 'a') }),
+      /PEM private key/,
+    )
 
-    const cert = writeKey(path.join(root, 'real.pem'));
+    const cert = writeKey(path.join(root, 'real.pem'))
     assert.throws(
       () => performInit({ ...baseInput, cert, dir: path.join(root, 'b'), allow: [] }),
       /default-deny/,
-    );
-  });
+    )
+  })
 
   it('adds a repository without dropping the others, and without re-supplying anything', () => {
     // The bug this replaces: adding one repository required every flag, and --force then
     // silently replaced the allowlist, so adding b/two could quietly drop a/one.
-    const root = dir(`init-merge-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
-    const target = path.join(root, 'deploy');
+    const root = dir(`init-merge-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
+    const target = path.join(root, 'deploy')
 
-    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] })
     const updated = performInit({
       ...baseInput,
       cert: undefined,
@@ -591,27 +668,27 @@ describe('init', () => {
       permissions: undefined,
       dir: target,
       allow: ['b/two'],
-    });
+    })
 
-    assert.deepEqual(appBlock(updated.config).allow, ['a/one', 'b/two']);
-    assert.deepEqual(appBlock(updated.previous as never).allow, ['a/one']);
-    assert.equal(updated.previous !== undefined, true);
-  });
+    assert.deepEqual(appBlock(updated.config).allow, ['a/one', 'b/two'])
+    assert.deepEqual(appBlock(updated.previous as never).allow, ['a/one'])
+    assert.equal(updated.previous !== undefined, true)
+  })
 
   it('preserves edits made to the file by hand', () => {
-    const root = dir(`init-hand-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
-    const target = path.join(root, 'deploy');
-    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+    const root = dir(`init-hand-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
+    const target = path.join(root, 'deploy')
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] })
 
-    const file = path.join(target, 'broker.config.yml');
+    const file = path.join(target, 'broker.config.yml')
     const edited = parseYaml(fs.readFileSync(file, 'utf8')) as {
-      hosts: Record<string, { permissions?: unknown }>;
-    };
-    const editedBlock = edited.hosts['github.com'];
-    assert.ok(editedBlock, 'the config must have a github.com block');
-    editedBlock.permissions = { contents: 'write', pull_requests: 'write' };
-    fs.writeFileSync(file, `${stringifyYaml(edited)}\n`);
+      hosts: Record<string, { permissions?: unknown }>
+    }
+    const editedBlock = edited.hosts['github.com']
+    assert.ok(editedBlock, 'the config must have a github.com block')
+    editedBlock.permissions = { contents: 'write', pull_requests: 'write' }
+    fs.writeFileSync(file, `${stringifyYaml(edited)}\n`)
 
     const updated = performInit({
       ...baseInput,
@@ -619,63 +696,68 @@ describe('init', () => {
       permissions: undefined,
       dir: target,
       allow: ['c/three'],
-    });
-    assert.deepEqual(appBlock(updated.config).permissions, { contents: 'write', pull_requests: 'write' });
-    assert.deepEqual(appBlock(updated.config).allow, ['a/one', 'c/three']);
-  });
+    })
+    assert.deepEqual(appBlock(updated.config).permissions, {
+      contents: 'write',
+      pull_requests: 'write',
+    })
+    assert.deepEqual(appBlock(updated.config).allow, ['a/one', 'c/three'])
+  })
 
   it('preserves comments when updating the YAML document', () => {
-    const root = dir(`init-comments-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
-    const target = path.join(root, 'deploy');
-    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+    const root = dir(`init-comments-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
+    const target = path.join(root, 'deploy')
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] })
 
-    const file = path.join(target, 'broker.config.yml');
-    const text = fs.readFileSync(file, 'utf8').replace('socketPath:', '# keep this comment\nsocketPath:');
-    fs.writeFileSync(file, text);
+    const file = path.join(target, 'broker.config.yml')
+    const text = fs
+      .readFileSync(file, 'utf8')
+      .replace('socketPath:', '# keep this comment\nsocketPath:')
+    fs.writeFileSync(file, text)
 
     const updated = performInit({
       ...baseInput,
       cert: undefined,
       dir: target,
       allow: ['b/two'],
-    });
+    })
 
-    const after = fs.readFileSync(file, 'utf8');
-    assert.match(after, /# keep this comment/, 'the unrelated comment survives the merge');
-    assert.match(after, /b\/two/);
-    assert.deepEqual(appBlock(updated.config).allow, ['a/one', 'b/two']);
-  });
+    const after = fs.readFileSync(file, 'utf8')
+    assert.match(after, /# keep this comment/, 'the unrelated comment survives the merge')
+    assert.match(after, /b\/two/)
+    assert.deepEqual(appBlock(updated.config).allow, ['a/one', 'b/two'])
+  })
 
   it('selects GIT_BROKER_CONFIG when neither --config nor --dir is given', () => {
-    const root = dir(`init-select-env-${Math.random().toString(36).slice(2)}`);
-    const file = path.join(root, 'custom.yml');
-    const selection = resolveInitSelection({}, { GIT_BROKER_CONFIG: file });
-    assert.equal(selection.dir, root);
-    assert.equal(selection.configPath, file);
-  });
+    const root = dir(`init-select-env-${Math.random().toString(36).slice(2)}`)
+    const file = path.join(root, 'custom.yml')
+    const selection = resolveInitSelection({}, { GIT_BROKER_CONFIG: file })
+    assert.equal(selection.dir, root)
+    assert.equal(selection.configPath, file)
+  })
 
   it('resolves a relative --dir to an absolute path', () => {
-    const selection = resolveInitSelection({ dir: 'deploy' }, {});
-    assert.equal(selection.dir, path.resolve('deploy'));
-    assert.equal(selection.configPath, undefined);
-  });
+    const selection = resolveInitSelection({ dir: 'deploy' }, {})
+    assert.equal(selection.dir, path.resolve('deploy'))
+    assert.equal(selection.configPath, undefined)
+  })
 
   it('uses the default file inside --dir and ignores the environment for the target', () => {
-    const root = dir(`init-select-dir-${Math.random().toString(36).slice(2)}`);
-    const file = path.join(root, 'custom.yml');
-    const selection = resolveInitSelection({ dir: root }, { GIT_BROKER_CONFIG: file });
-    assert.equal(selection.dir, root);
-    assert.equal(selection.configPath, undefined);
-  });
+    const root = dir(`init-select-dir-${Math.random().toString(36).slice(2)}`)
+    const file = path.join(root, 'custom.yml')
+    const selection = resolveInitSelection({ dir: root }, { GIT_BROKER_CONFIG: file })
+    assert.equal(selection.dir, root)
+    assert.equal(selection.configPath, undefined)
+  })
 
   it('preserves other hosts when updating github.com', () => {
-    const root = dir(`init-hosts-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
-    const target = path.join(root, 'deploy');
-    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+    const root = dir(`init-hosts-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
+    const target = path.join(root, 'deploy')
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] })
 
-    const file = path.join(target, 'broker.config.yml');
+    const file = path.join(target, 'broker.config.yml')
     fs.appendFileSync(
       file,
       `
@@ -687,26 +769,26 @@ describe('init', () => {
     password: p
     allow: [infra/*]
 `,
-    );
+    )
 
     const updated = performInit({
       ...baseInput,
       cert: undefined,
       dir: target,
       allow: ['b/two'],
-    });
+    })
 
-    const reloaded = loadConfig(file);
-    assert.equal(reloaded.hosts['git.example.internal:8443']?.provider, 'static');
-    assert.equal(updated.config.hosts['git.example.internal:8443']?.provider, 'static');
-    assert.match(fs.readFileSync(file, 'utf8'), /# keep this static host/);
-  });
+    const reloaded = loadConfig(file)
+    assert.equal(reloaded.hosts['git.example.internal:8443']?.provider, 'static')
+    assert.equal(updated.config.hosts['git.example.internal:8443']?.provider, 'static')
+    assert.match(fs.readFileSync(file, 'utf8'), /# keep this static host/)
+  })
 
   it('removes and replaces entries only when asked', () => {
-    const root = dir(`init-remove-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
-    const target = path.join(root, 'deploy');
-    performInit({ ...baseInput, cert, dir: target, allow: ['a/one', 'b/two', 'c/three'] });
+    const root = dir(`init-remove-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
+    const target = path.join(root, 'deploy')
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one', 'b/two', 'c/three'] })
 
     const afterRemove = performInit({
       ...baseInput,
@@ -714,8 +796,8 @@ describe('init', () => {
       dir: target,
       allow: [],
       removeAllow: ['b/two'],
-    });
-    assert.deepEqual(appBlock(afterRemove.config).allow, ['a/one', 'c/three']);
+    })
+    assert.deepEqual(appBlock(afterRemove.config).allow, ['a/one', 'c/three'])
 
     const afterReplace = performInit({
       ...baseInput,
@@ -723,26 +805,33 @@ describe('init', () => {
       dir: target,
       allow: ['z/last'],
       replaceAllow: true,
-    });
-    assert.deepEqual(appBlock(afterReplace.config).allow, ['z/last']);
-  });
+    })
+    assert.deepEqual(appBlock(afterReplace.config).allow, ['z/last'])
+  })
 
   it('never lets an update empty the allowlist', () => {
-    const root = dir(`init-empty-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
-    const target = path.join(root, 'deploy');
-    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+    const root = dir(`init-empty-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
+    const target = path.join(root, 'deploy')
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] })
     assert.throws(
-      () => performInit({ ...baseInput, cert: undefined, dir: target, allow: [], removeAllow: ['a/one'] }),
+      () =>
+        performInit({
+          ...baseInput,
+          cert: undefined,
+          dir: target,
+          allow: [],
+          removeAllow: ['a/one'],
+        }),
       /default-deny/,
-    );
-  });
+    )
+  })
 
   it('switches deployment only when asked by name, and never carries the other layout over', () => {
-    const root = dir(`init-mode-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
-    const target = path.join(root, 'deploy');
-    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
+    const root = dir(`init-mode-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
+    const target = path.join(root, 'deploy')
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] })
 
     // host -> sidecar needs nothing extra (and the host socket path must not be forced on it),
     // and keeps the allowlist.
@@ -753,16 +842,16 @@ describe('init', () => {
       allow: [],
       mode: 'sidecar',
       hostSocketPath: undefined,
-    });
-    assert.equal(toSidecar.mode, 'sidecar');
-    assert.equal(appBlock(toSidecar.config).privateKeyPath, SIDECAR.keyPath);
-    assert.equal(toSidecar.config.socketPath, SIDECAR.socketPath);
+    })
+    assert.equal(toSidecar.mode, 'sidecar')
+    assert.equal(appBlock(toSidecar.config).privateKeyPath, SIDECAR.keyPath)
+    assert.equal(toSidecar.config.socketPath, SIDECAR.socketPath)
     assert.equal(
       toSidecar.config.auditPath,
       SIDECAR.auditPath,
       'the host audit path must not follow the config into the sidecar',
-    );
-    assert.deepEqual(appBlock(toSidecar.config).allow, ['a/one']);
+    )
+    assert.deepEqual(appBlock(toSidecar.config).allow, ['a/one'])
 
     // sidecar -> host without a socket path is refused: the one on file belongs to the sidecar,
     // and a host process cannot bind it.
@@ -777,7 +866,7 @@ describe('init', () => {
           hostSocketPath: undefined,
         }),
       /records the sidecar's socket path .*pass --socket-path/,
-    );
+    )
 
     // and with one, the host layout is rebuilt rather than inherited.
     const toHost = performInit({
@@ -787,34 +876,42 @@ describe('init', () => {
       allow: [],
       mode: 'host',
       hostSocketPath: '/volume1/some/dir/broker.sock',
-    });
-    assert.equal(toHost.mode, 'host');
-    assert.equal(appBlock(toHost.config).privateKeyPath, path.join(target, 'app.pem'));
-    assert.equal(toHost.config.socketPath, '/volume1/some/dir/broker.sock');
-    assert.equal(toHost.config.auditPath, path.join(target, 'log', 'audit.jsonl'), 'not the sidecar path');
-    assert.deepEqual(appBlock(toHost.config).allow, ['a/one']);
-  });
+    })
+    assert.equal(toHost.mode, 'host')
+    assert.equal(appBlock(toHost.config).privateKeyPath, path.join(target, 'app.pem'))
+    assert.equal(toHost.config.socketPath, '/volume1/some/dir/broker.sock')
+    assert.equal(
+      toHost.config.auditPath,
+      path.join(target, 'log', 'audit.jsonl'),
+      'not the sidecar path',
+    )
+    assert.deepEqual(appBlock(toHost.config).allow, ['a/one'])
+  })
 
   it('says so when the key the config points at has gone', () => {
-    const root = dir(`init-nokey-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
-    const target = path.join(root, 'deploy');
-    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] });
-    fs.rmSync(path.join(target, 'app.pem'));
+    const root = dir(`init-nokey-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
+    const target = path.join(root, 'deploy')
+    performInit({ ...baseInput, cert, dir: target, allow: ['a/one'] })
+    fs.rmSync(path.join(target, 'app.pem'))
     assert.throws(
       () => performInit({ ...baseInput, cert: undefined, dir: target, allow: ['b/two'] }),
       /pass --cert to install the key/,
-    );
-  });
+    )
+  })
 
   it('parses permission lists and rejects malformed ones', () => {
-    assert.equal(parsePermissions(undefined), undefined, 'absent in an update means "leave it alone"');
+    assert.equal(
+      parsePermissions(undefined),
+      undefined,
+      'absent in an update means "leave it alone"',
+    )
     assert.deepEqual(parsePermissions('contents=write,pull_requests=write'), {
       contents: 'write',
       pull_requests: 'write',
-    });
-    assert.throws(() => parsePermissions('contents'), /name=level/);
-  });
+    })
+    assert.throws(() => parsePermissions('contents'), /name=level/)
+  })
 
   it('builds a config through the daemon validator, so bad input fails here', () => {
     assert.throws(
@@ -827,59 +924,77 @@ describe('init', () => {
           hostSocketPath: '',
         }),
       /socketPath is required/,
-    );
-  });
-});
+    )
+  })
+})
 
 describe('mergeAllowList', () => {
   it('adds, deduplicates case-insensitively and preserves order', () => {
-    assert.deepEqual(mergeAllowList(['a/one'], { dir: '/x', allow: ['b/two'], force: false }), ['a/one', 'b/two']);
-    assert.deepEqual(mergeAllowList(['a/one'], { dir: '/x', allow: ['A/One'], force: false }), ['a/one']);
-  });
+    assert.deepEqual(mergeAllowList(['a/one'], { dir: '/x', allow: ['b/two'], force: false }), [
+      'a/one',
+      'b/two',
+    ])
+    assert.deepEqual(mergeAllowList(['a/one'], { dir: '/x', allow: ['A/One'], force: false }), [
+      'a/one',
+    ])
+  })
 
   it('refuses to produce an empty allowlist, which would authorize nothing', () => {
-    assert.throws(() => mergeAllowList([], { dir: '/x', allow: [], force: false }), /default-deny/);
+    assert.throws(() => mergeAllowList([], { dir: '/x', allow: [], force: false }), /default-deny/)
     assert.throws(
       () => mergeAllowList(['a/one'], { dir: '/x', replaceAllow: true, force: false }),
       /default-deny/,
-    );
-  });
+    )
+  })
 
   it('treats whitespace-padded entries as the same key and deduplicates replace mode', () => {
     assert.deepEqual(
       mergeAllowList([' a/one', 'b/two'], { dir: '/x', removeAllow: ['a/one'], force: false }),
       ['b/two'],
-    );
+    )
     assert.deepEqual(
-      mergeAllowList([], { dir: '/x', allow: ['a/one', 'A/ONE'], replaceAllow: true, force: false }),
+      mergeAllowList([], {
+        dir: '/x',
+        allow: ['a/one', 'A/ONE'],
+        replaceAllow: true,
+        force: false,
+      }),
       ['a/one'],
-    );
-  });
+    )
+  })
 
   it('removes, and replaces only when told to', () => {
     assert.deepEqual(
       mergeAllowList(['a/one', 'b/two'], { dir: '/x', removeAllow: ['A/ONE'], force: false }),
       ['b/two'],
-    );
+    )
     assert.deepEqual(
-      mergeAllowList(['a/one', 'b/two'], { dir: '/x', allow: ['c/three'], replaceAllow: true, force: false }),
+      mergeAllowList(['a/one', 'b/two'], {
+        dir: '/x',
+        allow: ['c/three'],
+        replaceAllow: true,
+        force: false,
+      }),
       ['c/three'],
-    );
-  });
+    )
+  })
 
   it('rejects a malformed entry instead of writing it', () => {
     for (const bad of ['acme', 'acme/wid*', 'acme/other/extra']) {
-      assert.throws(() => mergeAllowList([], { dir: '/x', allow: [bad], force: false }), /not a valid/);
+      assert.throws(
+        () => mergeAllowList([], { dir: '/x', allow: [bad], force: false }),
+        /not a valid/,
+      )
     }
-  });
-});
+  })
+})
 
 describe('diagnose', () => {
   it('explains a sidecar configuration instead of failing to read its key', async () => {
     // The case that produced this test: `diagnose` run on the host against a config written for the
     // sidecar, which died with a bare ENOENT about a path it could never have had.
-    const root = dir(`diagnose-${Math.random().toString(36).slice(2)}`);
-    const configPath = path.join(root, 'broker.config.yml');
+    const root = dir(`diagnose-${Math.random().toString(36).slice(2)}`)
+    const configPath = path.join(root, 'broker.config.yml')
     fs.writeFileSync(
       configPath,
       stringifyYaml({
@@ -896,125 +1011,154 @@ describe('diagnose', () => {
           },
         },
       }),
-    );
+    )
 
     // runDiagnose refuses to start when a proxy is configured without the switch, and it reads the real
     // environment, so the variables are taken away for the call: the assertion is about the sidecar message,
     // not about the machine this runs on.
-    const proxyVars = ['http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY', 'NODE_USE_ENV_PROXY'];
-    const savedProxy = proxyVars.map((name) => [name, process.env[name]] as const);
+    const proxyVars = [
+      'http_proxy',
+      'HTTP_PROXY',
+      'https_proxy',
+      'HTTPS_PROXY',
+      'NODE_USE_ENV_PROXY',
+    ]
+    const savedProxy = proxyVars.map(name => [name, process.env[name]] as const)
     try {
-      for (const name of proxyVars) delete process.env[name];
+      for (const name of proxyVars) {
+        delete process.env[name]
+      }
       await assert.rejects(
         () => runDiagnose(['--config', configPath]),
         /exists only inside the sidecar container/,
-      );
+      )
     } finally {
       for (const [name, value] of savedProxy) {
-        if (value === undefined) delete process.env[name];
-        else process.env[name] = value;
+        if (value === undefined) {
+          delete process.env[name]
+        } else {
+          process.env[name] = value
+        }
       }
     }
-  });
-});
+  })
+})
 
 describe('socket discovery', () => {
   it('honours the socket file, the way the git helper does', async () => {
     // Regression: probe and logs accepted only --socket and $GIT_BROKER_SOCKET, so in a shell
     // without the environment they refused even though git itself would have found the broker.
-    const root = dir(`socket-file-${Math.random().toString(36).slice(2)}`);
-    const socketFile = path.join(root, 'socket');
-    fs.writeFileSync(socketFile, path.join(root, 'absent.sock'));
+    const root = dir(`socket-file-${Math.random().toString(36).slice(2)}`)
+    const socketFile = path.join(root, 'socket')
+    fs.writeFileSync(socketFile, path.join(root, 'absent.sock'))
 
-    const savedSocket = process.env['GIT_BROKER_SOCKET'];
-    const savedFile = process.env['GIT_BROKER_SOCKET_FILE'];
-    delete process.env['GIT_BROKER_SOCKET'];
-    process.env['GIT_BROKER_SOCKET_FILE'] = socketFile;
+    const savedSocket = process.env['GIT_BROKER_SOCKET']
+    const savedFile = process.env['GIT_BROKER_SOCKET_FILE']
+    delete process.env['GIT_BROKER_SOCKET']
+    process.env['GIT_BROKER_SOCKET_FILE'] = socketFile
     try {
-      const code = await runProbe(['--repo', 'a/one']);
-      assert.equal(code, 3, 'it must use the path from the file and report the broker unreachable');
+      const code = await runProbe(['--repo', 'a/one'])
+      assert.equal(code, 3, 'it must use the path from the file and report the broker unreachable')
     } finally {
-      if (savedSocket === undefined) delete process.env['GIT_BROKER_SOCKET'];
-      else process.env['GIT_BROKER_SOCKET'] = savedSocket;
-      if (savedFile === undefined) delete process.env['GIT_BROKER_SOCKET_FILE'];
-      else process.env['GIT_BROKER_SOCKET_FILE'] = savedFile;
+      if (savedSocket === undefined) {
+        delete process.env['GIT_BROKER_SOCKET']
+      } else {
+        process.env['GIT_BROKER_SOCKET'] = savedSocket
+      }
+      if (savedFile === undefined) {
+        delete process.env['GIT_BROKER_SOCKET_FILE']
+      } else {
+        process.env['GIT_BROKER_SOCKET_FILE'] = savedFile
+      }
     }
-  });
-});
+  })
+})
 
 describe('host flag validation at the CLI boundary', () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-host-home-'));
-  after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-host-home-'))
+  after(() => fs.rmSync(home, { recursive: true, force: true }))
 
   /** Run a client command as a process and return its refusal. */
   const refuse = (command: string, args: readonly string[]): { status: number; stderr: string } => {
     try {
-      execFileSync('node', ['--conditions=development', 'packages/client/bin/gcb.js', command, ...args], {
-        cwd: path.resolve('.'),
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
-      });
-      return { status: 0, stderr: '' };
+      execFileSync(
+        'node',
+        ['--conditions=development', 'packages/client/bin/gcb.js', command, ...args],
+        {
+          cwd: path.resolve('.'),
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+        },
+      )
+      return { status: 0, stderr: '' }
     } catch (error) {
-      const failed = error as { status?: number | null; stderr?: string };
-      return { status: failed.status ?? -1, stderr: String(failed.stderr ?? '') };
+      const failed = error as { status?: number | null; stderr?: string }
+      return { status: failed.status ?? -1, stderr: String(failed.stderr ?? '') }
     }
-  };
+  }
 
   it('probe sends github.com when --host is omitted', async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-probe-default-'));
-    const socketPath = path.join(root, 'broker.sock');
-    let request: Record<string, unknown> | undefined;
-    const server = net.createServer((socket) => {
-      let buffer = '';
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-probe-default-'))
+    const socketPath = path.join(root, 'broker.sock')
+    let request: Record<string, unknown> | undefined
+    const server = net.createServer(socket => {
+      let buffer = ''
       socket.on('data', (chunk: Buffer) => {
-        buffer += chunk.toString('utf8');
-        const newline = buffer.indexOf('\n');
-        if (newline < 0) return;
-        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
-        socket.end(encodeMessage({ ok: true, username: 'x-access-token', password: 'secret' }));
-      });
-    });
-    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
-    const savedSocket = process.env['GIT_BROKER_SOCKET'];
-    const savedFile = process.env['GIT_BROKER_SOCKET_FILE'];
+        buffer += chunk.toString('utf8')
+        const newline = buffer.indexOf('\n')
+        if (newline < 0) {
+          return
+        }
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined
+        socket.end(encodeMessage({ ok: true, username: 'x-access-token', password: 'secret' }))
+      })
+    })
+    await new Promise<void>(resolve => server.listen(socketPath, resolve))
+    const savedSocket = process.env['GIT_BROKER_SOCKET']
+    const savedFile = process.env['GIT_BROKER_SOCKET_FILE']
     try {
-      process.env['GIT_BROKER_SOCKET'] = socketPath;
-      delete process.env['GIT_BROKER_SOCKET_FILE'];
-      assert.equal(await runProbe(['--repo', 'a/one']), 0);
-      assert.equal(request?.['host'], 'github.com');
+      process.env['GIT_BROKER_SOCKET'] = socketPath
+      delete process.env['GIT_BROKER_SOCKET_FILE']
+      assert.equal(await runProbe(['--repo', 'a/one']), 0)
+      assert.equal(request?.['host'], 'github.com')
     } finally {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      if (savedSocket === undefined) delete process.env['GIT_BROKER_SOCKET'];
-      else process.env['GIT_BROKER_SOCKET'] = savedSocket;
-      if (savedFile === undefined) delete process.env['GIT_BROKER_SOCKET_FILE'];
-      else process.env['GIT_BROKER_SOCKET_FILE'] = savedFile;
-      fs.rmSync(root, { recursive: true, force: true });
+      await new Promise<void>(resolve => server.close(() => resolve()))
+      if (savedSocket === undefined) {
+        delete process.env['GIT_BROKER_SOCKET']
+      } else {
+        process.env['GIT_BROKER_SOCKET'] = savedSocket
+      }
+      if (savedFile === undefined) {
+        delete process.env['GIT_BROKER_SOCKET_FILE']
+      } else {
+        process.env['GIT_BROKER_SOCKET_FILE'] = savedFile
+      }
+      fs.rmSync(root, { recursive: true, force: true })
     }
-  });
+  })
 
   for (const command of ['probe', 'logs']) {
     it(`${command} refuses a bare --host`, () => {
-      const result = refuse(command, ['--host']);
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /--host needs a value/);
-    });
+      const result = refuse(command, ['--host'])
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /--host needs a value/)
+    })
 
     it(`${command} refuses an empty --host`, () => {
-      const result = refuse(command, ['--host', '']);
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /--host needs a value/);
-    });
+      const result = refuse(command, ['--host', ''])
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /--host needs a value/)
+    })
   }
-});
+})
 
 describe('gcb config allow', () => {
-  const runAllow = (args: readonly string[]) => runConfigCli('allow', args);
+  const runAllow = (args: readonly string[]) => runConfigCli('allow', args)
 
   const fixture = (): { dir: string; file: string; original: string } => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-'));
-    const file = path.join(dir, 'broker.config.yml');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-'))
+    const file = path.join(dir, 'broker.config.yml')
     const original = [
       '# keep this comment',
       'socketPath: /run/gcb.sock',
@@ -1027,243 +1171,265 @@ describe('gcb config allow', () => {
       '      - acme/other',
       '      - " acme/padded "',
       '',
-    ].join('\n');
-    fs.writeFileSync(file, original);
-    if (process.platform !== 'win32') fs.chmodSync(file, 0o660);
-    return { dir, file, original };
-  };
+    ].join('\n')
+    fs.writeFileSync(file, original)
+    if (process.platform !== 'win32') {
+      fs.chmodSync(file, 0o660)
+    }
+    return { dir, file, original }
+  }
 
   it('adds then removes one entry without disturbing comments or formatting', () => {
-    const { dir, file, original } = fixture();
-    const inode = process.platform === 'win32' ? undefined : fs.statSync(file).ino;
+    const { dir, file, original } = fixture()
+    const inode = process.platform === 'win32' ? undefined : fs.statSync(file).ino
     try {
-      const added = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
-      assert.equal(added.status, 0);
-      assert.match(added.stdout, /allow add github\.com acme\/new: written/u);
-      assert.match(added.stdout, /entry=acme\/new reload=unconfirmed signal=unavailable/u);
-      assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u);
-      assert.match(fs.readFileSync(file, 'utf8'), /# keep this too/u);
+      const added = runAllow(['add', 'github.com', 'acme/new', '--config', file])
+      assert.equal(added.status, 0)
+      assert.match(added.stdout, /allow add github\.com acme\/new: written/u)
+      assert.match(added.stdout, /entry=acme\/new reload=unconfirmed signal=unavailable/u)
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u)
+      assert.match(fs.readFileSync(file, 'utf8'), /# keep this too/u)
       if (process.platform !== 'win32') {
-        assert.equal(fs.statSync(file).mode & 0o777, 0o660, 'add keeps the mode');
-        assert.notEqual(fs.statSync(file).ino, inode, 'add replaces the inode');
+        assert.equal(fs.statSync(file).mode & 0o777, 0o660, 'add keeps the mode')
+        assert.notEqual(fs.statSync(file).ino, inode, 'add replaces the inode')
       }
 
-      const checked = execFileSync('node', ['--conditions=development', 'packages/host/bin/gcb.js', 'config', 'check', '--config', file], {
-        cwd: path.resolve('.'),
-        encoding: 'utf8',
-      });
-      assert.match(checked, /ok: /u);
+      const checked = execFileSync(
+        'node',
+        [
+          '--conditions=development',
+          'packages/host/bin/gcb.js',
+          'config',
+          'check',
+          '--config',
+          file,
+        ],
+        {
+          cwd: path.resolve('.'),
+          encoding: 'utf8',
+        },
+      )
+      assert.match(checked, /ok: /u)
 
-      const beforeRemove = process.platform === 'win32' ? undefined : fs.statSync(file).ino;
-      const removed = runAllow(['remove', 'github.com', 'acme/new', '--config', file]);
-      assert.equal(removed.status, 0);
-      assert.equal(fs.readFileSync(file, 'utf8'), original);
+      const beforeRemove = process.platform === 'win32' ? undefined : fs.statSync(file).ino
+      const removed = runAllow(['remove', 'github.com', 'acme/new', '--config', file])
+      assert.equal(removed.status, 0)
+      assert.equal(fs.readFileSync(file, 'utf8'), original)
       if (process.platform !== 'win32') {
-        assert.equal(fs.statSync(file).mode & 0o777, 0o660, 'remove keeps the mode');
-        assert.notEqual(fs.statSync(file).ino, beforeRemove, 'remove replaces the inode');
+        assert.equal(fs.statSync(file).mode & 0o777, 0o660, 'remove keeps the mode')
+        assert.notEqual(fs.statSync(file).ino, beforeRemove, 'remove replaces the inode')
       }
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('preserves CRLF line endings through add and remove', () => {
-    const { dir, file, original } = fixture();
-    const crlf = original.replaceAll('\n', '\r\n');
-    fs.writeFileSync(file, crlf);
+    const { dir, file, original } = fixture()
+    const crlf = original.replaceAll('\n', '\r\n')
+    fs.writeFileSync(file, crlf)
     try {
-      assert.equal(runAllow(['add', 'github.com', 'acme/new', '--config', file]).status, 0);
-      assert.match(fs.readFileSync(file, 'utf8'), /\r\n/u);
-      assert.equal(runAllow(['remove', 'github.com', 'acme/new', '--config', file]).status, 0);
-      assert.equal(fs.readFileSync(file, 'utf8'), crlf);
+      assert.equal(runAllow(['add', 'github.com', 'acme/new', '--config', file]).status, 0)
+      assert.match(fs.readFileSync(file, 'utf8'), /\r\n/u)
+      assert.equal(runAllow(['remove', 'github.com', 'acme/new', '--config', file]).status, 0)
+      assert.equal(fs.readFileSync(file, 'utf8'), crlf)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('refuses mixed line endings instead of normalizing them', () => {
-    const { dir, file, original } = fixture();
-    const mixed = original.replaceAll('\n', '\r\n').replace('socketPath: /run/gcb.sock\r\n', 'socketPath: /run/gcb.sock\n');
-    fs.writeFileSync(file, mixed);
+    const { dir, file, original } = fixture()
+    const mixed = original
+      .replaceAll('\n', '\r\n')
+      .replace('socketPath: /run/gcb.sock\r\n', 'socketPath: /run/gcb.sock\n')
+    fs.writeFileSync(file, mixed)
     try {
-      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /mixed line endings/u);
-      assert.equal(fs.readFileSync(file, 'utf8'), mixed);
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file])
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /mixed line endings/u)
+      assert.equal(fs.readFileSync(file, 'utf8'), mixed)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('finds a host key regardless of case', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-host-'));
-    const file = path.join(dir, 'broker.config.yml');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-host-'))
+    const file = path.join(dir, 'broker.config.yml')
     fs.writeFileSync(
       file,
       'socketPath: /run/gcb.sock\nhosts:\n  GitHub.com:\n    provider: static\n    password: p\n    allow:\n      - acme/widget\n',
-    );
+    )
     try {
-      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
-      assert.equal(result.status, 0);
-      assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u);
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file])
+      assert.equal(result.status, 0)
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('refuses a duplicate add and a missing remove without writing', () => {
-    const { dir, file, original } = fixture();
+    const { dir, file, original } = fixture()
     try {
-      const duplicate = runAllow(['add', 'github.com', 'acme/widget', '--config', file]);
-      const padded = runAllow(['add', 'github.com', 'acme/padded', '--config', file]);
-      assert.equal(padded.status, 1);
-      assert.match(padded.stderr, /already in/u);
-      assert.equal(duplicate.status, 1);
-      assert.match(duplicate.stderr, /already in github\.com\.allow/u);
-      assert.equal(fs.readFileSync(file, 'utf8'), original);
+      const duplicate = runAllow(['add', 'github.com', 'acme/widget', '--config', file])
+      const padded = runAllow(['add', 'github.com', 'acme/padded', '--config', file])
+      assert.equal(padded.status, 1)
+      assert.match(padded.stderr, /already in/u)
+      assert.equal(duplicate.status, 1)
+      assert.match(duplicate.stderr, /already in github\.com\.allow/u)
+      assert.equal(fs.readFileSync(file, 'utf8'), original)
 
-      const missing = runAllow(['remove', 'github.com', 'acme/absent', '--config', file]);
-      assert.equal(missing.status, 1);
-      assert.match(missing.stderr, /not in github\.com\.allow/u);
-      assert.equal(fs.readFileSync(file, 'utf8'), original);
+      const missing = runAllow(['remove', 'github.com', 'acme/absent', '--config', file])
+      assert.equal(missing.status, 1)
+      assert.match(missing.stderr, /not in github\.com\.allow/u)
+      assert.equal(fs.readFileSync(file, 'utf8'), original)
 
-      const removePadded = runAllow(['remove', 'github.com', 'acme/padded', '--config', file]);
-      assert.equal(removePadded.status, 0);
-      assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /padded/u);
+      const removePadded = runAllow(['remove', 'github.com', 'acme/padded', '--config', file])
+      assert.equal(removePadded.status, 0)
+      assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /padded/u)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('refuses malformed repositories and unknown hosts before writing', () => {
-    const { dir, file, original } = fixture();
+    const { dir, file, original } = fixture()
     try {
-      for (const bad of ['acme', 'acme/widget/extra', 'https://github.com/acme/widget', 'acme/*', '']) {
-        const result = runAllow(['add', 'github.com', bad, '--config', file]);
-        assert.equal(result.status, 1, bad);
-        assert.match(result.stderr, /one exact owner\/name/u);
+      for (const bad of [
+        'acme',
+        'acme/widget/extra',
+        'https://github.com/acme/widget',
+        'acme/*',
+        '',
+      ]) {
+        const result = runAllow(['add', 'github.com', bad, '--config', file])
+        assert.equal(result.status, 1, bad)
+        assert.match(result.stderr, /one exact owner\/name/u)
       }
-      const host = runAllow(['add', 'gitlab.com', 'acme/widget', '--config', file]);
-      assert.equal(host.status, 1);
-      assert.match(host.stderr, /no host "gitlab\.com"/u);
-      assert.equal(fs.readFileSync(file, 'utf8'), original);
+      const host = runAllow(['add', 'gitlab.com', 'acme/widget', '--config', file])
+      assert.equal(host.status, 1)
+      assert.match(host.stderr, /no host "gitlab\.com"/u)
+      assert.equal(fs.readFileSync(file, 'utf8'), original)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('rejects a case-variant duplicate and an extra positional', () => {
-    const { dir, file, original } = fixture();
+    const { dir, file, original } = fixture()
     try {
-      const duplicate = runAllow(['add', 'github.com', 'ACME/Widget', '--config', file]);
-      assert.equal(duplicate.status, 1);
-      assert.match(duplicate.stderr, /already in github\.com\.allow/u);
-      assert.equal(fs.readFileSync(file, 'utf8'), original);
+      const duplicate = runAllow(['add', 'github.com', 'ACME/Widget', '--config', file])
+      assert.equal(duplicate.status, 1)
+      assert.match(duplicate.stderr, /already in github\.com\.allow/u)
+      assert.equal(fs.readFileSync(file, 'utf8'), original)
 
-      const extra = runAllow(['add', 'github.com', 'acme/new', 'oops', '--config', file]);
-      assert.equal(extra.status, 1);
-      assert.match(extra.stderr, /usage: gcb config allow/u);
-      assert.equal(fs.readFileSync(file, 'utf8'), original);
+      const extra = runAllow(['add', 'github.com', 'acme/new', 'oops', '--config', file])
+      assert.equal(extra.status, 1)
+      assert.match(extra.stderr, /usage: gcb config allow/u)
+      assert.equal(fs.readFileSync(file, 'utf8'), original)
 
-      const spaces = runAllow(['add', 'github.com', ' acme/spaced ', '--config', file]);
-      assert.equal(spaces.status, 0);
-      assert.match(fs.readFileSync(file, 'utf8'), /- acme\/spaced/u);
-      const spacesAgain = runAllow(['add', 'github.com', 'acme/spaced', '--config', file]);
-      assert.equal(spacesAgain.status, 1);
-      assert.match(spacesAgain.stderr, /already in/u);
+      const spaces = runAllow(['add', 'github.com', ' acme/spaced ', '--config', file])
+      assert.equal(spaces.status, 0)
+      assert.match(fs.readFileSync(file, 'utf8'), /- acme\/spaced/u)
+      const spacesAgain = runAllow(['add', 'github.com', 'acme/spaced', '--config', file])
+      assert.equal(spacesAgain.status, 1)
+      assert.match(spacesAgain.stderr, /already in/u)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('refuses a .git suffix and a malformed existing entry', () => {
-    const { dir, file, original } = fixture();
+    const { dir, file, original } = fixture()
     try {
-      const dotGit = runAllow(['add', 'github.com', 'acme/widget.git', '--config', file]);
-      assert.equal(dotGit.status, 1);
-      assert.match(dotGit.stderr, /without a wildcard or \.git/u);
-      assert.equal(fs.readFileSync(file, 'utf8'), original);
+      const dotGit = runAllow(['add', 'github.com', 'acme/widget.git', '--config', file])
+      assert.equal(dotGit.status, 1)
+      assert.match(dotGit.stderr, /without a wildcard or \.git/u)
+      assert.equal(fs.readFileSync(file, 'utf8'), original)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
 
-    const badDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-loader-'));
-    const badFile = path.join(badDir, 'broker.config.yml');
-    const bad = 'socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow:\n      - acme/wid*\n';
-    fs.writeFileSync(badFile, bad);
+    const badDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-loader-'))
+    const badFile = path.join(badDir, 'broker.config.yml')
+    const bad =
+      'socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow:\n      - acme/wid*\n'
+    fs.writeFileSync(badFile, bad)
     try {
-      const result = runAllow(['add', 'github.com', 'acme/new', '--config', badFile]);
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /not a valid "owner\/repo" pattern/u);
-      assert.equal(fs.readFileSync(badFile, 'utf8'), bad);
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', badFile])
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /not a valid "owner\/repo" pattern/u)
+      assert.equal(fs.readFileSync(badFile, 'utf8'), bad)
     } finally {
-      fs.rmSync(badDir, { recursive: true, force: true });
+      fs.rmSync(badDir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('follows a symlinked config instead of replacing the link', () => {
-    const { dir, file } = fixture();
-    const link = path.join(dir, 'link.yml');
-    fs.symlinkSync(file, link);
+    const { dir, file } = fixture()
+    const link = path.join(dir, 'link.yml')
+    fs.symlinkSync(file, link)
     try {
-      const result = runAllow(['add', 'github.com', 'acme/new', '--config', link]);
-      assert.equal(result.status, 0);
-      assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u);
-      assert.equal(fs.lstatSync(link).isSymbolicLink(), true);
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', link])
+      assert.equal(result.status, 0)
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/new/u)
+      assert.equal(fs.lstatSync(link).isSymbolicLink(), true)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('removes every case-variant match but keeps the last entry rule', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-dup-'));
-    const file = path.join(dir, 'broker.config.yml');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-dup-'))
+    const file = path.join(dir, 'broker.config.yml')
     const body = (entries: string): string =>
-      `socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow:\n${entries}`;
-    fs.writeFileSync(file, body('      - acme/widget\n      - ACME/Widget\n      - acme/other\n'));
+      `socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow:\n${entries}`
+    fs.writeFileSync(file, body('      - acme/widget\n      - ACME/Widget\n      - acme/other\n'))
     try {
-      const removed = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
-      assert.equal(removed.status, 0);
-      const text = fs.readFileSync(file, 'utf8');
-      assert.doesNotMatch(text, /widget/iu);
-      assert.match(text, /acme\/other/u);
+      const removed = runAllow(['remove', 'github.com', 'acme/widget', '--config', file])
+      assert.equal(removed.status, 0)
+      const text = fs.readFileSync(file, 'utf8')
+      assert.doesNotMatch(text, /widget/iu)
+      assert.match(text, /acme\/other/u)
 
-      fs.writeFileSync(file, body('      - ACME/Widget\n      - acme/other\n'));
-      const upper = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
-      assert.equal(upper.status, 0);
-      assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /widget/iu);
-      assert.match(fs.readFileSync(file, 'utf8'), /acme\/other/u);
+      fs.writeFileSync(file, body('      - ACME/Widget\n      - acme/other\n'))
+      const upper = runAllow(['remove', 'github.com', 'acme/widget', '--config', file])
+      assert.equal(upper.status, 0)
+      assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /widget/iu)
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/other/u)
 
-      fs.writeFileSync(file, body('      - acme/widget\n      - ACME/Widget\n'));
-      const last = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
-      assert.equal(last.status, 1);
-      assert.match(last.stderr, /allowlist empty/u);
-      assert.match(fs.readFileSync(file, 'utf8'), /ACME\/Widget/u);
+      fs.writeFileSync(file, body('      - acme/widget\n      - ACME/Widget\n'))
+      const last = runAllow(['remove', 'github.com', 'acme/widget', '--config', file])
+      assert.equal(last.status, 1)
+      assert.match(last.stderr, /allowlist empty/u)
+      assert.match(fs.readFileSync(file, 'utf8'), /ACME\/Widget/u)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('refuses to remove the last entry', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-last-'));
-    const file = path.join(dir, 'broker.config.yml');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-last-'))
+    const file = path.join(dir, 'broker.config.yml')
     fs.writeFileSync(
       file,
       'socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow:\n      - acme/widget\n',
-    );
+    )
     try {
-      const result = runAllow(['remove', 'github.com', 'acme/widget', '--config', file]);
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /allowlist empty/u);
-      assert.match(fs.readFileSync(file, 'utf8'), /acme\/widget/u);
+      const result = runAllow(['remove', 'github.com', 'acme/widget', '--config', file])
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /allowlist empty/u)
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/widget/u)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('waits for an empty lock instead of calling it stale', async () => {
-    const { dir, file } = fixture();
-    fs.writeFileSync(`${file}.lock`, '');
+    const { dir, file } = fixture()
+    fs.writeFileSync(`${file}.lock`, '')
     const child = spawn(
       process.execPath,
       [
@@ -1278,237 +1444,257 @@ describe('gcb config allow', () => {
         file,
       ],
       { cwd: path.resolve('.'), stdio: ['ignore', 'pipe', 'pipe'] },
-    );
+    )
     try {
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      assert.equal(child.exitCode, null, 'the child waits instead of failing on an empty lock');
-      fs.writeFileSync(`${file}.lock`, String(process.pid));
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      fs.rmSync(`${file}.lock`);
-      const code = await new Promise<number | null>((resolve) => child.on('exit', resolve));
-      assert.equal(code, 0);
-      assert.match(fs.readFileSync(file, 'utf8'), /acme\/late/u);
+      await new Promise(resolve => setTimeout(resolve, 400))
+      assert.equal(child.exitCode, null, 'the child waits instead of failing on an empty lock')
+      fs.writeFileSync(`${file}.lock`, String(process.pid))
+      await new Promise(resolve => setTimeout(resolve, 50))
+      fs.rmSync(`${file}.lock`)
+      const code = await new Promise<number | null>(resolve => child.on('exit', resolve))
+      assert.equal(code, 0)
+      assert.match(fs.readFileSync(file, 'utf8'), /acme\/late/u)
     } finally {
-      child.kill();
-      fs.rmSync(dir, { recursive: true, force: true });
+      child.kill()
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('does not steal an old lock from a live process', () => {
-    const { dir, file, original } = fixture();
-    fs.writeFileSync(`${file}.lock`, String(process.pid));
-    const old = new Date(Date.now() - 31_000);
-    fs.utimesSync(`${file}.lock`, old, old);
+    const { dir, file, original } = fixture()
+    fs.writeFileSync(`${file}.lock`, String(process.pid))
+    const old = new Date(Date.now() - 31_000)
+    fs.utimesSync(`${file}.lock`, old, old)
     try {
-      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /another gcb command is updating/u);
-      assert.equal(fs.readFileSync(file, 'utf8'), original);
-      assert.equal(fs.existsSync(`${file}.lock`), true);
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file])
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /another gcb command is updating/u)
+      assert.equal(fs.readFileSync(file, 'utf8'), original)
+      assert.equal(fs.existsSync(`${file}.lock`), true)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('fails closed on a fresh lock whose pid has exited', () => {
-    const { dir, file, original } = fixture();
-    const dead = spawnSync(process.execPath, ['-e', '']);
-    assert.ok(dead.pid !== undefined);
-    fs.writeFileSync(`${file}.lock`, String(dead.pid));
+    const { dir, file, original } = fixture()
+    const dead = spawnSync(process.execPath, ['-e', ''])
+    assert.ok(dead.pid !== undefined)
+    fs.writeFileSync(`${file}.lock`, String(dead.pid))
     try {
-      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /stale lock .*; remove it/u);
-      assert.equal(fs.readFileSync(file, 'utf8'), original);
-      assert.equal(fs.existsSync(`${file}.lock`), true);
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file])
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /stale lock .*; remove it/u)
+      assert.equal(fs.readFileSync(file, 'utf8'), original)
+      assert.equal(fs.existsSync(`${file}.lock`), true)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('reports a missing config with the config path', () => {
-    const result = runAllow(['add', 'github.com', 'acme/new', '--config', '/definitely/not/here.yml']);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /cannot read config \/definitely\/not\/here\.yml/u);
-  });
+    const result = runAllow([
+      'add',
+      'github.com',
+      'acme/new',
+      '--config',
+      '/definitely/not/here.yml',
+    ])
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /cannot read config \/definitely\/not\/here\.yml/u)
+  })
 
   it('fails closed on a stale lock left by a dead process', () => {
-    const { dir, file, original } = fixture();
-    fs.writeFileSync(`${file}.lock`, String(Number.MAX_SAFE_INTEGER));
-    const old = new Date(Date.now() - 31_000);
-    fs.utimesSync(`${file}.lock`, old, old);
+    const { dir, file, original } = fixture()
+    fs.writeFileSync(`${file}.lock`, String(Number.MAX_SAFE_INTEGER))
+    const old = new Date(Date.now() - 31_000)
+    fs.utimesSync(`${file}.lock`, old, old)
     try {
-      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /stale lock .*; remove it/u);
-      assert.equal(fs.readFileSync(file, 'utf8'), original);
-      assert.equal(fs.existsSync(`${file}.lock`), true);
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file])
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /stale lock .*; remove it/u)
+      assert.equal(fs.readFileSync(file, 'utf8'), original)
+      assert.equal(fs.existsSync(`${file}.lock`), true)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('refuses a non-list allow field', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-bad-'));
-    const file = path.join(dir, 'broker.config.yml');
-    fs.writeFileSync(file, 'socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow: acme/widget\n');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-allow-bad-'))
+    const file = path.join(dir, 'broker.config.yml')
+    fs.writeFileSync(
+      file,
+      'socketPath: /run/gcb.sock\nhosts:\n  github.com:\n    provider: static\n    password: p\n    allow: acme/widget\n',
+    )
     try {
-      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file]);
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /allow must be a list/u);
+      const result = runAllow(['add', 'github.com', 'acme/new', '--config', file])
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /allow must be a list/u)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
-});
+  })
+})
 
 describe('gcb config check', () => {
   it('validates a real configuration and prints its mode and hosts', () => {
-    const result = runConfigCli('check', ['--config', path.resolve('examples/broker.config.example.yml')]);
-    assert.equal(result.status, 0);
-    assert.match(result.stdout, /ok: .* \(host\)/);
-    assert.match(result.stdout, /hosts: github\.com/);
-  });
+    const result = runConfigCli('check', [
+      '--config',
+      path.resolve('examples/broker.config.example.yml'),
+    ])
+    assert.equal(result.status, 0)
+    assert.match(result.stdout, /ok: .* \(host\)/)
+    assert.match(result.stdout, /hosts: github\.com/)
+  })
 
   it('refuses a missing file, a bare --config and an extra positional', () => {
-    const missing = runConfigCli('check', ['--config', '/definitely/not/here.yml']);
-    assert.equal(missing.status, 1);
-    assert.match(missing.stderr, /cannot read config/);
+    const missing = runConfigCli('check', ['--config', '/definitely/not/here.yml'])
+    assert.equal(missing.status, 1)
+    assert.match(missing.stderr, /cannot read config/)
 
-    const bare = runConfigCli('check', ['--config']);
-    assert.equal(bare.status, 1);
-    assert.match(bare.stderr, /--config may only be given once/);
+    const bare = runConfigCli('check', ['--config'])
+    assert.equal(bare.status, 1)
+    assert.match(bare.stderr, /--config may only be given once/)
 
-    const repeated = runConfigCli('check', ['--config', 'a.yml', '--config', 'b.yml']);
-    assert.equal(repeated.status, 1);
-    assert.match(repeated.stderr, /--config may only be given once/);
+    const repeated = runConfigCli('check', ['--config', 'a.yml', '--config', 'b.yml'])
+    assert.equal(repeated.status, 1)
+    assert.match(repeated.stderr, /--config may only be given once/)
 
-    const oneMissing = runConfigCli('check', ['--config', 'a.yml', '--config']);
-    assert.equal(oneMissing.status, 1);
-    assert.match(oneMissing.stderr, /--config may only be given once/);
+    const oneMissing = runConfigCli('check', ['--config', 'a.yml', '--config'])
+    assert.equal(oneMissing.status, 1)
+    assert.match(oneMissing.stderr, /--config may only be given once/)
 
-    const misspelled = runConfigCli('check', ['--confg', 'x']);
-    assert.equal(misspelled.status, 1);
-    assert.match(misspelled.stderr, /unknown option --confg/);
+    const misspelled = runConfigCli('check', ['--confg', 'x'])
+    assert.equal(misspelled.status, 1)
+    assert.match(misspelled.stderr, /unknown option --confg/)
 
-    const extra = runConfigCli('check', ['extra']);
-    assert.equal(extra.status, 1);
-    assert.match(extra.stderr, /usage: gcb config check/);
-  });
+    const extra = runConfigCli('check', ['extra'])
+    assert.equal(extra.status, 1)
+    assert.match(extra.stderr, /usage: gcb config check/)
+  })
 
   it('opens the config in the editor and validates it', () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-open-'));
-    const config = path.join(directory, 'broker.config.yml');
-    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-open-'))
+    const config = path.join(directory, 'broker.config.yml')
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config)
     try {
       const result = runConfigCli('edit', ['--config', config], {
         VISUAL: 'true',
         EDITOR: 'true',
-      });
-      assert.equal(result.status, 0);
-      assert.match(result.stdout, /ok: .* \(host\)/);
+      })
+      assert.equal(result.status, 0)
+      assert.match(result.stdout, /ok: .* \(host\)/)
     } finally {
-      fs.rmSync(directory, { recursive: true, force: true });
+      fs.rmSync(directory, { recursive: true, force: true })
     }
-  });
+  })
 
   it('passes the path as one argument to an editor command with arguments', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb config edit-'));
-    const config = path.join(dir, 'broker.config.yml');
-    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb config edit-'))
+    const config = path.join(dir, 'broker.config.yml')
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config)
     try {
       const result = runConfigCli('edit', ['--config', config], {
         VISUAL: 'printf [%s]\\n',
         EDITOR: 'printf [%s]\\n',
-      });
-      assert.equal(result.status, 0);
-      assert.match(result.stdout, /\[\/.*gcb config edit-[^/]*\/broker\.config\.yml\]/);
+      })
+      assert.equal(result.status, 0)
+      assert.match(result.stdout, /\[\/.*gcb config edit-[^/]*\/broker\.config\.yml\]/)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('stops when the editor fails', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-fail-'));
-    const config = path.join(dir, 'broker.config.yml');
-    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-fail-'))
+    const config = path.join(dir, 'broker.config.yml')
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config)
     try {
       const result = runConfigCli('edit', ['--config', config], {
         VISUAL: 'false',
         EDITOR: 'false',
-      });
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /editor exited with status 1/);
+      })
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /editor exited with status 1/)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
-
+  })
 
   it('validates the file the editor saved, not the one it opened', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-'));
-    const config = path.join(dir, 'broker.config.yml');
-    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
-    const editor = path.join(dir, 'editor.sh');
-    fs.writeFileSync(editor, '#!/bin/sh\nprintf \'hosts: [\' > "$1"\n', { mode: 0o755 });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-'))
+    const config = path.join(dir, 'broker.config.yml')
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config)
+    const editor = path.join(dir, 'editor.sh')
+    fs.writeFileSync(editor, '#!/bin/sh\nprintf \'hosts: [\' > "$1"\n', { mode: 0o755 })
     try {
-      const result = runConfigCli('edit', ['--config', config], { VISUAL: editor, EDITOR: editor });
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /not valid YAML/);
+      const result = runConfigCli('edit', ['--config', config], { VISUAL: editor, EDITOR: editor })
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /not valid YAML/)
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('reports an editor killed by a signal', () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-signal-'));
-    const config = path.join(directory, 'broker.config.yml');
-    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config);
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-config-edit-signal-'))
+    const config = path.join(directory, 'broker.config.yml')
+    fs.copyFileSync(path.resolve('examples/broker.config.example.yml'), config)
     try {
       const result = runConfigCli('edit', ['--config', config], {
         VISUAL: 'kill -KILL $$',
         EDITOR: 'kill -KILL $$',
-      });
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /editor exited with signal SIGKILL/);
+      })
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /editor exited with signal SIGKILL/)
     } finally {
-      fs.rmSync(directory, { recursive: true, force: true });
+      fs.rmSync(directory, { recursive: true, force: true })
     }
-  });
+  })
 
   it('refuses config edit without an editor', () => {
-    const result = runConfigCli('edit', ['--config', path.resolve('examples/broker.config.example.yml')], {
-      VISUAL: '',
-      EDITOR: '',
-    });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /needs \$VISUAL or \$EDITOR/);
-  });
+    const result = runConfigCli(
+      'edit',
+      ['--config', path.resolve('examples/broker.config.example.yml')],
+      {
+        VISUAL: '',
+        EDITOR: '',
+      },
+    )
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /needs \$VISUAL or \$EDITOR/)
+  })
 
   it('prints help before rejecting unknown options', () => {
-    const result = runConfigCli('check', ['--help', '--bogus']);
-    assert.equal(result.status, 0);
-    assert.match(result.stdout, /Usage: gcb config check/);
-  });
-});
+    const result = runConfigCli('check', ['--help', '--bogus'])
+    assert.equal(result.status, 0)
+    assert.match(result.stdout, /Usage: gcb config check/)
+  })
+})
 
 describe('config discovery', () => {
   it('prefers --config, then GIT_BROKER_CONFIG, then ./broker.config.yml', () => {
-    assert.equal(resolveConfigPath('/a/b.json', {}), '/a/b.json');
-    assert.equal(resolveConfigPath(undefined, { GIT_BROKER_CONFIG: '/c/d.json' }), '/c/d.json');
-    assert.equal(resolveConfigPath(undefined, {}), path.resolve('broker.config.yml'));
-    assert.equal(resolveConfigPath('', { GIT_BROKER_CONFIG: '' }), path.resolve('broker.config.yml'));
-  });
+    assert.equal(resolveConfigPath('/a/b.json', {}), '/a/b.json')
+    assert.equal(resolveConfigPath(undefined, { GIT_BROKER_CONFIG: '/c/d.json' }), '/c/d.json')
+    assert.equal(resolveConfigPath(undefined, {}), path.resolve('broker.config.yml'))
+    assert.equal(
+      resolveConfigPath('', { GIT_BROKER_CONFIG: '' }),
+      path.resolve('broker.config.yml'),
+    )
+  })
 
   it('takes the deployment directory from the config path, so --dir is not needed', () => {
-    const found = resolveConfigPath(undefined, { GIT_BROKER_CONFIG: '/volume1/docker/git-cred-broker/broker.config.yml' });
-    assert.equal(deploymentDir(found), '/volume1/docker/git-cred-broker');
-  });
+    const found = resolveConfigPath(undefined, {
+      GIT_BROKER_CONFIG: '/volume1/docker/git-cred-broker/broker.config.yml',
+    })
+    assert.equal(deploymentDir(found), '/volume1/docker/git-cred-broker')
+  })
 
   it('writes to an explicit --config path, creating its directory', () => {
-    const root = dir(`init-configpath-${Math.random().toString(36).slice(2)}`);
-    const cert = writeKey(path.join(root, 'downloaded.pem'));
-    const custom = path.join(root, 'elsewhere', 'broker.json');
+    const root = dir(`init-configpath-${Math.random().toString(36).slice(2)}`)
+    const cert = writeKey(path.join(root, 'downloaded.pem'))
+    const custom = path.join(root, 'elsewhere', 'broker.json')
 
     const result = performInit({
       cert,
@@ -1520,13 +1706,17 @@ describe('config discovery', () => {
       permissions: { contents: 'write' },
       force: false,
       env: { isInsideContainer: () => false, home: dir('discovery-home'), mounts: [] },
-    });
+    })
 
-    assert.equal(result.configPath, custom);
-    assert.equal(fs.existsSync(custom), true);
-    assert.equal(fs.existsSync(path.join(root, 'deploy', 'broker.config.yml')), false, 'and not in --dir as well');
-  });
-});
+    assert.equal(result.configPath, custom)
+    assert.equal(fs.existsSync(custom), true)
+    assert.equal(
+      fs.existsSync(path.join(root, 'deploy', 'broker.config.yml')),
+      false,
+      'and not in --dir as well',
+    )
+  })
+})
 
 describe('compose', () => {
   const rendered = renderCompose({
@@ -1536,18 +1726,18 @@ describe('compose', () => {
     image: 'node:24-slim',
     packageSpec: 'gcb-host@0.0.0',
     name: 'git-cred-broker',
-  });
+  })
 
   it('mounts the key read-only and publishes no ports', () => {
-    assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/);
-    assert.match(rendered, /volume1\/docker\/git-cred-broker:\/etc\/git-cred-broker\/config:ro/);
-    assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/);
-    assert.doesNotMatch(rendered, /user\.refresh:\/etc\/git-cred-broker\/config\/user\.refresh/);
-    assert.equal(/^\s+ports:/m.test(rendered), false, 'the socket is the only interface');
-  });
+    assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/)
+    assert.match(rendered, /volume1\/docker\/git-cred-broker:\/etc\/git-cred-broker\/config:ro/)
+    assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/)
+    assert.doesNotMatch(rendered, /user\.refresh:\/etc\/git-cred-broker\/config\/user\.refresh/)
+    assert.equal(/^\s+ports:/m.test(rendered), false, 'the socket is the only interface')
+  })
 
   it('uses --dir for the default config lookup', () => {
-    const target = dir(`compose-dir-${Math.random().toString(36).slice(2)}`);
+    const target = dir(`compose-dir-${Math.random().toString(36).slice(2)}`)
     fs.writeFileSync(
       path.join(target, 'broker.config.yml'),
       stringifyYaml({
@@ -1564,25 +1754,25 @@ describe('compose', () => {
           },
         },
       }),
-    );
+    )
 
-    let output = '';
-    const original = process.stdout.write;
+    let output = ''
+    const original = process.stdout.write
     process.stdout.write = ((chunk: unknown) => {
-      output += String(chunk);
-      return true;
-    }) as typeof process.stdout.write;
+      output += String(chunk)
+      return true
+    }) as typeof process.stdout.write
     try {
-      assert.equal(runCompose(['--dir', target, '--socket-dir', '/srv/sock']), 0);
+      assert.equal(runCompose(['--dir', target, '--socket-dir', '/srv/sock']), 0)
     } finally {
-      process.stdout.write = original;
+      process.stdout.write = original
     }
-    assert.equal(output.includes(`${target}:${path.dirname(SIDECAR.configPath)}:ro`), true);
-  });
+    assert.equal(output.includes(`${target}:${path.dirname(SIDECAR.configPath)}:ro`), true)
+  })
 
   it('honors GIT_BROKER_CONFIG when no --config or --dir is given', () => {
-    const target = dir(`compose-env-${Math.random().toString(36).slice(2)}`);
-    const configFile = path.join(target, 'custom.yml');
+    const target = dir(`compose-env-${Math.random().toString(36).slice(2)}`)
+    const configFile = path.join(target, 'custom.yml')
     fs.writeFileSync(
       configFile,
       stringifyYaml({
@@ -1599,25 +1789,28 @@ describe('compose', () => {
           },
         },
       }),
-    );
+    )
 
-    const previous = process.env['GIT_BROKER_CONFIG'];
-    process.env['GIT_BROKER_CONFIG'] = configFile;
-    let output = '';
-    const original = process.stdout.write;
+    const previous = process.env['GIT_BROKER_CONFIG']
+    process.env['GIT_BROKER_CONFIG'] = configFile
+    let output = ''
+    const original = process.stdout.write
     process.stdout.write = ((chunk: unknown) => {
-      output += String(chunk);
-      return true;
-    }) as typeof process.stdout.write;
+      output += String(chunk)
+      return true
+    }) as typeof process.stdout.write
     try {
-      assert.equal(runCompose(['--socket-dir', '/srv/sock']), 0);
+      assert.equal(runCompose(['--socket-dir', '/srv/sock']), 0)
     } finally {
-      process.stdout.write = original;
-      if (previous === undefined) delete process.env['GIT_BROKER_CONFIG'];
-      else process.env['GIT_BROKER_CONFIG'] = previous;
+      process.stdout.write = original
+      if (previous === undefined) {
+        delete process.env['GIT_BROKER_CONFIG']
+      } else {
+        process.env['GIT_BROKER_CONFIG'] = previous
+      }
     }
-    assert.equal(output.includes(`${target}:${path.dirname(SIDECAR.configPath)}:ro`), true);
-  });
+    assert.equal(output.includes(`${target}:${path.dirname(SIDECAR.configPath)}:ro`), true)
+  })
 
   it('mounts an explicitly selected config file', () => {
     const custom = renderCompose({
@@ -1628,10 +1821,10 @@ describe('compose', () => {
       image: 'node:24-slim',
       packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
-    });
-    assert.match(custom, /\/srv\/custom:\/etc\/git-cred-broker\/config:ro/);
-    assert.match(custom, /--config '\/etc\/git-cred-broker\/config\/broker\.yml'/);
-  });
+    })
+    assert.match(custom, /\/srv\/custom:\/etc\/git-cred-broker\/config:ro/)
+    assert.match(custom, /--config '\/etc\/git-cred-broker\/config\/broker\.yml'/)
+  })
 
   it('quotes a config basename that needs one shell word', () => {
     const custom = renderCompose({
@@ -1642,8 +1835,8 @@ describe('compose', () => {
       image: 'node:24-slim',
       packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
-    });
-    assert.match(custom, /--config '\/etc\/git-cred-broker\/config\/broker live\.yml'/);
+    })
+    assert.match(custom, /--config '\/etc\/git-cred-broker\/config\/broker live\.yml'/)
     const dollar = renderCompose({
       dir: '/volume1/docker/git-cred-broker',
       configPath: '/srv/custom/br$ker "x".yml',
@@ -1652,18 +1845,18 @@ describe('compose', () => {
       image: 'node:24-slim',
       packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
-    });
-    assert.match(dollar, /--config '\/etc\/git-cred-broker\/config\/br\$\$ker "x"\.yml'/);
-  });
+    })
+    assert.match(dollar, /--config '\/etc\/git-cred-broker\/config\/br\$\$ker "x"\.yml'/)
+  })
 
   it('mounts the real target of a symlinked config', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-compose-link-'));
-    const targetDir = path.join(root, 'store');
-    fs.mkdirSync(targetDir);
-    const target = path.join(targetDir, 'prod.yml');
-    fs.writeFileSync(target, 'hosts: {}\n');
-    const link = path.join(root, 'selected.yml');
-    fs.symlinkSync(target, link);
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-compose-link-'))
+    const targetDir = path.join(root, 'store')
+    fs.mkdirSync(targetDir)
+    const target = path.join(targetDir, 'prod.yml')
+    fs.writeFileSync(target, 'hosts: {}\n')
+    const link = path.join(root, 'selected.yml')
+    fs.symlinkSync(target, link)
     try {
       const custom = renderCompose({
         dir: '/volume1/docker/git-cred-broker',
@@ -1673,19 +1866,22 @@ describe('compose', () => {
         image: 'node:24-slim',
         packageSpec: 'gcb-host@0.0.0',
         name: 'git-cred-broker',
-      });
-      assert.equal(custom.includes(targetDir + ':' + path.dirname(SIDECAR.configPath) + ':ro'), true);
-      assert.match(custom, /--config '\/etc\/git-cred-broker\/config\/prod\.yml'/);
+      })
+      assert.equal(
+        custom.includes(targetDir + ':' + path.dirname(SIDECAR.configPath) + ':ro'),
+        true,
+      )
+      assert.match(custom, /--config '\/etc\/git-cred-broker\/config\/prod\.yml'/)
     } finally {
-      fs.rmSync(root, { recursive: true, force: true });
+      fs.rmSync(root, { recursive: true, force: true })
     }
-  });
+  })
 
   it('derives the default deployment directory from a symlink target', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-compose-link-dir-'));
-    const targetDir = path.join(root, 'store');
-    fs.mkdirSync(targetDir);
-    const target = path.join(targetDir, 'prod.yml');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-compose-link-dir-'))
+    const targetDir = path.join(root, 'store')
+    fs.mkdirSync(targetDir)
+    const target = path.join(targetDir, 'prod.yml')
     fs.writeFileSync(
       target,
       stringifyYaml({
@@ -1702,26 +1898,26 @@ describe('compose', () => {
           },
         },
       }),
-    );
-    const link = path.join(root, 'selected.yml');
-    fs.symlinkSync(target, link);
-    const original = process.stdout.write;
-    let output = '';
+    )
+    const link = path.join(root, 'selected.yml')
+    fs.symlinkSync(target, link)
+    const original = process.stdout.write
+    let output = ''
     process.stdout.write = ((chunk: unknown) => {
-      output += String(chunk);
-      return true;
-    }) as typeof process.stdout.write;
+      output += String(chunk)
+      return true
+    }) as typeof process.stdout.write
     try {
-      assert.equal(runCompose(['--config', link, '--socket-dir', '/srv/sock']), 0);
+      assert.equal(runCompose(['--config', link, '--socket-dir', '/srv/sock']), 0)
     } finally {
-      process.stdout.write = original;
-      fs.rmSync(root, { recursive: true, force: true });
+      process.stdout.write = original
+      fs.rmSync(root, { recursive: true, force: true })
     }
-    assert.equal(output.includes(targetDir + ':' + path.dirname(SIDECAR.configPath) + ':ro'), true);
-    assert.equal(output.includes(targetDir + '/app.pem:' + SIDECAR.keyPath + ':ro'), true);
-    assert.equal(output.includes(targetDir + '/log:' + SIDECAR.auditDir), true);
-    assert.match(output, /--config '\/etc\/git-cred-broker\/config\/prod\.yml'/);
-  });
+    assert.equal(output.includes(targetDir + ':' + path.dirname(SIDECAR.configPath) + ':ro'), true)
+    assert.equal(output.includes(targetDir + '/app.pem:' + SIDECAR.keyPath + ':ro'), true)
+    assert.equal(output.includes(targetDir + '/log:' + SIDECAR.auditDir), true)
+    assert.match(output, /--config '\/etc\/git-cred-broker\/config\/prod\.yml'/)
+  })
 
   it('quotes volume scalars whose paths contain YAML indicators', () => {
     const custom = renderCompose({
@@ -1731,23 +1927,26 @@ describe('compose', () => {
       image: 'node:24-slim',
       packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
-    });
-    assert.equal(custom.includes('- "/srv/broker #1:/etc/git-cred-broker/config:ro"'), true);
-    assert.equal(custom.includes('- "/srv/broker #1/app.pem:/etc/git-cred-broker/app.pem:ro"'), true);
-    assert.equal(custom.includes('- "/srv/socket #2:/run/git-broker"'), true);
-  });
+    })
+    assert.equal(custom.includes('- "/srv/broker #1:/etc/git-cred-broker/config:ro"'), true)
+    assert.equal(
+      custom.includes('- "/srv/broker #1/app.pem:/etc/git-cred-broker/app.pem:ro"'),
+      true,
+    )
+    assert.equal(custom.includes('- "/srv/socket #2:/run/git-broker"'), true)
+  })
 
   it('drops privileges and keeps the root filesystem read-only', () => {
-    assert.match(rendered, /cap_drop:\n\s+- ALL/);
-    assert.match(rendered, /no-new-privileges:true/);
-    assert.match(rendered, /read_only: true/);
-    assert.match(rendered, /user: "1026:100"/);
-  });
+    assert.match(rendered, /cap_drop:\n\s+- ALL/)
+    assert.match(rendered, /no-new-privileges:true/)
+    assert.match(rendered, /read_only: true/)
+    assert.match(rendered, /user: "1026:100"/)
+  })
 
   it('runs the daemon from the published package, not from a copied checkout', () => {
-    assert.match(rendered, /npx --yes --package 'gcb-host@0\.0\.0' gcb daemon/);
-    assert.match(rendered, new RegExp(`--config '${SIDECAR.configPath}'`));
-  });
+    assert.match(rendered, /npx --yes --package 'gcb-host@0\.0\.0' gcb daemon/)
+    assert.match(rendered, new RegExp(`--config '${SIDECAR.configPath}'`))
+  })
 
   it('can run staged code from a mount instead, fetching and building nothing at boot', () => {
     const fromCode = renderCompose({
@@ -1758,28 +1957,31 @@ describe('compose', () => {
       packageSpec: 'gcb-host@0.0.0',
       name: 'git-cred-broker',
       code: '/volume1/docker/git-cred-broker/app',
-    });
+    })
 
-    assert.match(fromCode, /- \/volume1\/docker\/git-cred-broker\/app:\/opt\/gcb:ro/);
-    assert.match(fromCode, /exec node --conditions=development \/opt\/gcb\/packages\/host\/bin\/gcb\.js daemon/);
-    assert.equal(/npx/.test(fromCode), false, 'no registry access at start');
-    assert.equal(/npm_config_cache/.test(fromCode), false, 'and so no cache to write');
-    assert.match(fromCode, /STAGED\.json/, 'it points at the record of which commit this is');
+    assert.match(fromCode, /- \/volume1\/docker\/git-cred-broker\/app:\/opt\/gcb:ro/)
+    assert.match(
+      fromCode,
+      /exec node --conditions=development \/opt\/gcb\/packages\/host\/bin\/gcb\.js daemon/,
+    )
+    assert.equal(/npx/.test(fromCode), false, 'no registry access at start')
+    assert.equal(/npm_config_cache/.test(fromCode), false, 'and so no cache to write')
+    assert.match(fromCode, /STAGED\.json/, 'it points at the record of which commit this is')
     // Everything that matters for isolation is unchanged.
-    assert.match(fromCode, /cap_drop:\n\s+- ALL/);
-    assert.match(fromCode, /read_only: true/);
-    assert.equal(/^\s+ports:/m.test(fromCode), false);
-  });
+    assert.match(fromCode, /cap_drop:\n\s+- ALL/)
+    assert.match(fromCode, /read_only: true/)
+    assert.equal(/^\s+ports:/m.test(fromCode), false)
+  })
 
   it('states the config paths it requires, so --mode sidecar is discoverable', () => {
-    assert.match(rendered, /gcb init --mode sidecar/);
-    assert.match(rendered, new RegExp(`privateKeyPath ${SIDECAR.keyPath.replace(/[/.]/g, '\\$&')}`));
-  });
+    assert.match(rendered, /gcb init --mode sidecar/)
+    assert.match(rendered, new RegExp(`privateKeyPath ${SIDECAR.keyPath.replace(/[/.]/g, '\\$&')}`))
+  })
 
   it('mounts exactly the paths a --mode sidecar config records', () => {
     // The regression this guards: `init` once recorded host paths while `compose` mounted the
     // files at container paths, so the sidecar could not read its own key.
-    const deployDir = '/volume1/docker/git-cred-broker';
+    const deployDir = '/volume1/docker/git-cred-broker'
     const config = buildBrokerConfig({
       cert: '/tmp/unused.pem',
       dir: deployDir,
@@ -1790,228 +1992,286 @@ describe('compose', () => {
       appId: 1,
       permissions: { contents: 'write' },
       force: true,
-    });
+    })
 
-    assert.equal(config.socketPath, SIDECAR.socketPath);
-    assert.equal(appHost(config).privateKeyPath, SIDECAR.keyPath);
-    assert.equal(config.auditPath, SIDECAR.auditPath);
+    assert.equal(config.socketPath, SIDECAR.socketPath)
+    assert.equal(appHost(config).privateKeyPath, SIDECAR.keyPath)
+    assert.equal(config.auditPath, SIDECAR.auditPath)
 
-    assert.equal(rendered.includes(`${deployDir}:${path.dirname(SIDECAR.configPath)}:ro`), true);
-    assert.equal(rendered.includes(`${deployDir}/app.pem:${SIDECAR.keyPath}:ro`), true);
-    assert.equal(rendered.includes(`${deployDir}/log:${SIDECAR.auditDir}`), true);
-    assert.equal(
-      rendered.includes('/srv/shared/git-broker:' + SIDECAR.socketDir),
-      true,
-    );
-  });
+    assert.equal(rendered.includes(`${deployDir}:${path.dirname(SIDECAR.configPath)}:ro`), true)
+    assert.equal(rendered.includes(`${deployDir}/app.pem:${SIDECAR.keyPath}:ro`), true)
+    assert.equal(rendered.includes(`${deployDir}/log:${SIDECAR.auditDir}`), true)
+    assert.equal(rendered.includes('/srv/shared/git-broker:' + SIDECAR.socketDir), true)
+  })
 
   it('emits one environment block, with the proxy switch the daemon insists on', () => {
     // Not a regex on a fragment: the failure this guards is a second `environment:` key, which is not valid
     // YAML and which docker rejects — and `docker compose config` cannot run here.
-    const keys = rendered.split('environment:').length - 1;
-    assert.equal(keys, 1, 'a service with two environment keys is not a valid compose file');
-    assert.match(rendered, /NODE_USE_ENV_PROXY=1/, 'and the switch has to be there with the proxy variables');
-    assert.match(rendered, /GCB_PROXY=\$\{GCB_PROXY-default\}/);
-    assert.match(rendered, /case "\$\$\{GCB_PROXY-default\}"/);
-    assert.match(rendered, /\$\$GCB_PROXY/);
-    assert.match(rendered, /unset http_proxy https_proxy all_proxy no_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY NODE_USE_ENV_PROXY/);
-  });
-});
+    const keys = rendered.split('environment:').length - 1
+    assert.equal(keys, 1, 'a service with two environment keys is not a valid compose file')
+    assert.match(
+      rendered,
+      /NODE_USE_ENV_PROXY=1/,
+      'and the switch has to be there with the proxy variables',
+    )
+    assert.match(rendered, /GCB_PROXY=\$\{GCB_PROXY-default\}/)
+    assert.match(rendered, /case "\$\$\{GCB_PROXY-default\}"/)
+    assert.match(rendered, /\$\$GCB_PROXY/)
+    assert.match(
+      rendered,
+      /unset http_proxy https_proxy all_proxy no_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY NODE_USE_ENV_PROXY/,
+    )
+  })
+})
 
 describe('the anchor flags, at the CLI boundary', () => {
   /**
    * Run the real command as a process.
    *
-   * Every case here is refused by `fail`, which exits, so it cannot be a call into the module — and that is
-   * the point of testing it here: the checks are the CLI's, and the unit tests under them never see them.
+   * Every case here is refused by `fail`, which exits, so it cannot be a call into the module — and
+   * that is the point of testing it here: the checks are the CLI's, and the unit tests under them
+   * never see them.
    */
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-pr-home-'));
-  after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-pr-home-'))
+  after(() => fs.rmSync(home, { recursive: true, force: true }))
 
   const cli = (args: readonly string[]): { status: number; stdout: string; stderr: string } => {
     try {
-      execFileSync('node', ['--conditions=development', 'packages/client/bin/gcb.js', 'pr', ...args], {
-        cwd: path.resolve('.'),
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-        // A test-owned HOME and no socket in the environment: the fallback must not depend on the machine
-        // that runs the suite, and a case that gets past validation has to die at the socket rather than
-        // reach a broker someone happens to have running.
-        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
-      });
-      return { status: 0, stdout: '', stderr: '' };
+      execFileSync(
+        'node',
+        ['--conditions=development', 'packages/client/bin/gcb.js', 'pr', ...args],
+        {
+          cwd: path.resolve('.'),
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          // A test-owned HOME and no socket in the environment: the fallback must not depend on the machine
+          // that runs the suite, and a case that gets past validation has to die at the socket rather than
+          // reach a broker someone happens to have running.
+          env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+        },
+      )
+      return { status: 0, stdout: '', stderr: '' }
     } catch (error) {
-      const failed = error as { status?: number | null; stderr?: string };
+      const failed = error as { status?: number | null; stderr?: string }
       return {
         status: failed.status ?? -1,
         stdout: String((failed as { stdout?: string }).stdout ?? ''),
         stderr: String(failed.stderr ?? ''),
-      };
+      }
     }
-  };
+  }
 
-  const base = ['--host', 'github.com', '--repo', 'acme/widget', '--number', '7'];
+  const base = ['--host', 'github.com', '--repo', 'acme/widget', '--number', '7']
 
   it('refuses half an anchor, in both directions', () => {
-    const fileOnly = cli([...base, '--comment', '--file', 'Dockerfile', '--body', 'x']);
-    assert.equal(fileOnly.status, 1, 'a file with no line is refused');
-    assert.match(fileOnly.stderr, /both --file and --line/);
+    const fileOnly = cli([...base, '--comment', '--file', 'Dockerfile', '--body', 'x'])
+    assert.equal(fileOnly.status, 1, 'a file with no line is refused')
+    assert.match(fileOnly.stderr, /both --file and --line/)
 
-    const lineOnly = cli([...base, '--comment', '--line', '4', '--body', 'x']);
-    assert.equal(lineOnly.status, 1, 'and a line with no file');
-    assert.match(lineOnly.stderr, /both --file and --line/);
-  });
+    const lineOnly = cli([...base, '--comment', '--line', '4', '--body', 'x'])
+    assert.equal(lineOnly.status, 1, 'and a line with no file')
+    assert.match(lineOnly.stderr, /both --file and --line/)
+  })
 
   it('refuses an anchor on an action that is not a comment', () => {
-    const closed = cli([...base, '--status', '--file', 'Dockerfile', '--line', '4', '--body', 'x']);
-    assert.equal(closed.status, 1);
-    assert.match(closed.stderr, /only go with --comment/);
-  });
+    const closed = cli([...base, '--status', '--file', 'Dockerfile', '--line', '4', '--body', 'x'])
+    assert.equal(closed.status, 1)
+    assert.match(closed.stderr, /only go with --comment/)
+  })
 
   it('routes review --id to the review read', () => {
-    const result = cli(['review', ...base, '--id', '9', '--jq', '.body']);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /no broker socket/);
-  });
+    const result = cli(['review', ...base, '--id', '9', '--jq', '.body'])
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /no broker socket/)
+  })
 
   it('refuses a noncanonical review id before dispatch', () => {
-    const result = cli(['review', ...base, '--id', '9.0', '--jq', '.body']);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /--id needs a positive review id/);
-  });
+    const result = cli(['review', ...base, '--id', '9.0', '--jq', '.body'])
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /--id needs a positive review id/)
+  })
 
   it('refuses --id beside another action', () => {
-    const result = cli([...base, '--id', '9', '--status']);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /--id only goes with --number and --jq/);
-  });
+    const result = cli([...base, '--id', '9', '--status'])
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /--id only goes with --number and --jq/)
+  })
 
   it('refuses --jq without --id', () => {
-    const result = cli([...base, '--jq', '.body']);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /--jq only goes with --id/);
-  });
+    const result = cli([...base, '--jq', '.body'])
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /--jq only goes with --id/)
+  })
 
   it('refuses --body together with --body-file in the pr lifecycle', () => {
-    const both = cli(['--number', '7', '--approve', '--body', 'x', '--body-file', 'f', '--repo', 'acme/widget']);
-    assert.equal(both.status, 1);
-    assert.match(both.stderr, /--body and --body-file are mutually exclusive/u);
-  });
+    const both = cli([
+      '--number',
+      '7',
+      '--approve',
+      '--body',
+      'x',
+      '--body-file',
+      'f',
+      '--repo',
+      'acme/widget',
+    ])
+    assert.equal(both.status, 1)
+    assert.match(both.stderr, /--body and --body-file are mutually exclusive/u)
+  })
 
   it('refuses a bare --jq', () => {
-    const result = cli(['review', ...base, '--id', '9', '--jq']);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /--jq needs a value/);
-  });
+    const result = cli(['review', ...base, '--id', '9', '--jq'])
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /--jq needs a value/)
+  })
 
   it('refuses an empty --jq', () => {
-    const result = cli(['review', ...base, '--id', '9', '--jq', '']);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /--jq needs an expression/);
-  });
+    const result = cli(['review', ...base, '--id', '9', '--jq', ''])
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /--jq needs an expression/)
+  })
 
   it('refuses --close with a value too', () => {
     for (const argv of [['--close', '7'], ['--close=7']]) {
-      const moved = cli([...base, ...argv]);
-      assert.equal(moved.status, 1);
-      assert.match(moved.stderr, /gcb gh pr close/);
+      const moved = cli([...base, ...argv])
+      assert.equal(moved.status, 1)
+      assert.match(moved.stderr, /gcb gh pr close/)
     }
-  });
+  })
 
   it('shows help for bare gcb pr', () => {
-    const result = cli([]);
-    assert.equal(result.status, 1);
-    assert.match(result.stdout, /Usage: gcb gh/);
-  });
+    const result = cli([])
+    assert.equal(result.status, 1)
+    assert.match(result.stdout, /Usage: gcb gh/)
+  })
 
   it('refuses an equals value on a boolean flag', () => {
     for (const flag of ['--request-changes=true', '--approve=yes', '--review-comment=1']) {
-      const result = cli(['--number', '7', flag, '--body', 'review text', '--repo', 'acme/widget']);
-      assert.equal(result.status, 1, flag);
-      assert.match(result.stderr, /does not take a value/u);
+      const result = cli(['--number', '7', flag, '--body', 'review text', '--repo', 'acme/widget'])
+      assert.equal(result.status, 1, flag)
+      assert.match(result.stderr, /does not take a value/u)
     }
-  });
+  })
 
   it('refuses unknown options, including removed merge flags', () => {
-    for (const flag of [['--merge'], ['-merge'], ['--merge-xxx'], ['--method', 'squash'], ['--method-xxx', 'squash'], ['--xafajbsfbafabsjkf']]) {
-      const result = cli([...base, ...flag, '--title', 'a title']);
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, new RegExp(`unknown option --${flag[0]?.replace(/^-+/, '')} for gcb pr`, 'u'));
+    for (const flag of [
+      ['--merge'],
+      ['-merge'],
+      ['--merge-xxx'],
+      ['--method', 'squash'],
+      ['--method-xxx', 'squash'],
+      ['--xafajbsfbafabsjkf'],
+    ]) {
+      const result = cli([...base, ...flag, '--title', 'a title'])
+      assert.equal(result.status, 1)
+      assert.match(
+        result.stderr,
+        new RegExp(`unknown option --${flag[0]?.replace(/^-+/, '')} for gcb pr`, 'u'),
+      )
     }
 
-    const value = cli([...base, '--title=--not-a-flag']);
-    assert.doesNotMatch(value.stderr, /unknown option/, 'a value is not an option');
-  });
+    const value = cli([...base, '--title=--not-a-flag'])
+    assert.doesNotMatch(value.stderr, /unknown option/, 'a value is not an option')
+  })
 
   it('refuses a valueless or option-looking repo', () => {
-    for (const argv of [['--repo', '--number', '7', '--status'], ['--repo', '-h', '--number', '7', '--status'], ['--repo=--help', '--number', '7', '--status'], ['--repo', 'acme/widget', '--repo', '-h', '--number', '7', '--status']]) {
-      const result = cli(argv);
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /--repo needs a value/);
+    for (const argv of [
+      ['--repo', '--number', '7', '--status'],
+      ['--repo', '-h', '--number', '7', '--status'],
+      ['--repo=--help', '--number', '7', '--status'],
+      ['--repo', 'acme/widget', '--repo', '-h', '--number', '7', '--status'],
+    ]) {
+      const result = cli(argv)
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /--repo needs a value/)
     }
-  });
+  })
 
   it('refuses an option-looking host', () => {
     for (const argv of [
       ['--host', '-h', '--repo', 'acme/widget', '--number', '7', '--status'],
       ['--host=--help', '--repo', 'acme/widget', '--number', '7', '--status'],
-      ['--host', 'github.com', '--host', '-h', '--repo', 'acme/widget', '--number', '7', '--status'],
+      [
+        '--host',
+        'github.com',
+        '--host',
+        '-h',
+        '--repo',
+        'acme/widget',
+        '--number',
+        '7',
+        '--status',
+      ],
     ]) {
-      const result = cli(argv);
-      assert.equal(result.status, 1);
-      assert.match(result.stderr, /--host needs a value/);
+      const result = cli(argv)
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /--host needs a value/)
     }
-  });
+  })
 
   it('refuses unexpected positionals', () => {
-    const result = cli(['--repo', 'acme/widget', '--number', '7', '--status', 'stray']);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /unexpected argument "stray"/);
-  });
+    const result = cli(['--repo', 'acme/widget', '--number', '7', '--status', 'stray'])
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /unexpected argument "stray"/)
+  })
 
   it('refuses a plain --comment and names the anchor requirement', () => {
-    const moved = cli([...base, '--comment', '--body', 'x']);
-    assert.equal(moved.status, 1);
-    assert.match(moved.stderr, /anchored review comment/);
+    const moved = cli([...base, '--comment', '--body', 'x'])
+    assert.equal(moved.status, 1)
+    assert.match(moved.stderr, /anchored review comment/)
 
-    const bare = cli(['--comment']);
-    assert.equal(bare.status, 1);
-    assert.match(bare.stderr, /anchored review comment/, 'before --repo too');
-  });
+    const bare = cli(['--comment'])
+    assert.equal(bare.status, 1)
+    assert.match(bare.stderr, /anchored review comment/, 'before --repo too')
+  })
 
   it('points --close at the gh action', () => {
-    const moved = cli([...base, '--close']);
-    assert.equal(moved.status, 1);
-    assert.match(moved.stderr, /gcb gh pr close/);
+    const moved = cli([...base, '--close'])
+    assert.equal(moved.status, 1)
+    assert.match(moved.stderr, /gcb gh pr close/)
 
-    const bare = cli(['--close']);
-    assert.equal(bare.status, 1);
-    assert.match(bare.stderr, /gcb gh pr close/, 'before --repo, so the message names the replacement');
-  });
+    const bare = cli(['--close'])
+    assert.equal(bare.status, 1)
+    assert.match(
+      bare.stderr,
+      /gcb gh pr close/,
+      'before --repo, so the message names the replacement',
+    )
+  })
 
   it('refuses a side that is neither, and a line that is not a line', () => {
-    const side = cli([...base, '--comment', '--file', 'Dockerfile', '--line', '4', '--side', 'middle', '--body', 'x']);
-    assert.match(side.stderr, /--side must be left or right/);
+    const side = cli([
+      ...base,
+      '--comment',
+      '--file',
+      'Dockerfile',
+      '--line',
+      '4',
+      '--side',
+      'middle',
+      '--body',
+      'x',
+    ])
+    assert.match(side.stderr, /--side must be left or right/)
 
     for (const line of ['0', 'x', '-1']) {
-      const bad = cli([...base, '--comment', '--file', 'Dockerfile', '--line', line, '--body', 'x']);
-      assert.equal(bad.status, 1, `--line ${line} is refused`);
-      assert.match(bad.stderr, /--line must be a positive integer/);
+      const bad = cli([...base, '--comment', '--file', 'Dockerfile', '--line', line, '--body', 'x'])
+      assert.equal(bad.status, 1, `--line ${line} is refused`)
+      assert.match(bad.stderr, /--line must be a positive integer/)
     }
-  });
-
+  })
 
   it('refuses an edit with nothing to say, or with no comment to change', () => {
-    const noBody = cli([...base, '--edit', '99']);
-    assert.equal(noBody.status, 1, 'an edit with no body is refused');
-    assert.match(noBody.stderr, /a comment has to say something/);
+    const noBody = cli([...base, '--edit', '99'])
+    assert.equal(noBody.status, 1, 'an edit with no body is refused')
+    assert.match(noBody.stderr, /a comment has to say something/)
 
     for (const id of ['0', 'x', '-1']) {
-      const bad = cli([...base, '--edit', id, '--body', 'a corrected note']);
-      assert.equal(bad.status, 1, `--edit ${id} is refused`);
-      assert.match(bad.stderr, /--edit needs the id of the review comment/);
+      const bad = cli([...base, '--edit', id, '--body', 'a corrected note'])
+      assert.equal(bad.status, 1, `--edit ${id} is refused`)
+      assert.match(bad.stderr, /--edit needs the id of the review comment/)
     }
-  });
+  })
 
   it('refuses a value flag given with no value, instead of updating the pull request', () => {
     // A bare --edit / --reply-to / --resolve is parsed as a boolean flag with no value, so the action
@@ -2022,189 +2282,274 @@ describe('the anchor flags, at the CLI boundary', () => {
       ['--reply-to', /--reply-to needs a value/],
       ['--resolve', /--resolve needs a value/],
     ] as const) {
-      const refused = cli([...base, flag, '--body', 'a corrected note']);
-      assert.equal(refused.status, 1, `a bare ${flag} is refused`);
-      assert.match(refused.stderr, message);
+      const refused = cli([...base, flag, '--body', 'a corrected note'])
+      assert.equal(refused.status, 1, `a bare ${flag} is refused`)
+      assert.match(refused.stderr, message)
     }
-  });
+  })
 
   it('needs no --number to edit, which names the comment instead', () => {
     // The route is /pulls/comments/{id}: it carries no pull request number, so requiring one would be a
     // flag the command could not honour. This case gets past validation and dies at the socket, which is
     // exactly the proof that the number check let it through.
     const noNumber = cli([
-      '--host', 'github.com', '--repo', 'acme/widget',
-      '--edit', '99', '--body', 'a corrected note',
-    ]);
-    assert.equal(noNumber.status, 1);
-    assert.match(noNumber.stderr, /no broker socket/, 'it reached socket resolution');
-    assert.doesNotMatch(noNumber.stderr, /--number is required/, 'without being asked for a number');
-  });
+      '--host',
+      'github.com',
+      '--repo',
+      'acme/widget',
+      '--edit',
+      '99',
+      '--body',
+      'a corrected note',
+    ])
+    assert.equal(noNumber.status, 1)
+    assert.match(noNumber.stderr, /no broker socket/, 'it reached socket resolution')
+    assert.doesNotMatch(noNumber.stderr, /--number is required/, 'without being asked for a number')
+  })
 
   it('defaults the host to github.com', () => {
-    const result = cli(['--repo', 'acme/widget', '--number', '7', '--status']);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /no broker socket/, 'validation got past the host');
-    assert.doesNotMatch(result.stderr, /--host is required/);
-  });
+    const result = cli(['--repo', 'acme/widget', '--number', '7', '--status'])
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /no broker socket/, 'validation got past the host')
+    assert.doesNotMatch(result.stderr, /--host is required/)
+  })
 
   it('refuses an explicitly empty host', () => {
-    const result = cli(['--host', '', '--repo', 'acme/widget', '--number', '7', '--status']);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /--host needs a value/);
-  });
+    const result = cli(['--host', '', '--repo', 'acme/widget', '--number', '7', '--status'])
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /--host needs a value/)
+  })
 
   it('refuses a valueless host', () => {
-    const result = cli(['--host', '--repo', 'acme/widget', '--number', '7', '--status']);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /--host needs a value/);
-  });
+    const result = cli(['--host', '--repo', 'acme/widget', '--number', '7', '--status'])
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /--host needs a value/)
+  })
 
   it('resolves the repository from origin', async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-pr-origin-'));
-    execFileSync('git', ['init', '--quiet'], { cwd: root });
-    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widget.git'], { cwd: root });
-    const socketPath = path.join(root, 'broker.sock');
-    let request: Record<string, unknown> | undefined;
-    const server = net.createServer((socket) => {
-      let buffer = '';
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-pr-origin-'))
+    execFileSync('git', ['init', '--quiet'], { cwd: root })
+    execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/acme/widget.git'], {
+      cwd: root,
+    })
+    const socketPath = path.join(root, 'broker.sock')
+    let request: Record<string, unknown> | undefined
+    const server = net.createServer(socket => {
+      let buffer = ''
       socket.on('data', (chunk: Buffer) => {
-        buffer += chunk.toString('utf8');
-        const newline = buffer.indexOf('\n');
-        if (newline < 0) return;
-        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
-        socket.end(encodeMessage({ ok: true, prStatus: 'open', prNumber: 7, prUrl: 'https://example.test/7' }));
-      });
-    });
-    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+        buffer += chunk.toString('utf8')
+        const newline = buffer.indexOf('\n')
+        if (newline < 0) {
+          return
+        }
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined
+        socket.end(
+          encodeMessage({
+            ok: true,
+            prStatus: 'open',
+            prNumber: 7,
+            prUrl: 'https://example.test/7',
+          }),
+        )
+      })
+    })
+    await new Promise<void>(resolve => server.listen(socketPath, resolve))
     try {
-      const result = await runAsync(process.execPath, [
-        '--conditions=development',
-        path.resolve('packages/client/bin/gcb.js'),
-        'pr', '--number', '7', '--status', '--socket', socketPath,
-      ], {
-        cwd: root,
-        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
-      });
-      assert.equal(result.status, 0);
-      assert.equal(request?.['path'], 'acme/widget');
+      const result = await runAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          path.resolve('packages/client/bin/gcb.js'),
+          'pr',
+          '--number',
+          '7',
+          '--status',
+          '--socket',
+          socketPath,
+        ],
+        {
+          cwd: root,
+          env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+        },
+      )
+      assert.equal(result.status, 0)
+      assert.equal(request?.['path'], 'acme/widget')
     } finally {
-      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-      fs.rmSync(root, { recursive: true, force: true });
+      await new Promise<void>((resolve, reject) =>
+        server.close(error => (error ? reject(error) : resolve())),
+      )
+      fs.rmSync(root, { recursive: true, force: true })
     }
-  });
+  })
 
   it('routes an update to gh pr edit', async () => {
-    const socketPath = path.join(scratch, 'pr-update.sock');
-    let request: Record<string, unknown> | undefined;
-    const server = net.createServer((socket) => {
-      let buffer = '';
+    const socketPath = path.join(scratch, 'pr-update.sock')
+    let request: Record<string, unknown> | undefined
+    const server = net.createServer(socket => {
+      let buffer = ''
       socket.on('data', (chunk: Buffer) => {
-        buffer += chunk.toString('utf8');
-        const newline = buffer.indexOf('\n');
-        if (newline < 0) return;
-        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
-        socket.end(encodeMessage({ ok: true, stdout: 'updated\n', exitCode: 0 }));
-      });
-    });
-    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+        buffer += chunk.toString('utf8')
+        const newline = buffer.indexOf('\n')
+        if (newline < 0) {
+          return
+        }
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined
+        socket.end(encodeMessage({ ok: true, stdout: 'updated\n', exitCode: 0 }))
+      })
+    })
+    await new Promise<void>(resolve => server.listen(socketPath, resolve))
     try {
-      const result = await runAsync(process.execPath, [
-        '--conditions=development',
-        'packages/client/bin/gcb.js',
-        'pr', '--number', '7', '--title', 'a title', '--repo', 'acme/widget', '--socket', socketPath,
-      ], {
-        cwd: path.resolve('.'),
-        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
-      });
-      assert.equal(result.status, 0);
-      assert.equal(request?.['op'], 'action');
-      assert.equal(request?.['ghAction'], 'pr:edit');
-      assert.equal(request?.['path'], 'acme/widget');
+      const result = await runAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          'packages/client/bin/gcb.js',
+          'pr',
+          '--number',
+          '7',
+          '--title',
+          'a title',
+          '--repo',
+          'acme/widget',
+          '--socket',
+          socketPath,
+        ],
+        {
+          cwd: path.resolve('.'),
+          env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+        },
+      )
+      assert.equal(result.status, 0)
+      assert.equal(request?.['op'], 'action')
+      assert.equal(request?.['ghAction'], 'pr:edit')
+      assert.equal(request?.['path'], 'acme/widget')
     } finally {
-      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await new Promise<void>((resolve, reject) =>
+        server.close(error => (error ? reject(error) : resolve())),
+      )
     }
-  });
+  })
 
   it('passes a front-matter body to gh pr edit', async () => {
-    const bodyFile = path.join(scratch, 'front-matter.md');
-    fs.writeFileSync(bodyFile, '---\ntitle: x\n---\n\nbody\n');
-    const socketPath = path.join(scratch, 'pr-body.sock');
-    let request: Record<string, unknown> | undefined;
-    const server = net.createServer((socket) => {
-      let buffer = '';
+    const bodyFile = path.join(scratch, 'front-matter.md')
+    fs.writeFileSync(bodyFile, '---\ntitle: x\n---\n\nbody\n')
+    const socketPath = path.join(scratch, 'pr-body.sock')
+    let request: Record<string, unknown> | undefined
+    const server = net.createServer(socket => {
+      let buffer = ''
       socket.on('data', (chunk: Buffer) => {
-        buffer += chunk.toString('utf8');
-        const newline = buffer.indexOf('\n');
-        if (newline < 0) return;
-        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
-        socket.end(encodeMessage({ ok: true, stdout: 'updated\n', exitCode: 0 }));
-      });
-    });
-    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+        buffer += chunk.toString('utf8')
+        const newline = buffer.indexOf('\n')
+        if (newline < 0) {
+          return
+        }
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined
+        socket.end(encodeMessage({ ok: true, stdout: 'updated\n', exitCode: 0 }))
+      })
+    })
+    await new Promise<void>(resolve => server.listen(socketPath, resolve))
     try {
-      const result = await runAsync(process.execPath, [
-        '--conditions=development',
-        'packages/client/bin/gcb.js',
-        'pr', '--number', '7', '--body-file', bodyFile, '--repo', 'acme/widget', '--socket', socketPath,
-      ], {
-        cwd: path.resolve('.'),
-        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
-      });
-      assert.equal(result.status, 0);
-      assert.equal((request?.['values'] as Record<string, unknown> | undefined)?.['body'], '---\ntitle: x\n---\n\nbody\n');
+      const result = await runAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          'packages/client/bin/gcb.js',
+          'pr',
+          '--number',
+          '7',
+          '--body-file',
+          bodyFile,
+          '--repo',
+          'acme/widget',
+          '--socket',
+          socketPath,
+        ],
+        {
+          cwd: path.resolve('.'),
+          env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+        },
+      )
+      assert.equal(result.status, 0)
+      assert.equal(
+        (request?.['values'] as Record<string, unknown> | undefined)?.['body'],
+        '---\ntitle: x\n---\n\nbody\n',
+      )
     } finally {
-      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await new Promise<void>((resolve, reject) =>
+        server.close(error => (error ? reject(error) : resolve())),
+      )
     }
-  });
+  })
 
   it('sends the default host to the broker', async () => {
-    const socketPath = path.join(scratch, 'pr-host-default.sock');
-    let request: Record<string, unknown> | undefined;
-    const server = net.createServer((socket) => {
-      let buffer = '';
+    const socketPath = path.join(scratch, 'pr-host-default.sock')
+    let request: Record<string, unknown> | undefined
+    const server = net.createServer(socket => {
+      let buffer = ''
       socket.on('data', (chunk: Buffer) => {
-        buffer += chunk.toString('utf8');
-        const newline = buffer.indexOf('\n');
-        if (newline < 0) return;
-        request = parseMessage(buffer.slice(0, newline)) ?? undefined;
-        socket.end(encodeMessage({ ok: true, prStatus: 'open', prNumber: 7, prUrl: 'https://example.test/7' }));
-      });
-    });
-    await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+        buffer += chunk.toString('utf8')
+        const newline = buffer.indexOf('\n')
+        if (newline < 0) {
+          return
+        }
+        request = parseMessage(buffer.slice(0, newline)) ?? undefined
+        socket.end(
+          encodeMessage({
+            ok: true,
+            prStatus: 'open',
+            prNumber: 7,
+            prUrl: 'https://example.test/7',
+          }),
+        )
+      })
+    })
+    await new Promise<void>(resolve => server.listen(socketPath, resolve))
     try {
-      const result = await runAsync(process.execPath, [
-        '--conditions=development',
-        'packages/client/bin/gcb.js',
-        'pr',
-        '--repo', 'acme/widget',
-        '--number', '7',
-        '--status',
-        '--socket', socketPath,
-      ], {
-        cwd: path.resolve('.'),
-        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
-      });
-      assert.equal(result.status, 0);
-      assert.equal(request?.['host'], 'github.com');
+      const result = await runAsync(
+        process.execPath,
+        [
+          '--conditions=development',
+          'packages/client/bin/gcb.js',
+          'pr',
+          '--repo',
+          'acme/widget',
+          '--number',
+          '7',
+          '--status',
+          '--socket',
+          socketPath,
+        ],
+        {
+          cwd: path.resolve('.'),
+          env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+        },
+      )
+      assert.equal(result.status, 0)
+      assert.equal(request?.['host'], 'github.com')
     } finally {
-      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await new Promise<void>((resolve, reject) =>
+        server.close(error => (error ? reject(error) : resolve())),
+      )
     }
-  });
-});
+  })
+})
 
 describe('the help path', () => {
   it('routes gcb help pr to gcb pr --help', () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-help-path-'));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-help-path-'))
     try {
-      const result = execFileSync('node', ['--conditions=development', 'packages/client/bin/gcb.js', 'help', 'pr'], {
-        cwd: path.resolve('.'),
-        encoding: 'utf8',
-        env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
-      });
-      assert.match(result, /Usage: gcb pr/);
+      const result = execFileSync(
+        'node',
+        ['--conditions=development', 'packages/client/bin/gcb.js', 'help', 'pr'],
+        {
+          cwd: path.resolve('.'),
+          encoding: 'utf8',
+          env: { ...process.env, HOME: home, GIT_BROKER_SOCKET: '', GIT_BROKER_SOCKET_FILE: '' },
+        },
+      )
+      assert.match(result, /Usage: gcb pr/)
     } finally {
-      fs.rmSync(home, { recursive: true, force: true });
+      fs.rmSync(home, { recursive: true, force: true })
     }
-  });
-});
+  })
+})

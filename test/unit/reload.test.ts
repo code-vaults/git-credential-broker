@@ -1,198 +1,210 @@
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { after, describe, it } from 'node:test';
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { after, describe, it } from 'node:test'
 
-import { ConfigWatcher, fingerprintConfig } from '../../packages/host/src/reload.ts';
+import { ConfigWatcher, fingerprintConfig } from '../../packages/host/src/reload.ts'
 
-const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-reload-'));
-after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-reload-'))
+after(() => fs.rmSync(scratch, { recursive: true, force: true }))
 
 describe('config watcher', () => {
   it('reloads only after the digest changes, and SIGHUP forces a retry', () => {
-    const file = path.join(scratch, 'broker.config.yml');
-    fs.writeFileSync(file, 'one\n');
-    let loads = 0;
-    const watcher = new ConfigWatcher({ file, intervalMs: 60_000, reload: () => { loads += 1; return fingerprintConfig(file)?.digest ?? ''; } });
-    try {
-      watcher.check(false);
-      assert.equal(loads, 0);
-      fs.writeFileSync(file, 'two\n');
-      watcher.check(false);
-      assert.equal(loads, 1);
-      watcher.check(false);
-      assert.equal(loads, 1);
-      watcher.check(true);
-      assert.equal(loads, 2);
-    } finally {
-      watcher.stop();
-    }
-  });
-
-  it('keeps the last good snapshot after a failed reload and reports the error', () => {
-    const file = path.join(scratch, 'broken.config.yml');
-    fs.writeFileSync(file, 'one\n');
-    const errors: string[] = [];
-    let loads = 0;
+    const file = path.join(scratch, 'broker.config.yml')
+    fs.writeFileSync(file, 'one\n')
+    let loads = 0
     const watcher = new ConfigWatcher({
       file,
       intervalMs: 60_000,
       reload: () => {
-        loads += 1;
-        throw new Error('bad config');
+        loads += 1
+        return fingerprintConfig(file)?.digest ?? ''
       },
-      onError: (error) => errors.push(error.message),
-    });
+    })
     try {
-      fs.writeFileSync(file, 'two\n');
-      watcher.check(false);
-      assert.equal(loads, 1);
-      assert.deepEqual(errors, ['bad config']);
-      watcher.check(false);
-      assert.equal(loads, 2, 'a failed reload is retried on the next poll');
-      assert.deepEqual(errors, ['bad config'], 'the same broken content is reported once');
-      watcher.check(true);
-      assert.equal(loads, 3, 'SIGHUP forces another retry');
-      assert.deepEqual(errors, ['bad config'], 'and does not repeat the report');
+      watcher.check(false)
+      assert.equal(loads, 0)
+      fs.writeFileSync(file, 'two\n')
+      watcher.check(false)
+      assert.equal(loads, 1)
+      watcher.check(false)
+      assert.equal(loads, 1)
+      watcher.check(true)
+      assert.equal(loads, 2)
     } finally {
-      watcher.stop();
+      watcher.stop()
     }
-  });
+  })
+
+  it('keeps the last good snapshot after a failed reload and reports the error', () => {
+    const file = path.join(scratch, 'broken.config.yml')
+    fs.writeFileSync(file, 'one\n')
+    const errors: string[] = []
+    let loads = 0
+    const watcher = new ConfigWatcher({
+      file,
+      intervalMs: 60_000,
+      reload: () => {
+        loads += 1
+        throw new Error('bad config')
+      },
+      onError: error => errors.push(error.message),
+    })
+    try {
+      fs.writeFileSync(file, 'two\n')
+      watcher.check(false)
+      assert.equal(loads, 1)
+      assert.deepEqual(errors, ['bad config'])
+      watcher.check(false)
+      assert.equal(loads, 2, 'a failed reload is retried on the next poll')
+      assert.deepEqual(errors, ['bad config'], 'the same broken content is reported once')
+      watcher.check(true)
+      assert.equal(loads, 3, 'SIGHUP forces another retry')
+      assert.deepEqual(errors, ['bad config'], 'and does not repeat the report')
+    } finally {
+      watcher.stop()
+    }
+  })
 
   it('reloads from a real file write through a started watcher', async () => {
-    const dir = fs.mkdtempSync(path.join(scratch, 'watched-'));
-    const file = path.join(dir, 'config.yml');
-    fs.writeFileSync(file, 'one\n');
-    let loads = 0;
+    const dir = fs.mkdtempSync(path.join(scratch, 'watched-'))
+    const file = path.join(dir, 'config.yml')
+    fs.writeFileSync(file, 'one\n')
+    let loads = 0
     const watcher = new ConfigWatcher({
       file,
       intervalMs: 50,
       debounceMs: 20,
       reload: () => {
-        loads += 1;
-        return fingerprintConfig(file)?.digest ?? '';
+        loads += 1
+        return fingerprintConfig(file)?.digest ?? ''
       },
-    });
-    watcher.start();
+    })
+    watcher.start()
     try {
-      fs.writeFileSync(file, 'two\n');
-      const deadline = Date.now() + 2_000;
+      fs.writeFileSync(file, 'two\n')
+      const deadline = Date.now() + 2_000
       while (loads === 0 && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await new Promise(resolve => setTimeout(resolve, 20))
       }
-      assert.equal(loads, 1);
+      assert.equal(loads, 1)
     } finally {
-      watcher.stop();
+      watcher.stop()
     }
-  });
+  })
 
   it('polls when the watch never fires', async () => {
-    const dir = fs.mkdtempSync(path.join(scratch, 'polled-'));
-    const file = path.join(dir, 'config.yml');
-    fs.writeFileSync(file, 'one\n');
-    const originalWatch = fs.watch;
-    let loads = 0;
-    fs.watch = (() => ({ on() { return this; }, close() {} })) as unknown as typeof fs.watch;
+    const dir = fs.mkdtempSync(path.join(scratch, 'polled-'))
+    const file = path.join(dir, 'config.yml')
+    fs.writeFileSync(file, 'one\n')
+    const originalWatch = fs.watch
+    let loads = 0
+    fs.watch = (() => ({
+      on() {
+        return this
+      },
+      close() {},
+    })) as unknown as typeof fs.watch
     const watcher = new ConfigWatcher({
       file,
       intervalMs: 50,
       reload: () => {
-        loads += 1;
-        return fingerprintConfig(file)?.digest ?? '';
+        loads += 1
+        return fingerprintConfig(file)?.digest ?? ''
       },
-    });
-    watcher.start();
+    })
+    watcher.start()
     try {
-      fs.writeFileSync(file, 'two\n');
-      const deadline = Date.now() + 2_000;
+      fs.writeFileSync(file, 'two\n')
+      const deadline = Date.now() + 2_000
       while (loads === 0 && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await new Promise(resolve => setTimeout(resolve, 20))
       }
-      assert.equal(loads, 1);
+      assert.equal(loads, 1)
     } finally {
-      watcher.stop();
-      fs.watch = originalWatch;
+      watcher.stop()
+      fs.watch = originalWatch
     }
-  });
+  })
 
   it('keeps a forced reload pending while the file is absent', () => {
-    const file = path.join(scratch, 'pending.config.yml');
-    fs.writeFileSync(file, 'same\n');
-    let loads = 0;
+    const file = path.join(scratch, 'pending.config.yml')
+    fs.writeFileSync(file, 'same\n')
+    let loads = 0
     const watcher = new ConfigWatcher({
       file,
       intervalMs: 60_000,
       reload: () => {
-        loads += 1;
-        return fingerprintConfig(file)?.digest ?? '';
+        loads += 1
+        return fingerprintConfig(file)?.digest ?? ''
       },
-    });
+    })
     try {
-      fs.rmSync(file);
-      watcher.check(true);
-      assert.equal(loads, 0, 'nothing to load while absent');
-      fs.writeFileSync(file, 'same\n');
-      watcher.check(false);
-      assert.equal(loads, 1, 'the pending SIGHUP is honoured even for identical bytes');
+      fs.rmSync(file)
+      watcher.check(true)
+      assert.equal(loads, 0, 'nothing to load while absent')
+      fs.writeFileSync(file, 'same\n')
+      watcher.check(false)
+      assert.equal(loads, 1, 'the pending SIGHUP is honoured even for identical bytes')
     } finally {
-      watcher.stop();
+      watcher.stop()
     }
-  });
+  })
 
   it('reports a new failure reason for the same digest', () => {
-    const file = path.join(scratch, 'reason.config.yml');
-    fs.writeFileSync(file, 'same\n');
-    const errors: string[] = [];
-    let message = 'first reason';
+    const file = path.join(scratch, 'reason.config.yml')
+    fs.writeFileSync(file, 'same\n')
+    const errors: string[] = []
+    let message = 'first reason'
     const watcher = new ConfigWatcher({
       file,
       intervalMs: 60_000,
       reload: () => {
-        throw new Error(message);
+        throw new Error(message)
       },
-      onError: (error) => errors.push(error.message),
-    });
+      onError: error => errors.push(error.message),
+    })
     try {
-      watcher.check(true);
-      watcher.check(false);
-      assert.deepEqual(errors, ['first reason']);
-      message = 'second reason';
-      watcher.check(false);
-      assert.deepEqual(errors, ['first reason', 'second reason']);
+      watcher.check(true)
+      watcher.check(false)
+      assert.deepEqual(errors, ['first reason'])
+      message = 'second reason'
+      watcher.check(false)
+      assert.deepEqual(errors, ['first reason', 'second reason'])
     } finally {
-      watcher.stop();
+      watcher.stop()
     }
-  });
+  })
 
   it('reports a read error once per message', () => {
-    const file = path.join(scratch, 'unreadable.config.yml');
-    fs.writeFileSync(file, 'one\n');
-    const errors: string[] = [];
-    const originalRead = fs.readFileSync;
+    const file = path.join(scratch, 'unreadable.config.yml')
+    fs.writeFileSync(file, 'one\n')
+    const errors: string[] = []
+    const originalRead = fs.readFileSync
     fs.readFileSync = ((input: unknown) => {
       if (input === file) {
-        throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
+        throw Object.assign(new Error('permission denied'), { code: 'EACCES' })
       }
-      return originalRead(input as string, 'utf8');
-    }) as unknown as typeof fs.readFileSync;
+      return originalRead(input as string, 'utf8')
+    }) as unknown as typeof fs.readFileSync
     const watcher = new ConfigWatcher({
       file,
       intervalMs: 60_000,
       reload: () => '',
-      onError: (error) => errors.push(error.message),
-    });
+      onError: error => errors.push(error.message),
+    })
     try {
-      watcher.check(false);
-      watcher.check(false);
-      assert.deepEqual(errors, ['permission denied']);
+      watcher.check(false)
+      watcher.check(false)
+      assert.deepEqual(errors, ['permission denied'])
     } finally {
-      watcher.stop();
-      fs.readFileSync = originalRead;
+      watcher.stop()
+      fs.readFileSync = originalRead
     }
-  });
+  })
 
   it('treats a missing file as no change', () => {
-    assert.equal(fingerprintConfig(path.join(scratch, 'missing.yml')), undefined);
-  });
-});
+    assert.equal(fingerprintConfig(path.join(scratch, 'missing.yml')), undefined)
+  })
+})

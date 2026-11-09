@@ -24,11 +24,11 @@
 一个会把短期 token 与共享密钥**明文送进局域网上的第三方进程**。
 另有 8 条 P1/P2 问题，其中一条与文档自己的安全声明**自相矛盾**。
 
-| 级别 | 数量 | 含义 |
-|---|---|---|
-| **P0 阻塞** | 2 | 不修则方案目标不成立，或引入比现状更差的泄露面 |
-| **P1 重要** | 6 | 会踩坑、削弱承诺、或让验收标准过不了 |
-| **P2 完善** | 4 | 实现时容易漏，但漏了就有真实后果 |
+| 级别        | 数量 | 含义                                           |
+| ----------- | ---- | ---------------------------------------------- |
+| **P0 阻塞** | 2    | 不修则方案目标不成立，或引入比现状更差的泄露面 |
+| **P1 重要** | 6    | 会踩坑、削弱承诺、或让验收标准过不了           |
+| **P2 完善** | 4    | 实现时容易漏，但漏了就有真实后果               |
 
 ---
 
@@ -69,10 +69,10 @@ path=owner/name.git          ← 关键：path 只有在开了这个开关后才
    （或 `credential.https://github.com.useHttpPath true`）。
 2. helper 把「**没有 `path`**」当作硬错误，**fail closed**（绝不退化成 host 粒度签发）：
    ```js
-   const r = parseKv(stdin);
-   if (r.protocol !== "https") fail("只服务 https");
-   if (!ALLOWED_HOSTS.has(r.host)) fail("host 不在白名单");
-   if (!r.path) fail("缺少 path：credential.useHttpPath 未开启，拒绝按 host 粒度签发");
+   const r = parseKv(stdin)
+   if (r.protocol !== 'https') fail('只服务 https')
+   if (!ALLOWED_HOSTS.has(r.host)) fail('host 不在白名单')
+   if (!r.path) fail('缺少 path：credential.useHttpPath 未开启，拒绝按 host 粒度签发')
    ```
 3. 验收里加一条**负向测试**：故意 `-c credential.useHttpPath=false`，
    断言 push 失败且错误信息指向该开关（证明退化路径被堵死）。
@@ -126,9 +126,9 @@ the reachability result.
   - 代理环境变量对它**完全无影响**（不走 TCP，无 `http_proxy` 语义）；
   - 不对局域网暴露任何监听端口，不引入 TLS/重放/嗅探问题；
   - 共享密钥可保留为纵深防御，但不再是唯一闸门。
-  socket 落点二选一（见 §10 结论）：
-  (a) 新增一个专用 bind mount（推荐，位于 `Workspaces` 之外）；
-  (b) 复用 `/home/app/.dsh/git-broker/broker.sock`（零 compose 改动，但见 P1-6）。
+    socket 落点二选一（见 §10 结论）：
+    (a) 新增一个专用 bind mount（推荐，位于 `Workspaces` 之外）；
+    (b) 复用 `/home/app/.dsh/git-broker/broker.sock`（零 compose 改动，但见 P1-6）。
 - **次选：仍走 HTTP**，则必须同时做到：
   1. broker **只绑 docker 网关**（实测 `DOCKER_GATEWAY_IP` 可达），不绑 `0.0.0.0`/LAN；
   2. `no_proxy`/`NO_PROXY` 精确加入 broker 地址（两套大小写变量都要，
@@ -161,11 +161,11 @@ owner 分组，而不是文档中扁平的 `{"repos": ["owner/name"]}`。
 
 官方要求（[Generate a JWT](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app)）：
 
-| claim | 要求 |
-|---|---|
-| `alg` | 必须 `RS256` |
-| `iat` | **往前 60 秒**（防时钟漂移） |
-| `exp` | **最多 10 分钟**后 |
+| claim | 要求                                  |
+| ----- | ------------------------------------- |
+| `alg` | 必须 `RS256`                          |
+| `iat` | **往前 60 秒**（防时钟漂移）          |
+| `exp` | **最多 10 分钟**后                    |
 | `iss` | App 的 **client ID（推荐）或 app ID** |
 
 这三条是「400 Bad Request」的经典来源，必须显式实现并写进测试。
@@ -254,18 +254,18 @@ D. 未设置、stdin 为 /dev/null → fatal: ...: No such device or address    
 
 ## 5. 断言核对表（文档 claim → 实测结论）
 
-| 文档断言 | 位置 | 实测 |
-|---|---|---|
-| 容器内无 GitHub 凭据 | §1 | ✅ 无 `~/.gitconfig`、无 helper、无 token 文件/环境变量 |
-| 容器内无 `python3` | §2.2.3 | ✅ 无；有 `bash` / `node v24.21.0` / `git 2.39.5` / `npm 11.19.0`；**无 `curl`** |
-| 是否有 `openssl` CLI「待验证」 | §2.2.3, §7, §10.6 | ❌ **无** → bash 实现出局，**必须 Node** |
-| App 私钥放挂载之外 | §2.2.4, §7 | ✅ 容器内无 `/volume1`；`/volume1/docker/…` 是可行且正确的落点 |
-| 「`.dsh` 不等于安全」 | — | ⚠️ compose 是 `..:/home/app/Workspaces` + `./.dsh:/home/app/.dsh`，**`.dsh` ⊂ `Workspaces`**，别把长期材料放 `.dsh` |
-| 降权到 `app` 是有效边界 | §2.1 | ✅ `CapEff=0x0`（SETUID/SETGID 仅存在于 bounding set，未生效） |
-| broker 走宿主 LAN IP | §5.1, §7 | ❌ `192.0.2.10:443/3000` **timeout**；文档未验证该地址。LAN 可达性本身成立（`.1:80` OPEN），docker 网关 `192.0.2.1` 也可达 |
-| 容器内不存在长期材料即安全 | §6.1 | ✅ 这条成立，且是本设计最强的部分 |
-| 集中吊销 | §6.1 | ✅ 删安装/吊销 App 有效（注意 token 有效期 1 小时，见官方文档） |
-| `api.github.com` 可换取 token | §5.2 | ✅ 实测 `/`→200、未认证 `/app/installations`→401（首次裸请求 403 是代理抖动，非封禁） |
+| 文档断言                       | 位置              | 实测                                                                                                                       |
+| ------------------------------ | ----------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 容器内无 GitHub 凭据           | §1                | ✅ 无 `~/.gitconfig`、无 helper、无 token 文件/环境变量                                                                    |
+| 容器内无 `python3`             | §2.2.3            | ✅ 无；有 `bash` / `node v24.21.0` / `git 2.39.5` / `npm 11.19.0`；**无 `curl`**                                           |
+| 是否有 `openssl` CLI「待验证」 | §2.2.3, §7, §10.6 | ❌ **无** → bash 实现出局，**必须 Node**                                                                                   |
+| App 私钥放挂载之外             | §2.2.4, §7        | ✅ 容器内无 `/volume1`；`/volume1/docker/…` 是可行且正确的落点                                                             |
+| 「`.dsh` 不等于安全」          | —                 | ⚠️ compose 是 `..:/home/app/Workspaces` + `./.dsh:/home/app/.dsh`，**`.dsh` ⊂ `Workspaces`**，别把长期材料放 `.dsh`        |
+| 降权到 `app` 是有效边界        | §2.1              | ✅ `CapEff=0x0`（SETUID/SETGID 仅存在于 bounding set，未生效）                                                             |
+| broker 走宿主 LAN IP           | §5.1, §7          | ❌ `192.0.2.10:443/3000` **timeout**；文档未验证该地址。LAN 可达性本身成立（`.1:80` OPEN），docker 网关 `192.0.2.1` 也可达 |
+| 容器内不存在长期材料即安全     | §6.1              | ✅ 这条成立，且是本设计最强的部分                                                                                          |
+| 集中吊销                       | §6.1              | ✅ 删安装/吊销 App 有效（注意 token 有效期 1 小时，见官方文档）                                                            |
+| `api.github.com` 可换取 token  | §5.2              | ✅ 实测 `/`→200、未认证 `/app/installations`→401（首次裸请求 403 是代理抖动，非封禁）                                      |
 
 ---
 

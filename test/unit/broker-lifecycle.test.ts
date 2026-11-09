@@ -1,106 +1,131 @@
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import net from 'node:net';
-import os from 'node:os';
-import path from 'node:path';
-import { describe, it } from 'node:test';
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import net from 'node:net'
+import os from 'node:os'
+import path from 'node:path'
+import { describe, it } from 'node:test'
 
-import { CODES, startBroker } from '../../packages/host/src/broker.ts';
-import { MAX_MESSAGE_BYTES } from '../../packages/core/src/socket-protocol.ts';
-import { createStaticProvider } from '../../packages/host/src/providers/static.ts';
-import type { AuditSink, BrokerConfig, Provider, StaticHostConfig, WireResponse } from '../../packages/core/src/types.ts';
+import { MAX_MESSAGE_BYTES } from '../../packages/core/src/socket-protocol.ts'
+import type {
+  AuditSink,
+  BrokerConfig,
+  Provider,
+  StaticHostConfig,
+  WireResponse,
+} from '../../packages/core/src/types.ts'
+import { CODES, startBroker } from '../../packages/host/src/broker.ts'
+import { createStaticProvider } from '../../packages/host/src/providers/static.ts'
 
-const HOST = 'github.com';
+const HOST = 'github.com'
 
 async function ping(socketPath: string): Promise<WireResponse> {
-  const socket = net.connect(socketPath);
+  const socket = net.connect(socketPath)
   return new Promise<WireResponse>((resolve, reject) => {
-    let text = '';
+    let text = ''
     socket.on('data', (chunk: Buffer) => {
-      text += chunk.toString('utf8');
-      const newline = text.indexOf('\n');
-      if (newline < 0) return;
-      socket.destroy();
-      resolve(JSON.parse(text.slice(0, newline)) as WireResponse);
-    });
-    socket.on('error', reject);
-    socket.write(JSON.stringify({ op: 'ping' }) + '\n');
-  });
+      text += chunk.toString('utf8')
+      const newline = text.indexOf('\n')
+      if (newline < 0) {
+        return
+      }
+      socket.destroy()
+      resolve(JSON.parse(text.slice(0, newline)) as WireResponse)
+    })
+    socket.on('error', reject)
+    socket.write(JSON.stringify({ op: 'ping' }) + '\n')
+  })
 }
 
 describe('startBroker reload', () => {
   it('serves the swapper providers without rebinding the socket', async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-broker-reload-'));
-    const socketPath = path.join(root, 'broker.sock');
-    const block: StaticHostConfig = { provider: 'static', allow: ['a/one'], username: 'u', password: 'p' };
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-broker-reload-'))
+    const socketPath = path.join(root, 'broker.sock')
+    const block: StaticHostConfig = {
+      provider: 'static',
+      allow: ['a/one'],
+      username: 'u',
+      password: 'p',
+    }
     const config: BrokerConfig = {
       socketPath,
       socketMode: 0o600,
       auditPath: null,
       tokenCacheSkewSeconds: 300,
       hosts: { [HOST]: block },
-    };
-    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() };
+    }
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() }
     const broker = await startBroker({
       config,
       audit,
-      providers: new Map<string, Provider>([[HOST, createStaticProvider({ host: HOST, cfg: block })]]),
+      providers: new Map<string, Provider>([
+        [HOST, createStaticProvider({ host: HOST, cfg: block })],
+      ]),
       log: () => {},
-    });
+    })
     try {
-      assert.deepEqual((await ping(socketPath)).hosts, [HOST]);
-      const nextHost = 'git.example';
-      const nextConfig: BrokerConfig = { ...config, hosts: { [nextHost]: { ...block, allow: ['a/one'] } } };
-      broker.reload(nextConfig, new Map<string, Provider>([[nextHost, createStaticProvider({ host: nextHost, cfg: { ...block, allow: ['a/one'] } })]]));
-      assert.deepEqual((await ping(socketPath)).hosts, [nextHost]);
+      assert.deepEqual((await ping(socketPath)).hosts, [HOST])
+      const nextHost = 'git.example'
+      const nextConfig: BrokerConfig = {
+        ...config,
+        hosts: { [nextHost]: { ...block, allow: ['a/one'] } },
+      }
+      broker.reload(
+        nextConfig,
+        new Map<string, Provider>([
+          [nextHost, createStaticProvider({ host: nextHost, cfg: { ...block, allow: ['a/one'] } })],
+        ]),
+      )
+      assert.deepEqual((await ping(socketPath)).hosts, [nextHost])
     } finally {
-      await broker.close();
-      fs.rmSync(root, { recursive: true, force: true });
+      await broker.close()
+      fs.rmSync(root, { recursive: true, force: true })
     }
-  });
-});
+  })
+})
 
 describe('startBroker oversized request', () => {
   it('answers with a named bad-request instead of dropping the socket', async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-broker-lifecycle-'));
-    const socketPath = path.join(root, 'broker.sock');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-broker-lifecycle-'))
+    const socketPath = path.join(root, 'broker.sock')
     const block: StaticHostConfig = {
       provider: 'static',
       allow: ['acme/widget'],
       username: 'x-access-token',
       password: 'unit-secret',
-    };
+    }
     const config: BrokerConfig = {
       socketPath,
       socketMode: 0o600,
       auditPath: null,
       tokenCacheSkewSeconds: 300,
       hosts: { [HOST]: block },
-    };
-    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() };
+    }
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() }
     const broker = await startBroker({
       config,
       audit,
-      providers: new Map<string, Provider>([[HOST, createStaticProvider({ host: HOST, cfg: block })]]),
+      providers: new Map<string, Provider>([
+        [HOST, createStaticProvider({ host: HOST, cfg: block })],
+      ]),
       log: () => {},
-    });
+    })
     try {
-      const socket = net.connect(socketPath);
+      const socket = net.connect(socketPath)
       const response = await new Promise<string>((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        socket.on('data', (chunk: Buffer) => chunks.push(chunk));
-        socket.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-        socket.on('error', reject);
-        socket.write('x'.repeat(MAX_MESSAGE_BYTES + 1) + '\n');
-      });
-      socket.destroy();
-      const parsed = JSON.parse(response.trim()) as WireResponse;
-      assert.equal(parsed.ok, false);
-      assert.equal(parsed.code, CODES.BAD_REQUEST);
-      assert.equal(parsed.reason, `request exceeds ${MAX_MESSAGE_BYTES} bytes`);
+        const chunks: Buffer[] = []
+        socket.on('data', (chunk: Buffer) => chunks.push(chunk))
+        socket.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+        socket.on('error', reject)
+        socket.write('x'.repeat(MAX_MESSAGE_BYTES + 1) + '\n')
+      })
+      socket.destroy()
+      const parsed = JSON.parse(response.trim()) as WireResponse
+      assert.equal(parsed.ok, false)
+      assert.equal(parsed.code, CODES.BAD_REQUEST)
+      assert.equal(parsed.reason, `request exceeds ${MAX_MESSAGE_BYTES} bytes`)
     } finally {
-      await broker.close();
-      fs.rmSync(root, { recursive: true, force: true });
+      await broker.close()
+      fs.rmSync(root, { recursive: true, force: true })
     }
-  });
-});
+  })
+})

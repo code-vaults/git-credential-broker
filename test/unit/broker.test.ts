@@ -1,41 +1,47 @@
 /**
  * Tests for the broker's request handling and its refusal codes.
  *
- * These are the assertions that back the "default deny" claim: every way a request can be
- * wrong has a named code, and the caller never learns more than it needs to.
+ * These are the assertions that back the "default deny" claim: every way a request can be wrong has
+ * a named code, and the caller never learns more than it needs to.
  */
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import net from 'node:net';
-import os from 'node:os';
-import path from 'node:path';
-import { after, describe, it } from 'node:test';
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import net from 'node:net'
+import os from 'node:os'
+import path from 'node:path'
+import { after, describe, it } from 'node:test'
 
-import { redact } from '../../packages/host/src/audit.ts';
-import { tokenFingerprint } from '../../packages/core/src/fingerprint.ts';
-import { PACKAGE_VERSION } from '../../packages/core/src/version.ts';
-import { CODES, createRequestHandler, prepareSocketPath } from '../../packages/host/src/broker.ts';
-import { MAX_BODY_CHARS } from '../../packages/core/src/host-request.ts';
-import { createStaticProvider } from '../../packages/host/src/providers/static.ts';
-import type { AuditSink, BrokerConfig, Provider, StaticHostConfig, WireResponse } from '../../packages/core/src/types.ts';
-import { ProviderConfigError } from '../../packages/core/src/errors.ts';
+import { ProviderConfigError } from '../../packages/core/src/errors.ts'
+import { tokenFingerprint } from '../../packages/core/src/fingerprint.ts'
+import { MAX_BODY_CHARS } from '../../packages/core/src/host-request.ts'
+import type {
+  AuditSink,
+  BrokerConfig,
+  Provider,
+  StaticHostConfig,
+  WireResponse,
+} from '../../packages/core/src/types.ts'
+import { PACKAGE_VERSION } from '../../packages/core/src/version.ts'
+import { redact } from '../../packages/host/src/audit.ts'
+import { CODES, createRequestHandler, prepareSocketPath } from '../../packages/host/src/broker.ts'
+import { createStaticProvider } from '../../packages/host/src/providers/static.ts'
 
-const HOST = 'github.com';
-const SECRET = 'unit-secret-value';
+const HOST = 'github.com'
+const SECRET = 'unit-secret-value'
 
 /** A handler plus the audit events it produced. */
 interface Harness {
-  handle(message: Record<string, unknown>): Promise<WireResponse>;
-  events: Array<Record<string, unknown>>;
+  handle(message: Record<string, unknown>): Promise<WireResponse>
+  events: Array<Record<string, unknown>>
 }
 
 /**
  * Build a handler backed by a static provider and an in-memory audit sink.
  *
- * @param allow - the allowlist for the configured host.
- * @param providerOverride - a provider to use instead of the static one.
- * @param allowInsecureHttp - whether the host opts into plaintext remotes.
- * @returns the harness.
+ * @param allow - The allowlist for the configured host.
+ * @param providerOverride - A provider to use instead of the static one.
+ * @param allowInsecureHttp - Whether the host opts into plaintext remotes.
+ * @returns The harness.
  */
 function makeHarness(
   allow: readonly string[] = ['acme/widget'],
@@ -51,26 +57,26 @@ function makeHarness(
     ...options,
     username: 'x-access-token',
     password: SECRET,
-  };
+  }
   const config: BrokerConfig = {
     socketPath: path.join(os.tmpdir(), 'gcb-unit', 'broker.sock'),
     socketMode: 0o660,
     auditPath,
     tokenCacheSkewSeconds: 300,
     hosts: { [HOST]: block },
-  };
-  const events: Array<Record<string, unknown>> = [];
+  }
+  const events: Array<Record<string, unknown>> = []
   const audit: AuditSink = {
     path: null,
-    record: (event) => {
-      events.push(event);
+    record: event => {
+      events.push(event)
     },
     close: () => Promise.resolve(),
-  };
+  }
   const providers = new Map<string, Provider>([
     [HOST, providerOverride ?? createStaticProvider({ host: HOST, cfg: block })],
-  ]);
-  return { handle: createRequestHandler({ audit, state: { config, providers } }), events };
+  ])
+  return { handle: createRequestHandler({ audit, state: { config, providers } }), events }
 }
 
 /** A well-formed request for the allowlisted repository. */
@@ -81,114 +87,129 @@ const REQUEST: Record<string, unknown> = {
   path: 'acme/widget.git',
   session: 'session-d2465e08',
   pid: 4242,
-};
+}
 
 describe('broker request handling', () => {
   it('issues a credential for an allowlisted repository and audits it without the secret', async () => {
-    const { handle, events } = makeHarness();
-    const response = await handle({ ...REQUEST });
+    const { handle, events } = makeHarness()
+    const response = await handle({ ...REQUEST })
 
-    assert.equal(response.ok, true);
-    assert.equal(response.username, 'x-access-token');
-    assert.equal(response.password, SECRET);
+    assert.equal(response.ok, true)
+    assert.equal(response.username, 'x-access-token')
+    assert.equal(response.password, SECRET)
 
-    const allowed = events.filter((event) => event['decision'] === 'allow');
-    assert.equal(allowed.length, 1);
-    const record = allowed[0];
-    assert.ok(record);
-    assert.equal(record['repo'], 'acme/widget', 'the audit names the repository, normalized');
-    assert.equal(record['session'], 'session-d2465e08', 'the audit carries the DSH session for attribution');
-    assert.equal(record['helper_pid'], 4242);
-    assert.equal(record['token_fingerprint'], tokenFingerprint(SECRET));
+    const allowed = events.filter(event => event['decision'] === 'allow')
+    assert.equal(allowed.length, 1)
+    const record = allowed[0]
+    assert.ok(record)
+    assert.equal(record['repo'], 'acme/widget', 'the audit names the repository, normalized')
+    assert.equal(
+      record['session'],
+      'session-d2465e08',
+      'the audit carries the DSH session for attribution',
+    )
+    assert.equal(record['helper_pid'], 4242)
+    assert.equal(record['token_fingerprint'], tokenFingerprint(SECRET))
     assert.equal(
       JSON.stringify(events).includes(SECRET),
       false,
       'the credential itself must never reach the audit log',
-    );
-  });
+    )
+  })
 
   it('answers a ping with the version and the configured hosts', async () => {
-    const { handle } = makeHarness();
-    const response = await handle({ op: 'ping' });
-    assert.equal(response.ok, true);
-    assert.equal(response.version, PACKAGE_VERSION);
-    assert.deepEqual(response.hosts, [HOST]);
-    assert.equal(response.auditPath, null);
-  });
+    const { handle } = makeHarness()
+    const response = await handle({ op: 'ping' })
+    assert.equal(response.ok, true)
+    assert.equal(response.version, PACKAGE_VERSION)
+    assert.deepEqual(response.hosts, [HOST])
+    assert.equal(response.auditPath, null)
+  })
 
   it('returns a configured audit path from ping', async () => {
-    const auditPath = path.join(os.tmpdir(), 'gcb-unit', 'audit.jsonl');
-    const { handle } = makeHarness(['acme/widget'], undefined, undefined, auditPath);
-    const response = await handle({ op: 'ping' });
-    assert.equal(response.ok, true);
-    assert.equal(response.auditPath, auditPath);
-  });
+    const auditPath = path.join(os.tmpdir(), 'gcb-unit', 'audit.jsonl')
+    const { handle } = makeHarness(['acme/widget'], undefined, undefined, auditPath)
+    const response = await handle({ op: 'ping' })
+    assert.equal(response.ok, true)
+    assert.equal(response.auditPath, auditPath)
+  })
 
   it('reports a relative audit path as absolute from ping', async () => {
-    const { handle } = makeHarness(['acme/widget'], undefined, undefined, 'relative-audit.jsonl');
-    const response = await handle({ op: 'ping' });
-    assert.equal(response.ok, true);
-    assert.equal(response.auditPath, path.resolve('relative-audit.jsonl'));
-  });
+    const { handle } = makeHarness(['acme/widget'], undefined, undefined, 'relative-audit.jsonl')
+    const response = await handle({ op: 'ping' })
+    assert.equal(response.ok, true)
+    assert.equal(response.auditPath, path.resolve('relative-audit.jsonl'))
+  })
 
   it('refuses an unknown operation', async () => {
-    const { handle } = makeHarness();
-    const response = await handle({ op: 'exfiltrate' });
-    assert.equal(response.ok, false);
-    assert.equal(response.code, CODES.BAD_REQUEST);
-  });
+    const { handle } = makeHarness()
+    const response = await handle({ op: 'exfiltrate' })
+    assert.equal(response.ok, false)
+    assert.equal(response.code, CODES.BAD_REQUEST)
+  })
 
   it('refuses a plaintext or unknown protocol unless the host opts in', async () => {
-    const { handle } = makeHarness();
+    const { handle } = makeHarness()
     for (const protocol of ['http', 'ftp', undefined]) {
-      const response = await handle({ ...REQUEST, protocol });
-      assert.equal(response.code, CODES.PROTOCOL_NOT_HTTPS, `expected a refusal for ${String(protocol)}`);
+      const response = await handle({ ...REQUEST, protocol })
+      assert.equal(
+        response.code,
+        CODES.PROTOCOL_NOT_HTTPS,
+        `expected a refusal for ${String(protocol)}`,
+      )
     }
-  });
+  })
 
   it('allows a plaintext http remote only when the host explicitly opts in', async () => {
-    const strict = makeHarness();
-    assert.equal((await strict.handle({ ...REQUEST, protocol: 'http' })).code, CODES.PROTOCOL_NOT_HTTPS);
+    const strict = makeHarness()
+    assert.equal(
+      (await strict.handle({ ...REQUEST, protocol: 'http' })).code,
+      CODES.PROTOCOL_NOT_HTTPS,
+    )
 
-    const relaxed = makeHarness(['acme/widget'], undefined, true);
-    const allowed = await relaxed.handle({ ...REQUEST, protocol: 'http' });
-    assert.equal(allowed.ok, true);
-    assert.equal(allowed.password, SECRET);
-  });
+    const relaxed = makeHarness(['acme/widget'], undefined, true)
+    const allowed = await relaxed.handle({ ...REQUEST, protocol: 'http' })
+    assert.equal(allowed.ok, true)
+    assert.equal(allowed.password, SECRET)
+  })
 
   it('refuses a host that is not configured', async () => {
-    const { handle } = makeHarness();
-    const response = await handle({ ...REQUEST, host: 'evil.example' });
-    assert.equal(response.code, CODES.HOST_NOT_ALLOWED);
-  });
+    const { handle } = makeHarness()
+    const response = await handle({ ...REQUEST, host: 'evil.example' })
+    assert.equal(response.code, CODES.HOST_NOT_ALLOWED)
+  })
 
   it('refuses a request with no path, and tells the operator which switch is missing', async () => {
-    const { handle } = makeHarness();
+    const { handle } = makeHarness()
     // Deliberately built without `path`, which is what git sends unless useHttpPath is on.
-    const response = await handle({ op: 'credential', protocol: 'https', host: HOST });
-    assert.equal(response.code, CODES.PATH_REQUIRED);
-    assert.match(response.reason ?? '', /credential\.useHttpPath true/);
-  });
+    const response = await handle({ op: 'credential', protocol: 'https', host: HOST })
+    assert.equal(response.code, CODES.PATH_REQUIRED)
+    assert.match(response.reason ?? '', /credential\.useHttpPath true/)
+  })
 
   it('refuses an unparsable or traversal path', async () => {
-    const { handle } = makeHarness();
+    const { handle } = makeHarness()
     for (const value of ['acme/..', 'acme', 'acme/widget/extra', '../../etc/passwd']) {
-      const response = await handle({ ...REQUEST, path: value });
-      assert.equal(response.code, CODES.PATH_REQUIRED, `expected a refusal for ${JSON.stringify(value)}`);
+      const response = await handle({ ...REQUEST, path: value })
+      assert.equal(
+        response.code,
+        CODES.PATH_REQUIRED,
+        `expected a refusal for ${JSON.stringify(value)}`,
+      )
     }
-  });
+  })
 
   it('refuses a repository that is not on the allowlist', async () => {
-    const { handle } = makeHarness();
-    const response = await handle({ ...REQUEST, path: 'acme/other.git' });
-    assert.equal(response.code, CODES.REPO_NOT_ALLOWED);
-  });
+    const { handle } = makeHarness()
+    const response = await handle({ ...REQUEST, path: 'acme/other.git' })
+    assert.equal(response.code, CODES.REPO_NOT_ALLOWED)
+  })
 
   it('never treats an allowlisted name as a prefix', async () => {
-    const { handle } = makeHarness(['acme/widget']);
-    const response = await handle({ ...REQUEST, path: 'acme/widget-evil.git' });
-    assert.equal(response.code, CODES.REPO_NOT_ALLOWED);
-  });
+    const { handle } = makeHarness(['acme/widget'])
+    const response = await handle({ ...REQUEST, path: 'acme/widget-evil.git' })
+    assert.equal(response.code, CODES.REPO_NOT_ALLOWED)
+  })
 
   it('shows the caller a provider error that is ours, not a provider response', async () => {
     // The other half of the rule below: a permission problem is composed from the configuration and a
@@ -198,386 +219,458 @@ describe('broker request handling', () => {
       name: 'misconfigured',
       getCredential: () =>
         Promise.reject(
-          new ProviderConfigError('the configured permissions are not available (workflows: this installation has not approved it)'),
+          new ProviderConfigError(
+            'the configured permissions are not available (workflows: this installation has not approved it)',
+          ),
         ),
-    };
-    const { handle } = makeHarness(['acme/widget'], misconfigured);
-    const response = await handle({ ...REQUEST });
+    }
+    const { handle } = makeHarness(['acme/widget'], misconfigured)
+    const response = await handle({ ...REQUEST })
 
-    assert.equal(response.code, CODES.PROVIDER_ERROR);
-    assert.match(response.reason ?? '', /workflows/);
-    assert.match(response.reason ?? '', /this installation has not approved it/);
-  });
+    assert.equal(response.code, CODES.PROVIDER_ERROR)
+    assert.match(response.reason ?? '', /workflows/)
+    assert.match(response.reason ?? '', /this installation has not approved it/)
+  })
 
   it('serves a job log for an allowlisted repository, and audits it', async () => {
     const logs: Provider = {
-  name: 'with-logs',
-  getCredential: () => Promise.reject(new Error('not used here')),
-  getJobLog: () => Promise.resolve({ text: 'job output\n', truncated: false }),
-    };
-    const { handle, events } = makeHarness(['acme/widget'], logs);
-    const response = await handle({ ...REQUEST, op: 'logs', jobId: 7 });
+      name: 'with-logs',
+      getCredential: () => Promise.reject(new Error('not used here')),
+      getJobLog: () => Promise.resolve({ text: 'job output\n', truncated: false }),
+    }
+    const { handle, events } = makeHarness(['acme/widget'], logs)
+    const response = await handle({ ...REQUEST, op: 'logs', jobId: 7 })
 
-    assert.equal(response.ok, true);
-    assert.equal(response.log, 'job output\n');
-    assert.equal(events.at(-1)?.['event'], 'logs');
-    assert.equal(events.at(-1)?.['job_id'], 7);
-  });
+    assert.equal(response.ok, true)
+    assert.equal(response.log, 'job output\n')
+    assert.equal(events.at(-1)?.['event'], 'logs')
+    assert.equal(events.at(-1)?.['job_id'], 7)
+  })
 
   it('refuses a log for an unlisted repository, and for a provider with no logs', async () => {
     const withLogs: Provider = {
-  name: 'with-logs',
-  getCredential: () => Promise.reject(new Error('not used here')),
-  getJobLog: () => Promise.resolve({ text: 'x', truncated: false }),
-    };
+      name: 'with-logs',
+      getCredential: () => Promise.reject(new Error('not used here')),
+      getJobLog: () => Promise.resolve({ text: 'x', truncated: false }),
+    }
     const denied = await makeHarness(['acme/widget'], withLogs).handle({
-  ...REQUEST,
-  op: 'logs',
-  jobId: 7,
-  path: 'acme/other',
-    });
-    assert.equal(denied.code, CODES.REPO_NOT_ALLOWED);
+      ...REQUEST,
+      op: 'logs',
+      jobId: 7,
+      path: 'acme/other',
+    })
+    assert.equal(denied.code, CODES.REPO_NOT_ALLOWED)
 
     const noLogs: Provider = {
-  name: 'no-logs',
-  getCredential: () => Promise.reject(new Error('not used here')),
-    };
+      name: 'no-logs',
+      getCredential: () => Promise.reject(new Error('not used here')),
+    }
     const unsupported = await makeHarness(['acme/widget'], noLogs).handle({
-  ...REQUEST,
-  op: 'logs',
-  jobId: 7,
-    });
-    assert.equal(unsupported.code, CODES.PROVIDER_ERROR);
-    assert.match(unsupported.reason ?? '', /cannot read workflow logs/);
-  });
+      ...REQUEST,
+      op: 'logs',
+      jobId: 7,
+    })
+    assert.equal(unsupported.code, CODES.PROVIDER_ERROR)
+    assert.match(unsupported.reason ?? '', /cannot read workflow logs/)
+  })
 
   it('opens a pull request for an allowlisted repository, and audits it', async () => {
     const opened: Provider = {
-  name: 'with-prs',
-  getCredential: () => Promise.reject(new Error('not used here')),
-  pullRequest: (request) => {
-    assert.equal(request.head, 'feature');
-    assert.equal(request.base, 'main');
-    return Promise.resolve({ number: 7, url: 'https://github.com/acme/widget/pull/7' });
-  },
-    };
-    const { handle, events } = makeHarness(['acme/widget'], opened);
-    const response = await handle({ ...REQUEST, op: 'pull-request', head: 'feature', base: 'main', title: 'a title', body: 'a body' });
+      name: 'with-prs',
+      getCredential: () => Promise.reject(new Error('not used here')),
+      pullRequest: request => {
+        assert.equal(request.head, 'feature')
+        assert.equal(request.base, 'main')
+        return Promise.resolve({ number: 7, url: 'https://github.com/acme/widget/pull/7' })
+      },
+    }
+    const { handle, events } = makeHarness(['acme/widget'], opened)
+    const response = await handle({
+      ...REQUEST,
+      op: 'pull-request',
+      head: 'feature',
+      base: 'main',
+      title: 'a title',
+      body: 'a body',
+    })
 
-    assert.equal(response.ok, true);
-    assert.equal(response.prNumber, 7);
-    assert.equal(events.at(-1)?.['event'], 'pull-request');
-    assert.equal(events.at(-1)?.['pr_number'], 7);
-  });
+    assert.equal(response.ok, true)
+    assert.equal(response.prNumber, 7)
+    assert.equal(events.at(-1)?.['event'], 'pull-request')
+    assert.equal(events.at(-1)?.['pr_number'], 7)
+  })
 
   it('forks without a pull request number', async () => {
-    const seen: unknown[] = [];
+    const seen: unknown[] = []
     const forked: Provider = {
       name: 'fork-test',
       getCredential: () => Promise.reject(new Error('not used here')),
-      pullRequest: (request) => {
-        seen.push(request.action, request.identity);
-        return Promise.resolve({ number: 0, url: 'https://github.com/me/widget' });
+      pullRequest: request => {
+        seen.push(request.action, request.identity)
+        return Promise.resolve({ number: 0, url: 'https://github.com/me/widget' })
       },
-    };
-    const { handle, events } = makeHarness(['acme/widget'], forked);
-    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'fork', identity: 'user' });
-    assert.equal(response.ok, true);
-    assert.equal(response.prUrl, 'https://github.com/me/widget');
-    assert.equal(response.prNumber, undefined);
-    assert.deepEqual(seen, ['fork', 'user']);
-    assert.equal(events.at(-1)?.['fork_url'], 'https://github.com/me/widget');
-    assert.equal('pr_number' in (events.at(-1) ?? {}), false);
-  });
+    }
+    const { handle, events } = makeHarness(['acme/widget'], forked)
+    const response = await handle({
+      ...REQUEST,
+      op: 'pull-request',
+      action: 'fork',
+      identity: 'user',
+    })
+    assert.equal(response.ok, true)
+    assert.equal(response.prUrl, 'https://github.com/me/widget')
+    assert.equal(response.prNumber, undefined)
+    assert.deepEqual(seen, ['fork', 'user'])
+    assert.equal(events.at(-1)?.['fork_url'], 'https://github.com/me/widget')
+    assert.equal('pr_number' in (events.at(-1) ?? {}), false)
+  })
 
   it('refuses a fork as the app', async () => {
-    const { handle } = makeHarness();
-    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'fork', identity: 'app' });
-    assert.equal(response.ok, false);
-    assert.equal(response.code, 'bad-request');
-    assert.match(response.reason ?? '', /a fork must be owned by a person/u);
-  });
+    const { handle } = makeHarness()
+    const response = await handle({
+      ...REQUEST,
+      op: 'pull-request',
+      action: 'fork',
+      identity: 'app',
+    })
+    assert.equal(response.ok, false)
+    assert.equal(response.code, 'bad-request')
+    assert.match(response.reason ?? '', /a fork must be owned by a person/u)
+  })
 
   it('records a refused pull request as a pull-request event', async () => {
-    const { handle, events } = makeHarness();
-    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'fork', identity: 'app' });
-    assert.equal(response.ok, false);
-    assert.equal(events.at(-1)?.['event'], 'pull-request');
-    assert.equal(events.at(-1)?.['decision'], 'deny');
-  });
+    const { handle, events } = makeHarness()
+    const response = await handle({
+      ...REQUEST,
+      op: 'pull-request',
+      action: 'fork',
+      identity: 'app',
+    })
+    assert.equal(response.ok, false)
+    assert.equal(events.at(-1)?.['event'], 'pull-request')
+    assert.equal(events.at(-1)?.['decision'], 'deny')
+  })
 
   it('records an allowlist refusal for a pull request as a pull-request event', async () => {
-    const { handle, events } = makeHarness(['other/repo']);
-    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'threads', number: 1 });
-    assert.equal(response.ok, false);
-    assert.equal(response.code, 'repo-not-allowed');
-    assert.equal(events.at(-1)?.['event'], 'pull-request');
-  });
+    const { handle, events } = makeHarness(['other/repo'])
+    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'threads', number: 1 })
+    assert.equal(response.ok, false)
+    assert.equal(response.code, 'repo-not-allowed')
+    assert.equal(events.at(-1)?.['event'], 'pull-request')
+  })
 
   it('classifies an invalid-proxy refusal by the request op', async () => {
-    const { handle, events } = makeHarness();
-    const response = await handle({ ...REQUEST, op: 'pull-request', proxy: 'ftp://proxy.example' });
-    assert.equal(response.ok, false);
-    assert.equal(response.code, 'bad-request');
-    assert.equal(events.at(-1)?.['event'], 'pull-request');
-  });
+    const { handle, events } = makeHarness()
+    const response = await handle({ ...REQUEST, op: 'pull-request', proxy: 'ftp://proxy.example' })
+    assert.equal(response.ok, false)
+    assert.equal(response.code, 'bad-request')
+    assert.equal(events.at(-1)?.['event'], 'pull-request')
+  })
 
   it('refuses an unusable branch, and a provider that cannot manage pull requests', async () => {
     const opened: Provider = {
-  name: 'with-prs',
-  getCredential: () => Promise.reject(new Error('not used here')),
-  pullRequest: () => Promise.resolve({ number: 1, url: 'u' }),
-    };
+      name: 'with-prs',
+      getCredential: () => Promise.reject(new Error('not used here')),
+      pullRequest: () => Promise.resolve({ number: 1, url: 'u' }),
+    }
     const traversal = await makeHarness(['acme/widget'], opened).handle({
-  ...REQUEST,
-  op: 'pull-request',
-  head: '../escape',
-  base: 'main',
-  title: 'a title',
-    });
-    assert.equal(traversal.code, CODES.BAD_REQUEST);
+      ...REQUEST,
+      op: 'pull-request',
+      head: '../escape',
+      base: 'main',
+      title: 'a title',
+    })
+    assert.equal(traversal.code, CODES.BAD_REQUEST)
 
     const none: Provider = {
-  name: 'no-prs',
-  getCredential: () => Promise.reject(new Error('not used here')),
-    };
+      name: 'no-prs',
+      getCredential: () => Promise.reject(new Error('not used here')),
+    }
     const unsupported = await makeHarness(['acme/widget'], none).handle({
-  ...REQUEST,
-  op: 'pull-request',
-  head: 'feature',
-  base: 'main',
-  title: 'a title',
-    });
-    assert.equal(unsupported.code, CODES.PROVIDER_ERROR);
-    assert.match(unsupported.reason ?? '', /cannot manage pull requests/);
-  });
+      ...REQUEST,
+      op: 'pull-request',
+      head: 'feature',
+      base: 'main',
+      title: 'a title',
+    })
+    assert.equal(unsupported.code, CODES.PROVIDER_ERROR)
+    assert.match(unsupported.reason ?? '', /cannot manage pull requests/)
+  })
 
   it('reports a pull request without changing it', async () => {
-    const asked: string[] = [];
+    const asked: string[] = []
     const reader: Provider = {
-  name: 'with-prs',
-  getCredential: () => Promise.reject(new Error('not used here')),
-  pullRequest: (request) => {
-    asked.push(request.action);
-    return Promise.resolve({ number: 42, url: 'u', state: 'open', status: '#42 open' });
-  },
-    };
-    const { handle, events } = makeHarness(['acme/widget'], reader);
-    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'status', number: 42 });
+      name: 'with-prs',
+      getCredential: () => Promise.reject(new Error('not used here')),
+      pullRequest: request => {
+        asked.push(request.action)
+        return Promise.resolve({ number: 42, url: 'u', state: 'open', status: '#42 open' })
+      },
+    }
+    const { handle, events } = makeHarness(['acme/widget'], reader)
+    const response = await handle({ ...REQUEST, op: 'pull-request', action: 'status', number: 42 })
 
-    assert.equal(response.ok, true);
-    assert.deepEqual(asked, ['status']);
-    assert.equal(response.prStatus, '#42 open');
-    assert.equal(events.at(-1)?.['action'], 'status');
-  });
+    assert.equal(response.ok, true)
+    assert.deepEqual(asked, ['status'])
+    assert.equal(response.prStatus, '#42 open')
+    assert.equal(events.at(-1)?.['action'], 'status')
+  })
 
   it('keeps provider failures generic for the caller and detailed in the audit', async () => {
     const exploding: Provider = {
       name: 'exploding',
-      getCredential: () => Promise.reject(new Error(`internal detail: token ghs_leak_should_not_surface`)),
-    };
-    const { handle, events } = makeHarness(['acme/widget'], exploding);
-    const response = await handle({ ...REQUEST });
-
-    assert.equal(response.code, CODES.PROVIDER_ERROR);
-    assert.doesNotMatch(response.reason ?? '', /ghs_leak_should_not_surface/);
-    assert.match(String(events.at(-1)?.['reason']), /internal detail/, 'the audit keeps the real reason');
-  });
-});
-
-
-  it('accepts an owner-qualified head, and hands it on unchanged', async () => {
-    const seen: Array<string | undefined> = [];
-    const opened: Provider = {
-      name: 'with-forks',
-      getCredential: () => Promise.reject(new Error('not used here')),
-      pullRequest: (request) => {
-        seen.push(request.head);
-        return Promise.resolve({ number: 7, url: 'https://github.com/me/widget/pull/7' });
-      },
-    };
-    const { handle } = makeHarness(['acme/widget'], opened);
-    const response = await handle({ ...REQUEST, op: 'pull-request', head: 'me:feature', base: 'main', title: 'a', body: 'b' });
-
-    assert.equal(response.ok, true, 'the fork form is a branch name the socket may carry');
-    assert.deepEqual(seen, ['me:feature'], 'and it reaches the provider exactly as written');
-  });
-
-  it('still refuses a head that tries to leave the request', async () => {
-    const opened: Provider = {
-      name: 'unused',
-      getCredential: () => Promise.reject(new Error('not used here')),
-      pullRequest: () => Promise.resolve({ number: 7, url: '' }),
-    };
-    const { handle } = makeHarness(['acme/widget'], opened);
-    const response = await handle({ ...REQUEST, op: 'pull-request', head: '../escape', base: 'main', title: 'a', body: 'b' });
-    assert.equal(response.code, 'bad-request');
-  });
-
-
-  it('carries an anchored comment, and refuses a bad anchor before the provider sees it', async () => {
-    const seen: Array<Record<string, unknown>> = [];
-    const provider: Provider = {
-      name: 'with-anchors',
-      getCredential: () => Promise.reject(new Error('not used here')),
-      pullRequest: (request) => {
-        seen.push(request as unknown as Record<string, unknown>);
-        return Promise.resolve({ number: 7, url: '' });
-      },
-    };
-    const { handle } = makeHarness(['acme/widget'], provider);
-    const comments = { ...REQUEST, op: 'pull-request', action: 'comment', number: 7, body: 'a note', filePath: 'Dockerfile', line: 4 };
-    const good = await handle(comments);
-    assert.equal(good.ok, true);
-    assert.deepEqual(
-      [seen.at(-1)?.['filePath'], seen.at(-1)?.['line'], seen.at(-1)?.['side']],
-      ['Dockerfile', 4, 'right'],
-      'the anchor reaches the provider, with the default side',
-    );
-
-    for (const [label, patch] of [
-      ['an absolute path', { filePath: '/etc/passwd' }],
-      ['a path that climbs out', { filePath: '../../etc/passwd' }],
-      ['an empty path', { filePath: '' }],
-      ['a line of zero', { line: 0 }],
-      ['a line that is not a number', { line: 'four' }],
-      ['an unknown side', { side: 'middle' }],
-      ['half an anchor', { line: undefined }],
-    ] as const) {
-      // Spreading an own property whose value is undefined does set the key, so the explicit
-      // "half an anchor" case still removes it and every other case keeps the line it named.
-      const response = await handle({ ...comments, ...patch });
-      assert.equal(response.code, 'bad-request', label + ' has to be refused by the broker');
+      getCredential: () =>
+        Promise.reject(new Error(`internal detail: token ghs_leak_should_not_surface`)),
     }
+    const { handle, events } = makeHarness(['acme/widget'], exploding)
+    const response = await handle({ ...REQUEST })
 
-    const wrongAction = await handle({ ...comments, action: 'status' });
-    assert.equal(wrongAction.code, 'bad-request', 'and an anchor only belongs on a comment');
-  });
+    assert.equal(response.code, CODES.PROVIDER_ERROR)
+    assert.doesNotMatch(response.reason ?? '', /ghs_leak_should_not_surface/)
+    assert.match(
+      String(events.at(-1)?.['reason']),
+      /internal detail/,
+      'the audit keeps the real reason',
+    )
+  })
+})
 
-  it('carries an edit by comment id alone, and audits which comment it changed', async () => {
-    const seen: Array<Record<string, unknown>> = [];
-    const provider: Provider = {
-      name: 'with-edits',
-      getCredential: () => Promise.reject(new Error('not used here')),
-      pullRequest: (request) => {
-        seen.push(request as unknown as Record<string, unknown>);
-        // The provider reads the pull request back from the comment, so the broker need not be told it.
-        return Promise.resolve({ number: 8, url: 'https://github.com/acme/widget/pull/8#discussion_r99' });
-      },
-    };
-    const { handle, events } = makeHarness(['acme/widget'], provider);
-    const good = await handle({
-      ...REQUEST,
-      op: 'pull-request',
-      action: 'edit',
-      commentId: 99,
-      body: 'a corrected note',
-    });
-    assert.equal(good.ok, true);
-    assert.equal(good.prNumber, 8);
-    assert.deepEqual(
-      [seen.at(-1)?.['action'], seen.at(-1)?.['commentId'], seen.at(-1)?.['body'], seen.at(-1)?.['number']],
-      ['edit', 99, 'a corrected note', undefined],
-      'the action, the comment id and the new body reach the provider, with no number required',
-    );
-    assert.equal(events.at(-1)?.['action'], 'edit', 'the audit records the action');
-    assert.equal(events.at(-1)?.['comment_id'], 99, 'and the comment it changed, which a number would not name');
-    assert.equal(events.at(-1)?.['pr_number'], 8, 'with the number the comment itself reports');
+it('accepts an owner-qualified head, and hands it on unchanged', async () => {
+  const seen: Array<string | undefined> = []
+  const opened: Provider = {
+    name: 'with-forks',
+    getCredential: () => Promise.reject(new Error('not used here')),
+    pullRequest: request => {
+      seen.push(request.head)
+      return Promise.resolve({ number: 7, url: 'https://github.com/me/widget/pull/7' })
+    },
+  }
+  const { handle } = makeHarness(['acme/widget'], opened)
+  const response = await handle({
+    ...REQUEST,
+    op: 'pull-request',
+    head: 'me:feature',
+    base: 'main',
+    title: 'a',
+    body: 'b',
+  })
 
-    const empty = await handle({
-      ...REQUEST,
-      op: 'pull-request',
-      action: 'edit',
-      commentId: 99,
-      body: '   ',
-    });
-    assert.equal(empty.code, 'bad-request', 'an edit has to say something');
+  assert.equal(response.ok, true, 'the fork form is a branch name the socket may carry')
+  assert.deepEqual(seen, ['me:feature'], 'and it reaches the provider exactly as written')
+})
 
-    const noId = await handle({ ...REQUEST, op: 'pull-request', action: 'edit', body: 'a note' });
-    assert.equal(noId.code, 'bad-request', 'and it has to name the comment it changes');
-  });
+it('still refuses a head that tries to leave the request', async () => {
+  const opened: Provider = {
+    name: 'unused',
+    getCredential: () => Promise.reject(new Error('not used here')),
+    pullRequest: () => Promise.resolve({ number: 7, url: '' }),
+  }
+  const { handle } = makeHarness(['acme/widget'], opened)
+  const response = await handle({
+    ...REQUEST,
+    op: 'pull-request',
+    head: '../escape',
+    base: 'main',
+    title: 'a',
+    body: 'b',
+  })
+  assert.equal(response.code, 'bad-request')
+})
+
+it('carries an anchored comment, and refuses a bad anchor before the provider sees it', async () => {
+  const seen: Array<Record<string, unknown>> = []
+  const provider: Provider = {
+    name: 'with-anchors',
+    getCredential: () => Promise.reject(new Error('not used here')),
+    pullRequest: request => {
+      seen.push(request as unknown as Record<string, unknown>)
+      return Promise.resolve({ number: 7, url: '' })
+    },
+  }
+  const { handle } = makeHarness(['acme/widget'], provider)
+  const comments = {
+    ...REQUEST,
+    op: 'pull-request',
+    action: 'comment',
+    number: 7,
+    body: 'a note',
+    filePath: 'Dockerfile',
+    line: 4,
+  }
+  const good = await handle(comments)
+  assert.equal(good.ok, true)
+  assert.deepEqual(
+    [seen.at(-1)?.['filePath'], seen.at(-1)?.['line'], seen.at(-1)?.['side']],
+    ['Dockerfile', 4, 'right'],
+    'the anchor reaches the provider, with the default side',
+  )
+
+  for (const [label, patch] of [
+    ['an absolute path', { filePath: '/etc/passwd' }],
+    ['a path that climbs out', { filePath: '../../etc/passwd' }],
+    ['an empty path', { filePath: '' }],
+    ['a line of zero', { line: 0 }],
+    ['a line that is not a number', { line: 'four' }],
+    ['an unknown side', { side: 'middle' }],
+    ['half an anchor', { line: undefined }],
+  ] as const) {
+    // Spreading an own property whose value is undefined does set the key, so the explicit
+    // "half an anchor" case still removes it and every other case keeps the line it named.
+    const response = await handle({ ...comments, ...patch })
+    assert.equal(response.code, 'bad-request', label + ' has to be refused by the broker')
+  }
+
+  const wrongAction = await handle({ ...comments, action: 'status' })
+  assert.equal(wrongAction.code, 'bad-request', 'and an anchor only belongs on a comment')
+})
+
+it('carries an edit by comment id alone, and audits which comment it changed', async () => {
+  const seen: Array<Record<string, unknown>> = []
+  const provider: Provider = {
+    name: 'with-edits',
+    getCredential: () => Promise.reject(new Error('not used here')),
+    pullRequest: request => {
+      seen.push(request as unknown as Record<string, unknown>)
+      // The provider reads the pull request back from the comment, so the broker need not be told it.
+      return Promise.resolve({
+        number: 8,
+        url: 'https://github.com/acme/widget/pull/8#discussion_r99',
+      })
+    },
+  }
+  const { handle, events } = makeHarness(['acme/widget'], provider)
+  const good = await handle({
+    ...REQUEST,
+    op: 'pull-request',
+    action: 'edit',
+    commentId: 99,
+    body: 'a corrected note',
+  })
+  assert.equal(good.ok, true)
+  assert.equal(good.prNumber, 8)
+  assert.deepEqual(
+    [
+      seen.at(-1)?.['action'],
+      seen.at(-1)?.['commentId'],
+      seen.at(-1)?.['body'],
+      seen.at(-1)?.['number'],
+    ],
+    ['edit', 99, 'a corrected note', undefined],
+    'the action, the comment id and the new body reach the provider, with no number required',
+  )
+  assert.equal(events.at(-1)?.['action'], 'edit', 'the audit records the action')
+  assert.equal(
+    events.at(-1)?.['comment_id'],
+    99,
+    'and the comment it changed, which a number would not name',
+  )
+  assert.equal(events.at(-1)?.['pr_number'], 8, 'with the number the comment itself reports')
+
+  const empty = await handle({
+    ...REQUEST,
+    op: 'pull-request',
+    action: 'edit',
+    commentId: 99,
+    body: '   ',
+  })
+  assert.equal(empty.code, 'bad-request', 'an edit has to say something')
+
+  const noId = await handle({ ...REQUEST, op: 'pull-request', action: 'edit', body: 'a note' })
+  assert.equal(noId.code, 'bad-request', 'and it has to name the comment it changes')
+})
 
 describe('prepareSocketPath', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-sock-'));
-  after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-sock-'))
+  after(() => fs.rmSync(dir, { recursive: true, force: true }))
 
   it('creates the parent directory and tolerates a missing socket', () => {
-    const target = path.join(dir, 'nested', 'deep', 'broker.sock');
-    prepareSocketPath(target);
-    assert.equal(fs.existsSync(path.dirname(target)), true);
-  });
+    const target = path.join(dir, 'nested', 'deep', 'broker.sock')
+    prepareSocketPath(target)
+    assert.equal(fs.existsSync(path.dirname(target)), true)
+  })
 
   it('unlinks an existing socket so a crashed broker\u2019s leftovers do not block startup', async () => {
-    const target = path.join(dir, 'existing.sock');
-    const server = net.createServer();
-    await new Promise<void>((resolve) => server.listen(target, () => resolve()));
-    assert.equal(fs.lstatSync(target).isSocket(), true);
+    const target = path.join(dir, 'existing.sock')
+    const server = net.createServer()
+    await new Promise<void>(resolve => server.listen(target, () => resolve()))
+    assert.equal(fs.lstatSync(target).isSocket(), true)
 
-    prepareSocketPath(target);
-    assert.equal(fs.existsSync(target), false, 'the old socket must be gone so listen() can rebind');
+    prepareSocketPath(target)
+    assert.equal(fs.existsSync(target), false, 'the old socket must be gone so listen() can rebind')
 
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  });
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  })
 
   it('refuses a regular file instead of overwriting it, and says how to clear it', () => {
-    const target = path.join(dir, 'not-a-socket');
-    fs.writeFileSync(target, 'important');
-    assert.throws(() => prepareSocketPath(target), /not a socket is in the way/);
-    assert.throws(() => prepareSocketPath(target), /remove it and start again/);
-    assert.equal(fs.readFileSync(target, 'utf8'), 'important', 'the file must be left alone');
-  });
+    const target = path.join(dir, 'not-a-socket')
+    fs.writeFileSync(target, 'important')
+    assert.throws(() => prepareSocketPath(target), /not a socket is in the way/)
+    assert.throws(() => prepareSocketPath(target), /remove it and start again/)
+    assert.equal(fs.readFileSync(target, 'utf8'), 'important', 'the file must be left alone')
+  })
 
   it('refuses to bind inside a symlinked directory', () => {
     // The recommended socket path sits in a directory the agent can write to, so a symlinked
     // directory would let the container choose where the broker binds.
-    const real = path.join(dir, 'real-dir');
-    const link = path.join(dir, 'link-dir');
-    fs.mkdirSync(real, { recursive: true });
-    fs.symlinkSync(real, link);
-    assert.throws(() => prepareSocketPath(path.join(link, 'broker.sock')), /symlinked directory/);
-  });
+    const real = path.join(dir, 'real-dir')
+    const link = path.join(dir, 'link-dir')
+    fs.mkdirSync(real, { recursive: true })
+    fs.symlinkSync(real, link)
+    assert.throws(() => prepareSocketPath(path.join(link, 'broker.sock')), /symlinked directory/)
+  })
 
   it('refuses a symlink instead of following it', () => {
-    const real = path.join(dir, 'real.sock');
-    const link = path.join(dir, 'link.sock');
-    fs.writeFileSync(real, '');
-    fs.symlinkSync(real, link);
-    assert.throws(() => prepareSocketPath(link), /symlink/);
-  });
-});
+    const real = path.join(dir, 'real.sock')
+    const link = path.join(dir, 'link.sock')
+    fs.writeFileSync(real, '')
+    fs.symlinkSync(real, link)
+    assert.throws(() => prepareSocketPath(link), /symlink/)
+  })
+})
 
 describe('audit redaction', () => {
   it('drops secret-looking keys whatever a future caller passes', () => {
-    const record = redact({ password: 'p', token: 't', secret: 's', apiKey: 'k', provider: 'static', repo: 'a/b' });
-    assert.equal(record['password'], '<redacted>');
-    assert.equal(record['token'], '<redacted>');
-    assert.equal(record['secret'], '<redacted>');
-    assert.equal(record['provider'], 'static');
-    assert.equal(record['repo'], 'a/b');
-  });
+    const record = redact({
+      password: 'p',
+      token: 't',
+      secret: 's',
+      apiKey: 'k',
+      provider: 'static',
+      repo: 'a/b',
+    })
+    assert.equal(record['password'], '<redacted>')
+    assert.equal(record['token'], '<redacted>')
+    assert.equal(record['secret'], '<redacted>')
+    assert.equal(record['provider'], 'static')
+    assert.equal(record['repo'], 'a/b')
+  })
 
   it('keeps the fingerprint, which is a hash rather than a credential', () => {
-    const record = redact({ token_fingerprint: 'abcdef012345', access_token: 'a', client_secret: 'c' });
-    assert.equal(record['token_fingerprint'], 'abcdef012345');
-    assert.equal(record['access_token'], '<redacted>');
-    assert.equal(record['client_secret'], '<redacted>');
-  });
+    const record = redact({
+      token_fingerprint: 'abcdef012345',
+      access_token: 'a',
+      client_secret: 'c',
+    })
+    assert.equal(record['token_fingerprint'], 'abcdef012345')
+    assert.equal(record['access_token'], '<redacted>')
+    assert.equal(record['client_secret'], '<redacted>')
+  })
 
   it('produces a deterministic short fingerprint', () => {
-    assert.equal(tokenFingerprint('abc'), tokenFingerprint('abc'));
-    assert.notEqual(tokenFingerprint('abc'), tokenFingerprint('abd'));
-    assert.match(tokenFingerprint('abc'), /^[0-9a-f]{12}$/);
-  });
-});
+    assert.equal(tokenFingerprint('abc'), tokenFingerprint('abc'))
+    assert.notEqual(tokenFingerprint('abc'), tokenFingerprint('abd'))
+    assert.match(tokenFingerprint('abc'), /^[0-9a-f]{12}$/)
+  })
+})
 
 describe('broker actions', () => {
   it('validates and audits a catalogued action through the provider', async () => {
-    const calls: unknown[] = [];
+    const calls: unknown[] = []
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
-      runAction: async (request) => {
-        calls.push(request);
+      runAction: async request => {
+        calls.push(request)
         return {
           stdout: 'viewed',
           stderr: '',
@@ -586,17 +679,17 @@ describe('broker actions', () => {
           truncated: false,
           timedOut: false,
           tokenFingerprint: 'action-fingerprint',
-        };
+        }
       },
-    };
-    const harness = makeHarness(undefined, provider);
+    }
+    const harness = makeHarness(undefined, provider)
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/widget',
       ghAction: 'pr:view',
       values: { number: 7 },
-    });
+    })
     assert.deepEqual(response, {
       ok: true,
       stdout: 'viewed',
@@ -604,24 +697,24 @@ describe('broker actions', () => {
       exitCode: 0,
       truncated: false,
       timedOut: false,
-    });
-    assert.equal(calls.length, 1);
-    const record = harness.events.at(-1);
-    assert.equal(record?.['event'], 'action');
-    assert.equal(record?.['command'], 'pr view');
+    })
+    assert.equal(calls.length, 1)
+    const record = harness.events.at(-1)
+    assert.equal(record?.['event'], 'action')
+    assert.equal(record?.['command'], 'pr view')
     assert.deepEqual(record?.['permissions'], {
       pull_requests: 'read',
       contents: 'read',
       checks: 'read',
       statuses: 'read',
-    });
-    const duration = record?.['duration_ms'];
-    assert.ok(typeof duration === 'number' && duration >= 0);
-    assert.equal(record?.['token_fingerprint'], 'action-fingerprint');
-  });
+    })
+    const duration = record?.['duration_ms']
+    assert.ok(typeof duration === 'number' && duration >= 0)
+    assert.equal(record?.['token_fingerprint'], 'action-fingerprint')
+  })
 
   it('refuses an unusable action identity', async () => {
-    const harness = makeHarness();
+    const harness = makeHarness()
     const response = await harness.handle({
       op: 'action',
       host: HOST,
@@ -629,23 +722,23 @@ describe('broker actions', () => {
       ghAction: 'pr:view',
       values: { number: 7 },
       identity: 'robot',
-    });
-    assert.equal(response.ok, false);
-    assert.equal(response.code, CODES.BAD_REQUEST);
-    assert.match(String(response.reason), /no usable identity/);
-  });
+    })
+    assert.equal(response.ok, false)
+    assert.equal(response.code, CODES.BAD_REQUEST)
+    assert.match(String(response.reason), /no usable identity/)
+  })
 
   it('allows the user identity for a review', async () => {
-    let called = false;
+    let called = false
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       runAction: async () => {
-        called = true;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        called = true
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
-    const harness = makeHarness(undefined, provider);
+    }
+    const harness = makeHarness(undefined, provider)
     const response = await harness.handle({
       op: 'action',
       host: HOST,
@@ -653,22 +746,22 @@ describe('broker actions', () => {
       ghAction: 'pr:review',
       values: { number: 7, approve: true },
       identity: 'user',
-    });
-    assert.equal(response.ok, true);
-    assert.equal(called, true);
-  });
+    })
+    assert.equal(response.ok, true)
+    assert.equal(called, true)
+  })
 
   it('allows the user identity for a pull request edit', async () => {
-    let called = false;
+    let called = false
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       runAction: async () => {
-        called = true;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        called = true
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
-    const harness = makeHarness(undefined, provider);
+    }
+    const harness = makeHarness(undefined, provider)
     const response = await harness.handle({
       op: 'action',
       host: HOST,
@@ -676,41 +769,48 @@ describe('broker actions', () => {
       ghAction: 'pr:edit',
       values: { number: 7, title: 'fixed' },
       identity: 'user',
-    });
-    assert.equal(response.ok, true);
-    assert.equal(called, true);
-  });
+    })
+    assert.equal(response.ok, true)
+    assert.equal(called, true)
+  })
 
   it('runs a readOnly action with a metadata token on a verified public repository', async () => {
-    let seen: unknown;
+    let seen: unknown
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       isPublicRepository: async () => true,
-      runAction: async (request) => {
-        seen = request;
-        return { stdout: 'ok', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      runAction: async request => {
+        seen = request
+        return {
+          stdout: 'ok',
+          stderr: '',
+          code: 0,
+          signal: null,
+          truncated: false,
+          timedOut: false,
+        }
       },
-    };
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true });
+    }
+    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/public',
       ghAction: 'pr:view',
       values: { number: 7 },
-    });
-    assert.equal(response.ok, true);
-    assert.equal((seen as { publicRead?: boolean } | undefined)?.publicRead, true);
-    assert.equal(harness.events.at(-1)?.['public_read'], true);
-  });
+    })
+    assert.equal(response.ok, true)
+    assert.equal((seen as { publicRead?: boolean } | undefined)?.publicRead, true)
+    assert.equal(harness.events.at(-1)?.['public_read'], true)
+  })
 
   it('reports a public-visibility rate limit as a provider error', async () => {
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       isPublicRepository: async () => {
-        throw new ProviderConfigError('GitHub rate-limited the public check');
+        throw new ProviderConfigError('GitHub rate-limited the public check')
       },
       runAction: async () => ({
         stdout: '',
@@ -720,56 +820,56 @@ describe('broker actions', () => {
         truncated: false,
         timedOut: false,
       }),
-    };
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true });
+    }
+    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/public',
       ghAction: 'pr:view',
       values: { number: 7 },
-    });
-    assert.equal(response.ok, false);
-    assert.equal(response.code, CODES.PROVIDER_ERROR);
-    assert.match(String(response.reason), /rate-limited/u);
-    assert.doesNotMatch(String(response.reason), /not public/u);
-  });
+    })
+    assert.equal(response.ok, false)
+    assert.equal(response.code, CODES.PROVIDER_ERROR)
+    assert.match(String(response.reason), /rate-limited/u)
+    assert.doesNotMatch(String(response.reason), /not public/u)
+  })
 
   it('keeps writes on the allowlist even when the repository is public', async () => {
-    let calls = 0;
+    let calls = 0
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       isPublicRepository: async () => true,
       runAction: async () => {
-        calls += 1;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        calls += 1
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true });
+    }
+    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/public',
       ghAction: 'pr:create',
       values: { head: 'x', title: 'x', body: 'x' },
-    });
-    assert.equal(response.ok, false);
-    assert.equal(calls, 0);
-  });
+    })
+    assert.equal(response.ok, false)
+    assert.equal(calls, 0)
+  })
 
   it('keeps the user identity on a public read requested with --as-user', async () => {
-    let seen: unknown;
+    let seen: unknown
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       isPublicRepository: async () => true,
-      runAction: async (request) => {
-        seen = request;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      runAction: async request => {
+        seen = request
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true });
+    }
+    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
@@ -777,238 +877,253 @@ describe('broker actions', () => {
       ghAction: 'run:watch',
       values: { runId: 42 },
       identity: 'user',
-    });
-    assert.equal(response.ok, true);
-    assert.equal((seen as { publicRead?: boolean; identity?: string } | undefined)?.publicRead, true);
-    assert.equal((seen as { identity?: string } | undefined)?.identity, 'user');
-    assert.equal(harness.events.at(-1)?.['identity'], 'user');
-  });
+    })
+    assert.equal(response.ok, true)
+    assert.equal(
+      (seen as { publicRead?: boolean; identity?: string } | undefined)?.publicRead,
+      true,
+    )
+    assert.equal((seen as { identity?: string } | undefined)?.identity, 'user')
+    assert.equal(harness.events.at(-1)?.['identity'], 'user')
+  })
 
   it('requires the public-read opt-in for an unlisted read', async () => {
-    let calls = 0;
+    let calls = 0
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       isPublicRepository: async () => true,
       runAction: async () => {
-        calls += 1;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        calls += 1
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
-    const harness = makeHarness(['acme/widget'], provider);
+    }
+    const harness = makeHarness(['acme/widget'], provider)
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/public',
       ghAction: 'pr:view',
       values: { number: 7 },
-    });
-    assert.equal(response.ok, false);
-    assert.equal(calls, 0);
-  });
+    })
+    assert.equal(response.ok, false)
+    assert.equal(calls, 0)
+  })
 
   it('keeps a private read on the allowlist', async () => {
-    let calls = 0;
+    let calls = 0
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       isPublicRepository: async () => false,
       runAction: async () => {
-        calls += 1;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        calls += 1
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true });
+    }
+    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/private',
       ghAction: 'pr:view',
       values: { number: 7 },
-    });
-    assert.equal(response.ok, false);
-    assert.equal(calls, 0);
-  });
+    })
+    assert.equal(response.ok, false)
+    assert.equal(calls, 0)
+  })
 
   it('allows an action on the parent of an allowlisted fork', async () => {
-    let called = false;
+    let called = false
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       isForkOf: async (owner, repo, bases) =>
         owner === 'alice' && repo === 'widget' && bases.includes('acme/widget'),
       runAction: async () => {
-        called = true;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        called = true
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
-    const harness = makeHarness(['alice/widget'], provider, false, null, { allowFork: true });
+    }
+    const harness = makeHarness(['alice/widget'], provider, false, null, { allowFork: true })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/widget',
       ghAction: 'pr:view',
       values: { number: 7 },
-    });
-    assert.equal(response.ok, true);
-    assert.equal(called, true);
-  });
+    })
+    assert.equal(response.ok, true)
+    assert.equal(called, true)
+  })
 
   it('lets a later fork entry win after an earlier check fails', async () => {
-    let called = false;
+    let called = false
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
-      isForkOf: async (owner) => {
-        if (owner === 'alice') throw new ProviderConfigError('GitHub timed out during the fork check');
-        return true;
+      isForkOf: async owner => {
+        if (owner === 'alice') {
+          throw new ProviderConfigError('GitHub timed out during the fork check')
+        }
+        return true
       },
       runAction: async () => {
-        called = true;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        called = true
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
-    const harness = makeHarness(['alice/widget', 'bob/widget'], provider, false, null, { allowFork: true });
+    }
+    const harness = makeHarness(['alice/widget', 'bob/widget'], provider, false, null, {
+      allowFork: true,
+    })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/widget',
       ghAction: 'pr:view',
       values: { number: 7 },
-    });
-    assert.equal(response.ok, true);
-    assert.equal(called, true);
-    assert.equal(harness.events.at(-1)?.['fork_action'], true);
-  });
+    })
+    assert.equal(response.ok, true)
+    assert.equal(called, true)
+    assert.equal(harness.events.at(-1)?.['fork_action'], true)
+  })
 
   it('falls back to public read when the fork check fails', async () => {
-    let called = false;
+    let called = false
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       isForkOf: async () => {
-        throw new ProviderConfigError('GitHub rate-limited the fork check');
+        throw new ProviderConfigError('GitHub rate-limited the fork check')
       },
       isPublicRepository: async () => true,
       runAction: async () => {
-        called = true;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        called = true
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
+    }
     const harness = makeHarness(['alice/widget'], provider, false, null, {
       allowFork: true,
       allowPublicRead: true,
-    });
+    })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/public',
       ghAction: 'pr:view',
       values: { number: 7 },
-    });
-    assert.equal(response.ok, true);
-    assert.equal(called, true);
-  });
+    })
+    assert.equal(response.ok, true)
+    assert.equal(called, true)
+  })
 
   it('keeps the fork-check error when the public fallback also fails', async () => {
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       isForkOf: async () => {
-        throw new ProviderConfigError('GitHub timed out during the fork check');
+        throw new ProviderConfigError('GitHub timed out during the fork check')
       },
       isPublicRepository: async () => false,
-      runAction: async () => ({ stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }),
-    };
+      runAction: async () => ({
+        stdout: '',
+        stderr: '',
+        code: 0,
+        signal: null,
+        truncated: false,
+        timedOut: false,
+      }),
+    }
     const harness = makeHarness(['alice/widget'], provider, false, null, {
       allowFork: true,
       allowPublicRead: true,
-    });
+    })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/public',
       ghAction: 'pr:view',
       values: { number: 7 },
-    });
-    assert.equal(response.ok, false);
-    assert.equal(response.code, CODES.PROVIDER_ERROR);
-    assert.match(String(response.reason), /timed out during the fork check/u);
-  });
+    })
+    assert.equal(response.ok, false)
+    assert.equal(response.code, CODES.PROVIDER_ERROR)
+    assert.match(String(response.reason), /timed out during the fork check/u)
+  })
 
   it('does not let a fork credential opt-in authorize catalog actions', async () => {
-    let calls = 0;
+    let calls = 0
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       isForkOf: async () => true,
       isPublicRepository: async () => true,
       runAction: async () => {
-        calls += 1;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        calls += 1
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowForkPush: true });
+    }
+    const harness = makeHarness(['acme/widget'], provider, false, null, { allowForkPush: true })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'alice/widget',
       ghAction: 'pr:view',
       values: { number: 7 },
-    });
-    assert.equal(response.ok, false);
-    assert.equal(calls, 0);
-  });
+    })
+    assert.equal(response.ok, false)
+    assert.equal(calls, 0)
+  })
 
   it('reports a fork-check rate limit as a provider error', async () => {
     const provider: Provider = {
       name: 'static',
       isForkOf: async () => {
-        throw new ProviderConfigError('GitHub rate-limited the fork check');
+        throw new ProviderConfigError('GitHub rate-limited the fork check')
       },
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
-    };
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowForkPush: true });
+    }
+    const harness = makeHarness(['acme/widget'], provider, false, null, { allowForkPush: true })
     const response = await harness.handle({
       op: 'credential',
       host: HOST,
       protocol: 'https',
       path: 'alice/widget',
-    });
-    assert.equal(response.ok, false);
-    assert.equal(response.code, CODES.PROVIDER_ERROR);
-    assert.match(String(response.reason), /rate-limited/u);
-    assert.doesNotMatch(String(response.reason), /not a fork/u);
-  });
+    })
+    assert.equal(response.ok, false)
+    assert.equal(response.code, CODES.PROVIDER_ERROR)
+    assert.match(String(response.reason), /rate-limited/u)
+    assert.doesNotMatch(String(response.reason), /not a fork/u)
+  })
 
   it('allows a credential for a verified fork of an allowlisted repository', async () => {
     const provider: Provider = {
       name: 'static',
-      isForkOf: async (owner, repo, bases) => owner === 'alice' && repo === 'widget' && bases.includes('acme/widget'),
+      isForkOf: async (owner, repo, bases) =>
+        owner === 'alice' && repo === 'widget' && bases.includes('acme/widget'),
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
-    };
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowForkPush: true });
+    }
+    const harness = makeHarness(['acme/widget'], provider, false, null, { allowForkPush: true })
     const response = await harness.handle({
       op: 'credential',
       host: HOST,
       protocol: 'https',
       path: 'alice/widget',
-    });
-    assert.equal(response.ok, true);
-    assert.equal(harness.events.at(-1)?.['fork_push'], true);
-  });
+    })
+    assert.equal(response.ok, true)
+    assert.equal(harness.events.at(-1)?.['fork_push'], true)
+  })
 
   it('refuses the user identity for an action that does not declare appUser', async () => {
-    let called = false;
+    let called = false
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       runAction: async () => {
-        called = true;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        called = true
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
-    const harness = makeHarness(undefined, provider);
+    }
+    const harness = makeHarness(undefined, provider)
     const response = await harness.handle({
       op: 'action',
       host: HOST,
@@ -1016,23 +1131,23 @@ describe('broker actions', () => {
       ghAction: 'pr:close',
       values: { number: 7 },
       identity: 'user',
-    });
-    assert.equal(response.ok, false);
-    assert.match(String(response.reason), /cannot run as a person/);
-    assert.equal(called, false);
-  });
+    })
+    assert.equal(response.ok, false)
+    assert.match(String(response.reason), /cannot run as a person/)
+    assert.equal(called, false)
+  })
 
   it('refuses the user identity for an action the app broker does not allow', async () => {
-    let called = false;
+    let called = false
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       runAction: async () => {
-        called = true;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        called = true
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
-    const harness = makeHarness(undefined, provider);
+    }
+    const harness = makeHarness(undefined, provider)
     const response = await harness.handle({
       op: 'action',
       host: HOST,
@@ -1040,23 +1155,30 @@ describe('broker actions', () => {
       ghAction: 'pr:close',
       values: { number: 7 },
       identity: 'user',
-    });
-    assert.equal(response.ok, false);
-    assert.match(String(response.reason), /cannot run as a person/);
-    assert.equal(called, false);
-  });
+    })
+    assert.equal(response.ok, false)
+    assert.match(String(response.reason), /cannot run as a person/)
+    assert.equal(called, false)
+  })
 
   it('passes and audits the user identity for issue creation', async () => {
-    const calls: unknown[] = [];
+    const calls: unknown[] = []
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
-      runAction: async (request) => {
-        calls.push(request);
-        return { stdout: 'created', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      runAction: async request => {
+        calls.push(request)
+        return {
+          stdout: 'created',
+          stderr: '',
+          code: 0,
+          signal: null,
+          truncated: false,
+          timedOut: false,
+        }
       },
-    };
-    const harness = makeHarness(undefined, provider);
+    }
+    const harness = makeHarness(undefined, provider)
     const response = await harness.handle({
       op: 'action',
       host: HOST,
@@ -1064,11 +1186,11 @@ describe('broker actions', () => {
       ghAction: 'issue:create',
       values: { title: 't', body: 'b' },
       identity: 'user',
-    });
-    assert.equal(response.ok, true);
-    assert.equal((calls[0] as { identity?: string }).identity, 'user');
-    assert.equal(harness.events.at(-1)?.['identity'], 'user');
-  });
+    })
+    assert.equal(response.ok, true)
+    assert.equal((calls[0] as { identity?: string }).identity, 'user')
+    assert.equal(harness.events.at(-1)?.['identity'], 'user')
+  })
 
   it('passes a warning with a failed start', async () => {
     const provider: Provider = {
@@ -1084,18 +1206,18 @@ describe('broker actions', () => {
         error: 'spawn failed',
         warning: 'the action token could not be revoked; it expires on its own',
       }),
-    };
-    const harness = makeHarness(undefined, provider);
+    }
+    const harness = makeHarness(undefined, provider)
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/widget',
       ghAction: 'pr:view',
       values: { number: 7 },
-    });
-    assert.equal(response.ok, false);
-    assert.match(String(response.warning), /expires on its own/);
-  });
+    })
+    assert.equal(response.ok, false)
+    assert.match(String(response.warning), /expires on its own/)
+  })
 
   it('passes a provider warning to the caller', async () => {
     const provider: Provider = {
@@ -1110,91 +1232,91 @@ describe('broker actions', () => {
         timedOut: false,
         warning: 'the action token could not be revoked; it expires on its own',
       }),
-    };
-    const harness = makeHarness(undefined, provider);
+    }
+    const harness = makeHarness(undefined, provider)
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/widget',
       ghAction: 'pr:view',
       values: { number: 7 },
-    });
-    assert.equal(response.ok, true);
-    assert.match(String(response.warning), /expires on its own/);
-  });
+    })
+    assert.equal(response.ok, true)
+    assert.match(String(response.warning), /expires on its own/)
+  })
 
   it('refuses an undeclared flag before the provider', async () => {
-    let called = false;
+    let called = false
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       runAction: async () => {
-        called = true;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        called = true
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
-    const harness = makeHarness(undefined, provider);
+    }
+    const harness = makeHarness(undefined, provider)
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/widget',
       ghAction: 'pr:view',
       values: { number: 7, web: true },
-    });
-    assert.equal(response.ok, false);
-    assert.equal(response.code, CODES.BAD_REQUEST);
-    assert.equal(called, false);
-    assert.equal(harness.events.at(-1)?.['event'], 'action');
-  });
-});
+    })
+    assert.equal(response.ok, false)
+    assert.equal(response.code, CODES.BAD_REQUEST)
+    assert.equal(called, false)
+    assert.equal(harness.events.at(-1)?.['event'], 'action')
+  })
+})
 
 describe('broker action refusals', () => {
   it('audits a non-allowlisted action as an action event', async () => {
-    let called = false;
+    let called = false
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       runAction: async () => {
-        called = true;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        called = true
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
-    const harness = makeHarness(undefined, provider);
+    }
+    const harness = makeHarness(undefined, provider)
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'other/repo',
       ghAction: 'pr:view',
       values: { number: 1 },
-    });
-    assert.equal(response.ok, false);
-    assert.equal(response.code, CODES.REPO_NOT_ALLOWED);
-    assert.equal(called, false);
-    assert.equal(harness.events.at(-1)?.['event'], 'action');
-  });
-});
+    })
+    assert.equal(response.ok, false)
+    assert.equal(response.code, CODES.REPO_NOT_ALLOWED)
+    assert.equal(called, false)
+    assert.equal(harness.events.at(-1)?.['event'], 'action')
+  })
+})
 
 describe('broker action limits', () => {
   it('refuses a body over the configured limit before the provider', async () => {
-    let called = false;
+    let called = false
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       runAction: async () => {
-        called = true;
-        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+        called = true
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
-    };
-    const harness = makeHarness(undefined, provider);
+    }
+    const harness = makeHarness(undefined, provider)
     const response = await harness.handle({
       op: 'action',
       host: HOST,
       path: 'acme/widget',
       ghAction: 'pr:comment',
       values: { number: 1, body: 'x'.repeat(MAX_BODY_CHARS + 1) },
-    });
-    assert.equal(response.ok, false);
-    assert.equal(response.code, CODES.BAD_REQUEST);
-    assert.equal(called, false);
-  });
-});
+    })
+    assert.equal(response.ok, false)
+    assert.equal(response.code, CODES.BAD_REQUEST)
+    assert.equal(called, false)
+  })
+})

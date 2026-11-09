@@ -1,21 +1,18 @@
 {
   "name": "gcb-core",
   "version": "0.7.1",
+  "type": "module",
   "description": "Shared command runtime and protocol for gcb-client and gcb-host.",
-  "license": "MIT",
-  "author": "JounQin <admin@1stg.me>",
-  "homepage": "https://github.com/code-vaults/git-credential-broker#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/code-vaults/git-credential-broker.git"
   },
-  "type": "module",
+  "homepage": "https://github.com/code-vaults/git-credential-broker#readme",
+  "author": "JounQin <admin@1stg.me>",
+  "license": "MIT",
   "engines": {
     "node": ">=24"
   },
-  "files": [
-    "lib"
-  ],
   "exports": {
     ".": {
       "development": "./src/index.ts",
@@ -23,11 +20,14 @@
       "default": "./lib/index.js"
     }
   },
+  "files": [
+    "lib"
+  ],
+  "scripts": {
+    "prepack": "clean-pkg-json"
+  },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
-  },
-  "scripts": {
-    "prepack": "clean-pkg-json"
   }
 }

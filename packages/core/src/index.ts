@@ -5,22 +5,31 @@
  * parts that must not drift: version/help dispatch, the "wrong package" error, and the shared
  * wire/types used by both sides. It never imports `yaml` or a host implementation.
  */
-export * from './actions.ts';
-export * from './errors.ts';
-export * from './fingerprint.ts';
-export * from './host-request.ts';
-export * from './paths.ts';
-export * from './platform.ts';
-export * from './socket-protocol.ts';
-export * from './support.ts';
-export * from './types.ts';
-export * from './version.ts';
+export * from './actions.ts'
+export * from './errors.ts'
+export * from './fingerprint.ts'
+export * from './host-request.ts'
+export * from './paths.ts'
+export * from './platform.ts'
+export * from './socket-protocol.ts'
+export * from './support.ts'
+export * from './types.ts'
+export * from './version.ts'
 
-import { platformRefusal } from './platform.ts';
-import { PACKAGE_VERSION } from './version.ts';
+import { platformRefusal } from './platform.ts'
+import { PACKAGE_VERSION } from './version.ts'
 
 /** Commands implemented by the container-side package. */
-export const CLIENT_COMMANDS = ['setup', 'probe', 'logs', 'pr', 'run', 'issue', 'repo', 'gh'] as const;
+export const CLIENT_COMMANDS = [
+  'setup',
+  'probe',
+  'logs',
+  'pr',
+  'run',
+  'issue',
+  'repo',
+  'gh',
+] as const
 
 /** Commands implemented by the host-side package. */
 export const HOST_COMMANDS = [
@@ -34,82 +43,84 @@ export const HOST_COMMANDS = [
   'diagnose',
   'doctor',
   'authorize',
-] as const;
+] as const
 
 /** The commands a top-level package implements. */
 export interface CommandBackend {
   /** Which side this process is. */
-  readonly role: 'client' | 'host';
+  readonly role: 'client' | 'host'
   /** Commands this backend implements, without the leading `gcb`. */
-  readonly commands: readonly string[];
+  readonly commands: readonly string[]
   /** Full help text, including the command list for this side. */
-  readonly help: string;
+  readonly help: string
   /**
    * Run one command.
    *
-   * @param argv - the full argv, starting with the command name.
-   * @returns the process exit code.
+   * @param argv - The full argv, starting with the command name.
+   * @returns The process exit code.
    */
-  run(argv: readonly string[]): Promise<number>;
+  run(argv: readonly string[]): Promise<number>
 }
 
 /**
  * Dispatch one command line to the installed backend.
  *
- * @param argv - arguments after the `gcb` bin name.
- * @param backend - the client or host implementation.
- * @returns the process exit code.
+ * @param argv - Arguments after the `gcb` bin name.
+ * @param backend - The client or host implementation.
+ * @returns The process exit code.
  */
 export async function runCli(argv: readonly string[], backend: CommandBackend): Promise<number> {
-  const [command] = argv;
+  const [command] = argv
 
   if (command === undefined) {
-    process.stderr.write(`${backend.help}\n`);
-    return 1;
+    process.stderr.write(`${backend.help}\n`)
+    return 1
   }
   if (command === 'help') {
-    const path = argv.slice(1);
+    const path = argv.slice(1)
     if (
       path.length === 0 ||
       (path.length === 1 && (path[0] === 'help' || path[0] === '--help' || path[0] === '-h'))
     ) {
-      process.stdout.write(`${backend.help}\n`);
-      return 0;
+      process.stdout.write(`${backend.help}\n`)
+      return 0
     }
-    if (path.some((argument) => argument.startsWith('-'))) {
-      process.stderr.write('gcb: help takes a command path, not options\n');
-      return 1;
+    if (path.some(argument => argument.startsWith('-'))) {
+      process.stderr.write('gcb: help takes a command path, not options\n')
+      return 1
     }
-    return runCli([...path, '--help'], backend);
+    return runCli([...path, '--help'], backend)
   }
   if (command === '--help' || command === '-h') {
-    process.stdout.write(`${backend.help}\n`);
-    return 0;
+    process.stdout.write(`${backend.help}\n`)
+    return 0
   }
   if (command === 'version' || command === '--version' || command === '-v') {
-    process.stdout.write(`${PACKAGE_VERSION}\n`);
-    return 0;
+    process.stdout.write(`${PACKAGE_VERSION}\n`)
+    return 0
   }
 
   // Refuse before the backend imports its command modules: the host ones import yaml, and the
   // Windows job removes it on purpose.
-  const refusal = platformRefusal();
+  const refusal = platformRefusal()
   if (refusal !== null) {
-    process.stderr.write(`gcb: ${refusal}\n`);
-    return 1;
+    process.stderr.write(`gcb: ${refusal}\n`)
+    return 1
   }
 
-  if (backend.commands.includes(command)) return backend.run(argv);
+  if (backend.commands.includes(command)) {
+    return backend.run(argv)
+  }
 
-  const otherRole = backend.role === 'client' ? 'host' : 'client';
-  const otherCommands = backend.role === 'client' ? HOST_COMMANDS : CLIENT_COMMANDS;
+  const otherRole = backend.role === 'client' ? 'host' : 'client'
+  const otherCommands = backend.role === 'client' ? HOST_COMMANDS : CLIENT_COMMANDS
   if ((otherCommands as readonly string[]).includes(command)) {
     process.stderr.write(
       `gcb: \`${command}\` is a ${otherRole} command; install gcb-${otherRole} on the ${otherRole}.\n`,
-    );
-    return 1;
+    )
+    return 1
   }
 
-  process.stderr.write(`gcb: unknown command \`${command}\`.\n\n${backend.help}\n`);
-  return 1;
+  process.stderr.write(`gcb: unknown command \`${command}\`.\n\n${backend.help}\n`)
+  return 1
 }

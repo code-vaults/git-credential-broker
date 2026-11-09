@@ -1,82 +1,96 @@
 /**
  * `compose` — print a Docker sidecar definition for the broker.
  *
- * The broker runs in its own container with the private key mounted read-only, no published
- * ports, no capabilities and a read-only root filesystem; the only surface it shares with
- * anything else is the socket directory. The container fetches the published package, so there
- * is no checkout to copy and nothing to build on the host.
+ * The broker runs in its own container with the private key mounted read-only, no published ports,
+ * no capabilities and a read-only root filesystem; the only surface it shares with anything else is
+ * the socket directory. The container fetches the published package, so there is no checkout to
+ * copy and nothing to build on the host.
  *
- * The mount targets are constants from `deployment.ts`, shared with `init --mode sidecar`, so
- * the paths recorded in `broker.config.yml` and the paths this file mounts cannot drift apart.
+ * The mount targets are constants from `deployment.ts`, shared with `init --mode sidecar`, so the
+ * paths recorded in `broker.config.yml` and the paths this file mounts cannot drift apart.
  */
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from 'node:fs'
+import path from 'node:path'
 
-import { inferMode, loadConfig, resolveConfigPath, deploymentDir, SIDECAR } from '../config.ts';
-import { PACKAGE_VERSION } from 'gcb-core';
-import { fail, parseArgs, say, warn } from 'gcb-core';
-import { USER_TOKEN_FILE } from '../config.ts';
+import { PACKAGE_VERSION, fail, parseArgs, say, warn } from 'gcb-core'
+
+import {
+  inferMode,
+  loadConfig,
+  resolveConfigPath,
+  deploymentDir,
+  SIDECAR,
+  USER_TOKEN_FILE,
+} from '../config.ts'
 
 /** Everything `compose` needs, resolved. */
 export interface ComposeInput {
   /** Host directory holding broker.config.yml, app.pem and log/. */
-  readonly dir: string;
+  readonly dir: string
   /** Host configuration file; defaults to `${dir}/broker.config.yml`. */
-  readonly configPath?: string;
+  readonly configPath?: string
   /** Host directory the pushing container already mounts, where the socket will appear. */
-  readonly socketDir: string;
+  readonly socketDir: string
   /** `uid:gid` the sidecar runs as; must match the container that needs the socket. */
-  readonly user: string;
+  readonly user: string
   /** Base image. */
-  readonly image: string;
-  /** npm spec to run, e.g. `gcb@0.0.0`. */
-  readonly packageSpec: string;
+  readonly image: string
+  /** Npm spec to run, e.g. `gcb@0.0.0`. */
+  readonly packageSpec: string
   /** Compose service and container name. */
-  readonly name: string;
+  readonly name: string
   /**
    * Host directory holding the broker's code, as `stage` exports it. When given, the sidecar runs
-   * that code with the image's Node instead of fetching the package at start: no registry access
-   * at boot, and the commit that runs is the one you reviewed.
+   * that code with the image's Node instead of fetching the package at start: no registry access at
+   * boot, and the commit that runs is the one you reviewed.
    */
-  readonly code?: string;
+  readonly code?: string
 }
 
 /** Where a code-mounted sidecar expects the broker. */
-export const CODE_DIR = '/opt/gcb';
+export const CODE_DIR = '/opt/gcb'
 
 /** A volume scalar as YAML, with compose's dollar escaping applied first. */
 function yamlVolume(host: string, container: string, mode?: string): string {
-  const raw = `${host}:${container}${mode === undefined ? '' : `:${mode}`}`;
-  const escaped = raw.replace(/\$/g, () => '$$');
+  const raw = `${host}:${container}${mode === undefined ? '' : `:${mode}`}`
+  const escaped = raw.replace(/\$/g, () => '$$')
   // Plain YAML is fine until a path has a space, '#' or another indicator; JSON quoting is valid YAML.
-  return /^[A-Za-z0-9_./:@%+=,~-]+$/.test(raw) ? escaped : JSON.stringify(escaped);
+  return /^[A-Za-z0-9_./:@%+=,~-]+$/.test(raw) ? escaped : JSON.stringify(escaped)
 }
 
 /** Follow a selected config symlink; a missing file is the only fallback. */
 function selectedConfigFile(configPath: string): string {
   try {
-    return fs.realpathSync(configPath);
+    return fs.realpathSync(configPath)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return configPath;
-    throw error;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return configPath
+    }
+    throw error
   }
 }
 
 /**
  * Render the compose file.
  *
- * @param input - the resolved options.
- * @returns the YAML, newline-terminated.
+ * @param input - The resolved options.
+ * @returns The YAML, newline-terminated.
  */
 export function renderCompose(input: ComposeInput): string {
-  const socketDir = input.socketDir.replace(/\/+$/, '');
-  const configPath = input.configPath ?? `${input.dir}/broker.config.yml`;
+  const socketDir = input.socketDir.replace(/\/+$/, '')
+  const configPath = input.configPath ?? `${input.dir}/broker.config.yml`
   // Follow a selected symlink: the directory bind exposes the link, not a target outside it.
-  const configFile = selectedConfigFile(configPath);
-  const mountedConfigPath = path.posix.join(path.posix.dirname(SIDECAR.configPath), path.basename(configFile));
+  const configFile = selectedConfigFile(configPath)
+  const mountedConfigPath = path.posix.join(
+    path.posix.dirname(SIDECAR.configPath),
+    path.basename(configFile),
+  )
   // One shell word; compose interpolates $ before sh runs, so a literal dollar is doubled.
-  const mountedConfigArg = `'${mountedConfigPath.replace(/'/g, "'\\''")}'`.replace(/\$/g, () => '$$');
-  const fromCode = input.code !== undefined;
+  const mountedConfigArg = `'${mountedConfigPath.replace(/'/g, "'\\''")}'`.replace(
+    /\$/g,
+    () => '$$',
+  )
+  const fromCode = input.code !== undefined
 
   const origin = fromCode
     ? `# It runs the code mounted read-only from ${input.code}, which is whatever \`stage\` put there —
@@ -89,7 +103,7 @@ export function renderCompose(input: ComposeInput): string {
 # To avoid depending on the registry at boot, either render this file with --code <directory> to
 # run staged code from a mount, or point --image at an image of your own that already has the
 # package installed, and change \`command\` to the binary in it:
-#   ["gcb", "daemon", "--config", "${mountedConfigPath}"]`;
+#   ["gcb", "daemon", "--config", "${mountedConfigPath}"]`
 
   // The egress lines belong to both renders: a --code deployment is a sidecar too, and without them it
   // would carry no proxy variables at all, so the daemon would go direct and hang rather than refuse.
@@ -101,7 +115,7 @@ export function renderCompose(input: ComposeInput): string {
       # The daemon refuses to start with a proxy variable and without this one.
       - NODE_USE_ENV_PROXY=1
       # Runtime override: a URL pins a proxy, an empty value goes direct, unset keeps the above.
-      - GCB_PROXY=\${GCB_PROXY-default}`;
+      - GCB_PROXY=\${GCB_PROXY-default}`
 
   const environment = fromCode
     ? `
@@ -109,7 +123,7 @@ export function renderCompose(input: ComposeInput): string {
     : `
     environment:
       # npx needs somewhere writable for its cache; /tmp is a tmpfs above.
-      - npm_config_cache=/tmp/npm-cache${egress}`;
+      - npm_config_cache=/tmp/npm-cache${egress}`
 
   // A bind mount for a path that does not exist becomes a directory, and the broker would then read a
   // directory instead of a token — for every action, not only the personal ones. Emit it once `authorize`
@@ -117,25 +131,25 @@ export function renderCompose(input: ComposeInput): string {
   const userRefreshMount = fs.existsSync(`${input.dir}/${USER_TOKEN_FILE}`)
     ? `\n      # The authorized person's refresh token: the only secret mounted writable, because GitHub\n      # rotates it on every exchange.\n      - ${yamlVolume(`${input.dir}/${USER_TOKEN_FILE}`, SIDECAR.userTokenPath, 'rw')}`
     : '\n      # No user.refresh yet: run `gcb authorize` and render this again. A mount' +
-      '\n      # for a path that does not exist would become a directory, and the broker would read that.';
+      '\n      # for a path that does not exist would become a directory, and the broker would read that.'
   const start = fromCode
     ? `exec node --conditions=development ${CODE_DIR}/packages/host/bin/gcb.js daemon --config ${mountedConfigArg}`
-    : `exec npx --yes --package '${input.packageSpec}' gcb daemon --config ${mountedConfigArg}`;
+    : `exec npx --yes --package '${input.packageSpec}' gcb daemon --config ${mountedConfigArg}`
   const command = `      - sh
       - -c
       - |
-        case "\$\${GCB_PROXY-default}" in
+        case "$\${GCB_PROXY-default}" in
           default) ;;
           "") unset http_proxy https_proxy all_proxy no_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY NODE_USE_ENV_PROXY ;;
-          *) export http_proxy="\$\$GCB_PROXY" https_proxy="\$\$GCB_PROXY" no_proxy=localhost,127.0.0.1 NODE_USE_ENV_PROXY=1 ;;
+          *) export http_proxy="$$GCB_PROXY" https_proxy="$$GCB_PROXY" no_proxy=localhost,127.0.0.1 NODE_USE_ENV_PROXY=1 ;;
         esac
-        ${start}`;
+        ${start}`
 
   const codeMount = fromCode
     ? `
       # The code, read-only, from the commit you reviewed and staged.
       - ${yamlVolume(input.code, CODE_DIR, 'ro')}`
-    : '';
+    : ''
 
   return `# Docker sidecar for gcb-host@${PACKAGE_VERSION}
 #
@@ -187,7 +201,7 @@ ${userRefreshMount}
 # The socket appears at ${socketDir}${SIDECAR.socketPath.slice(SIDECAR.socketDir.length)} on the host. Point the pushing
 # environment at the same socket with:
 #   gcb setup --socket <that path as the pusher sees it>
-`;
+`
 }
 
 /** Usage text for `compose`. */
@@ -207,59 +221,59 @@ Print a Docker sidecar definition for the broker (to stdout). Pair it with a con
   --package <spec>    npm spec to run (default: gcb-host@<version>)
   --name <name>       Service and container name (default: gcb)
   -h, --help          Show this help
-`;
+`
 
 /**
  * Run the `compose` command.
  *
- * @param argv - arguments after the command name.
- * @returns the process exit code.
+ * @param argv - Arguments after the command name.
+ * @returns The process exit code.
  */
 export function runCompose(argv: readonly string[]): number {
-  const args = parseArgs(argv, { booleans: ['help'] });
+  const args = parseArgs(argv, { booleans: ['help'] })
   if (args.has('help') || args.has('h')) {
-    say(COMPOSE_USAGE);
-    return 0;
+    say(COMPOSE_USAGE)
+    return 0
   }
-  const explicitConfig = args.value('config');
-  const dirArg = args.value('dir');
+  const explicitConfig = args.value('config')
+  const dirArg = args.value('dir')
   const configPath = path.resolve(
-    explicitConfig !== undefined
-      ? resolveConfigPath(explicitConfig)
-      : dirArg !== undefined
-        ? path.join(dirArg, 'broker.config.yml')
-        : resolveConfigPath(),
-  );
-  const configFile = selectedConfigFile(configPath);
-  const dir = path.resolve(dirArg ?? deploymentDir(configFile));
-  const socketDir = args.value('socket-dir');
+    explicitConfig === undefined
+      ? dirArg === undefined
+        ? resolveConfigPath()
+        : path.join(dirArg, 'broker.config.yml')
+      : resolveConfigPath(explicitConfig),
+  )
+  const configFile = selectedConfigFile(configPath)
+  const dir = path.resolve(dirArg ?? deploymentDir(configFile))
+  const socketDir = args.value('socket-dir')
   if (!socketDir) {
-    fail('--socket-dir is required (a host directory the pushing container already mounts)');
+    fail('--socket-dir is required (a host directory the pushing container already mounts)')
   }
 
   // Check before emitting. A config written for the other deployment produces a sidecar that
   // starts and then cannot find its own private key, which is a confusing way to find out.
   if (fs.existsSync(configFile)) {
-    const mode = inferMode(loadConfig(configFile));
+    const mode = inferMode(loadConfig(configFile))
     if (mode !== 'sidecar') {
       fail(
         `${configFile} was written with --mode host; re-run ` +
           '`gcb init --mode sidecar ...` before using compose',
-      );
+      )
     }
   } else {
-    warn(`no configuration at ${configFile} yet; create it with \`init --mode sidecar\` first`);
+    warn(`no configuration at ${configFile} yet; create it with \`init --mode sidecar\` first`)
   }
 
   // POSIX only, and guaranteed to exist by the refusal above: the file this prints binds host paths
   // and a socket directory, neither of which works from a Windows host. Asserting it here rather
   // than defaulting to a made-up uid — a wrong `user:` line is a silent misconfiguration.
-  const uid = process.getuid?.();
-  const gid = process.getgid?.();
+  const uid = process.getuid?.()
+  const gid = process.getgid?.()
   if (uid === undefined || gid === undefined) {
-    fail('compose needs a POSIX uid and gid');
+    fail('compose needs a POSIX uid and gid')
   }
-  const user = args.value('user') ?? `${uid}:${gid}`;
+  const user = args.value('user') ?? `${uid}:${gid}`
 
   say(
     renderCompose({
@@ -272,6 +286,6 @@ export function runCompose(argv: readonly string[]): number {
       name: args.value('name') ?? 'gcb',
       code: args.value('code'),
     }),
-  );
-  return 0;
+  )
+  return 0
 }

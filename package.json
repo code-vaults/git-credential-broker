@@ -1,48 +1,71 @@
 {
   "name": "gcb-workspace",
   "version": "0.0.0",
-  "private": true,
+  "type": "module",
   "description": "Workspace for gcb-core, gcb-client and gcb-host.",
-  "license": "MIT",
-  "author": "JounQin <admin@1stg.me>",
-  "homepage": "https://github.com/code-vaults/git-credential-broker#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/code-vaults/git-credential-broker.git"
   },
+  "homepage": "https://github.com/code-vaults/git-credential-broker#readme",
   "bugs": {
     "url": "https://github.com/code-vaults/git-credential-broker/issues"
   },
-  "type": "module",
+  "author": "JounQin <admin@1stg.me>",
+  "license": "MIT",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "packageManager": "yarn@4.18.1",
   "engines": {
     "node": ">=24"
   },
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
     "build": "node scripts/clean-build.mjs && tsc -p packages/core/tsconfig.build.json && tsc -p packages/client/tsconfig.build.json && tsc -p packages/host/tsconfig.build.json && node scripts/postbuild.mjs",
-    "typecheck": "tsc -p tsconfig.json",
-    "test": "yarn build && node --conditions=development --disable-warning=ExperimentalWarning --test test/unit/*.test.ts test/e2e/*.test.ts",
-    "test:unit": "node --conditions=development --disable-warning=ExperimentalWarning --test test/unit/*.test.ts",
-    "test:e2e": "yarn build && node --conditions=development --disable-warning=ExperimentalWarning --test test/e2e/*.test.ts",
     "check": "yarn typecheck && yarn test",
     "docs:actions": "node scripts/action-permissions.mjs",
+    "fix": "concurrently 'yarn:lint:*(!tsc) --fix'",
+    "format": "concurrently -r \"yarn:format:*\"",
+    "format:ox": "oxfmt --ignore-path .gitignore --ignore-path .oxfmtignore .",
+    "format:prettier": "prettier --write .",
+    "lint": "concurrently -r \"yarn:lint:*\"",
+    "lint:es": "eslint . --cache",
+    "lint:ox": "oxlint .",
+    "lint:tsc": "tsc --noEmit",
     "pack:check": "yarn build && node scripts/pack-check.mjs",
+    "prepare": "simple-git-hooks",
     "prepublishOnly": "yarn check",
-    "version": "changeset version && yarn install --mode=update-lockfile",
     "release": "changeset publish",
-    "hooks:install": "simple-git-hooks"
+    "test": "yarn build && node --conditions=development --disable-warning=ExperimentalWarning --test test/unit/*.test.ts test/e2e/*.test.ts",
+    "test:e2e": "yarn build && node --conditions=development --disable-warning=ExperimentalWarning --test test/e2e/*.test.ts",
+    "test:unit": "node --conditions=development --disable-warning=ExperimentalWarning --test test/unit/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "version": "changeset version && yarn install --mode=update-lockfile"
   },
   "devDependencies": {
+    "@1stg/common-config": "^17.0.0",
     "@1stg/simple-git-hooks": "^3.0.0",
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
+    "@commitlint/cli": "^21.0.0",
     "@types/node": "^24.19.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "clean-pkg-json": "^2.0.0",
+    "concurrently": "^10.0.0",
+    "eslint": "^10.0.0",
+    "eslint-plugin-yml": "^3.9.0",
+    "nano-staged": "^1.0.0",
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.90.0",
+    "prettier": "^3.9.10",
     "simple-git-hooks": "^2.12.1",
-    "typescript": "^7.0.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-eslint": "^8.72.1",
     "yaml": "^2.9.1"
-  }
+  },
+  "commitlint": {
+    "extends": "@1stg"
+  },
+  "prettier": "@1stg/prettier-config"
 }

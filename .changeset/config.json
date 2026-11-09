@@ -9,11 +9,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "fixed": [
-    [
-      "gcb-core",
-      "gcb-client",
-      "gcb-host"
-    ]
-  ]
+  "fixed": [["gcb-core", "gcb-client", "gcb-host"]]
 }

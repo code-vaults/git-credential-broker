@@ -1,132 +1,159 @@
 /**
  * Tests for the GitHub App provider.
  *
- * These cover exactly the details that make `POST /app/installations/{id}/access_tokens`
- * fail in practice — JWT claims, installation resolution across owners, single-repository
- * scoping, permission narrowing and token reuse — with a stubbed transport, so they run
- * offline and never touch a real credential.
+ * These cover exactly the details that make `POST /app/installations/{id}/access_tokens` fail in
+ * practice — JWT claims, installation resolution across owners, single-repository scoping,
+ * permission narrowing and token reuse — with a stubbed transport, so they run offline and never
+ * touch a real credential.
  */
 /**
  * The body of a recorded call, as an object when it is JSON.
  *
- * The OAuth endpoints take a form, and a form is not JSON. Swallowing the failure is the point: a stub
- * that throws while recording is a stub that fails the test it was meant to explain.
+ * The OAuth endpoints take a form, and a form is not JSON. Swallowing the failure is the point: a
+ * stub that throws while recording is a stub that fails the test it was meant to explain.
  *
- * @param body - the raw body, if the call had one.
- * @returns the parsed object, or null.
+ * @param body - The raw body, if the call had one.
+ * @returns The parsed object, or null.
  */
 function recordedBody(body: string | undefined): Record<string, unknown> | null {
-  if (!body) return null;
+  if (!body) {
+    return null
+  }
   try {
-    return JSON.parse(body) as Record<string, unknown>;
+    return JSON.parse(body) as Record<string, unknown>
   } catch {
-    return null;
+    return null
   }
 }
 
-import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { createVerify, generateKeyPairSync } from 'node:crypto';
-import { describe, it } from 'node:test';
+import assert from 'node:assert/strict'
+import { createVerify, generateKeyPairSync } from 'node:crypto'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, it } from 'node:test'
 
-import { createGithubAppProvider, nextLink, signAppJwt } from '../../packages/host/src/providers/github-app.ts';
-import { createProvider } from '../../packages/host/src/providers/index.ts';
-import { tokenFingerprint } from '../../packages/core/src/fingerprint.ts';
-import type { FetchLike, FetchResponseLike, GithubAppHostConfig } from '../../packages/core/src/types.ts';
-import { ProviderConfigError } from '../../packages/core/src/errors.ts';
+import { ProviderConfigError } from '../../packages/core/src/errors.ts'
+import { tokenFingerprint } from '../../packages/core/src/fingerprint.ts'
+import type {
+  FetchLike,
+  FetchResponseLike,
+  GithubAppHostConfig,
+} from '../../packages/core/src/types.ts'
+import {
+  createGithubAppProvider,
+  nextLink,
+  signAppJwt,
+} from '../../packages/host/src/providers/github-app.ts'
+import { createProvider } from '../../packages/host/src/providers/index.ts'
 
-const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-const PRIVATE_PEM = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+const PRIVATE_PEM = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
 
 /**
  * Build a minimal fetch Response stand-in.
  *
  * @param body - JSON body.
  * @param status - HTTP status.
- * @param headers - response headers.
- * @returns a Response-like object.
+ * @param headers - Response headers.
+ * @returns A Response-like object.
  */
-function jsonResponse(body: unknown, status = 200, headers: Record<string, string> = {}): FetchResponseLike {
-  const map = new Map(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]));
+function jsonResponse(
+  body: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+): FetchResponseLike {
+  const map = new Map(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]))
   return {
     ok: status >= 200 && status < 300,
     status,
     headers: { get: (name: string) => map.get(name.toLowerCase()) ?? null },
     text: () => Promise.resolve(JSON.stringify(body)),
-  };
+  }
 }
 
 /** One recorded call to the stubbed transport. */
 interface RecordedCall {
   /** The body as sent, since the OAuth endpoints take a form rather than JSON. */
-  raw?: string;
-  readonly url: string;
-  readonly method: string;
-  readonly body: Record<string, unknown> | null;
-  readonly authorization: string | undefined;
-  readonly signal?: AbortSignal;
-  readonly redirect?: string;
+  raw?: string
+  readonly url: string
+  readonly method: string
+  readonly body: Record<string, unknown> | null
+  readonly authorization: string | undefined
+  readonly signal?: AbortSignal
+  readonly redirect?: string
 }
 
 describe('signAppJwt', () => {
-  const nowMs = Date.UTC(2026, 8, 30, 12, 0, 0);
+  const nowMs = Date.UTC(2026, 8, 30, 12, 0, 0)
 
   it('produces a verifiable RS256 JWT with the claims GitHub requires', () => {
-    const jwt = signAppJwt({ privateKeyPem: PRIVATE_PEM, iss: 'Iv1.clientid', nowMs });
-    const parts = jwt.split('.');
-    const header = parts[0];
-    const payload = parts[1];
-    const signature = parts[2];
-    assert.ok(header && payload && signature, 'a JWT has three dot-separated segments');
+    const jwt = signAppJwt({ privateKeyPem: PRIVATE_PEM, iss: 'Iv1.clientid', nowMs })
+    const parts = jwt.split('.')
+    const header = parts[0]
+    const payload = parts[1]
+    const signature = parts[2]
+    assert.ok(header && payload && signature, 'a JWT has three dot-separated segments')
 
     assert.deepEqual(JSON.parse(Buffer.from(header, 'base64url').toString('utf8')), {
       typ: 'JWT',
       alg: 'RS256',
-    });
+    })
 
-    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Record<string, unknown>;
-    const nowSeconds = Math.floor(nowMs / 1000);
-    assert.equal(claims['iat'], nowSeconds - 60, 'iat must be 60s in the past to absorb clock drift');
-    assert.equal(claims['exp'], nowSeconds + 600, 'exp must be at most 10 minutes after iat');
-    assert.equal((claims['exp'] as number) - (claims['iat'] as number), 660);
-    assert.equal(claims['iss'], 'Iv1.clientid');
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Record<
+      string,
+      unknown
+    >
+    const nowSeconds = Math.floor(nowMs / 1000)
+    assert.equal(
+      claims['iat'],
+      nowSeconds - 60,
+      'iat must be 60s in the past to absorb clock drift',
+    )
+    assert.equal(claims['exp'], nowSeconds + 600, 'exp must be at most 10 minutes after iat')
+    assert.equal((claims['exp'] as number) - (claims['iat'] as number), 660)
+    assert.equal(claims['iss'], 'Iv1.clientid')
 
     const verified = createVerify('RSA-SHA256')
       .update(`${header}.${payload}`)
-      .verify(publicKey, Buffer.from(signature, 'base64url'));
-    assert.equal(verified, true, 'the signature must verify against the app public key');
-  });
+      .verify(publicKey, Buffer.from(signature, 'base64url'))
+    assert.equal(verified, true, 'the signature must verify against the app public key')
+  })
 
   it('refuses a lifetime GitHub would reject', () => {
     assert.throws(
       () => signAppJwt({ privateKeyPem: PRIVATE_PEM, iss: 'x', nowMs, lifetimeSeconds: 601 }),
       /at most 600/,
-    );
-  });
+    )
+  })
 
   it('refuses to sign without a key or an issuer', () => {
-    assert.throws(() => signAppJwt({ privateKeyPem: '', iss: 'x', nowMs }), /privateKeyPem is required/);
-    assert.throws(() => signAppJwt({ privateKeyPem: PRIVATE_PEM, iss: '', nowMs }), /iss .* is required/);
-  });
-});
+    assert.throws(
+      () => signAppJwt({ privateKeyPem: '', iss: 'x', nowMs }),
+      /privateKeyPem is required/,
+    )
+    assert.throws(
+      () => signAppJwt({ privateKeyPem: PRIVATE_PEM, iss: '', nowMs }),
+      /iss .* is required/,
+    )
+  })
+})
 
 describe('nextLink', () => {
   it('extracts the next page and tolerates absence', () => {
     const header =
-      '<https://api.github.com/app/installations?page=2>; rel="next", <https://api.github.com/app/installations?page=5>; rel="last"';
-    assert.equal(nextLink(header), 'https://api.github.com/app/installations?page=2');
-    assert.equal(nextLink('<https://api.github.com/x>; rel="last"'), null);
-    assert.equal(nextLink(null), null);
-  });
-});
+      '<https://api.github.com/app/installations?page=2>; rel="next", <https://api.github.com/app/installations?page=5>; rel="last"'
+    assert.equal(nextLink(header), 'https://api.github.com/app/installations?page=2')
+    assert.equal(nextLink('<https://api.github.com/x>; rel="last"'), null)
+    assert.equal(nextLink(null), null)
+  })
+})
 
 /**
  * Build a recording fetch stub for the GitHub endpoints the provider uses.
  *
- * @param options - stub options.
- * @returns the stub.
+ * @param options - Stub options.
+ * @returns The stub.
  */
 /** A plain-text response, which is what the job log endpoint returns. */
 function textResponse(body: string, status = 200) {
@@ -135,27 +162,27 @@ function textResponse(body: string, status = 200) {
     status,
     headers: { get: (): string | null => null },
     text: () => Promise.resolve(body),
-  };
+  }
 }
 
 function createStubFetch(options: {
-  installations: unknown;
+  installations: unknown
   /** What the GraphQL scope check is told the thread belongs to. */
-  threadRepo?: string;
+  threadRepo?: string
   /** Which pull request the stubbed review comment belongs to. */
-  commentPr?: number;
-  nowMs: number;
-  token?: string;
-  tokenStatus?: number;
-  revokeStatus?: number;
-  revokeReject?: boolean;
-  appPermissions?: Record<string, string>;
-  installationPermissions?: Record<string, string>;
-  logText?: string;
-  jobMissing?: boolean;
-  fork?: { full_name: string; html_url: string };
-  repoInstalled?: boolean;
-  threadsResponse?: unknown;
+  commentPr?: number
+  nowMs: number
+  token?: string
+  tokenStatus?: number
+  revokeStatus?: number
+  revokeReject?: boolean
+  appPermissions?: Record<string, string>
+  installationPermissions?: Record<string, string>
+  logText?: string
+  jobMissing?: boolean
+  fork?: { full_name: string; html_url: string }
+  repoInstalled?: boolean
+  threadsResponse?: unknown
 }): { calls: RecordedCall[]; fetchImpl: FetchLike } {
   const {
     installations,
@@ -169,38 +196,53 @@ function createStubFetch(options: {
     logText = 'stub log\n',
     jobMissing = false,
     commentPr = 7,
-  } = options;
-  const calls: RecordedCall[] = [];
+  } = options
+  const calls: RecordedCall[] = []
   const fetchImpl: FetchLike = (url, init) => {
     calls.push({
       url,
       method: init.method,
       body: recordedBody(init.body),
       authorization: init.headers['authorization'],
-        raw: init.body ?? '',
-    });
+      raw: init.body ?? '',
+    })
     if (url.includes('/login/oauth/access_token')) {
       return Promise.resolve(
         jsonResponse({ access_token: 'person-token', refresh_token: 'rotated', expires_in: 28800 }),
-      );
+      )
     }
-    if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
+    if (url.endsWith('/app')) {
+      return Promise.resolve(jsonResponse({ permissions: appPermissions }))
+    }
     if (/\/repos\/[^/]+\/[^/]+\/installation$/.test(url)) {
-      return Promise.resolve(jsonResponse(options.repoInstalled === false ? { message: 'Not Found' } : { id: 42 }, options.repoInstalled === false ? 404 : 200));
+      return Promise.resolve(
+        jsonResponse(
+          options.repoInstalled === false ? { message: 'Not Found' } : { id: 42 },
+          options.repoInstalled === false ? 404 : 200,
+        ),
+      )
     }
-    if (url.includes('/app/installations?')) return Promise.resolve(jsonResponse(installations));
+    if (url.includes('/app/installations?')) {
+      return Promise.resolve(jsonResponse(installations))
+    }
     if (url.endsWith('/forks')) {
-      return Promise.resolve(jsonResponse(options.fork ?? { full_name: 'me/widget', html_url: 'https://github.com/me/widget' }));
+      return Promise.resolve(
+        jsonResponse(
+          options.fork ?? { full_name: 'me/widget', html_url: 'https://github.com/me/widget' },
+        ),
+      )
     }
     if (url.endsWith('/merge')) {
-      return Promise.resolve(jsonResponse({ merged: true, message: 'Pull Request successfully merged' }));
+      return Promise.resolve(
+        jsonResponse({ merged: true, message: 'Pull Request successfully merged' }),
+      )
     }
     if (url.includes('/actions/runs?head_sha=')) {
       return Promise.resolve(
         jsonResponse({
           workflow_runs: [{ name: 'CI', status: 'completed', conclusion: 'success' }],
         }),
-      );
+      )
     }
     if (/\/pulls\/\d+$/.test(url)) {
       return Promise.resolve(
@@ -212,28 +254,44 @@ function createStubFetch(options: {
           mergeable_state: 'blocked',
           head: { sha: 'cafebabe' },
         }),
-      );
+      )
     }
     // A review: what the comment path posts, with or without inline comments on it.
     // GraphQL: the scope check asks whose thread it is before resolving it, so both shapes answer.
     if (url.endsWith('/graphql')) {
-      const body = init.body ?? '';
-      if (body.includes('resolveReviewThread')) return Promise.resolve(jsonResponse({ data: { resolveReviewThread: { thread: { isResolved: true } } } }));
+      const body = init.body ?? ''
+      if (body.includes('resolveReviewThread')) {
+        return Promise.resolve(
+          jsonResponse({ data: { resolveReviewThread: { thread: { isResolved: true } } } }),
+        )
+      }
       if (body.includes('reviewThreads')) {
         return Promise.resolve(
-          jsonResponse(options.threadsResponse ?? {
-            data: { repository: { pullRequest: { reviewThreads: { totalCount: 0, nodes: [] } } } },
-          }),
-        );
+          jsonResponse(
+            options.threadsResponse ?? {
+              data: {
+                repository: { pullRequest: { reviewThreads: { totalCount: 0, nodes: [] } } },
+              },
+            },
+          ),
+        )
       }
       return Promise.resolve(
-        jsonResponse({ data: { node: { pullRequest: { repository: { nameWithOwner: options.threadRepo ?? 'acme/widget' } } } } }),
-      );
+        jsonResponse({
+          data: {
+            node: {
+              pullRequest: { repository: { nameWithOwner: options.threadRepo ?? 'acme/widget' } },
+            },
+          },
+        }),
+      )
     }
     if (/\/pulls\/\d+\/comments\/\d+\/replies$/.test(url)) {
-      return Promise.resolve(jsonResponse({ id: 55 }, 201));
+      return Promise.resolve(jsonResponse({ id: 55 }, 201))
     }
-    if (url.endsWith('/reviews')) return Promise.resolve(jsonResponse({}));
+    if (url.endsWith('/reviews')) {
+      return Promise.resolve(jsonResponse({}))
+    }
     if (/\/pulls\/comments\/\d+$/.test(url)) {
       return Promise.resolve(
         jsonResponse({
@@ -242,49 +300,53 @@ function createStubFetch(options: {
           pull_request_url: `https://api.github.com/repos/acme/widget/pulls/${commentPr}`,
           body: 'a corrected note',
         }),
-      );
+      )
     }
     if (url.endsWith('/pulls')) {
       return Promise.resolve(
         jsonResponse({ number: 42, html_url: 'https://github.com/acme/widget/pull/42' }, 201),
-      );
+      )
     }
     if (url.includes('/actions/jobs/') && url.endsWith('/logs')) {
       return jobMissing
         ? Promise.resolve(jsonResponse({ message: 'Not Found' }, 404))
-        : Promise.resolve(textResponse(logText));
+        : Promise.resolve(textResponse(logText))
     }
     if (url.includes('/actions/jobs/')) {
       return jobMissing
         ? Promise.resolve(jsonResponse({ message: 'Not Found' }, 404))
-        : Promise.resolve(jsonResponse({ id: 7 }));
+        : Promise.resolve(jsonResponse({ id: 7 }))
     }
     if (/\/app\/installations\/\d+$/.test(url)) {
-      return Promise.resolve(jsonResponse({ permissions: installationPermissions }));
+      return Promise.resolve(jsonResponse({ permissions: installationPermissions }))
     }
     if (url.endsWith('/installation/token')) {
-      return revokeReject ? Promise.reject(new Error('network down')) : Promise.resolve(jsonResponse({}, revokeStatus));
+      return revokeReject
+        ? Promise.reject(new Error('network down'))
+        : Promise.resolve(jsonResponse({}, revokeStatus))
     }
     if (url.includes('/access_tokens')) {
-      if (tokenStatus !== 201) return Promise.resolve(jsonResponse({ message: 'Bad credentials' }, tokenStatus));
+      if (tokenStatus !== 201) {
+        return Promise.resolve(jsonResponse({ message: 'Bad credentials' }, tokenStatus))
+      }
       return Promise.resolve(
         jsonResponse({ token, expires_at: new Date(nowMs + 3_600_000).toISOString() }, tokenStatus),
-      );
+      )
     }
-    return Promise.resolve(jsonResponse({ message: 'unexpected url' }, 404));
-  };
-  return { calls, fetchImpl };
+    return Promise.resolve(jsonResponse({ message: 'unexpected url' }, 404))
+  }
+  return { calls, fetchImpl }
 }
 
 describe('createGithubAppProvider', () => {
-  const nowMs = Date.UTC(2026, 8, 30, 12, 0, 0);
+  const nowMs = Date.UTC(2026, 8, 30, 12, 0, 0)
 
   /**
    * Build a provider wired to a stub transport.
    *
-   * @param stub - the stub from createStubFetch.
-   * @param overrides - configuration overrides.
-   * @returns the provider.
+   * @param stub - The stub from createStubFetch.
+   * @param overrides - Configuration overrides.
+   * @returns The provider.
    */
   function providerFor(
     stub: { calls: RecordedCall[]; fetchImpl: FetchLike },
@@ -299,37 +361,49 @@ describe('createGithubAppProvider', () => {
       privateKeyPem: PRIVATE_PEM,
       permissions: { contents: 'write', pull_requests: 'write' },
       ...overrides,
-    };
-    return createGithubAppProvider({ host: 'github.com', cfg, fetchImpl: stub.fetchImpl, now: () => nowMs, ghPath, log });
+    }
+    return createGithubAppProvider({
+      host: 'github.com',
+      cfg,
+      fetchImpl: stub.fetchImpl,
+      now: () => nowMs,
+      ghPath,
+      log,
+    })
   }
 
   it('logs a failed action-token revoke', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'gcb-action-revoke-'));
-    const gh = join(dir, 'gh');
-    writeFileSync(gh, '#!/bin/sh\nexit 0\n');
-    chmodSync(gh, 0o755);
-    const permissions = { pull_requests: 'read', contents: 'read', checks: 'read', statuses: 'read' };
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-action-revoke-'))
+    const gh = join(dir, 'gh')
+    writeFileSync(gh, '#!/bin/sh\nexit 0\n')
+    chmodSync(gh, 0o755)
+    const permissions = {
+      pull_requests: 'read',
+      contents: 'read',
+      checks: 'read',
+      statuses: 'read',
+    }
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'Acme' } }],
       nowMs,
       appPermissions: permissions,
       installationPermissions: permissions,
       revokeStatus: 500,
-    });
-    const logs: string[] = [];
+    })
+    const logs: string[] = []
     const cfg: GithubAppHostConfig = {
       provider: 'github-app',
       allow: ['acme/widget'],
       clientId: 'Iv1.clientid',
       privateKeyPem: PRIVATE_PEM,
       permissions,
-    };
+    }
     const provider = createProvider('github.com', cfg, {
       fetchImpl: stub.fetchImpl,
       now: () => nowMs,
       ghPath: gh,
-      log: (message) => logs.push(message),
-    });
+      log: message => logs.push(message),
+    })
     try {
       const result = await provider.runAction?.({
         host: 'github.com',
@@ -338,31 +412,36 @@ describe('createGithubAppProvider', () => {
         full: 'acme/widget',
         action: 'pr:view',
         values: { number: 7 },
-      });
-      assert.equal(result?.code, 0);
-      assert.ok(logs.some((line) => line.includes('could not revoke the action token')));
-      assert.ok(logs.some((line) => line.includes('500')));
-      assert.match(result?.warning ?? '', /expires on its own/);
+      })
+      assert.equal(result?.code, 0)
+      assert.ok(logs.some(line => line.includes('could not revoke the action token')))
+      assert.ok(logs.some(line => line.includes('500')))
+      assert.match(result?.warning ?? '', /expires on its own/)
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('reports a rejected action-token revoke', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'gcb-action-revoke-reject-'));
-    const gh = join(dir, 'gh');
-    writeFileSync(gh, '#!/bin/sh\nexit 0\n');
-    chmodSync(gh, 0o755);
-    const permissions = { pull_requests: 'read', contents: 'read', checks: 'read', statuses: 'read' };
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-action-revoke-reject-'))
+    const gh = join(dir, 'gh')
+    writeFileSync(gh, '#!/bin/sh\nexit 0\n')
+    chmodSync(gh, 0o755)
+    const permissions = {
+      pull_requests: 'read',
+      contents: 'read',
+      checks: 'read',
+      statuses: 'read',
+    }
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'Acme' } }],
       nowMs,
       appPermissions: permissions,
       installationPermissions: permissions,
       revokeReject: true,
-    });
-    const logs: string[] = [];
-    const provider = providerFor(stub, {}, gh, (message) => logs.push(message));
+    })
+    const logs: string[] = []
+    const provider = providerFor(stub, {}, gh, message => logs.push(message))
     try {
       const result = await provider.runAction?.({
         host: 'github.com',
@@ -371,26 +450,31 @@ describe('createGithubAppProvider', () => {
         full: 'acme/widget',
         action: 'pr:view',
         values: { number: 7 },
-      });
-      assert.match(result?.warning ?? '', /expires on its own/);
-      assert.ok(logs.some((line) => line.includes('network down')));
+      })
+      assert.match(result?.warning ?? '', /expires on its own/)
+      assert.ok(logs.some(line => line.includes('network down')))
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('returns setup failures and a failed-revoke warning together', async () => {
-    const permissions = { pull_requests: 'read', contents: 'read', checks: 'read', statuses: 'read' };
+    const permissions = {
+      pull_requests: 'read',
+      contents: 'read',
+      checks: 'read',
+      statuses: 'read',
+    }
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'Acme' } }],
       nowMs,
       appPermissions: permissions,
       installationPermissions: permissions,
       revokeStatus: 500,
-    });
-    const logs: string[] = [];
+    })
+    const logs: string[] = []
     // A NUL makes spawn throw synchronously; an ordinary bad path would be returned as result.error.
-    const provider = providerFor(stub, {}, '\0', (message) => logs.push(message));
+    const provider = providerFor(stub, {}, '\0', message => logs.push(message))
     const result = await provider.runAction?.({
       host: 'github.com',
       owner: 'acme',
@@ -398,22 +482,22 @@ describe('createGithubAppProvider', () => {
       full: 'acme/widget',
       action: 'pr:view',
       values: { number: 7 },
-    });
-    assert.ok(result?.error);
-    assert.match(result?.warning ?? '', /expires on its own/);
-    assert.ok(logs.some((line) => line.includes('could not revoke the action token')));
-  });
+    })
+    assert.ok(result?.error)
+    assert.match(result?.warning ?? '', /expires on its own/)
+    assert.ok(logs.some(line => line.includes('could not revoke the action token')))
+  })
 
   it('refuses an app action when the app is not installed on the repository', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'gcb-action-not-installed-'));
-    const gh = join(dir, 'gh');
-    writeFileSync(gh, '#!/bin/sh\nexit 0\n');
-    chmodSync(gh, 0o755);
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-action-not-installed-'))
+    const gh = join(dir, 'gh')
+    writeFileSync(gh, '#!/bin/sh\nexit 0\n')
+    chmodSync(gh, 0o755)
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'Acme' } }],
       nowMs,
       repoInstalled: false,
-    });
+    })
     try {
       await assert.rejects(
         providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }, gh).runAction?.({
@@ -425,30 +509,34 @@ describe('createGithubAppProvider', () => {
           values: { title: 't', body: 'b' },
         }) ?? Promise.resolve(undefined),
         /not installed/u,
-      );
+      )
       assert.equal(
-        stub.calls.some((call) => call.url.includes('/access_tokens')),
+        stub.calls.some(call => call.url.includes('/access_tokens')),
         false,
         'no installation token is minted when the app is not installed',
-      );
+      )
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('runs an action with the authorized user token', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'gcb-action-user-'));
-    const gh = join(dir, 'gh');
-    writeFileSync(gh, '#!/bin/sh\nprintf "TOKEN=%s\\n" "$GH_TOKEN"\n');
-    chmodSync(gh, 0o755);
-    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-action-user-'))
+    const gh = join(dir, 'gh')
+    writeFileSync(gh, '#!/bin/sh\nprintf "TOKEN=%s\\n" "$GH_TOKEN"\n')
+    chmodSync(gh, 0o755)
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8')
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       repoInstalled: false,
-    });
+    })
     try {
-      const result = await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }, gh).runAction?.({
+      const result = await providerFor(
+        stub,
+        { privateKeyPath: join(dir, 'app.pem') },
+        gh,
+      ).runAction?.({
         host: 'github.com',
         owner: 'acme',
         repo: 'widget',
@@ -456,36 +544,41 @@ describe('createGithubAppProvider', () => {
         action: 'issue:create',
         values: { title: 't', body: 'b' },
         identity: 'user',
-      });
-      assert.match(result?.stdout ?? '', /TOKEN=person-token/);
+      })
+      assert.match(result?.stdout ?? '', /TOKEN=person-token/)
       assert.equal(
-        stub.calls.some((call) => call.url.includes('/access_tokens')),
+        stub.calls.some(call => call.url.includes('/access_tokens')),
         false,
         'no installation token is minted for a person',
-      );
+      )
       assert.equal(
-        stub.calls.some((call) => call.url.endsWith('/installation/token')),
+        stub.calls.some(call => call.url.endsWith('/installation/token')),
         false,
         'the personal token is not revoked',
-      );
+      )
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('runs an action with an action token and revokes it', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'gcb-action-'));
-    const gh = join(dir, 'gh');
-    writeFileSync(gh, '#!/bin/sh\nprintf "ARGV=%s\\nTOKEN=%s\\n" "$*" "$GH_TOKEN"\n');
-    chmodSync(gh, 0o755);
-    const permissions = { pull_requests: 'read', contents: 'read', checks: 'read', statuses: 'read' };
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-action-'))
+    const gh = join(dir, 'gh')
+    writeFileSync(gh, '#!/bin/sh\nprintf "ARGV=%s\\nTOKEN=%s\\n" "$*" "$GH_TOKEN"\n')
+    chmodSync(gh, 0o755)
+    const permissions = {
+      pull_requests: 'read',
+      contents: 'read',
+      checks: 'read',
+      statuses: 'read',
+    }
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'Acme' } }],
       nowMs,
       appPermissions: permissions,
       installationPermissions: permissions,
-    });
-    const provider = providerFor(stub, {}, gh);
+    })
+    const provider = providerFor(stub, {}, gh)
     try {
       const result = await provider.runAction?.({
         host: 'github.com',
@@ -494,22 +587,28 @@ describe('createGithubAppProvider', () => {
         full: 'acme/widget',
         action: 'pr:view',
         values: { number: 7 },
-      });
-      assert.ok(result);
-      assert.equal(result.code, 0);
-      assert.equal(result.tokenFingerprint, tokenFingerprint('ghs_stub_token_value'));
-      assert.match(result.stdout, /ARGV=pr view 7 --repo acme\/widget/);
-      assert.match(result.stdout, /TOKEN=ghs_stub_token_value/);
-      const minted = stub.calls.find((call) => call.method === 'POST' && call.url.includes('/access_tokens'));
-      assert.deepEqual(minted?.body?.permissions, permissions);
-      assert.ok(stub.calls.some((call) => call.method === 'DELETE' && call.url.endsWith('/installation/token')));
+      })
+      assert.ok(result)
+      assert.equal(result.code, 0)
+      assert.equal(result.tokenFingerprint, tokenFingerprint('ghs_stub_token_value'))
+      assert.match(result.stdout, /ARGV=pr view 7 --repo acme\/widget/)
+      assert.match(result.stdout, /TOKEN=ghs_stub_token_value/)
+      const minted = stub.calls.find(
+        call => call.method === 'POST' && call.url.includes('/access_tokens'),
+      )
+      assert.deepEqual(minted?.body?.permissions, permissions)
+      assert.ok(
+        stub.calls.some(
+          call => call.method === 'DELETE' && call.url.endsWith('/installation/token'),
+        ),
+      )
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('passes the deadline and redirect refusal to the fork lookup', async () => {
-    const calls: RecordedCall[] = [];
+    const calls: RecordedCall[] = []
     const provider = providerFor({
       calls,
       fetchImpl: async (url, init) => {
@@ -521,14 +620,14 @@ describe('createGithubAppProvider', () => {
           raw: init.body ?? '',
           signal: init.signal,
           redirect: init.redirect,
-        });
-        return jsonResponse({ fork: true, parent: { full_name: 'acme/widget' } });
+        })
+        return jsonResponse({ fork: true, parent: { full_name: 'acme/widget' } })
       },
-    });
-    assert.equal(await provider.isForkOf!('alice', 'widget', ['acme/widget']), true);
-    assert.ok(calls[0]?.signal instanceof AbortSignal, 'the fork check must carry the abort signal');
-    assert.equal(calls[0]?.redirect, 'error', 'the fork check must refuse redirects');
-  });
+    })
+    assert.equal(await provider.isForkOf!('alice', 'widget', ['acme/widget']), true)
+    assert.ok(calls[0]?.signal instanceof AbortSignal, 'the fork check must carry the abort signal')
+    assert.equal(calls[0]?.redirect, 'error', 'the fork check must refuse redirects')
+  })
 
   it('classifies public and fork lookups without credentials', async () => {
     const response = (status: number, body: unknown) => ({
@@ -536,44 +635,60 @@ describe('createGithubAppProvider', () => {
       status,
       headers: { get: () => null },
       text: async () => JSON.stringify(body),
-    });
+    })
     const provider = (status: number, body: unknown) =>
-      providerFor(
-        { calls: [], fetchImpl: async () => response(status, body) },
-        {},
-        undefined,
-      );
-    assert.equal(await provider(200, { private: false }).isPublicRepository!('acme', 'widget'), true);
-    assert.equal(await provider(200, { private: true }).isPublicRepository!('acme', 'widget'), false);
-    assert.equal(await provider(404, {}).isPublicRepository!('acme', 'widget'), false);
-    await assert.rejects(provider(429, {}).isPublicRepository!('acme', 'widget'), /rate-limited/u);
-    await assert.rejects(provider(403, {}).isPublicRepository!('acme', 'widget'), /refused/u);
+      providerFor({ calls: [], fetchImpl: async () => response(status, body) }, {}, undefined)
     assert.equal(
-      await provider(200, { fork: true, parent: { full_name: 'acme/widget' } }).isForkOf!('alice', 'widget', ['acme/widget']),
+      await provider(200, { private: false }).isPublicRepository!('acme', 'widget'),
       true,
-    );
+    )
     assert.equal(
-      await provider(200, { fork: true, source: { full_name: 'acme/widget' } }).isForkOf!('alice', 'widget', ['acme/widget']),
+      await provider(200, { private: true }).isPublicRepository!('acme', 'widget'),
+      false,
+    )
+    assert.equal(await provider(404, {}).isPublicRepository!('acme', 'widget'), false)
+    await assert.rejects(provider(429, {}).isPublicRepository!('acme', 'widget'), /rate-limited/u)
+    await assert.rejects(provider(403, {}).isPublicRepository!('acme', 'widget'), /refused/u)
+    assert.equal(
+      await provider(200, { fork: true, parent: { full_name: 'acme/widget' } }).isForkOf!(
+        'alice',
+        'widget',
+        ['acme/widget'],
+      ),
       true,
-    );
-    assert.equal(await provider(200, { fork: false }).isForkOf!('alice', 'widget', ['acme/widget']), false);
-    assert.equal(await provider(404, {}).isForkOf!('alice', 'widget', ['acme/widget']), false);
-    await assert.rejects(provider(429, {}).isForkOf!('alice', 'widget', ['acme/widget']), /rate-limited/u);
-  });
+    )
+    assert.equal(
+      await provider(200, { fork: true, source: { full_name: 'acme/widget' } }).isForkOf!(
+        'alice',
+        'widget',
+        ['acme/widget'],
+      ),
+      true,
+    )
+    assert.equal(
+      await provider(200, { fork: false }).isForkOf!('alice', 'widget', ['acme/widget']),
+      false,
+    )
+    assert.equal(await provider(404, {}).isForkOf!('alice', 'widget', ['acme/widget']), false)
+    await assert.rejects(
+      provider(429, {}).isForkOf!('alice', 'widget', ['acme/widget']),
+      /rate-limited/u,
+    )
+  })
 
   it('mints a metadata-only token for a verified public read', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'gcb-public-read-'));
-    const gh = join(dir, 'gh');
-    writeFileSync(gh, '#!/bin/sh\nprintf "TOKEN=%s\\n" "$GH_TOKEN"\n');
-    chmodSync(gh, 0o755);
-    const permissions = { metadata: 'read' };
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-public-read-'))
+    const gh = join(dir, 'gh')
+    writeFileSync(gh, '#!/bin/sh\nprintf "TOKEN=%s\\n" "$GH_TOKEN"\n')
+    chmodSync(gh, 0o755)
+    const permissions = { metadata: 'read' }
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'Acme' } }],
       nowMs,
       appPermissions: permissions,
       installationPermissions: permissions,
-    });
-    const provider = providerFor(stub, { permissions }, gh);
+    })
+    const provider = providerFor(stub, { permissions }, gh)
     try {
       const result = await provider.runAction?.({
         host: 'github.com',
@@ -583,26 +698,32 @@ describe('createGithubAppProvider', () => {
         action: 'pr:view',
         values: { number: 7 },
         publicRead: true,
-      });
-      assert.equal(result?.code, 0);
-      assert.match(result?.stdout ?? '', /TOKEN=ghs_stub_token_value/u);
-      const mint = stub.calls.find((call) => call.method === 'POST' && call.url.includes('/access_tokens'));
-      assert.deepEqual(mint?.body, { repositories: ['widget'], permissions: { metadata: 'read' } });
-      assert.ok(stub.calls.some((call) => call.method === 'DELETE' && call.url.endsWith('/installation/token')));
+      })
+      assert.equal(result?.code, 0)
+      assert.match(result?.stdout ?? '', /TOKEN=ghs_stub_token_value/u)
+      const mint = stub.calls.find(
+        call => call.method === 'POST' && call.url.includes('/access_tokens'),
+      )
+      assert.deepEqual(mint?.body, { repositories: ['widget'], permissions: { metadata: 'read' } })
+      assert.ok(
+        stub.calls.some(
+          call => call.method === 'DELETE' && call.url.endsWith('/installation/token'),
+        ),
+      )
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('uses the person token for a public read requested with --as-user', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'gcb-public-user-'));
-    const tokenPath = join(dir, 'acme.token');
-    writeFileSync(tokenPath, 'github_pat_public_user\n');
-    const gh = join(dir, 'gh');
-    writeFileSync(gh, '#!/bin/sh\nprintf "TOKEN=%s\\n" "$GH_TOKEN"\n');
-    chmodSync(gh, 0o755);
-    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'Acme' } }], nowMs });
-    const provider = providerFor(stub, { userTokens: { acme: tokenPath } }, gh);
+    const dir = mkdtempSync(join(tmpdir(), 'gcb-public-user-'))
+    const tokenPath = join(dir, 'acme.token')
+    writeFileSync(tokenPath, 'github_pat_public_user\n')
+    const gh = join(dir, 'gh')
+    writeFileSync(gh, '#!/bin/sh\nprintf "TOKEN=%s\\n" "$GH_TOKEN"\n')
+    chmodSync(gh, 0o755)
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'Acme' } }], nowMs })
+    const provider = providerFor(stub, { userTokens: { acme: tokenPath } }, gh)
     try {
       const result = await provider.runAction?.({
         host: 'github.com',
@@ -613,81 +734,115 @@ describe('createGithubAppProvider', () => {
         values: { number: 7 },
         identity: 'user',
         publicRead: true,
-      });
-      assert.equal(result?.code, 0);
-      assert.match(result?.stdout ?? '', /TOKEN=github_pat_public_user/u);
+      })
+      assert.equal(result?.code, 0)
+      assert.match(result?.stdout ?? '', /TOKEN=github_pat_public_user/u)
       assert.equal(
-        stub.calls.some((call) => call.url.includes('/access_tokens')),
+        stub.calls.some(call => call.url.includes('/access_tokens')),
         false,
         'a public read with --as-user must not mint an installation token',
-      );
+      )
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true })
     }
-  });
+  })
 
   it('resolves the installation by account login and scopes the token to one named repository', async () => {
-    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'Acme' } }], nowMs });
-    const provider = providerFor(stub);
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'Acme' } }], nowMs })
+    const provider = providerFor(stub)
 
-    const credential = await provider.getCredential({ host: 'github.com', owner: 'acme', repo: 'widget', full: 'acme/widget' });
+    const credential = await provider.getCredential({
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      full: 'acme/widget',
+    })
 
-    assert.equal(credential.username, 'x-access-token');
-    assert.equal(credential.password, 'ghs_stub_token_value');
+    assert.equal(credential.username, 'x-access-token')
+    assert.equal(credential.password, 'ghs_stub_token_value')
 
-    const appCall = stub.calls.find((call) => call.url.endsWith('/app'));
-    const lookup = stub.calls.find((call) => call.url.includes('/app/installations?'));
-    const mint = stub.calls.find((call) => call.method === 'POST');
-    assert.ok(appCall && lookup && mint, 'the pre-flight, the lookup and the mint must all happen');
-    assert.match(lookup.url, /\/app\/installations\?per_page=100$/);
-    assert.match(lookup.authorization ?? '', /^Bearer eyJ/, 'the app JWT authenticates the lookup');
+    const appCall = stub.calls.find(call => call.url.endsWith('/app'))
+    const lookup = stub.calls.find(call => call.url.includes('/app/installations?'))
+    const mint = stub.calls.find(call => call.method === 'POST')
+    assert.ok(appCall && lookup && mint, 'the pre-flight, the lookup and the mint must all happen')
+    assert.match(lookup.url, /\/app\/installations\?per_page=100$/)
+    assert.match(lookup.authorization ?? '', /^Bearer eyJ/, 'the app JWT authenticates the lookup')
 
-    assert.match(mint.url, /\/app\/installations\/42\/access_tokens$/);
+    assert.match(mint.url, /\/app\/installations\/42\/access_tokens$/)
     assert.deepEqual(
       mint.body,
       { repositories: ['widget'], permissions: { contents: 'write', pull_requests: 'write' } },
       'the token must be scoped to one repository *name* with narrowed permissions',
-    );
-  });
+    )
+  })
 
   it('reuses a cached token instead of minting one per helper invocation', async () => {
-    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
-    const provider = providerFor(stub);
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs })
+    const provider = providerFor(stub)
 
-    await provider.getCredential({ host: 'github.com', owner: 'acme', repo: 'widget', full: 'acme/widget' });
-    const callsAfterFirst = stub.calls.length;
-    const second = await provider.getCredential({ host: 'github.com', owner: 'acme', repo: 'widget', full: 'acme/widget' });
+    await provider.getCredential({
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      full: 'acme/widget',
+    })
+    const callsAfterFirst = stub.calls.length
+    const second = await provider.getCredential({
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      full: 'acme/widget',
+    })
 
-    assert.equal(second.cached, true);
-    assert.equal(stub.calls.length, callsAfterFirst, 'a second call must not hit the network at all');
-  });
+    assert.equal(second.cached, true)
+    assert.equal(
+      stub.calls.length,
+      callsAfterFirst,
+      'a second call must not hit the network at all',
+    )
+  })
 
   it('re-mints before expiry rather than handing out a token that is about to die', async () => {
-    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
-    let clock = nowMs;
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs })
+    let clock = nowMs
     const provider = createGithubAppProvider({
       host: 'github.com',
-      cfg: { provider: 'github-app', allow: ['acme/widget'], clientId: 'Iv1.clientid', privateKeyPem: PRIVATE_PEM },
+      cfg: {
+        provider: 'github-app',
+        allow: ['acme/widget'],
+        clientId: 'Iv1.clientid',
+        privateKeyPem: PRIVATE_PEM,
+      },
       fetchImpl: stub.fetchImpl,
       now: () => clock,
       skewSeconds: 300,
-    });
+    })
 
-    await provider.getCredential({ host: 'github.com', owner: 'acme', repo: 'widget', full: 'acme/widget' });
-    clock = nowMs + 3_600_000 - 299_000; // inside the skew window
-    await provider.getCredential({ host: 'github.com', owner: 'acme', repo: 'widget', full: 'acme/widget' });
+    await provider.getCredential({
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      full: 'acme/widget',
+    })
+    clock = nowMs + 3_600_000 - 299_000 // inside the skew window
+    await provider.getCredential({
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      full: 'acme/widget',
+    })
 
     assert.equal(
-      stub.calls.filter((call) => call.method === 'POST').length,
+      stub.calls.filter(call => call.method === 'POST').length,
       2,
       'a token inside the skew window must be replaced',
-    );
+    )
     assert.equal(
-      stub.calls.filter((call) => call.url.endsWith('/app')).length,
+      stub.calls.filter(call => call.url.endsWith('/app')).length,
       1,
       'the permission pre-flight must run once per process, not per mint',
-    );
-  });
+    )
+  })
 
   it('supports multiple owners by resolving a different installation per account', async () => {
     const stub = createStubFetch({
@@ -696,53 +851,72 @@ describe('createGithubAppProvider', () => {
         { id: 43, account: { login: 'Other' } },
       ],
       nowMs,
-    });
-    const provider = providerFor(stub);
+    })
+    const provider = providerFor(stub)
 
-    await provider.getCredential({ host: 'github.com', owner: 'acme', repo: 'widget', full: 'acme/widget' });
-    await provider.getCredential({ host: 'github.com', owner: 'other', repo: 'thing', full: 'other/thing' });
+    await provider.getCredential({
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      full: 'acme/widget',
+    })
+    await provider.getCredential({
+      host: 'github.com',
+      owner: 'other',
+      repo: 'thing',
+      full: 'other/thing',
+    })
 
-    const posts = stub.calls.filter((call) => call.method === 'POST').map((call) => call.url);
+    const posts = stub.calls.filter(call => call.method === 'POST').map(call => call.url)
     assert.deepEqual(posts, [
       'https://api.github.com/app/installations/42/access_tokens',
       'https://api.github.com/app/installations/43/access_tokens',
-    ]);
-  });
+    ])
+  })
 
   it('fails loudly when the app is not installed for the owner', async () => {
-    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'someone-else' } }], nowMs });
-    const provider = providerFor(stub);
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'someone-else' } }],
+      nowMs,
+    })
+    const provider = providerFor(stub)
     await assert.rejects(
-      () => provider.getCredential({ host: 'github.com', owner: 'acme', repo: 'widget', full: 'acme/widget' }),
+      () =>
+        provider.getCredential({
+          host: 'github.com',
+          owner: 'acme',
+          repo: 'widget',
+          full: 'acme/widget',
+        }),
       /no installation.*acme/,
-    );
-  });
+    )
+  })
 
   it('fails before minting when the app is not granted a configured permission, and names it', async () => {
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       appPermissions: { contents: 'write', metadata: 'read' },
-    });
-    const provider = providerFor(stub);
+    })
+    const provider = providerFor(stub)
     const error = await provider
       .getCredential({ host: 'github.com', owner: 'acme', repo: 'widget', full: 'acme/widget' })
       .then(() => null)
-      .catch((caught: unknown) => caught as Error);
+      .catch((error_: unknown) => error_ as Error)
 
-    assert.ok(error, 'the call must fail');
-    assert.match(error.message, /pull_requests/, 'the message must name the missing permission');
-    assert.match(error.message, /not granted/);
+    assert.ok(error, 'the call must fail')
+    assert.match(error.message, /pull_requests/, 'the message must name the missing permission')
+    assert.match(error.message, /not granted/)
     assert.equal(
-      stub.calls.some((call) => call.method === 'POST'),
+      stub.calls.some(call => call.method === 'POST'),
       false,
       'it must fail before asking GitHub for a token that could never be granted',
-    );
-  });
+    )
+  })
 
   it('re-checks after a failure, so fixing the app settings needs no broker restart', async () => {
-    let appPermissions: Record<string, string> = { contents: 'write' };
-    const calls: RecordedCall[] = [];
+    let appPermissions: Record<string, string> = { contents: 'write' }
+    const calls: RecordedCall[] = []
     const fetchImpl: FetchLike = (url, init) => {
       calls.push({
         url,
@@ -750,21 +924,26 @@ describe('createGithubAppProvider', () => {
         body: recordedBody(init.body),
         authorization: init.headers['authorization'],
         raw: init.body ?? '',
-      });
-      if (url.endsWith('/app')) return Promise.resolve(jsonResponse({ permissions: appPermissions }));
+      })
+      if (url.endsWith('/app')) {
+        return Promise.resolve(jsonResponse({ permissions: appPermissions }))
+      }
       if (url.includes('/app/installations?')) {
-        return Promise.resolve(jsonResponse([{ id: 42, account: { login: 'acme' } }]));
+        return Promise.resolve(jsonResponse([{ id: 42, account: { login: 'acme' } }]))
       }
       if (/\/app\/installations\/\d+$/.test(url)) {
-        return Promise.resolve(jsonResponse({ permissions: appPermissions }));
+        return Promise.resolve(jsonResponse({ permissions: appPermissions }))
       }
       if (url.includes('/access_tokens')) {
         return Promise.resolve(
-          jsonResponse({ token: 'ghs_after_fix', expires_at: new Date(nowMs + 3_600_000).toISOString() }, 201),
-        );
+          jsonResponse(
+            { token: 'ghs_after_fix', expires_at: new Date(nowMs + 3_600_000).toISOString() },
+            201,
+          ),
+        )
       }
-      return Promise.resolve(jsonResponse({}, 404));
-    };
+      return Promise.resolve(jsonResponse({}, 404))
+    }
     const provider = createGithubAppProvider({
       host: 'github.com',
       cfg: {
@@ -776,22 +955,28 @@ describe('createGithubAppProvider', () => {
       },
       fetchImpl,
       now: () => nowMs,
-    });
+    })
 
     await assert.rejects(
-      () => provider.getCredential({ host: 'github.com', owner: 'acme', repo: 'widget', full: 'acme/widget' }),
+      () =>
+        provider.getCredential({
+          host: 'github.com',
+          owner: 'acme',
+          repo: 'widget',
+          full: 'acme/widget',
+        }),
       /pull_requests/,
-    );
+    )
 
-    appPermissions = { contents: 'write', pull_requests: 'write' };
+    appPermissions = { contents: 'write', pull_requests: 'write' }
     const credential = await provider.getCredential({
       host: 'github.com',
       owner: 'acme',
       repo: 'widget',
       full: 'acme/widget',
-    });
-    assert.equal(credential.password, 'ghs_after_fix');
-  });
+    })
+    assert.equal(credential.password, 'ghs_after_fix')
+  })
 
   it('fails when the app has a permission but the installation has not approved it', async () => {
     // /app is the app's ceiling; the installation is the actual grant. Checking only the former passes
@@ -802,19 +987,23 @@ describe('createGithubAppProvider', () => {
       nowMs,
       appPermissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
       installationPermissions: { contents: 'write', pull_requests: 'write' },
-    });
-    const provider = providerFor(stub, { permissions: { contents: 'write', workflows: 'write' } });
+    })
+    const provider = providerFor(stub, { permissions: { contents: 'write', workflows: 'write' } })
     const error = await provider
       .getCredential({ host: 'github.com', owner: 'acme', repo: 'widget', full: 'acme/widget' })
       .then(() => null)
-      .catch((caught: unknown) => caught as Error);
+      .catch((error_: unknown) => error_ as Error)
 
-    assert.ok(error, 'the call must fail');
-    assert.ok(error instanceof ProviderConfigError, 'and be marked as ours, so it can be shown');
-    assert.match(error.message, /workflows/, 'naming the permission');
-    assert.match(error.message, /installation/, 'and which grant is short of it');
-    assert.equal(stub.calls.some((call) => call.method === 'POST'), false, 'still before a token');
-  });
+    assert.ok(error, 'the call must fail')
+    assert.ok(error instanceof ProviderConfigError, 'and be marked as ours, so it can be shown')
+    assert.match(error.message, /workflows/, 'naming the permission')
+    assert.match(error.message, /installation/, 'and which grant is short of it')
+    assert.equal(
+      stub.calls.some(call => call.method === 'POST'),
+      false,
+      'still before a token',
+    )
+  })
 
   it('reads a job log with a token narrowed to actions: read', async () => {
     const stub = createStubFetch({
@@ -823,27 +1012,27 @@ describe('createGithubAppProvider', () => {
       appPermissions: { contents: 'write', actions: 'read' },
       installationPermissions: { contents: 'write', actions: 'read' },
       logText: 'line one\nline two\n',
-    });
+    })
     const log = await providerFor(stub).getJobLog!({
       host: 'github.com',
       owner: 'acme',
       repo: 'widget',
       jobId: 7,
-    });
+    })
 
-    assert.equal(log.text, 'line one\nline two\n');
-    assert.equal(log.truncated, false);
-    const mint = stub.calls.find((call) => call.url.includes('/access_tokens'));
+    assert.equal(log.text, 'line one\nline two\n')
+    assert.equal(log.truncated, false)
+    const mint = stub.calls.find(call => call.url.includes('/access_tokens'))
     assert.deepEqual(
       mint?.body?.['permissions'],
       { actions: 'read' },
       'the log token must ask for nothing but the log',
-    );
+    )
     assert.ok(
-      stub.calls.some((call) => call.url.endsWith('/repos/acme/widget/actions/jobs/7/logs')),
+      stub.calls.some(call => call.url.endsWith('/repos/acme/widget/actions/jobs/7/logs')),
       'the log is read through the repository route, which is what binds it to the allowlist',
-    );
-  });
+    )
+  })
 
   it('refuses a job the allowlisted repository does not have', async () => {
     const stub = createStubFetch({
@@ -852,113 +1041,125 @@ describe('createGithubAppProvider', () => {
       appPermissions: { actions: 'read' },
       installationPermissions: { actions: 'read' },
       jobMissing: true,
-    });
-    const error = await providerFor(stub)
-      .getJobLog!({ host: 'github.com', owner: 'acme', repo: 'widget', jobId: 7 })
+    })
+    const error = await providerFor(stub).getJobLog!({
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      jobId: 7,
+    })
       .then(() => null)
-      .catch((caught: unknown) => caught as Error);
+      .catch((error_: unknown) => error_ as Error)
 
-    assert.ok(error, 'it must fail');
-    assert.match(error.message, /actions\/jobs\/7/);
-    assert.match(error.message, /has no log yet/, 'and say why a 404 there is ordinary');
+    assert.ok(error, 'it must fail')
+    assert.match(error.message, /actions\/jobs\/7/)
+    assert.match(error.message, /has no log yet/, 'and say why a 404 there is ordinary')
     assert.equal(
       stub.calls.some(
-        (call) => call.url.endsWith('/logs') && !call.url.includes('/repos/acme/widget/'),
+        call => call.url.endsWith('/logs') && !call.url.includes('/repos/acme/widget/'),
       ),
       false,
       'a log must never be requested without the repository in the path',
-    );
-  });
+    )
+  })
 
   it('opens a pull request with a token narrowed to pull_requests: write', async () => {
-    const stub = createStubFetch({
-  installations: [{ id: 42, account: { login: 'acme' } }],
-  nowMs,
-  appPermissions: { pull_requests: 'write', contents: 'read' },
-  installationPermissions: { pull_requests: 'write', contents: 'read' },
-    });
-    const pr = await providerFor(stub).pullRequest!({
-    action: 'open',
-  host: 'github.com',
-  owner: 'acme',
-  repo: 'widget',
-  head: 'feature',
-  base: 'main',
-  title: 'a title',
-  body: 'a body',
-    });
-
-    assert.equal(pr.number, 42);
-    assert.equal(pr.url, 'https://github.com/acme/widget/pull/42');
-    const mint = stub.calls.find((call) => call.url.includes('/access_tokens'));
-    assert.deepEqual(
-  mint?.body?.['permissions'],
-  { pull_requests: 'write', contents: 'read' },
-  'the token must ask for what the pull request needs',
-    );
-    const posted = stub.calls.find((call) => call.url.endsWith('/pulls'));
-    assert.equal(posted?.method, 'POST');
-    assert.equal(posted?.url, 'https://api.github.com/repos/acme/widget/pulls', 'through the repository route');
-    assert.equal(posted?.body?.['head'], 'feature');
-    assert.equal(posted?.body?.['draft'], false);
-  });
-
-  it('reports a pull request, and how its commit is doing', async () => {
-    const stub = createStubFetch({
-  installations: [{ id: 42, account: { login: 'acme' } }],
-  nowMs,
-  appPermissions: { actions: 'read', pull_requests: 'write', contents: 'read' },
-  installationPermissions: { actions: 'read', pull_requests: 'write', contents: 'read' },
-    });
-
-  it('refuses to report the runs when the grant for them is missing', async () => {
-    // The pre-flight exists to name the permission that is missing, and status reads /actions/runs as
-    // well as the pull request. Without this case the pre-flight could be reverted to asking for
-    // pull_requests alone and every test would still pass, which is how the gap was found.
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       appPermissions: { pull_requests: 'write', contents: 'read' },
       installationPermissions: { pull_requests: 'write', contents: 'read' },
-    });
-
-    await assert.rejects(
-      providerFor(stub).pullRequest!({
-        action: 'status',
-        host: 'github.com',
-        owner: 'acme',
-        repo: 'widget',
-        number: 42,
-      }),
-      (error: unknown) => {
-        assert.match(String((error as Error).message), /actions/, 'and it names the permission that is missing');
-        return true;
-      },
-    );
-  });
+    })
     const pr = await providerFor(stub).pullRequest!({
-  action: 'status',
-  host: 'github.com',
-  owner: 'acme',
-  repo: 'widget',
-  number: 42,
-    });
+      action: 'open',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      head: 'feature',
+      base: 'main',
+      title: 'a title',
+      body: 'a body',
+    })
 
-    assert.equal(pr.state, 'closed');
-    assert.match(pr.status ?? '', /mergeable: blocked/);
-    assert.match(pr.status ?? '', /run CI: success/, 'and the runs for that exact commit');
+    assert.equal(pr.number, 42)
+    assert.equal(pr.url, 'https://github.com/acme/widget/pull/42')
+    const mint = stub.calls.find(call => call.url.includes('/access_tokens'))
+    assert.deepEqual(
+      mint?.body?.['permissions'],
+      { pull_requests: 'write', contents: 'read' },
+      'the token must ask for what the pull request needs',
+    )
+    const posted = stub.calls.find(call => call.url.endsWith('/pulls'))
+    assert.equal(posted?.method, 'POST')
+    assert.equal(
+      posted?.url,
+      'https://api.github.com/repos/acme/widget/pulls',
+      'through the repository route',
+    )
+    assert.equal(posted?.body?.['head'], 'feature')
+    assert.equal(posted?.body?.['draft'], false)
+  })
+
+  it('reports a pull request, and how its commit is doing', async () => {
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      appPermissions: { actions: 'read', pull_requests: 'write', contents: 'read' },
+      installationPermissions: { actions: 'read', pull_requests: 'write', contents: 'read' },
+    })
+
+    it('refuses to report the runs when the grant for them is missing', async () => {
+      // The pre-flight exists to name the permission that is missing, and status reads /actions/runs as
+      // well as the pull request. Without this case the pre-flight could be reverted to asking for
+      // pull_requests alone and every test would still pass, which is how the gap was found.
+      const stub = createStubFetch({
+        installations: [{ id: 42, account: { login: 'acme' } }],
+        nowMs,
+        appPermissions: { pull_requests: 'write', contents: 'read' },
+        installationPermissions: { pull_requests: 'write', contents: 'read' },
+      })
+
+      await assert.rejects(
+        providerFor(stub).pullRequest!({
+          action: 'status',
+          host: 'github.com',
+          owner: 'acme',
+          repo: 'widget',
+          number: 42,
+        }),
+        (error: unknown) => {
+          assert.match(
+            String((error as Error).message),
+            /actions/,
+            'and it names the permission that is missing',
+          )
+          return true
+        },
+      )
+    })
+    const pr = await providerFor(stub).pullRequest!({
+      action: 'status',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 42,
+    })
+
+    assert.equal(pr.state, 'closed')
+    assert.match(pr.status ?? '', /mergeable: blocked/)
+    assert.match(pr.status ?? '', /run CI: success/, 'and the runs for that exact commit')
     assert.ok(
-  stub.calls.some((call) => call.url.includes('/actions/runs?head_sha=cafebabe')),
-  'read through the repository route, pinned to the head commit',
-    );
-  });
+      stub.calls.some(call => call.url.includes('/actions/runs?head_sha=cafebabe')),
+      'read through the repository route, pinned to the head commit',
+    )
+  })
 
   it('does not turn a missing reviewThreads shape into an empty list', async () => {
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       threadsResponse: { data: { repository: { pullRequest: {} } } },
-    });
+    })
     await assert.rejects(
       providerFor(stub).pullRequest!({
         action: 'threads',
@@ -968,15 +1169,15 @@ describe('createGithubAppProvider', () => {
         number: 42,
       }),
       /reviewThreads/u,
-    );
-  });
+    )
+  })
 
   it('rejects a review-thread body that is not JSON data', async () => {
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       threadsResponse: 'not an object',
-    });
+    })
     await assert.rejects(
       providerFor(stub).pullRequest!({
         action: 'threads',
@@ -986,8 +1187,8 @@ describe('createGithubAppProvider', () => {
         number: 42,
       }),
       /review-thread JSON/u,
-    );
-  });
+    )
+  })
 
   it('rejects a thread without a comments connection', async () => {
     const stub = createStubFetch({
@@ -1005,7 +1206,7 @@ describe('createGithubAppProvider', () => {
           },
         },
       },
-    });
+    })
     await assert.rejects(
       providerFor(stub).pullRequest!({
         action: 'threads',
@@ -1015,15 +1216,15 @@ describe('createGithubAppProvider', () => {
         number: 42,
       }),
       /review-thread comments/u,
-    );
-  });
+    )
+  })
 
   it('rejects a thread list without totalCount', async () => {
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       threadsResponse: { data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } },
-    });
+    })
     await assert.rejects(
       providerFor(stub).pullRequest!({
         action: 'threads',
@@ -1033,8 +1234,8 @@ describe('createGithubAppProvider', () => {
         number: 42,
       }),
       /totalCount/u,
-    );
-  });
+    )
+  })
 
   it('rejects a thread without an id', async () => {
     const stub = createStubFetch({
@@ -1052,7 +1253,7 @@ describe('createGithubAppProvider', () => {
           },
         },
       },
-    });
+    })
     await assert.rejects(
       providerFor(stub).pullRequest!({
         action: 'threads',
@@ -1062,8 +1263,8 @@ describe('createGithubAppProvider', () => {
         number: 42,
       }),
       /review-thread id/u,
-    );
-  });
+    )
+  })
 
   it('rejects a comment without a body', async () => {
     const stub = createStubFetch({
@@ -1089,7 +1290,7 @@ describe('createGithubAppProvider', () => {
           },
         },
       },
-    });
+    })
     await assert.rejects(
       providerFor(stub).pullRequest!({
         action: 'threads',
@@ -1099,8 +1300,8 @@ describe('createGithubAppProvider', () => {
         number: 42,
       }),
       /review-comment body/u,
-    );
-  });
+    )
+  })
 
   it('rejects a positive thread count with an empty page', async () => {
     const stub = createStubFetch({
@@ -1109,7 +1310,7 @@ describe('createGithubAppProvider', () => {
       threadsResponse: {
         data: { repository: { pullRequest: { reviewThreads: { totalCount: 1, nodes: [] } } } },
       },
-    });
+    })
     await assert.rejects(
       providerFor(stub).pullRequest!({
         action: 'threads',
@@ -1119,8 +1320,8 @@ describe('createGithubAppProvider', () => {
         number: 42,
       }),
       /thread count but no threads/u,
-    );
-  });
+    )
+  })
 
   it('does not count an empty comment body as omitted lines', async () => {
     const stub = createStubFetch({
@@ -1146,75 +1347,84 @@ describe('createGithubAppProvider', () => {
           },
         },
       },
-    });
+    })
     const listed = await providerFor(stub).pullRequest!({
       action: 'threads',
       host: 'github.com',
       owner: 'acme',
       repo: 'widget',
       number: 42,
-    });
-    assert.doesNotMatch(listed.status ?? '', /\(\+1 more lines\)/u);
-  });
+    })
+    assert.doesNotMatch(listed.status ?? '', /\(\+1 more lines\)/u)
+  })
 
   it('reports an explicit empty reviewThreads list as no threads', async () => {
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
-      threadsResponse: { data: { repository: { pullRequest: { reviewThreads: { totalCount: 0, nodes: [] } } } } },
-    });
+      threadsResponse: {
+        data: { repository: { pullRequest: { reviewThreads: { totalCount: 0, nodes: [] } } } },
+      },
+    })
     const listed = await providerFor(stub).pullRequest!({
       action: 'threads',
       host: 'github.com',
       owner: 'acme',
       repo: 'widget',
       number: 42,
-    });
-    assert.equal(listed.status, 'no review threads on this pull request');
-  });
+    })
+    assert.equal(listed.status, 'no review threads on this pull request')
+  })
 
   it('skips the pre-flight when the operator turns it off', async () => {
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       appPermissions: {},
-    });
-    const provider = providerFor(stub, { verifyAppPermissions: false });
+    })
+    const provider = providerFor(stub, { verifyAppPermissions: false })
     const credential = await provider.getCredential({
       host: 'github.com',
       owner: 'acme',
       repo: 'widget',
       full: 'acme/widget',
-    });
-    assert.equal(credential.password, 'ghs_stub_token_value');
-    assert.equal(stub.calls.some((call) => call.url.endsWith('/app')), false);
-  });
+    })
+    assert.equal(credential.password, 'ghs_stub_token_value')
+    assert.equal(
+      stub.calls.some(call => call.url.endsWith('/app')),
+      false,
+    )
+  })
 
   it('surfaces an API failure without leaking the private key or the client ID', async () => {
-    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs, tokenStatus: 403 });
-    const provider = providerFor(stub);
+    const stub = createStubFetch({
+      installations: [{ id: 42, account: { login: 'acme' } }],
+      nowMs,
+      tokenStatus: 403,
+    })
+    const provider = providerFor(stub)
     const error = await provider
       .getCredential({ host: 'github.com', owner: 'acme', repo: 'widget', full: 'acme/widget' })
       .then(() => null)
-      .catch((caught: unknown) => caught as Error);
-    assert.ok(error, 'the call must fail');
-    assert.match(error.message, /403/);
-    assert.doesNotMatch(error.message, /PRIVATE KEY/);
-    assert.doesNotMatch(error.message, /clientid/);
-  });
+      .catch((error_: unknown) => error_ as Error)
+    assert.ok(error, 'the call must fail')
+    assert.match(error.message, /403/)
+    assert.doesNotMatch(error.message, /PRIVATE KEY/)
+    assert.doesNotMatch(error.message, /clientid/)
+  })
 
   describe("the authorized person's token", () => {
     it('is renewed from beside the key, used for the pull request, and rotated back to disk', async () => {
-      const dir = mkdtempSync(join(tmpdir(), 'personal-token-'));
-      const refreshPath = join(dir, 'user.refresh');
-      writeFileSync(refreshPath, 'refresh-from-authorize\n', 'utf8');
+      const dir = mkdtempSync(join(tmpdir(), 'personal-token-'))
+      const refreshPath = join(dir, 'user.refresh')
+      writeFileSync(refreshPath, 'refresh-from-authorize\n', 'utf8')
 
       const stub = createStubFetch({
         installations: [{ id: 42, account: { login: 'acme' } }],
         nowMs,
         appPermissions: { pull_requests: 'write', contents: 'read' },
         installationPermissions: { pull_requests: 'write', contents: 'read' },
-      });
+      })
 
       const pr = await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
         action: 'open',
@@ -1225,38 +1435,37 @@ describe('createGithubAppProvider', () => {
         base: 'main',
         title: 'a title',
         body: 'a body',
-      });
+      })
 
-      assert.equal(pr.number, 42);
+      assert.equal(pr.number, 42)
 
-      const exchange = stub.calls.find((call) => call.url.includes('/login/oauth/access_token'));
-      assert.ok(exchange, 'the refresh token was exchanged');
-      assert.match(String(exchange?.raw), /grant_type=refresh_token/);
-      assert.match(String(exchange?.raw), /refresh_token=refresh-from-authorize/);
+      const exchange = stub.calls.find(call => call.url.includes('/login/oauth/access_token'))
+      assert.ok(exchange, 'the refresh token was exchanged')
+      assert.match(String(exchange?.raw), /grant_type=refresh_token/)
+      assert.match(String(exchange?.raw), /refresh_token=refresh-from-authorize/)
 
-      const created = stub.calls.find((call) => call.url.endsWith('/pulls'));
-      assert.equal(created?.authorization, 'Bearer person-token', 'and it was created as them');
+      const created = stub.calls.find(call => call.url.endsWith('/pulls'))
+      assert.equal(created?.authorization, 'Bearer person-token', 'and it was created as them')
 
       assert.equal(
         readFileSync(refreshPath, 'utf8').trim(),
         'rotated',
         'the rotated refresh token is written back: keeping the old one would work exactly once',
-      );
+      )
 
-      rmSync(dir, { recursive: true, force: true });
-    });
-  });
-
+      rmSync(dir, { recursive: true, force: true })
+    })
+  })
 
   it('replies with the authorized user token', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'reply-user-'));
-    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+    const dir = mkdtempSync(join(tmpdir(), 'reply-user-'))
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8')
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       appPermissions: { pull_requests: 'write', contents: 'read' },
       installationPermissions: { pull_requests: 'write', contents: 'read' },
-    });
+    })
     await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
       action: 'reply',
       identity: 'user',
@@ -1266,22 +1475,22 @@ describe('createGithubAppProvider', () => {
       number: 4,
       commentId: 123,
       body: 'a reply',
-    });
-    const request = stub.calls.find((call) => call.url.endsWith('/comments/123/replies'));
-    assert.equal(request?.authorization, 'Bearer person-token');
-    assert.equal(request?.method, 'POST');
-    assert.match(String(request?.raw), /a reply/);
-    rmSync(dir, { recursive: true, force: true });
-  });
+    })
+    const request = stub.calls.find(call => call.url.endsWith('/comments/123/replies'))
+    assert.equal(request?.authorization, 'Bearer person-token')
+    assert.equal(request?.method, 'POST')
+    assert.match(String(request?.raw), /a reply/)
+    rmSync(dir, { recursive: true, force: true })
+  })
 
   it('keeps an omitted identity on the app for comment and edit', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'comment-app-'));
-    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+    const dir = mkdtempSync(join(tmpdir(), 'comment-app-'))
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8')
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
-    });
-    const provider = providerFor(stub, { privateKeyPath: join(dir, 'app.pem') });
+    })
+    const provider = providerFor(stub, { privateKeyPath: join(dir, 'app.pem') })
     await provider.pullRequest!({
       action: 'edit',
       host: 'github.com',
@@ -1289,7 +1498,7 @@ describe('createGithubAppProvider', () => {
       repo: 'widget',
       commentId: 99,
       body: 'fixed',
-    });
+    })
     await provider.pullRequest!({
       action: 'comment',
       host: 'github.com',
@@ -1297,22 +1506,22 @@ describe('createGithubAppProvider', () => {
       repo: 'widget',
       number: 4,
       body: 'note',
-    });
-    const edited = stub.calls.find((call) => call.url.endsWith('/pulls/comments/99'));
-    const commented = stub.calls.find((call) => call.url.endsWith('/pulls/4/reviews'));
-    assert.equal(edited?.authorization, 'Bearer ghs_stub_token_value');
-    assert.equal(commented?.authorization, 'Bearer ghs_stub_token_value');
-    rmSync(dir, { recursive: true, force: true });
-  });
+    })
+    const edited = stub.calls.find(call => call.url.endsWith('/pulls/comments/99'))
+    const commented = stub.calls.find(call => call.url.endsWith('/pulls/4/reviews'))
+    assert.equal(edited?.authorization, 'Bearer ghs_stub_token_value')
+    assert.equal(commented?.authorization, 'Bearer ghs_stub_token_value')
+    rmSync(dir, { recursive: true, force: true })
+  })
 
   it('edits a comment and posts a review with the authorized user token', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'user-comment-'));
-    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+    const dir = mkdtempSync(join(tmpdir(), 'user-comment-'))
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8')
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
-    });
-    const provider = providerFor(stub, { privateKeyPath: join(dir, 'app.pem') });
+    })
+    const provider = providerFor(stub, { privateKeyPath: join(dir, 'app.pem') })
     await provider.pullRequest!({
       action: 'edit',
       identity: 'user',
@@ -1321,7 +1530,7 @@ describe('createGithubAppProvider', () => {
       repo: 'widget',
       commentId: 99,
       body: 'fixed',
-    });
+    })
     await provider.pullRequest!({
       action: 'comment',
       identity: 'user',
@@ -1330,68 +1539,68 @@ describe('createGithubAppProvider', () => {
       repo: 'widget',
       number: 4,
       body: 'note',
-    });
-    const edited = stub.calls.find((call) => call.url.endsWith('/pulls/comments/99'));
-    const commented = stub.calls.find((call) => call.url.endsWith('/pulls/4/reviews'));
-    assert.equal(edited?.authorization, 'Bearer person-token');
-    assert.equal(edited?.method, 'PATCH');
-    assert.equal(commented?.authorization, 'Bearer person-token');
-    assert.equal(commented?.method, 'POST');
-    rmSync(dir, { recursive: true, force: true });
-  });
+    })
+    const edited = stub.calls.find(call => call.url.endsWith('/pulls/comments/99'))
+    const commented = stub.calls.find(call => call.url.endsWith('/pulls/4/reviews'))
+    assert.equal(edited?.authorization, 'Bearer person-token')
+    assert.equal(edited?.method, 'PATCH')
+    assert.equal(commented?.authorization, 'Bearer person-token')
+    assert.equal(commented?.method, 'POST')
+    rmSync(dir, { recursive: true, force: true })
+  })
 
   it('forks with the authorized user token', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'fork-user-'));
-    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+    const dir = mkdtempSync(join(tmpdir(), 'fork-user-'))
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8')
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       fork: { full_name: 'me/widget', html_url: 'https://github.com/me/widget' },
-    });
+    })
     const forked = await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
       action: 'fork',
       identity: 'user',
       host: 'github.com',
       owner: 'acme',
       repo: 'widget',
-    });
-    assert.equal(forked.url, 'https://github.com/me/widget');
-    const request = stub.calls.find((call) => call.url.endsWith('/forks'));
-    assert.equal(request?.authorization, 'Bearer person-token');
-    assert.equal(request?.method, 'POST');
-    rmSync(dir, { recursive: true, force: true });
-  });
+    })
+    assert.equal(forked.url, 'https://github.com/me/widget')
+    const request = stub.calls.find(call => call.url.endsWith('/forks'))
+    assert.equal(request?.authorization, 'Bearer person-token')
+    assert.equal(request?.method, 'POST')
+    rmSync(dir, { recursive: true, force: true })
+  })
 
   it('forks with a token per owner when there is no authorized user', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'fork-owner-'));
-    const tokenPath = join(dir, 'acme.token');
-    writeFileSync(tokenPath, 'github_pat_fork\n', 'utf8');
+    const dir = mkdtempSync(join(tmpdir(), 'fork-owner-'))
+    const tokenPath = join(dir, 'acme.token')
+    writeFileSync(tokenPath, 'github_pat_fork\n', 'utf8')
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       fork: { full_name: 'me/widget', html_url: 'https://github.com/me/widget' },
-    });
+    })
     await providerFor(stub, { userTokens: { acme: tokenPath } }).pullRequest!({
       action: 'fork',
       identity: 'user',
       host: 'github.com',
       owner: 'acme',
       repo: 'widget',
-    });
-    const request = stub.calls.find((call) => call.url.endsWith('/forks'));
-    assert.equal(request?.authorization, 'Bearer github_pat_fork');
-    rmSync(dir, { recursive: true, force: true });
-  });
+    })
+    const request = stub.calls.find(call => call.url.endsWith('/forks'))
+    assert.equal(request?.authorization, 'Bearer github_pat_fork')
+    rmSync(dir, { recursive: true, force: true })
+  })
 
   it('forces the app identity when asked, even with a user token on disk', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'identity-app-'));
-    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+    const dir = mkdtempSync(join(tmpdir(), 'identity-app-'))
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8')
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       appPermissions: { pull_requests: 'write', contents: 'read' },
       installationPermissions: { pull_requests: 'write', contents: 'read' },
-    });
+    })
     await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
       identity: 'app',
       action: 'open',
@@ -1402,20 +1611,20 @@ describe('createGithubAppProvider', () => {
       base: 'main',
       title: 'a title',
       body: 'a body',
-    });
+    })
     assert.equal(
-      stub.calls.some((call) => call.url.includes('/login/oauth/access_token')),
+      stub.calls.some(call => call.url.includes('/login/oauth/access_token')),
       false,
       'the user refresh token is not exchanged',
-    );
-    const created = stub.calls.find((call) => call.url.endsWith('/pulls'));
-    assert.equal(created?.authorization, 'Bearer ghs_stub_token_value');
-    rmSync(dir, { recursive: true, force: true });
-  });
+    )
+    const created = stub.calls.find(call => call.url.endsWith('/pulls'))
+    assert.equal(created?.authorization, 'Bearer ghs_stub_token_value')
+    rmSync(dir, { recursive: true, force: true })
+  })
 
   it('refuses the user identity when no user token is configured', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'identity-user-missing-'));
-    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    const dir = mkdtempSync(join(tmpdir(), 'identity-user-missing-'))
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs })
     await assert.rejects(
       providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
         identity: 'user',
@@ -1429,34 +1638,39 @@ describe('createGithubAppProvider', () => {
         body: 'a body',
       }),
       /no authorized user token/,
-    );
-    rmSync(dir, { recursive: true, force: true });
-  });
+    )
+    rmSync(dir, { recursive: true, force: true })
+  })
 
-  it("creates the pull request without an installation when a person has authorized one", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'no-installation-'));
-    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8');
+  it('creates the pull request without an installation when a person has authorized one', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'no-installation-'))
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8')
 
     // An upstream the app was never installed on: the installation lookup finds nothing at all.
-    const stub = createStubFetch({ installations: [], nowMs });
+    const stub = createStubFetch({ installations: [], nowMs })
 
     const pr = await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
-      action: 'open', host: 'github.com', owner: 'upstream', repo: 'upstream',
-      head: 'feat/thing', base: 'main', title: 'a title', body: 'a body',
-    });
+      action: 'open',
+      host: 'github.com',
+      owner: 'upstream',
+      repo: 'upstream',
+      head: 'feat/thing',
+      base: 'main',
+      title: 'a title',
+      body: 'a body',
+    })
 
-    assert.equal(pr.number, 42);
+    assert.equal(pr.number, 42)
     assert.ok(
-      !stub.calls.some((call) => call.url.includes('/access_tokens')),
+      !stub.calls.some(call => call.url.includes('/access_tokens')),
       'and never mints an installation token it does not have',
-    );
+    )
 
-    rmSync(dir, { recursive: true, force: true });
-  });
-
+    rmSync(dir, { recursive: true, force: true })
+  })
 
   it('posts an anchored comment on the line it was given, on the same review it already posts', async () => {
-    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs })
     await providerFor(stub).pullRequest!({
       action: 'comment',
       host: 'github.com',
@@ -1466,29 +1680,37 @@ describe('createGithubAppProvider', () => {
       body: 'why this marker exists',
       filePath: 'Dockerfile',
       line: 4,
-    });
+    })
 
-    const review = stub.calls.find((call) => call.url.endsWith('/reviews'));
-    assert.ok(review, 'the review endpoint is the one used');
-    assert.deepEqual(
-      (review?.body as Record<string, unknown>)?.['comments'],
-      [{ path: 'Dockerfile', line: 4, side: 'RIGHT', body: 'why this marker exists' }],
-    );
-    assert.equal((review?.body as Record<string, unknown>)?.['event'], 'COMMENT');
-  });
+    const review = stub.calls.find(call => call.url.endsWith('/reviews'))
+    assert.ok(review, 'the review endpoint is the one used')
+    assert.deepEqual((review?.body as Record<string, unknown>)?.['comments'], [
+      { path: 'Dockerfile', line: 4, side: 'RIGHT', body: 'why this marker exists' },
+    ])
+    assert.equal((review?.body as Record<string, unknown>)?.['event'], 'COMMENT')
+  })
 
   it('posts a body-only comment the way it always has', async () => {
-    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs })
     await providerFor(stub).pullRequest!({
-      action: 'comment', host: 'github.com', owner: 'acme', repo: 'widget', number: 7, body: 'a general remark',
-    });
+      action: 'comment',
+      host: 'github.com',
+      owner: 'acme',
+      repo: 'widget',
+      number: 7,
+      body: 'a general remark',
+    })
 
-    const review = stub.calls.find((call) => call.url.endsWith('/reviews'));
-    assert.deepEqual(review?.body, { body: 'a general remark', event: 'COMMENT' }, 'nothing new in the payload');
-  });
+    const review = stub.calls.find(call => call.url.endsWith('/reviews'))
+    assert.deepEqual(
+      review?.body,
+      { body: 'a general remark', event: 'COMMENT' },
+      'nothing new in the payload',
+    )
+  })
 
   it('changes a review comment by its id, and reports the comment it changed', async () => {
-    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs })
     const changed = await providerFor(stub).pullRequest!({
       action: 'edit',
       host: 'github.com',
@@ -1497,23 +1719,29 @@ describe('createGithubAppProvider', () => {
       number: 7,
       commentId: 99,
       body: 'a corrected note',
-    });
+    })
 
-    const patch = stub.calls.find((call) => call.method === 'PATCH' && call.url.includes('/pulls/comments/'));
-    assert.ok(patch, 'a review comment is changed at the review comments endpoint');
+    const patch = stub.calls.find(
+      call => call.method === 'PATCH' && call.url.includes('/pulls/comments/'),
+    )
+    assert.ok(patch, 'a review comment is changed at the review comments endpoint')
     // The comment id names the thing and is one for the whole repository, so the route carries no pull
     // request number and nothing is read first: the number to report comes back in the answer.
-    assert.equal(patch?.url, 'https://api.github.com/repos/acme/widget/pulls/comments/99');
-    assert.deepEqual(patch?.body, { body: 'a corrected note' });
-    assert.equal(patch?.authorization, 'Bearer ghs_stub_token_value', 'and it is the app that changes it');
+    assert.equal(patch?.url, 'https://api.github.com/repos/acme/widget/pulls/comments/99')
+    assert.deepEqual(patch?.body, { body: 'a corrected note' })
     assert.equal(
-      stub.calls.some((call) => call.method === 'GET' && call.url.includes('/pulls/comments/')),
+      patch?.authorization,
+      'Bearer ghs_stub_token_value',
+      'and it is the app that changes it',
+    )
+    assert.equal(
+      stub.calls.some(call => call.method === 'GET' && call.url.includes('/pulls/comments/')),
       false,
       'no round trip to read the comment first',
-    );
-    assert.equal(changed.number, 7);
-    assert.equal(changed.url, 'https://github.com/acme/widget/pull/7#discussion_r99');
-  });
+    )
+    assert.equal(changed.number, 7)
+    assert.equal(changed.url, 'https://github.com/acme/widget/pull/7#discussion_r99')
+  })
 
   it("reports the comment's own pull request, not the number the caller passed", async () => {
     // The route cannot honour a pull request number, so the provider must not echo one: the review
@@ -1522,7 +1750,7 @@ describe('createGithubAppProvider', () => {
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       commentPr: 8,
-    });
+    })
     const changed = await providerFor(stub).pullRequest!({
       action: 'edit',
       host: 'github.com',
@@ -1531,14 +1759,13 @@ describe('createGithubAppProvider', () => {
       number: 7,
       commentId: 99,
       body: 'a corrected note',
-    });
-    assert.equal(changed.number, 8, 'the comment names #8, so #8 is what is reported');
-    assert.equal(changed.url, 'https://github.com/acme/widget/pull/8#discussion_r99');
-  });
-
+    })
+    assert.equal(changed.number, 8, 'the comment names #8, so #8 is what is reported')
+    assert.equal(changed.url, 'https://github.com/acme/widget/pull/8#discussion_r99')
+  })
 
   it('refuses a resolve with no person token instead of minting an installation token', async () => {
-    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs });
+    const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'acme' } }], nowMs })
     await assert.rejects(
       providerFor(stub).pullRequest!({
         action: 'resolve',
@@ -1549,52 +1776,67 @@ describe('createGithubAppProvider', () => {
         threadId: 'PRRT_x',
       }),
       /no authorized user token for resolving this thread/,
-    );
+    )
     assert.equal(
-      stub.calls.some((call) => call.url.includes('/access_tokens')),
+      stub.calls.some(call => call.url.includes('/access_tokens')),
       false,
       'no installation token is minted for a resolve',
-    );
-  });
+    )
+  })
 
-  it("resolves a thread with a token per owner, which is a person acting too", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'resolve-owner-'));
-    const tokenPath = join(dir, 'upstream.token');
-    writeFileSync(tokenPath, 'github_pat_x\n', 'utf8');
+  it('resolves a thread with a token per owner, which is a person acting too', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'resolve-owner-'))
+    const tokenPath = join(dir, 'upstream.token')
+    writeFileSync(tokenPath, 'github_pat_x\n', 'utf8')
 
     // No installation: the repository the app was never installed on, resolved as a person.
-    const stub = createStubFetch({ installations: [], nowMs, threadRepo: 'upstream/upstream' });
+    const stub = createStubFetch({ installations: [], nowMs, threadRepo: 'upstream/upstream' })
     const answered = await providerFor(stub, { userTokens: { upstream: tokenPath } }).pullRequest!({
-      action: 'resolve', host: 'github.com', owner: 'upstream', repo: 'upstream', number: 4, threadId: 'PRRT_x',
-    });
-    assert.ok(answered, 'the resolve went through');
+      action: 'resolve',
+      host: 'github.com',
+      owner: 'upstream',
+      repo: 'upstream',
+      number: 4,
+      threadId: 'PRRT_x',
+    })
+    assert.ok(answered, 'the resolve went through')
 
-    const mutation = stub.calls.find((call) => typeof call.raw === 'string' && call.raw.includes('resolveReviewThread'));
-    assert.ok(mutation, 'the mutation was sent');
-    assert.equal(mutation?.authorization, 'Bearer github_pat_x', 'and a token per owner is what sent it');
+    const mutation = stub.calls.find(
+      call => typeof call.raw === 'string' && call.raw.includes('resolveReviewThread'),
+    )
+    assert.ok(mutation, 'the mutation was sent')
     assert.equal(
-      stub.calls.some((call) => call.url.includes('/access_tokens')),
+      mutation?.authorization,
+      'Bearer github_pat_x',
+      'and a token per owner is what sent it',
+    )
+    assert.equal(
+      stub.calls.some(call => call.url.includes('/access_tokens')),
       false,
       'without asking for an installation, which GraphQL refuses for this',
-    );
-    rmSync(dir, { recursive: true, force: true });
-  });
+    )
+    rmSync(dir, { recursive: true, force: true })
+  })
 
   it('refuses to resolve a thread that belongs to another repository', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'resolve-scope-'));
-    writeFileSync(join(dir, 'user.refresh'), 'refresh-1\n', 'utf8');
+    const dir = mkdtempSync(join(tmpdir(), 'resolve-scope-'))
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-1\n', 'utf8')
     const stub = createStubFetch({
       installations: [{ id: 42, account: { login: 'acme' } }],
       nowMs,
       threadRepo: 'someone/else',
-    });
+    })
     await assert.rejects(
       providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
-        action: 'resolve', host: 'github.com', owner: 'acme', repo: 'widget', number: 4, threadId: 'PRRT_elsewhere',
+        action: 'resolve',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        number: 4,
+        threadId: 'PRRT_elsewhere',
       }),
       /not a review thread of acme\/widget/,
-    );
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-});
+    )
+    rmSync(dir, { recursive: true, force: true })
+  })
+})

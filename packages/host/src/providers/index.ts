@@ -1,33 +1,33 @@
 /**
  * Provider factory: turns one host's configuration block into a credential source.
  *
- * Adding a provider for another forge means adding one module and one case here; the
- * broker, the helper, the socket protocol, the allowlist and the audit trail are all
- * provider-agnostic.
+ * Adding a provider for another forge means adding one module and one case here; the broker, the
+ * helper, the socket protocol, the allowlist and the audit trail are all provider-agnostic.
  */
-import type { FetchLike, HostConfig, Provider } from 'gcb-core';
-import { createGithubAppProvider } from './github-app.ts';
-import { createStaticProvider } from './static.ts';
+import type { FetchLike, HostConfig, Provider } from 'gcb-core'
+
+import { createGithubAppProvider } from './github-app.ts'
+import { createStaticProvider } from './static.ts'
 
 /** Dependencies threaded through to providers, injectable for tests. */
 export interface ProviderDeps {
-  readonly skewSeconds?: number;
-  readonly fetchImpl?: FetchLike;
-  readonly now?: () => number;
-  /** gh executable, injectable for tests. */
-  readonly ghPath?: string;
+  readonly skewSeconds?: number
+  readonly fetchImpl?: FetchLike
+  readonly now?: () => number
+  /** Gh executable, injectable for tests. */
+  readonly ghPath?: string
   /** Host-side diagnostics. */
-  readonly log?: (message: string) => void;
+  readonly log?: (message: string) => void
 }
 
 /**
  * Build the provider for one host.
  *
- * @param host - the configured host key.
- * @param cfg - the per-host configuration block.
- * @param deps - injectable dependencies.
- * @returns the provider instance.
- * @throws {Error} for an unknown provider name, or when the provider's config is incomplete.
+ * @param host - The configured host key.
+ * @param cfg - The per-host configuration block.
+ * @param deps - Injectable dependencies.
+ * @returns The provider instance.
+ * @throws {Error} For an unknown provider name, or when the provider's config is incomplete.
  */
 export function createProvider(host: string, cfg: HostConfig, deps: ProviderDeps = {}): Provider {
   switch (cfg.provider) {
@@ -40,12 +40,12 @@ export function createProvider(host: string, cfg: HostConfig, deps: ProviderDeps
         now: deps.now,
         ghPath: deps.ghPath,
         log: deps.log,
-      });
+      })
     case 'static':
-      return createStaticProvider({ host, cfg, now: deps.now });
+      return createStaticProvider({ host, cfg, now: deps.now })
     default: {
-      const exhaustive: never = cfg;
-      throw new Error(`unknown provider for host ${host}: ${JSON.stringify(exhaustive)}`);
+      const exhaustive: never = cfg
+      throw new Error(`unknown provider for host ${host}: ${JSON.stringify(exhaustive)}`)
     }
   }
 }

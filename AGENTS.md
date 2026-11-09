@@ -101,6 +101,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   measured, `yarn install` succeeds with `"node": ">=99"`, and `.npmrc` is not read by Yarn 4 at all — so
   neither would catch a host on an older interpreter. A deployment runs from a checkout with no install
   step, which is exactly the case a runtime check covers and an install-time one does not.
+
 - **After writing a fix, read the file back — and never trust a check the shell can rewrite.** Three
   commits in one session described changes the tree did not have: an edit applied after a commit whose
   message claimed it and then discarded by a restore, and a `String.replace` whose replacement contained
@@ -132,6 +133,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   container is not an answer — that is exactly when the check is blind, since the agent container may
   simply be stopped with its mounts still configured — so it refuses rather than guesses, as it does
   when nothing can answer at all.
+
 - **The process that owns a boundary decides what crosses it, not the error class.** A response body put
   into the message of a `ProviderConfigError` reached the container, because a caller that wraps that error
   to name a missing permission wraps it in the same class and so passes the whole message through. Detail
@@ -162,21 +164,21 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   publishes — copyright holder, author/maintainer, repository/homepage, funding or sponsor links — is
   allowed; keep it deliberate and minimal. This is a judgement call, not a fixed list of exempt files:
   when unsure, use a placeholder and ask.
-- **Do not run the broker from this checkout, and understand why the *key* being elsewhere is not
+- **Do not run the broker from this checkout, and understand why the _key_ being elsewhere is not
   enough.** The broker reads the key, so the code it executes has the key's privileges: it can mint
   installation tokens for anything the App can see, and it can read the key file. A key outside the
   container buys nothing while the process holding it runs code from an agent-writable directory —
   the agent then owns the allowlist. The boundary is control of the code. `stage` exports a
   **commit** (never the working tree) into a directory outside every mount and records the sha; the
   repository is agent-writable too, so a staged sha is worth checking against a clone or the remote.
-  The *helper* is fine here: it holds no secret and grants nothing; the broker decides.
+  The _helper_ is fine here: it holds no secret and grants nothing; the broker decides.
 - **Strict configuration validation is deliberate.** Top-level `_comment*` keys are ignored,
   and a malformed `allow` entry is rejected at load
   time. It fails closed either way, but silently — and a typo that looks like configuration is
   worse than a crash. Do not soften this to be helpful. What is checked is the fields the block
   defines: an unknown key inside `hosts` is dropped rather than refused, so a misspelled `userTokens`
   is not a typo this will catch.
-- **Never log the credential.** The audit log records a SHA-256 *fingerprint* plus host, repo,
+- **Never log the credential.** The audit log records a SHA-256 _fingerprint_ plus host, repo,
   DSH session id and expiry. `src/audit.ts` also redacts secret-looking keys defensively
   (`token_fingerprint` is deliberately exempt). The helper prints the credential to stdout
   because that is the git protocol, and to nowhere else.
@@ -267,7 +269,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   from `repo-not-allowed` to a generic `provider-error`, "could not mint a credential" — which is this
   rule and nothing more: allowed to try, no installation to mint from. `diagnose` answers it directly,
   listing the installations and the repositories each one reaches; asking for a credential for a
-  repository the app *is* installed on is the control that needs no such command.
+  repository the app _is_ installed on is the control that needs no such command.
 
   **Which actions are left is the operational half.** The host broker creates pull requests, submits
   reviews, replies to review comments, edits pull requests, runs catalogued actions (with
@@ -279,18 +281,19 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   action route can close a pull request as a person; neither route pushes. Acting as a person, from a
   checkout on the host that holds the person's own credentials or an allowlisted explicit repository,
   is the design.
+
 - **The configuration is found by convention and its paths belong to the broker, not to you.**
   Every command resolves `--config`, else `$GIT_BROKER_CONFIG`, else `./broker.config.yml`, and takes
-  the deployment directory from the file's own location. The paths *inside* it are resolved by
+  the deployment directory from the file's own location. The paths _inside_ it are resolved by
   the process that runs the broker, so `deployment.ts` holds one definition per deployment and
   both `init --mode` and `compose` read it; a config whose mode does not match the deployment is
   refused rather than half-working. `/broker.config.yml` is gitignored here: a personal copy is
   host-specific, the tracked reference is `examples/broker.config.example.yml`.
 - **`init` merges; it never rewrites what you did not mention.** The configuration file is the
-  source of truth, so updates preserve hand edits and `--allow` *adds*. Do not turn this back
+  source of truth, so updates preserve hand edits and `--allow` _adds_. Do not turn this back
   into "regenerate from flags": `--force` replacing the allowlist silently dropped repositories.
 - **A `credential.helper` value is a shell command only when it starts with `!`.** Writing
-  `credential.helper = node /path/helper.ts` makes git look for a helper *named* `node` and fail
+  `credential.helper = node /path/helper.ts` makes git look for a helper _named_ `node` and fail
   with `'credential-node' is not a git command`; it must be `!node /path/helper.ts`. A value
   starting with `/` is executed directly and anything else resolves to `git-credential-<value>`,
   which is why `setup` records `!gcb` and lets PATH resolve the installed bin; a source checkout that
@@ -331,21 +334,21 @@ Full detail and the measurements behind them:
 
 ## Where things are
 
-| Path | What |
-|---|---|
-| `packages/core/src/` | shared parser, help/version, protocol, types, platform, paths and the gh action catalog |
-| `packages/client/src/helper.ts` | the container-side credential helper |
-| `packages/client/src/primary.ts` | the catalogued-action primary adapter (default `gh`) |
-| `packages/client/src/commands/` | setup, probe, logs, pr, repo, gh, remotes and the shared host-submit helper |
-| `packages/host/src/broker.ts` | unix socket server, refusal codes, audit records |
-| `packages/host/src/config.ts` | YAML configuration |
-| `packages/host/src/gh.ts` | the isolated gh action executor |
-| `packages/host/src/providers/github-app.ts` | RS256 JWT, installation lookup, permission pre-flight, token cache |
-| `packages/host/src/device-flow.ts` | the device flow: the three exchanges that turn an authorization into a token |
-| `packages/host/src/commands/` | init, stage, compose, config, diagnose, doctor, authorize and host |
-| `Dockerfile` | client and host image stages, with gh in the host stage |
-| `packages/client/bin/gcb.js`, `packages/host/bin/gcb.js` | the two installed `gcb` bins |
-| `test/e2e/packages.test.ts` | npm pack and install into separate client/host prefixes |
-| `scripts/postbuild.mjs` | build-time fixup: shebang and exec bit on the bin files |
-| `.agents/notes/proposed/` | the original design and its review |
-| `.agents/notes/verified/` | what was built, and the measured environment facts |
+| Path                                                     | What                                                                                    |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `packages/core/src/`                                     | shared parser, help/version, protocol, types, platform, paths and the gh action catalog |
+| `packages/client/src/helper.ts`                          | the container-side credential helper                                                    |
+| `packages/client/src/primary.ts`                         | the catalogued-action primary adapter (default `gh`)                                    |
+| `packages/client/src/commands/`                          | setup, probe, logs, pr, repo, gh, remotes and the shared host-submit helper             |
+| `packages/host/src/broker.ts`                            | unix socket server, refusal codes, audit records                                        |
+| `packages/host/src/config.ts`                            | YAML configuration                                                                      |
+| `packages/host/src/gh.ts`                                | the isolated gh action executor                                                         |
+| `packages/host/src/providers/github-app.ts`              | RS256 JWT, installation lookup, permission pre-flight, token cache                      |
+| `packages/host/src/device-flow.ts`                       | the device flow: the three exchanges that turn an authorization into a token            |
+| `packages/host/src/commands/`                            | init, stage, compose, config, diagnose, doctor, authorize and host                      |
+| `Dockerfile`                                             | client and host image stages, with gh in the host stage                                 |
+| `packages/client/bin/gcb.js`, `packages/host/bin/gcb.js` | the two installed `gcb` bins                                                            |
+| `test/e2e/packages.test.ts`                              | npm pack and install into separate client/host prefixes                                 |
+| `scripts/postbuild.mjs`                                  | build-time fixup: shebang and exec bit on the bin files                                 |
+| `.agents/notes/proposed/`                                | the original design and its review                                                      |
+| `.agents/notes/verified/`                                | what was built, and the measured environment facts                                      |

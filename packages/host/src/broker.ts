@@ -2,23 +2,25 @@
  * The broker itself: a unix-socket server that turns a (host, repository) request into one
  * short-lived credential.
  *
- * Why a unix socket and not the LAN HTTP API the original design proposed: the container
- * runs with `http_proxy`/`https_proxy`/`all_proxy` pointing at another machine and with
- * `NODE_USE_ENV_PROXY=1`, so a plain-HTTP broker hop would route the shared key and the
- * minted token through that proxy, in cleartext. A socket on the filesystem is reachable
- * only from this host, ignores proxy environment variables entirely, and needs no TLS,
- * nonce or replay window.
+ * Why a unix socket and not the LAN HTTP API the original design proposed: the container runs with
+ * `http_proxy`/`https_proxy`/`all_proxy` pointing at another machine and with
+ * `NODE_USE_ENV_PROXY=1`, so a plain-HTTP broker hop would route the shared key and the minted
+ * token through that proxy, in cleartext. A socket on the filesystem is reachable only from this
+ * host, ignores proxy environment variables entirely, and needs no TLS, nonce or replay window.
  *
  * Security properties enforced here:
- *  - default deny: unknown host, missing path, unparsable path and unlisted repository are
- *    all refusals, each recorded in the audit log;
- *  - the credential is scoped to exactly one repository and to narrowed permissions;
- *  - a refusal never explains internals to the caller (details go to the host-side log);
- *  - the socket path is created by this process and refuses to replace anything that is not
- *    already a socket, and refuses to follow a symlink.
+ *
+ * - Default deny: unknown host, missing path, unparsable path and unlisted repository are all
+ *   refusals, each recorded in the audit log;
+ * - The credential is scoped to exactly one repository and to narrowed permissions;
+ * - A refusal never explains internals to the caller (details go to the host-side log);
+ * - The socket path is created by this process and refuses to replace anything that is not already a
+ *   socket, and refuses to follow a symlink.
  */
-import fs from 'node:fs';
-import { parseProxy, withProxy, type ProxyChoice } from './http.ts';
+import fs from 'node:fs'
+import net from 'node:net'
+import path from 'node:path'
+
 import {
   buildGhArgv,
   PACKAGE_VERSION,
@@ -34,22 +36,21 @@ import {
   parseMessage,
   socketPathRefusal,
   tokenFingerprint,
-} from 'gcb-core';
-import net from 'node:net';
-import path from 'node:path';
+} from 'gcb-core'
+import type { ActionValues, AuditSink, BrokerConfig, Provider, WireResponse } from 'gcb-core'
 
-import { hostConfig, normalizeRepoPath, parseAllowEntry, repoAllowed } from './policy.ts';
-import type { ActionValues, AuditSink, BrokerConfig, Provider, WireResponse } from 'gcb-core';
+import { parseProxy, withProxy, type ProxyChoice } from './http.ts'
+import { hostConfig, normalizeRepoPath, parseAllowEntry, repoAllowed } from './policy.ts'
 
 /** Reported by the `ping` operation so the container side can prove what it reached. */
-export const BROKER_VERSION = PACKAGE_VERSION;
+export const BROKER_VERSION = PACKAGE_VERSION
 
 /** How long one socket connection may stay idle before it is dropped. */
 // How long a connection may stay silent before it is dropped. It has to outlast the longest wait a client
 // makes on it: `pr` waits PR_TIMEOUT_MS (60s) for an answer that arrives only when the handler finishes, and
 // the handler is silent on the socket the whole time. At 30s the timer won every long action, and the client
 // reported "unreachable" for a merge or a close that had already happened.
-const REQUEST_TIMEOUT_MS = 120_000;
+const REQUEST_TIMEOUT_MS = 120_000
 
 /** Response codes returned to the helper. */
 export const CODES = {
@@ -59,101 +60,101 @@ export const CODES = {
   PATH_REQUIRED: 'path-required',
   REPO_NOT_ALLOWED: 'repo-not-allowed',
   PROVIDER_ERROR: 'provider-error',
-} as const;
+} as const
 
 /** Audit context shared by allow and deny records. */
 interface DecisionContext {
-  host: string | null;
-  repo: string | null;
-  session: string | null;
-  helper_pid: number | null;
+  host: string | null
+  repo: string | null
+  session: string | null
+  helper_pid: number | null
 }
 
 /** The mutable part of a running broker: reload swaps these together. */
 export interface HandlerState {
-  config: BrokerConfig;
-  providers: ReadonlyMap<string, Provider>;
+  config: BrokerConfig
+  providers: ReadonlyMap<string, Provider>
 }
 
 /** Options for {@link createRequestHandler}. */
 export interface RequestHandlerOptions {
-  readonly audit: AuditSink;
+  readonly audit: AuditSink
   /** The live snapshot; startBroker uses this so reload can swap it atomically. */
-  readonly state: HandlerState;
+  readonly state: HandlerState
   /** Host-side diagnostics sink; never seen by the caller. */
-  readonly log?: (message: string) => void;
+  readonly log?: (message: string) => void
 }
 
 /**
  * Make the socket path safe to bind.
  *
- * A stale socket left by a crashed broker is removed. Anything else at that path — a
- * symlink, a regular file, a directory — is refused rather than overwritten, because the path
- * may sit in a directory the agent container can write to. The containing directory is checked
- * for the same reason: a symlinked directory would let the container choose where the socket
- * gets bound.
+ * A stale socket left by a crashed broker is removed. Anything else at that path — a symlink, a
+ * regular file, a directory — is refused rather than overwritten, because the path may sit in a
+ * directory the agent container can write to. The containing directory is checked for the same
+ * reason: a symlinked directory would let the container choose where the socket gets bound.
  *
- * @param socketPath - the configured socket path.
- * @throws {Error} when the path exists and is not a stale socket, or the directory is a symlink.
+ * @param socketPath - The configured socket path.
+ * @throws {Error} When the path exists and is not a stale socket, or the directory is a symlink.
  */
 export function prepareSocketPath(socketPath: string): void {
   // Before creating anything: a Windows-backed mount inside WSL is 9p/drvfs, which will not carry a
   // unix socket. Failing here names the reason; failing at bind time does not.
-  const refusal = socketPathRefusal(socketPath);
+  const refusal = socketPathRefusal(socketPath)
   if (refusal !== null) {
-    throw new Error(`refusing to bind at ${socketPath}: ${refusal}`);
+    throw new Error(`refusing to bind at ${socketPath}: ${refusal}`)
   }
-  const directory = path.dirname(socketPath);
-  fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const directory = path.dirname(socketPath)
+  fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
   // Explicitly, not only in the mkdir call: on an ACL-based share (Synology's `synoacl`, which is
   // where this was measured) the mode given to a create call is advisory and the directory comes
   // out world-accessible. These permissions are the only thing stopping another local user from
   // connecting to the socket and asking the broker for credentials.
-  fs.chmodSync(directory, 0o700);
+  fs.chmodSync(directory, 0o700)
   if (fs.lstatSync(directory).isSymbolicLink()) {
-    throw new Error(`refusing to bind inside a symlinked directory: ${directory}`);
+    throw new Error(`refusing to bind inside a symlinked directory: ${directory}`)
   }
-  let stats: fs.Stats;
+  let stats: fs.Stats
   try {
-    stats = fs.lstatSync(socketPath);
+    stats = fs.lstatSync(socketPath)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-    throw error;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return
+    }
+    throw error
   }
   if (stats.isSymbolicLink()) {
-    throw new Error(`refusing to use socket path that is a symlink: ${socketPath}`);
+    throw new Error(`refusing to use socket path that is a symlink: ${socketPath}`)
   }
   if (!stats.isSocket()) {
     throw new Error(
       `refusing to replace ${socketPath}: something that is not a socket is in the way. ` +
         'If it is a leftover — an interrupted start, or a stray redirect onto the path — remove it and start again.',
-    );
+    )
   }
-  fs.unlinkSync(socketPath);
+  fs.unlinkSync(socketPath)
 }
 
-
 /**
- * Build the request handler. Kept separate from the server so it can be unit-tested without
- * a socket.
+ * Build the request handler. Kept separate from the server so it can be unit-tested without a
+ * socket.
  *
- * @param options - handler options.
- * @returns the handler.
+ * @param options - Handler options.
+ * @returns The handler.
  */
 export function createRequestHandler(
   options: RequestHandlerOptions,
 ): (message: Record<string, unknown>) => Promise<WireResponse> {
-  const { audit, log = () => {} } = options;
-  const state = options.state;
+  const { audit, log = () => {} } = options
+  const state = options.state
 
   /**
    * Record a refusal and produce the caller-visible response.
    *
-   * @param context - host/repo/session context.
-   * @param code - the response code.
-   * @param reason - the detailed reason; host-side log and audit only for provider errors.
-   * @param message - what the caller is told.
-   * @returns the refusal.
+   * @param context - Host/repo/session context.
+   * @param code - The response code.
+   * @param reason - The detailed reason; host-side log and audit only for provider errors.
+   * @param message - What the caller is told.
+   * @returns The refusal.
    */
   function deny(
     context: DecisionContext,
@@ -166,35 +167,48 @@ export function createRequestHandler(
     hostDetail?: string,
     event: 'credential' | 'action' | 'pull-request' = 'credential',
   ): WireResponse {
-    const detail = hostDetail === undefined || hostDetail === '' ? '' : ` | ${hostDetail}`;
-    audit.record({ event, decision: 'deny', ...context, code, reason: reason + detail });
-    log(`deny ${code} host=${context.host ?? '-'} repo=${context.repo ?? '-'} reason=${reason}${detail}`);
-    return { ok: false, code, reason: message };
+    const detail = hostDetail === undefined || hostDetail === '' ? '' : ` | ${hostDetail}`
+    audit.record({ event, decision: 'deny', ...context, code, reason: reason + detail })
+    log(
+      `deny ${code} host=${context.host ?? '-'} repo=${context.repo ?? '-'} reason=${reason}${detail}`,
+    )
+    return { ok: false, code, reason: message }
   }
 
-  async function handleRequest(message: Record<string, unknown>, proxy: ProxyChoice): Promise<WireResponse> {
+  async function handleRequest(
+    message: Record<string, unknown>,
+    proxy: ProxyChoice,
+  ): Promise<WireResponse> {
     // One request keeps the snapshot it started with, even if a reload lands mid-flight.
-    const current = { config: state.config, providers: state.providers };
-    const auditEvent = auditEventFor(message['op']);
+    const current = { config: state.config, providers: state.providers }
+    const auditEvent = auditEventFor(message['op'])
     const context: DecisionContext = {
       host: typeof message['host'] === 'string' ? message['host'] : null,
       repo: null,
       session: typeof message['session'] === 'string' ? message['session'].slice(0, 128) : null,
       helper_pid:
-        typeof message['pid'] === 'number' && Number.isInteger(message['pid']) ? message['pid'] : null,
-    };
+        typeof message['pid'] === 'number' && Number.isInteger(message['pid'])
+          ? message['pid']
+          : null,
+    }
 
-    const denyPullRequest = (code: string, reason: string, message: string, hostDetail?: string): WireResponse =>
-      deny(context, code, reason, message, hostDetail, auditEvent);
+    const denyPullRequest = (
+      code: string,
+      reason: string,
+      message: string,
+      hostDetail?: string,
+    ): WireResponse => deny(context, code, reason, message, hostDetail, auditEvent)
     if (message['op'] === 'ping') {
-      const configuredAudit = current.config.auditPath;
+      const configuredAudit = current.config.auditPath
       return {
         ok: true,
         version: BROKER_VERSION,
         hosts: [...current.providers.keys()],
         auditPath:
-          configuredAudit === null || configuredAudit === '' ? configuredAudit : path.resolve(configuredAudit),
-      };
+          configuredAudit === null || configuredAudit === ''
+            ? configuredAudit
+            : path.resolve(configuredAudit),
+      }
     }
     if (
       message['op'] !== 'credential' &&
@@ -207,12 +221,12 @@ export function createRequestHandler(
         CODES.BAD_REQUEST,
         `unknown op ${JSON.stringify(message['op'])}`,
         'unsupported operation',
-      );
+      )
     }
 
     // Host first: whether plaintext is tolerated is a property of the *host's* configuration,
     // not of the request, so the protocol can only be judged once the host is known.
-    const block = hostConfig(current.config, message['host']);
+    const block = hostConfig(current.config, message['host'])
     if (!block) {
       return deny(
         context,
@@ -221,12 +235,12 @@ export function createRequestHandler(
         'host is not configured',
         undefined,
         auditEvent,
-      );
+      )
     }
-    context.host = block.host;
+    context.host = block.host
 
-    const protocol = message['protocol'];
-    const insecureHttpAllowed = block.allowInsecureHttp === true;
+    const protocol = message['protocol']
+    const insecureHttpAllowed = block.allowInsecureHttp === true
     if (
       message['op'] === 'credential' &&
       protocol !== 'https' &&
@@ -237,15 +251,15 @@ export function createRequestHandler(
         CODES.PROTOCOL_NOT_HTTPS,
         `protocol=${JSON.stringify(protocol)} (allowInsecureHttp=${String(insecureHttpAllowed)})`,
         'only https is served for this host (a plaintext request would expose the credential on the wire)',
-      );
+      )
     }
 
-    const repo = normalizeRepoPath(message['path']);
+    const repo = normalizeRepoPath(message['path'])
     if (!repo) {
       const reason =
         typeof message['path'] === 'string' && message['path']
           ? `unparsable path ${JSON.stringify(message['path'])}`
-          : 'no path sent: git omits it unless credential.useHttpPath is enabled';
+          : 'no path sent: git omits it unless credential.useHttpPath is enabled'
       return deny(
         context,
         CODES.PATH_REQUIRED,
@@ -253,11 +267,11 @@ export function createRequestHandler(
         'the request carries no usable repository path, so a single-repository credential cannot be issued; enable `git config --global credential.useHttpPath true`',
         undefined,
         auditEvent,
-      );
+      )
     }
-    context.repo = repo.full;
+    context.repo = repo.full
 
-    const provider = current.providers.get(block.host);
+    const provider = current.providers.get(block.host)
     if (!provider) {
       return deny(
         context,
@@ -266,21 +280,25 @@ export function createRequestHandler(
         'provider unavailable',
         undefined,
         auditEvent,
-      );
+      )
     }
 
-    const allowedRepo = repoAllowed(block.allow, repo.full);
-    let forkPush = false;
-    let publicAction = false;
-    if (message['op'] === 'action' && block.allowPublicRead === true && typeof message['ghAction'] === 'string') {
+    const allowedRepo = repoAllowed(block.allow, repo.full)
+    let forkPush = false
+    let publicAction = false
+    if (
+      message['op'] === 'action' &&
+      block.allowPublicRead === true &&
+      typeof message['ghAction'] === 'string'
+    ) {
       try {
-        publicAction = getGhAction(message['ghAction']).readOnly === true;
+        publicAction = getGhAction(message['ghAction']).readOnly === true
       } catch {
         // The action branch reports the bad action name; this is only the allowlist test.
       }
     }
-    let forkAction = false;
-    let forkCheckError: ProviderConfigError | undefined;
+    let forkAction = false
+    let forkCheckError: ProviderConfigError | undefined
     if (
       !allowedRepo &&
       message['op'] === 'action' &&
@@ -288,35 +306,59 @@ export function createRequestHandler(
       provider.isForkOf !== undefined
     ) {
       for (const raw of block.allow) {
-        const entry = parseAllowEntry(raw);
-        if (!entry || entry.owner === '*' || entry.repo === '*') continue;
-        const fork = `${entry.owner}/${entry.repo}`;
-        if (fork === repo.full) continue;
+        const entry = parseAllowEntry(raw)
+        if (!entry || entry.owner === '*' || entry.repo === '*') {
+          continue
+        }
+        const fork = `${entry.owner}/${entry.repo}`
+        if (fork === repo.full) {
+          continue
+        }
         try {
           if (await provider.isForkOf(entry.owner, entry.repo, [repo.full])) {
-            forkAction = true;
-            break;
+            forkAction = true
+            break
           }
         } catch (error) {
-          if (error instanceof ProviderConfigError) forkCheckError = error;
-          continue;
+          if (error instanceof ProviderConfigError) {
+            forkCheckError = error
+          }
+          continue
         }
       }
     }
     if (forkCheckError !== undefined && !forkAction && !publicAction) {
-      return deny(context, CODES.PROVIDER_ERROR, forkCheckError.message, forkCheckError.message, undefined, auditEvent);
+      return deny(
+        context,
+        CODES.PROVIDER_ERROR,
+        forkCheckError.message,
+        forkCheckError.message,
+        undefined,
+        auditEvent,
+      )
     }
     if (!allowedRepo && !publicAction && !forkAction) {
-      if (message['op'] === 'credential' && block.allowForkPush === true && provider.isForkOf !== undefined) {
-        let fork = false;
-        let forkCredentialError: unknown;
+      if (
+        message['op'] === 'credential' &&
+        block.allowForkPush === true &&
+        provider.isForkOf !== undefined
+      ) {
+        let fork = false
+        let forkCredentialError: unknown
         try {
-          fork = await provider.isForkOf(repo.owner, repo.repo, block.allow);
+          fork = await provider.isForkOf(repo.owner, repo.repo, block.allow)
         } catch (error) {
-          forkCredentialError = error;
+          forkCredentialError = error
         }
         if (forkCredentialError instanceof ProviderConfigError) {
-          return deny(context, CODES.PROVIDER_ERROR, forkCredentialError.message, forkCredentialError.message, undefined, auditEvent);
+          return deny(
+            context,
+            CODES.PROVIDER_ERROR,
+            forkCredentialError.message,
+            forkCredentialError.message,
+            undefined,
+            auditEvent,
+          )
         }
         if (!fork) {
           return deny(
@@ -326,9 +368,9 @@ export function createRequestHandler(
             'repository is not allowlisted',
             undefined,
             auditEvent,
-          );
+          )
         }
-        forkPush = true;
+        forkPush = true
       } else {
         return deny(
           context,
@@ -337,67 +379,99 @@ export function createRequestHandler(
           'repository is not allowlisted',
           undefined,
           auditEvent,
-        );
+        )
       }
     }
 
     if (message['op'] === 'action') {
-      const ghAction = message['ghAction'];
-      const values = message['values'];
-      const identity = message['identity'];
+      const ghAction = message['ghAction']
+      const values = message['values']
+      const identity = message['identity']
       if (identity !== undefined && identity !== 'app' && identity !== 'user') {
-        return deny(context, CODES.BAD_REQUEST, 'bad action identity', 'the request names no usable identity', undefined, 'action');
+        return deny(
+          context,
+          CODES.BAD_REQUEST,
+          'bad action identity',
+          'the request names no usable identity',
+          undefined,
+          'action',
+        )
       }
-      const denyAction = (code: string, reason: string, message: string, hostDetail?: string): WireResponse =>
-        deny(context, code, reason, message, hostDetail, 'action');
-      if (typeof ghAction !== 'string' || values === null || typeof values !== 'object' || Array.isArray(values)) {
-        return denyAction(CODES.BAD_REQUEST, 'bad action request', 'the request carries no usable action');
+      const denyAction = (
+        code: string,
+        reason: string,
+        message: string,
+        hostDetail?: string,
+      ): WireResponse => deny(context, code, reason, message, hostDetail, 'action')
+      if (
+        typeof ghAction !== 'string' ||
+        values === null ||
+        typeof values !== 'object' ||
+        Array.isArray(values)
+      ) {
+        return denyAction(
+          CODES.BAD_REQUEST,
+          'bad action request',
+          'the request carries no usable action',
+        )
       }
-      const actionValues = values as ActionValues;
-      let spec: ReturnType<typeof getGhAction>;
+      const actionValues = values as ActionValues
+      let spec: ReturnType<typeof getGhAction>
       try {
-        spec = getGhAction(ghAction);
-        buildGhArgv(ghAction, actionValues, repo.full);
+        spec = getGhAction(ghAction)
+        buildGhArgv(ghAction, actionValues, repo.full)
       } catch (error) {
         if (error instanceof ActionError) {
-          return denyAction(CODES.BAD_REQUEST, error.message, error.message);
+          return denyAction(CODES.BAD_REQUEST, error.message, error.message)
         }
-        throw error;
+        throw error
       }
       if (identity === 'user' && spec.appUser !== true) {
-        return denyAction(CODES.BAD_REQUEST, 'action does not support the user identity', 'that action cannot run as a person');
+        return denyAction(
+          CODES.BAD_REQUEST,
+          'action does not support the user identity',
+          'that action cannot run as a person',
+        )
       }
       if (typeof provider.runAction !== 'function') {
         return denyAction(
           CODES.PROVIDER_ERROR,
           `provider ${provider.name} cannot run actions`,
           "this host's provider cannot run GitHub actions",
-        );
+        )
       }
-      let publicRead = false;
+      let publicRead = false
       if (!allowedRepo && !forkAction) {
         if (provider.isPublicRepository === undefined) {
-          return denyAction(CODES.REPO_NOT_ALLOWED, 'provider cannot verify public repositories', 'repository is not allowlisted');
+          return denyAction(
+            CODES.REPO_NOT_ALLOWED,
+            'provider cannot verify public repositories',
+            'repository is not allowlisted',
+          )
         }
-        let publicRepo = false;
-        let publicError: unknown;
+        let publicRepo = false
+        let publicError: unknown
         try {
-          publicRepo = await provider.isPublicRepository(repo.owner, repo.repo);
+          publicRepo = await provider.isPublicRepository(repo.owner, repo.repo)
         } catch (error) {
-          publicError = error;
+          publicError = error
         }
         if (publicError instanceof ProviderConfigError) {
-          return denyAction(CODES.PROVIDER_ERROR, publicError.message, publicError.message);
+          return denyAction(CODES.PROVIDER_ERROR, publicError.message, publicError.message)
         }
         if (!publicRepo) {
           if (forkCheckError !== undefined) {
-            return denyAction(CODES.PROVIDER_ERROR, forkCheckError.message, forkCheckError.message);
+            return denyAction(CODES.PROVIDER_ERROR, forkCheckError.message, forkCheckError.message)
           }
-          return denyAction(CODES.REPO_NOT_ALLOWED, 'repository is not public', 'repository is not allowlisted');
+          return denyAction(
+            CODES.REPO_NOT_ALLOWED,
+            'repository is not public',
+            'repository is not allowlisted',
+          )
         }
-        publicRead = true;
+        publicRead = true
       }
-      const startedAt = Date.now();
+      const startedAt = Date.now()
       try {
         const result = await provider.runAction({
           host: block.host,
@@ -409,10 +483,14 @@ export function createRequestHandler(
           ...(identity === undefined ? {} : { identity: identity as 'app' | 'user' }),
           ...(publicRead ? { publicRead: true } : {}),
           proxy,
-        });
+        })
         if (result.error !== undefined) {
-          const refusal = denyAction(CODES.PROVIDER_ERROR, result.error, 'the host could not start gh');
-          return result.warning === undefined ? refusal : { ...refusal, warning: result.warning };
+          const refusal = denyAction(
+            CODES.PROVIDER_ERROR,
+            result.error,
+            'the host could not start gh',
+          )
+          return result.warning === undefined ? refusal : { ...refusal, warning: result.warning }
         }
         audit.record({
           event: 'action',
@@ -430,7 +508,7 @@ export function createRequestHandler(
           truncated: result.truncated === true,
           timed_out: result.timedOut === true,
           bytes: Buffer.byteLength(result.stdout) + Buffer.byteLength(result.stderr),
-        });
+        })
         return {
           ok: true,
           stdout: result.stdout,
@@ -439,25 +517,27 @@ export function createRequestHandler(
           truncated: result.truncated,
           timedOut: result.timedOut,
           ...(result.warning === undefined ? {} : { warning: result.warning }),
-        };
+        }
       } catch (error) {
-        const reason = String((error as Error).message ?? error).slice(0, 300);
-        const hostDetail = (error as { hostDetail?: string }).hostDetail;
+        const reason = String((error as Error).message ?? error).slice(0, 300)
+        const hostDetail = (error as { hostDetail?: string }).hostDetail
         const callerMessage =
-          error instanceof ProviderConfigError ? reason : 'the broker could not run that action; see the broker log';
-        return denyAction(CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail);
+          error instanceof ProviderConfigError
+            ? reason
+            : 'the broker could not run that action; see the broker log'
+        return denyAction(CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail)
       }
     }
 
     if (message['op'] === 'logs') {
-      const jobId = message['jobId'];
+      const jobId = message['jobId']
       if (typeof jobId !== 'number' || !Number.isInteger(jobId) || jobId <= 0) {
         return deny(
           context,
           CODES.BAD_REQUEST,
           `bad jobId ${JSON.stringify(jobId)}`,
           'the request carries no usable workflow job id',
-        );
+        )
       }
       if (typeof provider.getJobLog !== 'function') {
         return deny(
@@ -465,7 +545,7 @@ export function createRequestHandler(
           CODES.PROVIDER_ERROR,
           `provider ${provider.name} cannot read logs`,
           "this host's provider cannot read workflow logs",
-        );
+        )
       }
       try {
         const jobLog = await provider.getJobLog({
@@ -474,7 +554,7 @@ export function createRequestHandler(
           repo: repo.repo,
           jobId,
           proxy,
-        });
+        })
         audit.record({
           event: 'logs',
           decision: 'allow',
@@ -482,23 +562,23 @@ export function createRequestHandler(
           job_id: jobId,
           bytes: Buffer.byteLength(jobLog.text, 'utf8'),
           truncated: jobLog.truncated === true,
-        });
-        return { ok: true, log: jobLog.text, truncated: jobLog.truncated === true };
+        })
+        return { ok: true, log: jobLog.text, truncated: jobLog.truncated === true }
       } catch (error) {
         // Same rule as a credential: a provider response can embed anything, so only our own
         // configuration errors are shown to the caller.
-        const reason = String((error as Error).message ?? error).slice(0, 300);
-      const hostDetail = (error as { hostDetail?: string }).hostDetail;
+        const reason = String((error as Error).message ?? error).slice(0, 300)
+        const hostDetail = (error as { hostDetail?: string }).hostDetail
         const callerMessage =
           error instanceof ProviderConfigError
             ? reason
-            : 'the broker could not read that log; see the broker log';
-        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail);
+            : 'the broker could not read that log; see the broker log'
+        return deny(context, CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail)
       }
     }
 
     if (message['op'] === 'pull-request') {
-      const action = message['action'] ?? 'open';
+      const action = message['action'] ?? 'open'
       if (
         action !== 'open' &&
         action !== 'status' &&
@@ -509,49 +589,88 @@ export function createRequestHandler(
         action !== 'resolve' &&
         action !== 'fork'
       ) {
-        return denyPullRequest(CODES.BAD_REQUEST, `bad action ${JSON.stringify(action)}`, 'unknown pull request action');
+        return denyPullRequest(
+          CODES.BAD_REQUEST,
+          `bad action ${JSON.stringify(action)}`,
+          'unknown pull request action',
+        )
       }
-      const number = message['number'];
-      const commentId = message['commentId'];
-      const threadId = message['threadId'];
-      const head = message['head'];
-      const base = message['base'];
-      const identity = message['identity'];
+      const number = message['number']
+      const commentId = message['commentId']
+      const threadId = message['threadId']
+      const head = message['head']
+      const base = message['base']
+      const identity = message['identity']
       if (identity !== undefined && identity !== 'app' && identity !== 'user') {
-        return denyPullRequest(CODES.BAD_REQUEST, `bad identity ${JSON.stringify(identity)}`, 'the identity must be app or user');
+        return denyPullRequest(
+          CODES.BAD_REQUEST,
+          `bad identity ${JSON.stringify(identity)}`,
+          'the identity must be app or user',
+        )
       }
       if (action === 'fork' && identity !== 'user') {
-        return denyPullRequest(CODES.BAD_REQUEST, 'fork without a user identity', 'a fork must be owned by a person');
+        return denyPullRequest(
+          CODES.BAD_REQUEST,
+          'fork without a user identity',
+          'a fork must be owned by a person',
+        )
       }
-      const title = message['title'];
-      const body = message['body'];
-      const filePath = message['filePath'];
-      const line = message['line'];
-      const side = message['side'] ?? 'right';
-      const branch = BRANCH;
+      const title = message['title']
+      const body = message['body']
+      const filePath = message['filePath']
+      const line = message['line']
+      const side = message['side'] ?? 'right'
+      const branch = BRANCH
       const usable = (value: unknown): value is string =>
-        typeof value === 'string' && branch.test(value) && !value.includes('..');
+        typeof value === 'string' && branch.test(value) && !value.includes('..')
 
       if (action === 'open' && !usable(head)) {
-        return denyPullRequest(CODES.BAD_REQUEST, `bad head ${JSON.stringify(head)}`, 'the head branch name is not usable');
+        return denyPullRequest(
+          CODES.BAD_REQUEST,
+          `bad head ${JSON.stringify(head)}`,
+          'the head branch name is not usable',
+        )
       }
       if (action === 'open' && base !== undefined && !usable(base)) {
-        return denyPullRequest(CODES.BAD_REQUEST, `bad base ${JSON.stringify(base)}`, 'the base branch name is not usable');
+        return denyPullRequest(
+          CODES.BAD_REQUEST,
+          `bad base ${JSON.stringify(base)}`,
+          'the base branch name is not usable',
+        )
       }
-      if (action === 'open' && (typeof title !== 'string' || title.trim() === '' || title.length > MAX_TITLE_CHARS)) {
-        return denyPullRequest(CODES.BAD_REQUEST, 'bad title', `a pull request needs a title of at most ${MAX_TITLE_CHARS} characters`);
+      if (
+        action === 'open' &&
+        (typeof title !== 'string' || title.trim() === '' || title.length > MAX_TITLE_CHARS)
+      ) {
+        return denyPullRequest(
+          CODES.BAD_REQUEST,
+          'bad title',
+          `a pull request needs a title of at most ${MAX_TITLE_CHARS} characters`,
+        )
       }
       if (body !== undefined && (typeof body !== 'string' || body.length > MAX_BODY_CHARS)) {
-        return denyPullRequest(CODES.BAD_REQUEST, 'bad body', `the body must be text of at most ${MAX_BODY_CHARS} characters`);
+        return denyPullRequest(
+          CODES.BAD_REQUEST,
+          'bad body',
+          `the body must be text of at most ${MAX_BODY_CHARS} characters`,
+        )
       }
 
       // An anchored comment: both halves or neither, only on a comment, and never outside the repository.
-      const anchored = filePath !== undefined || line !== undefined;
+      const anchored = filePath !== undefined || line !== undefined
       if (anchored && action !== 'comment') {
-        return denyPullRequest(CODES.BAD_REQUEST, `anchor fields with ${action}`, 'only a comment can be anchored to a file and a line');
+        return denyPullRequest(
+          CODES.BAD_REQUEST,
+          `anchor fields with ${action}`,
+          'only a comment can be anchored to a file and a line',
+        )
       }
       if (anchored && (filePath === undefined || line === undefined)) {
-        return denyPullRequest(CODES.BAD_REQUEST, 'half an anchor', 'an anchored comment needs a file and a line, or neither');
+        return denyPullRequest(
+          CODES.BAD_REQUEST,
+          'half an anchor',
+          'an anchored comment needs a file and a line, or neither',
+        )
       }
       if (filePath !== undefined) {
         if (
@@ -561,27 +680,51 @@ export function createRequestHandler(
           filePath.length > 1024 ||
           filePath.split('/').includes('..')
         ) {
-          return denyPullRequest(CODES.BAD_REQUEST, `bad file path ${JSON.stringify(filePath)}`, 'the file path is not usable');
+          return denyPullRequest(
+            CODES.BAD_REQUEST,
+            `bad file path ${JSON.stringify(filePath)}`,
+            'the file path is not usable',
+          )
         }
       }
       if (line !== undefined && (!Number.isInteger(line) || Number(line) <= 0)) {
-        return denyPullRequest(CODES.BAD_REQUEST, `bad line ${JSON.stringify(line)}`, 'the line has to be a positive number');
+        return denyPullRequest(
+          CODES.BAD_REQUEST,
+          `bad line ${JSON.stringify(line)}`,
+          'the line has to be a positive number',
+        )
       }
       if (side !== 'left' && side !== 'right') {
-        return denyPullRequest(CODES.BAD_REQUEST, `bad side ${JSON.stringify(side)}`, 'the side has to be left or right');
+        return denyPullRequest(
+          CODES.BAD_REQUEST,
+          `bad side ${JSON.stringify(side)}`,
+          'the side has to be left or right',
+        )
       }
-      if ((action === 'comment' || action === 'reply' || action === 'edit') && (typeof body !== 'string' || body.trim() === '')) {
-        return denyPullRequest(CODES.BAD_REQUEST, 'empty comment', 'a comment has to say something');
+      if (
+        (action === 'comment' || action === 'reply' || action === 'edit') &&
+        (typeof body !== 'string' || body.trim() === '')
+      ) {
+        return denyPullRequest(CODES.BAD_REQUEST, 'empty comment', 'a comment has to say something')
       }
-      if ((action === 'reply' || action === 'edit') && (typeof commentId !== 'number' || !Number.isInteger(commentId) || commentId <= 0)) {
+      if (
+        (action === 'reply' || action === 'edit') &&
+        (typeof commentId !== 'number' || !Number.isInteger(commentId) || commentId <= 0)
+      ) {
         return denyPullRequest(
           CODES.BAD_REQUEST,
           'bad commentId',
-          action === 'reply' ? 'a reply needs the id of the comment it answers' : 'an edit needs the id of the review comment it changes',
-        );
+          action === 'reply'
+            ? 'a reply needs the id of the comment it answers'
+            : 'an edit needs the id of the review comment it changes',
+        )
       }
       if (action === 'resolve' && (typeof threadId !== 'string' || threadId === '')) {
-        return denyPullRequest(CODES.BAD_REQUEST, 'bad threadId', 'resolving needs the id of the thread, which --threads prints');
+        return denyPullRequest(
+          CODES.BAD_REQUEST,
+          'bad threadId',
+          'resolving needs the id of the thread, which --threads prints',
+        )
       }
       if (
         action !== 'open' &&
@@ -590,14 +733,18 @@ export function createRequestHandler(
         action !== 'fork' &&
         (typeof number !== 'number' || !Number.isInteger(number) || number <= 0)
       ) {
-        return denyPullRequest(CODES.BAD_REQUEST, `bad number ${JSON.stringify(number)}`, 'this action needs a pull request number');
+        return denyPullRequest(
+          CODES.BAD_REQUEST,
+          `bad number ${JSON.stringify(number)}`,
+          'this action needs a pull request number',
+        )
       }
       if (typeof provider.pullRequest !== 'function') {
         return denyPullRequest(
           CODES.PROVIDER_ERROR,
           `provider ${provider.name} cannot manage pull requests`,
           "this host's provider cannot manage pull requests",
-        );
+        )
       }
       try {
         const result = await provider.pullRequest({
@@ -610,15 +757,15 @@ export function createRequestHandler(
           ...(typeof number === 'number' ? { number } : {}),
           ...(typeof commentId === 'number' ? { commentId } : {}),
           ...(typeof threadId === 'string' ? { threadId } : {}),
-        ...(typeof filePath === 'string' ? { filePath } : {}),
-        ...(typeof line === 'number' ? { line } : {}),
-        ...(typeof filePath === 'string' && typeof line === 'number' ? { side } : {}),
+          ...(typeof filePath === 'string' ? { filePath } : {}),
+          ...(typeof line === 'number' ? { line } : {}),
+          ...(typeof filePath === 'string' && typeof line === 'number' ? { side } : {}),
           ...(typeof head === 'string' ? { head } : {}),
           ...(typeof base === 'string' ? { base } : {}),
           ...(typeof title === 'string' ? { title } : {}),
           ...(typeof body === 'string' ? { body } : {}),
           draft: message['draft'] === true,
-        });
+        })
         audit.record({
           event: 'pull-request',
           decision: 'allow',
@@ -631,23 +778,25 @@ export function createRequestHandler(
           ...(typeof commentId === 'number' ? { comment_id: commentId } : {}),
           ...(typeof head === 'string' ? { head } : {}),
           ...(typeof base === 'string' ? { base } : {}),
-          ...(action === 'fork' ? { fork_url: result.url } : { pr_number: result.number, pr_url: result.url }),
-        });
+          ...(action === 'fork'
+            ? { fork_url: result.url }
+            : { pr_number: result.number, pr_url: result.url }),
+        })
         return {
           ok: true,
           ...(action === 'fork' ? {} : { prNumber: result.number }),
           prUrl: result.url,
           prState: result.state,
           prStatus: result.status,
-        };
+        }
       } catch (error) {
-        const reason = String((error as Error).message ?? error).slice(0, 300);
-      const hostDetail = (error as { hostDetail?: string }).hostDetail;
+        const reason = String((error as Error).message ?? error).slice(0, 300)
+        const hostDetail = (error as { hostDetail?: string }).hostDetail
         const callerMessage =
           error instanceof ProviderConfigError
             ? reason
-            : 'the broker could not manage that pull request; see the broker log';
-        return denyPullRequest(CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail);
+            : 'the broker could not manage that pull request; see the broker log'
+        return denyPullRequest(CODES.PROVIDER_ERROR, reason, callerMessage, hostDetail)
       }
     }
 
@@ -658,7 +807,7 @@ export function createRequestHandler(
         repo: repo.repo,
         full: repo.full,
         proxy,
-      });
+      })
       audit.record({
         event: 'credential',
         decision: 'allow',
@@ -668,29 +817,29 @@ export function createRequestHandler(
         expires_at: new Date(credential.expiresAt).toISOString(),
         cached: credential.cached === true,
         fork_push: forkPush,
-      });
+      })
       return {
         ok: true,
         username: credential.username,
         password: credential.password,
         expires_at: new Date(credential.expiresAt).toISOString(),
-      };
+      }
     } catch (error) {
       // The caller normally gets a generic message, because provider errors can embed API
       // responses. A ProviderConfigError is ours — a permission name and the configuration — and
       // passing it on is the difference between "see the broker log" and knowing what is missing.
-      const reason = String((error as Error).message ?? error).slice(0, 300);
-      const hostDetail = (error as { hostDetail?: string }).hostDetail;
+      const reason = String((error as Error).message ?? error).slice(0, 300)
+      const hostDetail = (error as { hostDetail?: string }).hostDetail
       const message =
         error instanceof ProviderConfigError
           ? reason
-          : 'the broker could not mint a credential; see the broker log';
-      return deny(context, CODES.PROVIDER_ERROR, reason, message, hostDetail);
+          : 'the broker could not mint a credential; see the broker log'
+      return deny(context, CODES.PROVIDER_ERROR, reason, message, hostDetail)
     }
-  };
+  }
 
   return async function handle(message: Record<string, unknown>): Promise<WireResponse> {
-    const proxy = parseProxy(message['proxy']);
+    const proxy = parseProxy(message['proxy'])
     if (proxy === false) {
       return deny(
         { host: null, repo: null, session: null, helper_pid: null },
@@ -699,74 +848,76 @@ export function createRequestHandler(
         'invalid proxy',
         undefined,
         auditEventFor(message['op']),
-      );
+      )
     }
-    return withProxy(proxy, () => handleRequest(message, proxy));
-  };
+    return withProxy(proxy, () => handleRequest(message, proxy))
+  }
 }
 
 function auditEventFor(op: unknown): 'action' | 'pull-request' | 'credential' {
-  return op === 'action' ? 'action' : op === 'pull-request' ? 'pull-request' : 'credential';
+  return op === 'action' ? 'action' : op === 'pull-request' ? 'pull-request' : 'credential'
 }
 
 /** Options for {@link startBroker}. */
 export interface StartBrokerOptions {
-  readonly config: BrokerConfig;
-  readonly audit: AuditSink;
-  readonly providers: ReadonlyMap<string, Provider>;
-  readonly log?: (message: string) => void;
+  readonly config: BrokerConfig
+  readonly audit: AuditSink
+  readonly providers: ReadonlyMap<string, Provider>
+  readonly log?: (message: string) => void
 }
 
 /** A running broker. */
 export interface RunningBroker {
-  readonly socketPath: string;
+  readonly socketPath: string
   /** Swap the configuration and providers; the socket path is immutable for one process. */
-  reload(config: BrokerConfig, providers: ReadonlyMap<string, Provider>): void;
-  close(): Promise<void>;
+  reload(config: BrokerConfig, providers: ReadonlyMap<string, Provider>): void
+  close(): Promise<void>
 }
 
 /**
  * Start the broker.
  *
- * @param options - server options.
- * @returns the running broker.
+ * @param options - Server options.
+ * @returns The running broker.
  */
 export async function startBroker(options: StartBrokerOptions): Promise<RunningBroker> {
-  const { config, audit, providers, log = () => {} } = options;
-  prepareSocketPath(config.socketPath);
-  const state: HandlerState = { config, providers };
-  const handle = createRequestHandler({ audit, log, state });
+  const { config, audit, providers, log = () => {} } = options
+  prepareSocketPath(config.socketPath)
+  const state: HandlerState = { config, providers }
+  const handle = createRequestHandler({ audit, log, state })
   const reload = (nextConfig: BrokerConfig, nextProviders: ReadonlyMap<string, Provider>): void => {
-    state.config = nextConfig;
-    state.providers = nextProviders;
-  };
+    state.config = nextConfig
+    state.providers = nextProviders
+  }
 
-  const server = net.createServer({ allowHalfOpen: false }, (socket) => {
-    socket.setTimeout(REQUEST_TIMEOUT_MS);
+  const server = net.createServer({ allowHalfOpen: false }, socket => {
+    socket.setTimeout(REQUEST_TIMEOUT_MS)
     const reader = createLineReader({
-      onLine: (line) => {
-        const message = parseMessage(line);
+      onLine: line => {
+        const message = parseMessage(line)
         if (message?.['op'] === 'action' && typeof message['ghAction'] === 'string') {
           try {
-            socket.setTimeout(getGhAction(message['ghAction']).timeoutSeconds * 1000 + 30_000);
+            socket.setTimeout(getGhAction(message['ghAction']).timeoutSeconds * 1000 + 30_000)
           } catch {
             // The action branch returns the named refusal.
           }
         }
         const respond = (response: WireResponse): void => {
-          if (!socket.destroyed) socket.write(encodeMessage(response));
-        };
+          if (!socket.destroyed) {
+            socket.write(encodeMessage(response))
+          }
+        }
         if (!message) {
-          respond({ ok: false, code: CODES.BAD_REQUEST, reason: 'malformed request' });
-          return;
+          respond({ ok: false, code: CODES.BAD_REQUEST, reason: 'malformed request' })
+          return
         }
         handle(message).then(respond, (error: unknown) => {
-          respond({ ok: false, code: CODES.PROVIDER_ERROR, reason: 'internal broker error' });
-          log(`internal error: ${String((error as Error).message ?? error)}`);
-        });
+          respond({ ok: false, code: CODES.PROVIDER_ERROR, reason: 'internal broker error' })
+          log(`internal error: ${String((error as Error).message ?? error)}`)
+        })
       },
       onOverflow: () => {
-        log(`request exceeded ${MAX_MESSAGE_BYTES} bytes`);
+        log(`request exceeded ${MAX_MESSAGE_BYTES} bytes`)
         if (!socket.writableEnded && !socket.destroyed) {
           socket.end(
             encodeMessage({
@@ -774,37 +925,39 @@ export async function startBroker(options: StartBrokerOptions): Promise<RunningB
               code: CODES.BAD_REQUEST,
               reason: `request exceeds ${MAX_MESSAGE_BYTES} bytes`,
             }),
-          );
+          )
         }
       },
-    });
-    socket.on('data', reader);
-    socket.on('timeout', () => socket.destroy());
-    socket.on('error', () => {});
-  });
+    })
+    socket.on('data', reader)
+    socket.on('timeout', () => socket.destroy())
+    socket.on('error', () => {})
+  })
 
   await new Promise<void>((resolve, reject) => {
-    const onError = (error: Error): void => reject(error);
-    server.once('error', onError);
+    const onError = (error: Error): void => reject(error)
+    server.once('error', onError)
     server.listen(config.socketPath, () => {
-      server.off('error', onError);
-      resolve();
-    });
-  });
+      server.off('error', onError)
+      resolve()
+    })
+  })
 
-  if (config.socketMode) fs.chmodSync(config.socketPath, config.socketMode);
-  log(`listening on ${config.socketPath} (mode ${config.socketMode.toString(8)})`);
+  if (config.socketMode) {
+    fs.chmodSync(config.socketPath, config.socketMode)
+  }
+  log(`listening on ${config.socketPath} (mode ${config.socketMode.toString(8)})`)
 
   return {
     socketPath: config.socketPath,
     reload,
     async close(): Promise<void> {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await new Promise<void>(resolve => server.close(() => resolve()))
       try {
-        fs.unlinkSync(config.socketPath);
+        fs.unlinkSync(config.socketPath)
       } catch {
         // Already gone: fine.
       }
     },
-  };
+  }
 }

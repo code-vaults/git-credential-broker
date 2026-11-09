@@ -60,6 +60,9 @@ Two consequences:
 corepack yarn build        # tsc per package + scripts/postbuild.mjs
 corepack yarn typecheck    # tsc, no emit
 corepack yarn docs:actions # regenerate the README action permission table (or --check)
+corepack yarn lint          # eslint + oxlint + tsc
+corepack yarn fix           # apply the linters' fixes
+corepack yarn format        # oxfmt + prettier
 ```
 
 Output goes to `packages/*/lib/`. `scripts/postbuild.mjs` exists for one reason: the two
@@ -221,13 +224,9 @@ docker-compose.example.yml  tracked sidecar example
 
 CI runs `tsc` over the tests; `node --test` alone strips types and would miss a type error.
 
-```sh
-corepack yarn hooks:install   # once per checkout
-```
-
-This installs the `simple-git-hooks` pre-push hook configured by `.simple-git-hooks.js`; the
-`@1stg/simple-git-hooks` base is used, with `pre-push: yarn typecheck` added. It is opt-in and not
-installed by `yarn install`. Skip one push with:
+`yarn install` runs `prepare` through the prepare-lifecycle plugin and installs the hooks configured
+by `.simple-git-hooks.js` (the `@1stg/simple-git-hooks` base, plus `pre-push: yarn typecheck`).
+Skip one push with:
 
 ```sh
 SKIP_SIMPLE_GIT_HOOKS=1 git push

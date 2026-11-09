@@ -1,32 +1,32 @@
 /**
- * Broker configuration: loaded from a YAML file that lives on the host, outside every
- * mount the agent container can see, and validated eagerly so a broken or over-broad
- * configuration stops the daemon at startup instead of silently denying (or silently
- * allowing) at push time.
+ * Broker configuration: loaded from a YAML file that lives on the host, outside every mount the
+ * agent container can see, and validated eagerly so a broken or over-broad configuration stops the
+ * daemon at startup instead of silently denying (or silently allowing) at push time.
  */
-import { existsSync, readFileSync } from 'node:fs';
-import path, { posix } from 'node:path';
-import { parseDocument } from 'yaml';
+import { existsSync, readFileSync } from 'node:fs'
+import path, { posix } from 'node:path'
 
-import { parseAllowEntry } from './policy.ts';
-import type { BrokerConfig, GithubAppHostConfig, HostConfig, StaticHostConfig } from 'gcb-core';
+import type { BrokerConfig, GithubAppHostConfig, HostConfig, StaticHostConfig } from 'gcb-core'
+import { parseDocument } from 'yaml'
+
+import { parseAllowEntry } from './policy.ts'
 
 /** The file every command looks for when no configuration path is given. */
-export const DEFAULT_CONFIG_FILE = 'broker.config.yml';
+export const DEFAULT_CONFIG_FILE = 'broker.config.yml'
 
 /**
  * Where the configuration lives when nothing says otherwise.
  *
  * This convention is what makes the commands usable without repeating paths: run them from the
- * deployment directory and `./broker.config.yml` is found, or export `GIT_BROKER_CONFIG` once.
- * An explicit `--config` always wins.
+ * deployment directory and `./broker.config.yml` is found, or export `GIT_BROKER_CONFIG` once. An
+ * explicit `--config` always wins.
  *
- * @param explicit - the `--config` argument, if any.
- * @param env - the environment to read.
- * @returns an absolute path.
+ * @param explicit - The `--config` argument, if any.
+ * @param env - The environment to read.
+ * @returns An absolute path.
  */
 export function resolveConfigPath(explicit?: string, env: NodeJS.ProcessEnv = process.env): string {
-  return path.resolve(explicit || env['GIT_BROKER_CONFIG'] || DEFAULT_CONFIG_FILE);
+  return path.resolve(explicit || env['GIT_BROKER_CONFIG'] || DEFAULT_CONFIG_FILE)
 }
 
 /**
@@ -35,15 +35,15 @@ export function resolveConfigPath(explicit?: string, env: NodeJS.ProcessEnv = pr
  * The key, the configuration and the log directory are siblings, so the file's own location says
  * where the deployment is.
  *
- * @param configPath - the configuration path.
- * @returns the absolute directory.
+ * @param configPath - The configuration path.
+ * @returns The absolute directory.
  */
 export function deploymentDir(configPath: string): string {
-  return path.dirname(path.resolve(configPath));
+  return path.dirname(path.resolve(configPath))
 }
 
 /** The two supported deployments. Which one a configuration suits is decided by its paths. */
-export type DeploymentMode = 'host' | 'sidecar';
+export type DeploymentMode = 'host' | 'sidecar'
 
 /**
  * Fixed paths inside the sidecar.
@@ -54,22 +54,23 @@ export type DeploymentMode = 'host' | 'sidecar';
 /**
  * The file name the authorized person's refresh token is kept under.
  *
- * It sits beside the private key, because the broker reads the key and can find the token without being
- * told anything else — one rule, used by the writer, the reader and the mount, so they cannot drift.
+ * It sits beside the private key, because the broker reads the key and can find the token without
+ * being told anything else — one rule, used by the writer, the reader and the mount, so they cannot
+ * drift.
  */
-export const USER_TOKEN_FILE = 'user.refresh';
+export const USER_TOKEN_FILE = 'user.refresh'
 
 /**
  * Where the authorized person's refresh token is, given the key it sits beside.
  *
- * posix, not path: these are paths inside the deployment, and the process reading them need not be the
- * platform they belong to.
+ * Posix, not path: these are paths inside the deployment, and the process reading them need not be
+ * the platform they belong to.
  *
- * @param privateKeyPath - the key, as the process that reads it sees the path.
- * @returns the refresh token path.
+ * @param privateKeyPath - The key, as the process that reads it sees the path.
+ * @returns The refresh token path.
  */
 export function userTokenPath(privateKeyPath: string): string {
-  return posix.join(posix.dirname(privateKeyPath), USER_TOKEN_FILE);
+  return posix.join(posix.dirname(privateKeyPath), USER_TOKEN_FILE)
 }
 
 export const SIDECAR = {
@@ -82,7 +83,7 @@ export const SIDECAR = {
   auditPath: '/var/log/git-cred-broker/audit.jsonl',
   socketDir: '/run/git-broker',
   socketPath: '/run/git-broker/broker.sock',
-} as const;
+} as const
 
 /**
  * Which deployment a configuration was written for.
@@ -91,13 +92,15 @@ export const SIDECAR = {
  * can find its key. This lives here, not with the CLI, so the daemon can use it to explain a
  * mismatch instead of reporting a bare ENOENT about a path that only exists in the other layout.
  *
- * @param config - a validated configuration.
- * @returns the deployment it suits.
+ * @param config - A validated configuration.
+ * @returns The deployment it suits.
  */
 export function inferMode(config: BrokerConfig): DeploymentMode {
-  const block = config.hosts['github.com'];
-  const keyPath = block?.provider === 'github-app' ? block.privateKeyPath : undefined;
-  return keyPath === SIDECAR.keyPath && config.socketPath === SIDECAR.socketPath ? 'sidecar' : 'host';
+  const block = config.hosts['github.com']
+  const keyPath = block?.provider === 'github-app' ? block.privateKeyPath : undefined
+  return keyPath === SIDECAR.keyPath && config.socketPath === SIDECAR.socketPath
+    ? 'sidecar'
+    : 'host'
 }
 
 /**
@@ -106,19 +109,23 @@ export function inferMode(config: BrokerConfig): DeploymentMode {
  * Same reasoning as the key: a path that does not resolve is a deployment mistake, and the process
  * that runs the broker is the one whose paths count.
  *
- * @param config - the loaded configuration.
+ * @param config - The loaded configuration.
  */
 export function assertUserTokensReadable(config: BrokerConfig): void {
   for (const [host, block] of Object.entries(config.hosts)) {
-    if (block.provider !== 'github-app') continue;
+    if (block.provider !== 'github-app') {
+      continue
+    }
     for (const [owner, tokenPath] of Object.entries(block.userTokens ?? {})) {
-      if (existsSync(tokenPath)) continue;
+      if (existsSync(tokenPath)) {
+        continue
+      }
       throw new Error(
         `cannot read the token for ${host}/${owner}: ${tokenPath} does not exist.\n` +
-        `       Create a fine-grained token with pull requests: read and write, contents: read and\n` +
-        `       metadata: read, for the repositories the allowlist names, and put it there — or drop\n` +
-        `       userTokens to keep opening pull requests as the app.`,
-      );
+          `       Create a fine-grained token with pull requests: read and write, contents: read and\n` +
+          `       metadata: read, for the repositories the allowlist names, and put it there — or drop\n` +
+          `       userTokens to keep opening pull requests as the app.`,
+      )
     }
   }
 }
@@ -126,20 +133,24 @@ export function assertUserTokensReadable(config: BrokerConfig): void {
 /**
  * Check that each recorded private key is readable, before the caller tries to read it.
  *
- * Both the daemon and `diagnose` need this, because both read the key, and a bare
- * `ENOENT ... /etc/git-cred-broker/app.pem` says nothing: that path exists only inside the sidecar,
- * so the mistake is where the command was run, not that the key is missing. The layout is
- * recoverable from the configuration itself, so name it and give the way out.
+ * Both the daemon and `diagnose` need this, because both read the key, and a bare `ENOENT ...
+ * /etc/git-cred-broker/app.pem` says nothing: that path exists only inside the sidecar, so the
+ * mistake is where the command was run, not that the key is missing. The layout is recoverable from
+ * the configuration itself, so name it and give the way out.
  *
- * @param config - the validated configuration.
- * @throws {Error} when a key file is missing, with the remedy in the message.
+ * @param config - The validated configuration.
+ * @throws {Error} When a key file is missing, with the remedy in the message.
  */
 
 export function assertKeysReadable(config: BrokerConfig): void {
-  const mode = inferMode(config);
+  const mode = inferMode(config)
   for (const [host, block] of Object.entries(config.hosts)) {
-    if (block.provider !== 'github-app' || block.privateKeyPath === undefined) continue;
-    if (existsSync(block.privateKeyPath)) continue;
+    if (block.provider !== 'github-app' || block.privateKeyPath === undefined) {
+      continue
+    }
+    if (existsSync(block.privateKeyPath)) {
+      continue
+    }
 
     const remedy =
       mode === 'sidecar'
@@ -148,32 +159,32 @@ export function assertKeysReadable(config: BrokerConfig): void {
           '         gcb init --mode host --socket-path <the path the host process binds>'
         : `${block.privateKeyPath} is the host's path. Install the key there (init does), or if this\n` +
           '       deployment is a sidecar, re-run init with --mode sidecar so the configuration records\n' +
-          '       the paths the sidecar actually mounts.';
-    throw new Error(`cannot read the private key for ${host}: ${remedy}`);
+          '       the paths the sidecar actually mounts.'
+    throw new Error(`cannot read the private key for ${host}: ${remedy}`)
   }
 }
 
 /** Providers this build knows how to construct. */
-export const KNOWN_PROVIDERS = ['github-app', 'static'] as const;
+export const KNOWN_PROVIDERS = ['github-app', 'static'] as const
 
 /**
  * Whether a value is a plain object.
  *
- * @param value - the value to test.
- * @returns true for a non-null, non-array object.
+ * @param value - The value to test.
+ * @returns True for a non-null, non-array object.
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**
  * Read an optional string field, recording a type error instead of coercing.
  *
- * @param record - the object to read from.
- * @param key - the field name.
- * @param errors - the error accumulator.
- * @param at - the human-readable location, for messages.
- * @returns the string, or undefined when absent or invalid.
+ * @param record - The object to read from.
+ * @param key - The field name.
+ * @param errors - The error accumulator.
+ * @param at - The human-readable location, for messages.
+ * @returns The string, or undefined when absent or invalid.
  */
 function stringField(
   record: Record<string, unknown>,
@@ -181,23 +192,25 @@ function stringField(
   errors: string[],
   at: string,
 ): string | undefined {
-  const value = record[key];
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== 'string') {
-    errors.push(`${at}.${key} must be a string`);
-    return undefined;
+  const value = record[key]
+  if (value === undefined || value === null) {
+    return undefined
   }
-  return value;
+  if (typeof value !== 'string') {
+    errors.push(`${at}.${key} must be a string`)
+    return undefined
+  }
+  return value
 }
 
 /**
  * Read an optional HTTPS URL field.
  *
- * @param record - the object to read from.
- * @param key - the field name.
- * @param errors - the error accumulator.
- * @param at - the configuration path, for the error message.
- * @returns the URL, or undefined when absent or invalid.
+ * @param record - The object to read from.
+ * @param key - The field name.
+ * @param errors - The error accumulator.
+ * @param at - The configuration path, for the error message.
+ * @returns The URL, or undefined when absent or invalid.
  */
 function httpsUrlField(
   record: Record<string, unknown>,
@@ -205,25 +218,29 @@ function httpsUrlField(
   errors: string[],
   at: string,
 ): string | undefined {
-  const value = stringField(record, key, errors, at);
-  if (value === undefined) return undefined;
+  const value = stringField(record, key, errors, at)
+  if (value === undefined) {
+    return undefined
+  }
   try {
-    if (new URL(value).protocol === 'https:') return value;
+    if (new URL(value).protocol === 'https:') {
+      return value
+    }
   } catch {
     // Fall through to the shared error below.
   }
-  errors.push(`${at}.${key} must be an https URL`);
-  return undefined;
+  errors.push(`${at}.${key} must be an https URL`)
+  return undefined
 }
 
 /**
  * Read an optional numeric field.
  *
- * @param record - the object to read from.
- * @param key - the field name.
- * @param errors - the error accumulator.
- * @param at - the human-readable location, for messages.
- * @returns the number, or undefined when absent or invalid.
+ * @param record - The object to read from.
+ * @param key - The field name.
+ * @param errors - The error accumulator.
+ * @param at - The human-readable location, for messages.
+ * @returns The number, or undefined when absent or invalid.
  */
 function numberField(
   record: Record<string, unknown>,
@@ -231,23 +248,25 @@ function numberField(
   errors: string[],
   at: string,
 ): number | undefined {
-  const value = record[key];
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    errors.push(`${at}.${key} must be a finite number`);
-    return undefined;
+  const value = record[key]
+  if (value === undefined || value === null) {
+    return undefined
   }
-  return value;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    errors.push(`${at}.${key} must be a finite number`)
+    return undefined
+  }
+  return value
 }
 
 /**
  * Read an optional boolean field.
  *
- * @param record - the object to read from.
- * @param key - the field name.
- * @param errors - the error accumulator.
- * @param at - the human-readable location, for messages.
- * @returns the boolean, or undefined when absent or invalid.
+ * @param record - The object to read from.
+ * @param key - The field name.
+ * @param errors - The error accumulator.
+ * @param at - The human-readable location, for messages.
+ * @returns The boolean, or undefined when absent or invalid.
  */
 function booleanField(
   record: Record<string, unknown>,
@@ -255,23 +274,25 @@ function booleanField(
   errors: string[],
   at: string,
 ): boolean | undefined {
-  const value = record[key];
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== 'boolean') {
-    errors.push(`${at}.${key} must be a boolean`);
-    return undefined;
+  const value = record[key]
+  if (value === undefined || value === null) {
+    return undefined
   }
-  return value;
+  if (typeof value !== 'boolean') {
+    errors.push(`${at}.${key} must be a boolean`)
+    return undefined
+  }
+  return value
 }
 
 /**
  * Read an optional string-or-number field (the app ID may be written either way).
  *
- * @param record - the object to read from.
- * @param key - the field name.
- * @param errors - the error accumulator.
- * @param at - the human-readable location, for messages.
- * @returns the value, or undefined when absent or invalid.
+ * @param record - The object to read from.
+ * @param key - The field name.
+ * @param errors - The error accumulator.
+ * @param at - The human-readable location, for messages.
+ * @returns The value, or undefined when absent or invalid.
  */
 function stringOrNumberField(
   record: Record<string, unknown>,
@@ -279,37 +300,47 @@ function stringOrNumberField(
   errors: string[],
   at: string,
 ): string | number | undefined {
-  const value = record[key];
-  if (value === undefined || value === null) return undefined;
-  if (typeof value === 'string' || typeof value === 'number') return value;
-  errors.push(`${at}.${key} must be a string or a number`);
-  return undefined;
+  const value = record[key]
+  if (value === undefined || value === null) {
+    return undefined
+  }
+  if (typeof value === 'string' || typeof value === 'number') {
+    return value
+  }
+  errors.push(`${at}.${key} must be a string or a number`)
+  return undefined
 }
 
 /**
  * The same map with its keys lower-cased.
  *
  * These keys are owners, and owners are case-insensitive on GitHub while every comparison in this
- * codebase is made against a lower-cased one. Normalising at the edge is what keeps a configuration that
- * looks right from silently doing nothing.
+ * codebase is made against a lower-cased one. Normalising at the edge is what keeps a configuration
+ * that looks right from silently doing nothing.
  *
- * @param value - the map, as written, or nothing when the field is absent.
- * @returns the map with lower-cased keys, or nothing.
+ * @param value - The map, as written, or nothing when the field is absent.
+ * @returns The map with lower-cased keys, or nothing.
  */
-function lowerCasedKeys(value: Record<string, string> | undefined): Record<string, string> | undefined {
-  if (value === undefined) return undefined;
-  const out: Record<string, string> = {};
-  for (const [key, entry] of Object.entries(value)) out[key.toLowerCase()] = entry;
-  return out;
+function lowerCasedKeys(
+  value: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  const out: Record<string, string> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    out[key.toLowerCase()] = entry
+  }
+  return out
 }
 
 /**
  * Read an optional map of strings, for REST permission names.
  *
- * @param value - the raw value.
- * @param errors - the error accumulator.
- * @param at - the human-readable location, for messages.
- * @returns the map, or undefined when absent or invalid.
+ * @param value - The raw value.
+ * @param errors - The error accumulator.
+ * @param at - The human-readable location, for messages.
+ * @returns The map, or undefined when absent or invalid.
  */
 
 function stringMapField(
@@ -318,95 +349,99 @@ function stringMapField(
   at: string,
   field = 'permissions',
 ): Readonly<Record<string, string>> | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (!isRecord(value)) {
-    errors.push(`${at}.${field} must be an object of names to values`);
-    return undefined;
+  if (value === undefined || value === null) {
+    return undefined
   }
-  const out: Record<string, string> = {};
+  if (!isRecord(value)) {
+    errors.push(`${at}.${field} must be an object of names to values`)
+    return undefined
+  }
+  const out: Record<string, string> = {}
   for (const [key, entry] of Object.entries(value)) {
     if (typeof entry !== 'string') {
-      errors.push(`${at}.${field}["${key}"] must be a string`);
-      continue;
+      errors.push(`${at}.${field}["${key}"] must be a string`)
+      continue
     }
-    out[key] = entry;
+    out[key] = entry
   }
-  return out;
+  return out
 }
 
 /**
  * Validate a parsed configuration object.
  *
- * @param raw - the parsed JSON.
- * @param source - where it came from, for error messages.
- * @returns the validated configuration with defaults applied.
- * @throws {Error} when any field is missing or malformed.
+ * @param raw - The parsed JSON.
+ * @param source - Where it came from, for error messages.
+ * @returns The validated configuration with defaults applied.
+ * @throws {Error} When any field is missing or malformed.
  */
 export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig {
   if (!isRecord(raw)) {
-    throw new Error(`invalid config (${source}): top level must be an object`);
+    throw new Error(`invalid config (${source}): top level must be an object`)
   }
 
-  const errors: string[] = [];
+  const errors: string[] = []
 
-  const socketPathRaw = raw['socketPath'];
+  const socketPathRaw = raw['socketPath']
   if (typeof socketPathRaw !== 'string' || !socketPathRaw) {
-    errors.push('socketPath is required (absolute path of the broker unix socket)');
+    errors.push('socketPath is required (absolute path of the broker unix socket)')
   }
 
-  const auditRaw = raw['auditPath'];
+  const auditRaw = raw['auditPath']
   if (auditRaw !== undefined && auditRaw !== null && typeof auditRaw !== 'string') {
-    errors.push('auditPath must be a string when present');
+    errors.push('auditPath must be a string when present')
   }
 
-  const socketModeRaw = raw['socketMode'];
+  const socketModeRaw = raw['socketMode']
   if (socketModeRaw !== undefined && !Number.isInteger(socketModeRaw)) {
-    errors.push('socketMode must be an integer (octal literal, e.g. 432 for 0660)');
+    errors.push('socketMode must be an integer (octal literal, e.g. 432 for 0660)')
   }
 
-  const skewRaw = raw['tokenCacheSkewSeconds'];
+  const skewRaw = raw['tokenCacheSkewSeconds']
   if (skewRaw !== undefined && (typeof skewRaw !== 'number' || !Number.isFinite(skewRaw))) {
-    errors.push('tokenCacheSkewSeconds must be a number');
+    errors.push('tokenCacheSkewSeconds must be a number')
   }
 
-  const hostsRaw = raw['hosts'];
-  const hosts: Record<string, HostConfig> = {};
+  const hostsRaw = raw['hosts']
+  const hosts: Record<string, HostConfig> = {}
   if (!isRecord(hostsRaw) || Object.keys(hostsRaw).length === 0) {
-    errors.push('hosts must be a non-empty object keyed by host as git reports it (e.g. "github.com")');
+    errors.push(
+      'hosts must be a non-empty object keyed by host as git reports it (e.g. "github.com")',
+    )
   } else {
-    const seenHosts = new Map<string, string>();
+    const seenHosts = new Map<string, string>()
     for (const [host, blockRaw] of Object.entries(hostsRaw)) {
-      const at = `hosts["${host}"]`;
-      const normalizedHost = host.toLowerCase();
-      const previousHost = seenHosts.get(normalizedHost);
+      const at = `hosts["${host}"]`
+      const normalizedHost = host.toLowerCase()
+      const previousHost = seenHosts.get(normalizedHost)
       if (previousHost !== undefined) {
-        errors.push(`${at} duplicates hosts["${previousHost}"] ignoring case`);
-        continue;
+        errors.push(`${at} duplicates hosts["${previousHost}"] ignoring case`)
+        continue
       }
-      seenHosts.set(normalizedHost, host);
+      seenHosts.set(normalizedHost, host)
       if (!isRecord(blockRaw)) {
-        errors.push(`${at} must be an object`);
-        continue;
+        errors.push(`${at} must be an object`)
+        continue
       }
 
-      const provider = blockRaw['provider'];
+      const provider = blockRaw['provider']
       if (provider !== 'static' && provider !== 'github-app') {
-        errors.push(`${at}.provider must be one of: ${KNOWN_PROVIDERS.join(', ')}`);
-        continue;
+        errors.push(`${at}.provider must be one of: ${KNOWN_PROVIDERS.join(', ')}`)
+        continue
       }
 
-      const allowRaw = blockRaw['allow'];
+      const allowRaw = blockRaw['allow']
       if (!Array.isArray(allowRaw) || allowRaw.length === 0) {
         errors.push(
           `${at}.allow must be a non-empty array; the broker is default deny, so an empty allowlist is almost certainly a mistake`,
-        );
-        continue;
+        )
+        continue
       }
-      const allow: string[] = [];
+      const allow: string[] = []
       for (const entry of allowRaw) {
         if (typeof entry !== 'string') {
-          errors.push(`${at}.allow must contain only strings`);
-          continue;
+          errors.push(`${at}.allow must contain only strings`)
+          continue
         }
         // A malformed entry would match nothing and therefore deny, which is safe but silent:
         // the operator would believe they had allowed a repository. Reject it loudly instead.
@@ -414,10 +449,10 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           errors.push(
             `${at}.allow entry ${JSON.stringify(entry)} is not a valid "owner/repo" pattern ` +
               '(a whole segment may be "*", but a partial wildcard like "wid*" is not)',
-          );
-          continue;
+          )
+          continue
         }
-        allow.push(entry);
+        allow.push(entry)
       }
 
       if (provider === 'static') {
@@ -433,8 +468,8 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           passwordPath: stringField(blockRaw, 'passwordPath', errors, at),
           passwordEnv: stringField(blockRaw, 'passwordEnv', errors, at),
           expiresInSeconds: numberField(blockRaw, 'expiresInSeconds', errors, at),
-        };
-        hosts[host] = block;
+        }
+        hosts[host] = block
       } else {
         const block: GithubAppHostConfig = {
           provider: 'github-app',
@@ -447,25 +482,27 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           appId: stringOrNumberField(blockRaw, 'appId', errors, at),
           privateKeyPath: stringField(blockRaw, 'privateKeyPath', errors, at),
           // Keys are owners, and every other owner in this codebase is compared lower-cased. A key spelled
-      // `An-Org` used to validate and then never match, which meant the pull request was created as the app
-      // while the operator believed a person would author it.
-      userTokens: lowerCasedKeys(stringMapField(blockRaw['userTokens'], errors, at, 'userTokens')),
+          // `An-Org` used to validate and then never match, which meant the pull request was created as the app
+          // while the operator believed a person would author it.
+          userTokens: lowerCasedKeys(
+            stringMapField(blockRaw['userTokens'], errors, at, 'userTokens'),
+          ),
           privateKeyPem: stringField(blockRaw, 'privateKeyPem', errors, at),
           permissions: stringMapField(blockRaw['permissions'], errors, at),
           apiBaseUrl: httpsUrlField(blockRaw, 'apiBaseUrl', errors, at),
           apiVersion: stringField(blockRaw, 'apiVersion', errors, at),
           installationCacheSeconds: numberField(blockRaw, 'installationCacheSeconds', errors, at),
           verifyAppPermissions: booleanField(blockRaw, 'verifyAppPermissions', errors, at),
-        };
-        hosts[host] = block;
+        }
+        hosts[host] = block
       }
     }
   }
 
   if (errors.length > 0) {
-    const error = new Error(`invalid config (${source}):\n - ${errors.join('\n - ')}`);
-    error.name = 'ConfigError';
-    throw error;
+    const error = new Error(`invalid config (${source}):\n - ${errors.join('\n - ')}`)
+    error.name = 'ConfigError'
+    throw error
   }
 
   return {
@@ -474,26 +511,26 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
     auditPath: typeof auditRaw === 'string' ? auditRaw : null,
     tokenCacheSkewSeconds: typeof skewRaw === 'number' ? skewRaw : 300,
     hosts,
-  };
+  }
 }
 
 /** Read configuration text, with the deployment path named on failure. */
 export function readConfigText(path: string): string {
   try {
-    return readFileSync(path, 'utf8');
+    return readFileSync(path, 'utf8')
   } catch (error) {
-    throw new Error(`cannot read config ${path}: ${(error as Error).message}`);
+    throw new Error(`cannot read config ${path}: ${(error as Error).message}`, { cause: error })
   }
 }
 
 /**
  * Read and validate a configuration file.
  *
- * @param path - path to the YAML config.
- * @returns the validated configuration.
+ * @param path - Path to the YAML config.
+ * @returns The validated configuration.
  */
 export function loadConfig(path: string): BrokerConfig {
-  return loadConfigText(readConfigText(path), path);
+  return loadConfigText(readConfigText(path), path)
 }
 
 /** Parse and validate configuration text already read from `path`. */
@@ -502,9 +539,11 @@ export function loadConfigText(text: string, path: string): BrokerConfig {
     schema: 'core',
     uniqueKeys: true,
     prettyErrors: true,
-  });
+  })
   if (document.errors.length > 0) {
-    throw new Error(`config ${path} is not valid YAML: ${document.errors.map((error) => error.message).join('; ')}`);
+    throw new Error(
+      `config ${path} is not valid YAML: ${document.errors.map(error => error.message).join('; ')}`,
+    )
   }
-  return validateConfig(document.toJS({ maxAliasCount: 0 }), path);
+  return validateConfig(document.toJS({ maxAliasCount: 0 }), path)
 }
