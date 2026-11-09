@@ -221,18 +221,22 @@ describe('host status', () => {
     );
     try {
       const deadline = Date.now() + 5_000;
+      let startup: { pid?: number; config?: unknown } | undefined;
       while (Date.now() < deadline) {
         try {
-          const status = JSON.parse(readFileSync(hostStatusPath(), 'utf8')) as { pid?: number; config?: unknown };
-          if (status.pid === child.pid && status.config === null) break;
+          startup = JSON.parse(readFileSync(hostStatusPath(), 'utf8')) as { pid?: number; config?: unknown };
+          if (startup.pid === child.pid && startup.config === null) break;
         } catch {
           // The child has not written yet.
         }
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
+      assert.equal(startup?.pid, child.pid);
+      assert.equal(startup?.config, null);
       const config = forkConfig(root, 'acme/widget');
       const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' });
-      while (Date.now() < deadline) {
+      const requestDeadline = Date.now() + 5_000;
+      while (Date.now() < requestDeadline) {
         if (readResult(dir, id) !== undefined) break;
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
@@ -246,6 +250,23 @@ describe('host status', () => {
       }
       clearStatus();
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a config equal to the status file', () => {
+    const status = hostStatusPath();
+    mkdirSync(dirname(status), { recursive: true });
+    writeFileSync(status, 'hosts: {}\n', 'utf8');
+    try {
+      const run = spawnSync(
+        process.execPath,
+        ['--conditions=development', hostBin, 'host', '--config', status],
+        { cwd: process.cwd(), encoding: 'utf8', timeout: 5_000 },
+      );
+      assert.equal(run.status, 1);
+      assert.match(run.stderr, /the config cannot be the host status file/u);
+    } finally {
+      clearStatus();
     }
   });
 
@@ -384,7 +405,7 @@ describe('bounded action output', () => {
     const result = await runBounded(
       process.execPath,
       ['-e', 'process.stderr.write("before\\n" + "x".repeat(60000)); setTimeout(() => {}, 5000);'],
-      { cwd: tmpdir(), env: process.env, timeoutMs: 500 },
+      { cwd: tmpdir(), env: process.env, timeoutMs: 3_000 },
     );
     assert.equal(result.code, 1);
     assert.match(result.stderr, /before/u);
@@ -397,7 +418,7 @@ describe('bounded action output', () => {
     const result = await runBounded(
       process.execPath,
       ['-e', 'setTimeout(() => {}, 5000);'],
-      { cwd: tmpdir(), env: process.env, timeoutMs: 500, writeCaveat: false },
+      { cwd: tmpdir(), env: process.env, timeoutMs: 3_000, writeCaveat: false },
     );
     assert.equal(result.code, 1);
     assert.match(result.stderr, /timed out/u);
