@@ -1,5 +1,12 @@
 # gcb-client
 
+## 0.7.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - gcb-core@0.7.1
+
 ## 0.7.0
 
 ### Patch Changes
