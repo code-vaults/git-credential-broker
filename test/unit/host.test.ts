@@ -19,11 +19,10 @@ import { channelDir, claimRequest, listRequests, readResult, writeRequest } from
 describe('host status', () => {
   it('reports the config path the daemon recorded', () => {
     const root = mkdtempSync(join(tmpdir(), 'host-status-'));
-    const repo = join(root, 'checkout');
-    mkdirSync(join(repo, '.git', 'gcb', 'host-broker'), { recursive: true });
-    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = join(root, 'broker.config.yml');
+    writeFileSync(config, 'hosts: {}\n', 'utf8');
     writeFileSync(
-      join(repo, '.git', 'gcb', 'host-broker', 'host-broker.json'),
+      join(root, 'host-status.json'),
       JSON.stringify({
         pid: process.pid,
         config: '/deployment/broker.config.yml',
@@ -36,14 +35,14 @@ describe('host status', () => {
     try {
       const run = spawnSync(
         process.execPath,
-        ['--conditions=development', 'packages/host/bin/gcb.js', 'host', 'status', '--repo', repo, '--json'],
+        ['--conditions=development', 'packages/host/bin/gcb.js', 'host', 'status', '--config', config, '--json'],
         { cwd: process.cwd(), encoding: 'utf8' },
       );
       assert.equal(run.status, 0, run.stderr);
-      const status = JSON.parse(run.stdout) as { config: string; cwd: string; version: string };
-      assert.equal(status.config, '/deployment/broker.config.yml');
-      assert.equal(status.cwd, '/deployment');
-      assert.equal(status.version, 'test-version');
+      const [status] = JSON.parse(run.stdout) as [{ config: string; cwd: string; version: string }];
+      assert.equal(status?.config, '/deployment/broker.config.yml');
+      assert.equal(status?.cwd, '/deployment');
+      assert.equal(status?.version, 'test-version');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -507,10 +506,11 @@ describe('the host action route', () => {
     const config = forkConfig(root, 'acme/widget');
     const dir = channelDir(join(repo, '.git'));
     const argvFile = join(root, 'argv');
+    const statusCopy = join(root, 'status-copy.json');
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "action output"\n',
+      '#!/bin/sh\ncp ' + join(root, 'host-status.json') + ' ' + statusCopy + '\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "action output"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
@@ -526,6 +526,10 @@ describe('the host action route', () => {
       const result = readResult(dir, id);
       assert.equal(result?.stdout, 'action output\n');
       assert.equal(result?.code, 0);
+      const status = JSON.parse(readFileSync(statusCopy, 'utf8')) as { config: string; cwd: string; version: string };
+      assert.equal(status.config, config);
+      assert.equal(status.cwd, process.cwd());
+      assert.equal(typeof status.version, 'string');
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
       assert.deepEqual(argv.slice(0, 3), ['issue', 'comment', '7']);
       assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');

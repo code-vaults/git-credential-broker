@@ -11,10 +11,10 @@
  * shell; the program it calls is configuration, and it is called with an argument list built here.
  */
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { StringDecoder } from 'node:string_decoder';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 import {
@@ -51,6 +51,18 @@ const run = promisify(execFile);
 
 /** How long one create, review, reply, edit or fork program may take. */
 const CREATE_TIMEOUT_MS = 120_000;
+
+/** Host-private status file, beside the configuration rather than in a channel. */
+const HOST_STATUS_FILE = 'host-status.json';
+
+/** The daemon state `host status` reports. */
+interface HostStatus {
+  readonly pid: number;
+  readonly config: string | null;
+  readonly cwd: string;
+  readonly version: string;
+  readonly startedAt: string;
+}
 
 /** Per-stream byte budget for a host action, small enough that JSON escaping stays under readResult's cap. */
 const HOST_ACTION_OUTPUT_BYTES = 48_000;
@@ -183,7 +195,7 @@ fork, with the gh account each request names. The result is authored by a person
   --arg <token>         An extra argument for that program, before the subcommand (repeatable)
   --interval <seconds>  How often to look for requests (default: 5)
   --once                Fulfil what is waiting, then exit
-  status                Report the running host daemon(s), without serving
+  status                Report the running host daemon, without serving
   --json                With status, print JSON
   -h, --help            Show this help
 
@@ -217,7 +229,7 @@ export function pullRequestUrl(output: string): { number: number; url: string } 
  */
 export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const statusMode = argv[0] === 'status';
-  const args = parseArgs(statusMode ? argv.slice(1) : argv, { booleans: ['help', 'once', 'status', 'json'] });
+  const args = parseArgs(statusMode ? argv.slice(1) : argv, { booleans: ['help', 'once', 'json'] });
   if (args.has('help') || args.has('h')) {
     say(HOST_BROKER_USAGE);
     return 0;
@@ -231,12 +243,30 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const command = args.value('command') ?? process.env['GCB_HOST_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
   const resolvedConfig = resolveConfigPath(configPath);
+  const statusFile = join(dirname(resolvedConfig), HOST_STATUS_FILE);
+  const startedAt = new Date().toISOString();
+  let loadedConfig: string | null = null;
+  /** Rewrite the host-private status file; the channel marker is not trusted for this. */
+  function writeStatus(): void {
+    if (!existsSync(dirname(statusFile))) return;
+    try {
+      writeFileSync(
+        statusFile,
+        JSON.stringify({ pid: process.pid, config: loadedConfig, cwd: process.cwd(), version: PACKAGE_VERSION, startedAt }),
+        { encoding: 'utf8', mode: 0o600 },
+      );
+    } catch {
+      // A status report is not worth taking the daemon down for.
+    }
+  }
   let config: BrokerConfig | undefined;
   /** Resolve one host block, loading the configuration on first use. */
   const blockFor = (host: string) => {
     if (config === undefined) {
       try {
         config = loadConfig(resolveConfigPath(configPath));
+        loadedConfig = resolvedConfig;
+        writeStatus();
       } catch (error) {
         throw new Error(
           `a fork, reply or explicit repository needs the broker config allowlist: ${(error as Error).message}; pass --config or set GIT_BROKER_CONFIG`,
@@ -267,60 +297,43 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     return [{ repo: single, dir: channelDir(gitDir) }];
   };
 
-  if (statusMode || args.has('status')) {
-    const info = new Map<string, Record<string, unknown> & { checkouts: string[] }>();
-    for (const { repo, dir } of targets()) {
-      const marker = readHostBroker(dir);
-      const pid = marker?.pid;
-      if (
-        marker === undefined ||
-        pid === undefined ||
-        !Number.isInteger(pid) ||
-        pid <= 0 ||
-        pid > 0x7fffffff
-      ) {
-        continue;
-      }
-      try {
-        process.kill(pid, 0);
-      } catch (error) {
-        // ESRCH is the only proof the process is gone; EPERM means it exists for another user.
-        if ((error as NodeJS.ErrnoException).code === 'ESRCH') continue;
-      }
-      const text = (value: unknown): string | null => (typeof value === 'string' ? value : null);
-      const config = text(marker.config);
-      const key = `${String(pid)}|${config ?? ''}`;
-      const found = info.get(key);
-      if (found === undefined) {
-        info.set(key, {
-          pid,
-          config,
-          cwd: text(marker.cwd),
-          version: text(marker.version),
-          startedAt: text(marker.startedAt),
-          checkouts: [repo],
-        });
-      } else {
-        found.checkouts.push(repo);
-      }
+  if (statusMode) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(statusFile, 'utf8'));
+    } catch {
+      fail('no host broker is running');
     }
-    const statuses = [...info.values()];
-    if (statuses.length === 0) {
-      warn('no host broker is running');
-      return 1;
+    const status = parsed as Partial<HostStatus>;
+    const text = (value: unknown): string | null => (typeof value === 'string' ? value : null);
+    const pid = status.pid;
+    if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0 || pid > 0x7fffffff) {
+      fail('no host broker is running');
     }
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') fail('no host broker is running');
+    }
+    const output = {
+      pid,
+      config: text(status.config),
+      cwd: text(status.cwd),
+      version: text(status.version),
+      startedAt: text(status.startedAt),
+    };
     if (args.has('json')) {
-      say(JSON.stringify(statuses.length === 1 ? statuses[0] : statuses));
+      say(JSON.stringify([output]));
     } else {
-      for (const status of statuses) {
-        say(
-          `pid ${String(status['pid'])} config ${String(status['config'])} cwd ${String(status['cwd'])} version ${String(status['version'])}`,
-        );
-      }
+      const configText = output.config === null ? 'unknown' : output.config;
+      say(
+        `pid ${String(output.pid)} config ${configText} cwd ${String(output.cwd)} version ${String(output.version)}`,
+      );
     }
     return 0;
   }
   if (args.has('json')) fail('--json needs status');
+
 
   const advertised = new Set<string>();
   /** Advertise a channel, without rewriting the marker on every sweep. */
@@ -332,9 +345,6 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         command,
         startedAt: new Date().toISOString(),
         kinds: ['pull-request', 'review', 'reply', 'edit', 'action', 'fork'],
-        config: resolvedConfig,
-        cwd: process.cwd(),
-        version: PACKAGE_VERSION,
       });
     }
   };
@@ -342,6 +352,12 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   // marker would tell the container a host broker is there and make it wait for an answer that is not
   // coming.
   process.on('exit', () => {
+    try {
+      const current = JSON.parse(readFileSync(statusFile, 'utf8')) as { pid?: unknown };
+      if (current.pid === process.pid) rmSync(statusFile, { force: true });
+    } catch {
+      // The file is already gone or unreadable; nothing to clean.
+    }
     for (const dir of advertised) {
       try {
         if (readHostBroker(dir)?.pid === process.pid) clearHostBroker(dir);

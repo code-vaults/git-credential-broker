@@ -180,12 +180,6 @@ export interface HostBrokerInfo {
   readonly startedAt?: string;
   /** Request kinds this build can fulfil; absent means the pre-issue build. */
   readonly kinds?: readonly string[];
-  /** The configuration path the daemon resolved at startup. */
-  readonly config?: string;
-  /** The daemon's working directory at startup. */
-  readonly cwd?: string;
-  /** The running package version. */
-  readonly version?: string;
 }
 
 /**
