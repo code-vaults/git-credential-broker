@@ -55,7 +55,9 @@ const run = promisify(execFile);
 const CREATE_TIMEOUT_MS = 120_000;
 
 /** Host-private daemon status, independent of any config path. */
-export const HOST_STATUS_PATH = join(homedir(), '.gcb-host', 'status.json');
+export function hostStatusPath(): string {
+  return process.env['GCB_HOST_STATUS'] ?? join(homedir(), '.gcb-host', 'status.json');
+}
 
 /** The daemon state `host status` reports. */
 interface HostStatus {
@@ -245,11 +247,28 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const command = args.value('command') ?? process.env['GCB_HOST_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
   const resolvedConfig = resolveConfigPath(configPath);
-  const statusFile = HOST_STATUS_PATH;
+  const statusFile = hostStatusPath();
   const startedAt = new Date().toISOString();
   let loadedConfig: string | null = null;
   /** Rewrite the host-private status file; the channel marker is not trusted for this. */
   function writeStatus(): void {
+    const current = readJson(statusFile);
+    if (
+      typeof current === 'object' &&
+      current !== null &&
+      !Array.isArray(current) &&
+      typeof (current as { pid?: unknown }).pid === 'number'
+    ) {
+      const owner = (current as { pid: number }).pid;
+      if (owner !== process.pid) {
+        try {
+          process.kill(owner, 0);
+          return;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return;
+        }
+      }
+    }
     try {
       writeJsonAtomic(statusFile, {
         pid: process.pid,
@@ -301,8 +320,13 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   };
 
   if (statusMode) {
-    if (args.value('repo') !== undefined || listFlag(args, 'root').length > 0) {
-      fail('status takes no --repo/--root');
+    if (
+      args.value('config') !== undefined ||
+      args.value('command') !== undefined ||
+      args.value('repo') !== undefined ||
+      listFlag(args, 'root').length > 0
+    ) {
+      fail('status takes no --config/--command/--repo/--root');
     }
     const parsed = readJson(statusFile);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
@@ -356,19 +380,6 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   // marker would tell the container a host broker is there and make it wait for an answer that is not
   // coming.
   process.on('exit', () => {
-    try {
-      const current = readJson(statusFile);
-      if (
-        typeof current === 'object' &&
-        current !== null &&
-        !Array.isArray(current) &&
-        (current as { pid?: unknown }).pid === process.pid
-      ) {
-        rmSync(statusFile, { force: true });
-      }
-    } catch {
-      // The file is already gone or unreadable; nothing to clean.
-    }
     for (const dir of advertised) {
       try {
         if (readHostBroker(dir)?.pid === process.pid) clearHostBroker(dir);
