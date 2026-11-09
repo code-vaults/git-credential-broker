@@ -272,21 +272,32 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     for (const { repo, dir } of targets()) {
       const marker = readHostBroker(dir);
       const pid = marker?.pid;
-      if (marker === undefined || pid === undefined || pid <= 0 || pid > 0x7fffffff) continue;
-      try {
-        process.kill(pid, 0);
-      } catch {
+      if (
+        marker === undefined ||
+        pid === undefined ||
+        !Number.isInteger(pid) ||
+        pid <= 0 ||
+        pid > 0x7fffffff
+      ) {
         continue;
       }
-      const key = `${String(pid)}|${marker.config ?? ''}`;
+      try {
+        process.kill(pid, 0);
+      } catch (error) {
+        // ESRCH is the only proof the process is gone; EPERM means it exists for another user.
+        if ((error as NodeJS.ErrnoException).code === 'ESRCH') continue;
+      }
+      const text = (value: unknown): string | null => (typeof value === 'string' ? value : null);
+      const config = text(marker.config);
+      const key = `${String(pid)}|${config ?? ''}`;
       const found = info.get(key);
       if (found === undefined) {
         info.set(key, {
           pid,
-          config: marker.config ?? null,
-          cwd: marker.cwd ?? null,
-          version: marker.version ?? null,
-          startedAt: marker.startedAt ?? null,
+          config,
+          cwd: text(marker.cwd),
+          version: text(marker.version),
+          startedAt: text(marker.startedAt),
           checkouts: [repo],
         });
       } else {
