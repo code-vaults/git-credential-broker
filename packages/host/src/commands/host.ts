@@ -200,7 +200,6 @@ fork, with the gh account each request names. The result is authored by a person
   --interval <seconds>  How often to look for requests (default: 5)
   --once                Fulfil what is waiting, then exit
   status                Report the running host daemon as JSON
-  --json                With status, print JSON
   -h, --help            Show this help
 
 The container asks for this by passing --as-user to \`pr\`. Requests are files under
