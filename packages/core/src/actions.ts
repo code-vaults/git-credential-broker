@@ -199,6 +199,7 @@ const PR_COMMENT: GhAction = {
   flags: [{ name: 'body', type: 'string', required: true, nonEmpty: true }],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
+  appUser: true,
 };
 
 // GitHub GraphQL: closePullRequest
