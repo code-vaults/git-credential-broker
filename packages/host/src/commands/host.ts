@@ -30,6 +30,7 @@ import {
   requestProblems,
   writeHostBroker,
   writeResult,
+  PACKAGE_VERSION,
   apiBodyJson,
   HOST,
   REPOSITORY,
@@ -182,6 +183,8 @@ fork, with the gh account each request names. The result is authored by a person
   --arg <token>         An extra argument for that program, before the subcommand (repeatable)
   --interval <seconds>  How often to look for requests (default: 5)
   --once                Fulfil what is waiting, then exit
+  status                Report the running host daemon(s), without serving
+  --json                With status, print JSON
   -h, --help            Show this help
 
 The container asks for this by passing --as-user to \`pr\`. Requests are files under
@@ -213,7 +216,8 @@ export function pullRequestUrl(output: string): { number: number; url: string } 
  * @returns the process exit code.
  */
 export async function runHostBroker(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help', 'once'] });
+  const statusMode = argv[0] === 'status';
+  const args = parseArgs(statusMode ? argv.slice(1) : argv, { booleans: ['help', 'once', 'status', 'json'] });
   if (args.has('help') || args.has('h')) {
     say(HOST_BROKER_USAGE);
     return 0;
@@ -226,6 +230,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const depth = Number(args.value('depth') ?? '4');
   const command = args.value('command') ?? process.env['GCB_HOST_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
+  const resolvedConfig = resolveConfigPath(configPath);
   let config: BrokerConfig | undefined;
   /** Resolve one host block, loading the configuration on first use. */
   const blockFor = (host: string) => {
@@ -262,6 +267,50 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     return [{ repo: single, dir: channelDir(gitDir) }];
   };
 
+  if (statusMode || args.has('status')) {
+    const info = new Map<string, Record<string, unknown> & { checkouts: string[] }>();
+    for (const { repo, dir } of targets()) {
+      const marker = readHostBroker(dir);
+      const pid = marker?.pid;
+      if (marker === undefined || pid === undefined || pid <= 0 || pid > 0x7fffffff) continue;
+      try {
+        process.kill(pid, 0);
+      } catch {
+        continue;
+      }
+      const key = `${String(pid)}|${marker.config ?? ''}`;
+      const found = info.get(key);
+      if (found === undefined) {
+        info.set(key, {
+          pid,
+          config: marker.config ?? null,
+          cwd: marker.cwd ?? null,
+          version: marker.version ?? null,
+          startedAt: marker.startedAt ?? null,
+          checkouts: [repo],
+        });
+      } else {
+        found.checkouts.push(repo);
+      }
+    }
+    const statuses = [...info.values()];
+    if (statuses.length === 0) {
+      warn('no host broker is running');
+      return 1;
+    }
+    if (args.has('json')) {
+      say(JSON.stringify(statuses.length === 1 ? statuses[0] : statuses));
+    } else {
+      for (const status of statuses) {
+        say(
+          `pid ${String(status['pid'])} config ${String(status['config'])} cwd ${String(status['cwd'])} version ${String(status['version'])}`,
+        );
+      }
+    }
+    return 0;
+  }
+  if (args.has('json')) fail('--json needs status');
+
   const advertised = new Set<string>();
   /** Advertise a channel, without rewriting the marker on every sweep. */
   const advertise = (dir: string): void => {
@@ -272,6 +321,9 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         command,
         startedAt: new Date().toISOString(),
         kinds: ['pull-request', 'review', 'reply', 'edit', 'action', 'fork'],
+        config: resolvedConfig,
+        cwd: process.cwd(),
+        version: PACKAGE_VERSION,
       });
     }
   };
