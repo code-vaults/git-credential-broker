@@ -28,12 +28,14 @@ describe('gh action catalog', () => {
       'pr:status',
       'pr:comment',
       'pr:comment-edit',
+      'pr:comment-delete',
       'pr:review',
       'pr:review-by-id',
       'issue:create',
       'issue:edit',
       'issue:comment',
       'issue:comment-edit',
+      'issue:comment-delete',
       'issue:close',
       'issue:reopen',
       'issue:lock',
@@ -98,6 +100,10 @@ describe('gh action catalog', () => {
     assert.equal(getGhAction('pr:comment').appUser, true);
     assert.equal(getGhAction('pr:comment-edit').appUser, true);
     assert.equal(getGhAction('pr:comment-edit').command.join(' '), 'pr comment-edit');
+    assert.deepEqual(getGhAction('issue:comment-delete').permissions, { issues: 'write' });
+    assert.deepEqual(getGhAction('pr:comment-delete').permissions, { pull_requests: 'write' });
+    assert.equal(getGhAction('issue:comment-delete').appUser, true);
+    assert.equal(getGhAction('pr:comment-delete').appUser, true);
     assert.equal(getGhAction('issue:comment-edit').appUser, true);
     assert.deepEqual(getGhAction('release:list').permissions, { contents: 'read' });
     assert.deepEqual(getGhAction('release:view').permissions, { contents: 'read' });
@@ -214,6 +220,10 @@ describe('buildGhArgv', () => {
     assert.deepEqual(
       buildGhArgv('workflow:view', { workflow: 'ci.yml', ref: 'main', yaml: true }, 'acme/widget'),
       ['workflow', 'view', '--ref', 'main', '--yaml', '--repo', 'acme/widget', '--', 'ci.yml'],
+    );
+    assert.deepEqual(
+      buildGhArgv('issue:comment-delete', { commentId: 123 }, 'acme/widget'),
+      ['api', '--method', 'DELETE', 'repos/acme/widget/issues/comments/123'],
     );
     assert.deepEqual(
       buildGhArgv('issue:comment-edit', { commentId: 123, body: 'secret' }, 'acme/widget', '/tmp/body.json'),

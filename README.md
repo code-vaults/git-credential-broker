@@ -802,12 +802,14 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr status` | `pull_requests: read`, `checks: read`, `statuses: read` |
 | `pr comment` | `pull_requests: write` |
 | `pr comment-edit` | `pull_requests: write` |
+| `pr comment-delete` | `pull_requests: write` |
 | `pr review` | `pull_requests: write` |
 | `pr review --id` (`pr:review-by-id`) | `pull_requests: read` |
 | `issue create` | `issues: write` |
 | `issue edit` | `issues: write` |
 | `issue comment` | `issues: write` |
 | `issue comment-edit` | `issues: write` |
+| `issue comment-delete` | `issues: write` |
 | `issue close` | `issues: write` |
 | `issue reopen` | `issues: write` |
 | `issue lock` | `issues: write` |

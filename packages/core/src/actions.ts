@@ -44,7 +44,7 @@ export interface FlagSpec {
 
 /** A fixed `gh api` request, with only typed values substituted. */
 export interface ApiSpec {
-  readonly method: 'GET' | 'PATCH';
+  readonly method: 'GET' | 'PATCH' | 'DELETE';
   readonly endpoint: string;
   /** When true, the action sends `{ body }` as JSON through gh api --input. */
   readonly jsonBody?: true;
@@ -430,6 +430,29 @@ const PR_COMMENT_EDIT: GhAction = {
   permissions: { pull_requests: 'write' },
 };
 
+// GitHub: DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}
+const ISSUE_COMMENT_DELETE: GhAction = {
+  name: 'issue:comment-delete',
+  command: ['issue', 'comment-delete'],
+  positionals: [{ name: 'commentId', type: 'number', required: true }],
+  flags: [],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+  api: {
+    method: 'DELETE',
+    endpoint: 'repos/{owner}/{repo}/issues/comments/{commentId}',
+  },
+};
+
+// GitHub: DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}; a PR conversation comment is an issue comment
+const PR_COMMENT_DELETE: GhAction = {
+  ...ISSUE_COMMENT_DELETE,
+  name: 'pr:comment-delete',
+  command: ['pr', 'comment-delete'],
+  permissions: { pull_requests: 'write' },
+};
+
 // GitHub: GET /repos/{owner}/{repo}/issues/{issue_number}
 const ISSUE_VIEW: GhAction = {
   name: 'issue:view',
@@ -690,12 +713,14 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:status': PR_STATUS,
   'pr:comment': PR_COMMENT,
   'pr:comment-edit': PR_COMMENT_EDIT,
+  'pr:comment-delete': PR_COMMENT_DELETE,
   'pr:review': PR_REVIEW,
   'pr:review-by-id': PR_REVIEW_BY_ID,
   'issue:create': ISSUE_CREATE,
   'issue:edit': ISSUE_EDIT,
   'issue:comment': ISSUE_COMMENT,
   'issue:comment-edit': ISSUE_COMMENT_EDIT,
+  'issue:comment-delete': ISSUE_COMMENT_DELETE,
   'issue:close': ISSUE_CLOSE,
   'issue:reopen': ISSUE_REOPEN,
   'issue:lock': ISSUE_LOCK,
