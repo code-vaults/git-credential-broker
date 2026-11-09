@@ -250,7 +250,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const statusFile = hostStatusPath();
   const startedAt = new Date().toISOString();
   let loadedConfig: string | null = null;
-  /** Rewrite the host-private status file; the channel marker is not trusted for this. */
+  /** Remove the status file only when this process owns it. */
   function removeOwnStatus(): void {
     try {
       const current = readJson(statusFile);
@@ -266,6 +266,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
       // Nothing to clean up.
     }
   }
+  /** Rewrite the host-private status file; the channel marker is not trusted for this. */
   function writeStatus(): void {
     if (once) return;
     try {
