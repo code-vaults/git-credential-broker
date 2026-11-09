@@ -53,6 +53,10 @@ describe('gh action catalog', () => {
       'release:view',
       'workflow:list',
       'workflow:view',
+      'label:list',
+      'label:create',
+      'label:edit',
+      'label:delete',
     ]);
     assert.equal('pr:merge' in GH_ACTIONS, false);
     assert.equal(getGhAction('pr:create').command.join(' '), 'pr create');
@@ -109,6 +113,10 @@ describe('gh action catalog', () => {
     assert.deepEqual(getGhAction('release:view').permissions, { contents: 'read' });
     assert.deepEqual(getGhAction('workflow:list').permissions, { actions: 'read' });
     assert.deepEqual(getGhAction('workflow:view').permissions, { actions: 'read', contents: 'read' });
+    assert.deepEqual(getGhAction('label:list').permissions, { issues: 'read' });
+    assert.deepEqual(getGhAction('label:create').permissions, { issues: 'write' });
+    assert.deepEqual(getGhAction('label:edit').permissions, { issues: 'write' });
+    assert.deepEqual(getGhAction('label:delete').permissions, { issues: 'write' });
     assert.equal(getGhAction('pr:checks').timeoutSeconds, 300);
   });
 
@@ -138,6 +146,7 @@ describe('gh action catalog', () => {
       'release:view',
       'workflow:list',
       'workflow:view',
+      'label:list',
     ]) {
       assert.equal(getGhAction(name).readOnly, true, name);
       assert.equal(getGhAction(name).appUser, true, name);
@@ -221,6 +230,30 @@ describe('buildGhArgv', () => {
       buildGhArgv('workflow:view', { workflow: 'ci.yml', ref: 'main', yaml: true }, 'acme/widget'),
       ['workflow', 'view', '--ref', 'main', '--yaml', '--repo', 'acme/widget', '--', 'ci.yml'],
     );
+    assert.deepEqual(buildGhArgv('label:create', { name: 'bug', color: 'ff0000' }, 'acme/widget'), [
+      'label',
+      'create',
+      '--color',
+      'ff0000',
+      '--repo',
+      'acme/widget',
+      '--',
+      'bug',
+    ]);
+    assert.deepEqual(
+      buildGhArgv('label:edit', { label: 'bug', name: 'defect' }, 'acme/widget'),
+      ['label', 'edit', '--name', 'defect', '--repo', 'acme/widget', '--', 'bug'],
+    );
+    assert.deepEqual(
+      buildGhArgv('label:delete', { name: 'bug', yes: true }, 'acme/widget'),
+      ['label', 'delete', '--yes', '--repo', 'acme/widget', '--', 'bug'],
+    );
+    assert.throws(() => buildGhArgv('label:delete', { name: 'bug' }, 'acme/widget'), /needs --yes/u);
+    assert.throws(
+      () => buildGhArgv('label:delete', { name: 'bug', yes: false }, 'acme/widget'),
+      /needs --yes/u,
+    );
+
     assert.deepEqual(
       buildGhArgv('issue:comment-delete', { commentId: 123 }, 'acme/widget'),
       ['api', '--method', 'DELETE', 'repos/acme/widget/issues/comments/123'],
