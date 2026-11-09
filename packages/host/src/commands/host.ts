@@ -250,7 +250,19 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   let loadedConfig: string | null = null;
   /** Rewrite the host-private status file; the channel marker is not trusted for this. */
   function writeStatus(): void {
-    if (!existsSync(resolvedConfig) || !existsSync(dirname(statusFile))) return;
+    const directory = dirname(statusFile);
+    if (!existsSync(directory)) {
+      warn(`could not write host status: ${directory} does not exist`);
+      return;
+    }
+    // A default config that is absent is not a deployment; an explicit --config is, even before it loads.
+    if (
+      !existsSync(resolvedConfig) &&
+      configPath === undefined &&
+      process.env['GIT_BROKER_CONFIG'] === undefined
+    ) {
+      return;
+    }
     try {
       writeJsonAtomic(statusFile, {
         pid: process.pid,
