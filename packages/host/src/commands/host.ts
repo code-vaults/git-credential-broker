@@ -245,7 +245,11 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const command = args.value('command') ?? process.env['GCB_HOST_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
   const resolvedConfig = resolveConfigPath(configPath);
-  const statusFile = join(dirname(resolvedConfig), HOST_STATUS_FILE);
+  const statusDirectory = dirname(resolvedConfig);
+  const statusFile =
+    resolve(statusDirectory, HOST_STATUS_FILE) === resolvedConfig
+      ? join(statusDirectory, `.${HOST_STATUS_FILE}`)
+      : join(statusDirectory, HOST_STATUS_FILE);
   const startedAt = new Date().toISOString();
   let loadedConfig: string | null = null;
   /** Rewrite the host-private status file; the channel marker is not trusted for this. */
