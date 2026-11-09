@@ -14,7 +14,7 @@ import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { StringDecoder } from 'node:string_decoder';
-import { basename, dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 import {
@@ -54,8 +54,17 @@ const run = promisify(execFile);
 /** How long one create, review, reply, edit or fork program may take. */
 const CREATE_TIMEOUT_MS = 120_000;
 
-/** Host-private status file, beside the configuration rather than in a channel. */
-const HOST_STATUS_FILE = 'host-status.json';
+/** Host-private daemon status, independent of any config path. */
+const HOST_STATUS_FILE = join(homedir(), '.gcb-host', 'status.json');
+
+/**
+ * The fixed host-private status path.
+ *
+ * @returns the status file path.
+ */
+export function hostStatusPath(): string {
+  return HOST_STATUS_FILE;
+}
 
 /** The daemon state `host status` reports. */
 interface HostStatus {
@@ -245,18 +254,11 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const command = args.value('command') ?? process.env['GCB_HOST_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
   const resolvedConfig = resolveConfigPath(configPath);
-  if (basename(resolvedConfig) === HOST_STATUS_FILE) {
-    fail(`config path cannot be named ${HOST_STATUS_FILE}`);
-  }
-  const statusFile = join(dirname(resolvedConfig), HOST_STATUS_FILE);
+  const statusFile = hostStatusPath();
   const startedAt = new Date().toISOString();
-  const configExplicit = Boolean(configPath) || Boolean(process.env['GIT_BROKER_CONFIG']);
-  const configSelected = existsSync(resolvedConfig) || configExplicit;
   let loadedConfig: string | null = null;
   /** Rewrite the host-private status file; the channel marker is not trusted for this. */
   function writeStatus(): void {
-    // A default config that is absent is not a deployment; an explicit --config is, even before it loads.
-    if (!configSelected) return;
     try {
       writeJsonAtomic(statusFile, {
         pid: process.pid,
@@ -309,9 +311,8 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
 
   if (statusMode) {
     if (args.value('repo') !== undefined || listFlag(args, 'root').length > 0) {
-      fail('status reads the host-status file beside --config; pass --config instead of --repo/--root');
+      fail('status takes no --repo/--root');
     }
-    if (!configExplicit) fail('no host broker is running; pass --config');
     const parsed = readJson(statusFile);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       fail('no host broker is running');

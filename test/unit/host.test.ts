@@ -14,22 +14,24 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, before, describe, it } from 'node:test';
 
-import { runBounded, runHostBroker } from '../../packages/host/src/commands/host.ts';
+import { hostStatusPath, runBounded, runHostBroker } from '../../packages/host/src/commands/host.ts';
 import { channelDir, claimRequest, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 
 describe('host status', () => {
   const hostBin = fileURLToPath(new URL('../../packages/host/bin/gcb.js', import.meta.url));
-  const writeStatus = (config: string, value: unknown): void => {
-    const file = join(dirname(config), 'host-status.json');
+
+  const writeStatus = (value: unknown): void => {
+    const file = hostStatusPath();
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, JSON.stringify(value), 'utf8');
   };
 
+  const clearStatus = (): void => {
+    rmSync(hostStatusPath(), { force: true });
+  };
+
   it('reports the config path the daemon recorded', () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-status-'));
-    const config = join(root, 'broker.config.yml');
-    writeFileSync(config, 'hosts: {}\n', 'utf8');
-    writeStatus(config, {
+    writeStatus({
       pid: process.pid,
       config: '/deployment/broker.config.yml',
       cwd: '/deployment',
@@ -39,7 +41,7 @@ describe('host status', () => {
     try {
       const run = spawnSync(
         process.execPath,
-        ['--conditions=development', hostBin, 'host', 'status', '--config', config, '--json'],
+        ['--conditions=development', hostBin, 'host', 'status', '--json'],
         { cwd: process.cwd(), encoding: 'utf8' },
       );
       assert.equal(run.status, 0, run.stderr);
@@ -48,25 +50,19 @@ describe('host status', () => {
       assert.equal(status?.cwd, '/deployment');
       assert.equal(status?.version, 'test-version');
     } finally {
-      rmSync(root, { recursive: true, force: true });
+      clearStatus();
     }
   });
 
   it('exits 1 when no daemon is running', () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-status-none-'));
-    const config = join(root, 'broker.config.yml');
-    writeFileSync(config, 'hosts: {}\n', 'utf8');
-    try {
-      const run = spawnSync(
-        process.execPath,
-        ['--conditions=development', hostBin, 'host', 'status', '--config', config, '--json'],
-        { cwd: process.cwd(), encoding: 'utf8' },
-      );
-      assert.equal(run.status, 1);
-      assert.match(run.stderr, /no host broker is running/u);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+    clearStatus();
+    const run = spawnSync(
+      process.execPath,
+      ['--conditions=development', hostBin, 'host', 'status', '--json'],
+      { cwd: process.cwd(), encoding: 'utf8' },
+    );
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /no host broker is running/u);
   });
 
   it('records status for an explicit config that does not exist', async () => {
@@ -80,7 +76,7 @@ describe('host status', () => {
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\ncp ' + join(dirname(config), 'host-status.json') + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
+      '#!/bin/sh\ncp ' + hostStatusPath() + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
@@ -89,6 +85,7 @@ describe('host status', () => {
       assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
       assert.equal((JSON.parse(readFileSync(captured, 'utf8')) as { config: unknown }).config, null);
     } finally {
+      clearStatus();
       rmSync(root, { recursive: true, force: true });
     }
   });
@@ -104,7 +101,7 @@ describe('host status', () => {
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\ncp ' + join(dirname(config), 'host-status.json') + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
+      '#!/bin/sh\ncp ' + hostStatusPath() + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
@@ -123,13 +120,14 @@ describe('host status', () => {
       assert.equal(status.cwd, process.cwd());
       assert.equal(typeof status.version, 'string');
     } finally {
+      clearStatus();
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it('does not trust a status file without an explicit config', () => {
+  it('does not read a cwd status file', () => {
+    clearStatus();
     const root = mkdtempSync(join(tmpdir(), 'host-status-no-config-'));
-    writeFileSync(join(root, 'broker.config.yml'), 'hosts: {}\n', 'utf8');
     writeFileSync(
       join(root, 'host-status.json'),
       JSON.stringify({ pid: process.pid, config: '/forged', cwd: '/', version: 'x', startedAt: 'x' }),
@@ -149,10 +147,7 @@ describe('host status', () => {
   });
 
   it('reports the running daemon before a config is loaded', () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-status-unloaded-'));
-    const config = join(root, 'broker.config.yml');
-    writeFileSync(config, 'hosts: {}\n', 'utf8');
-    writeStatus(config, {
+    writeStatus({
       pid: process.pid,
       config: null,
       cwd: '/deployment',
@@ -162,14 +157,14 @@ describe('host status', () => {
     try {
       const run = spawnSync(
         process.execPath,
-        ['--conditions=development', hostBin, 'host', 'status', '--config', config, '--json'],
+        ['--conditions=development', hostBin, 'host', 'status', '--json'],
         { cwd: process.cwd(), encoding: 'utf8' },
       );
       assert.equal(run.status, 0, run.stderr);
       const [status] = JSON.parse(run.stdout) as [{ config: unknown }];
       assert.equal(status?.config, null);
     } finally {
-      rmSync(root, { recursive: true, force: true });
+      clearStatus();
     }
   });
 });
@@ -635,7 +630,7 @@ describe('the host action route', () => {
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\ncp ' + join(dirname(config), 'host-status.json') + ' ' + statusCopy + '\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "action output"\n',
+      '#!/bin/sh\ncp ' + hostStatusPath() + ' ' + statusCopy + '\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "action output"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
