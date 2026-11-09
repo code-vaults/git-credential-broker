@@ -156,6 +156,26 @@ describe('host status', () => {
     }
   });
 
+  it('does not trust a status file without a selected config', () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-status-no-config-'));
+    writeFileSync(
+      join(root, 'host-status.json'),
+      JSON.stringify({ pid: process.pid, config: '/forged', cwd: '/', version: 'x', startedAt: 'x' }),
+      'utf8',
+    );
+    try {
+      const run = spawnSync(
+        process.execPath,
+        ['--conditions=development', hostBin, 'host', 'status', '--json'],
+        { cwd: root, encoding: 'utf8' },
+      );
+      assert.equal(run.status, 1);
+      assert.match(run.stderr, /no host broker is running/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('reports the running daemon before a config is loaded', () => {
     const root = mkdtempSync(join(tmpdir(), 'host-status-unloaded-'));
     const config = join(root, 'broker.config.yml');

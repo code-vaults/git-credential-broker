@@ -11,7 +11,7 @@
  * shell; the program it calls is configuration, and it is called with an argument list built here.
  */
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { StringDecoder } from 'node:string_decoder';
 import { dirname, join, resolve } from 'node:path';
@@ -56,6 +56,31 @@ const CREATE_TIMEOUT_MS = 120_000;
 
 /** Host-private status file, beside the configuration rather than in a channel. */
 const HOST_STATUS_FILE = 'host-status.json';
+
+/** Pick a status path that is distinct from the config, including through a symlink. */
+function statusPathFor(config: string): string {
+  const directory = dirname(config);
+  const configReal = (() => {
+    try {
+      return realpathSync(config);
+    } catch {
+      return config;
+    }
+  })();
+  for (const name of [HOST_STATUS_FILE, '.' + HOST_STATUS_FILE, '.gcb-' + HOST_STATUS_FILE]) {
+    const candidate = join(directory, name);
+    let candidateReal = candidate;
+    try {
+      candidateReal = realpathSync(candidate);
+    } catch {
+      // A missing candidate is fine; writeJsonAtomic creates it.
+    }
+    if (candidate !== config && candidate !== configReal && candidateReal !== configReal) {
+      return candidate;
+    }
+  }
+  throw new Error('the config path leaves no separate status path');
+}
 
 /** The daemon state `host status` reports. */
 interface HostStatus {
@@ -245,12 +270,12 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const command = args.value('command') ?? process.env['GCB_HOST_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
   const resolvedConfig = resolveConfigPath(configPath);
-  const statusDirectory = dirname(resolvedConfig);
-  const statusFile =
-    resolve(statusDirectory, HOST_STATUS_FILE) === resolvedConfig
-      ? join(statusDirectory, `.${HOST_STATUS_FILE}`)
-      : join(statusDirectory, HOST_STATUS_FILE);
+  const statusFile = statusPathFor(resolvedConfig);
   const startedAt = new Date().toISOString();
+  const configSelected =
+    existsSync(resolvedConfig) ||
+    configPath !== undefined ||
+    process.env['GIT_BROKER_CONFIG'] !== undefined;
   let loadedConfig: string | null = null;
   /** Rewrite the host-private status file; the channel marker is not trusted for this. */
   function writeStatus(): void {
@@ -260,14 +285,12 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
       return;
     }
     // A default config that is absent is not a deployment; an explicit --config is, even before it loads.
-    if (
-      !existsSync(resolvedConfig) &&
-      configPath === undefined &&
-      process.env['GIT_BROKER_CONFIG'] === undefined
-    ) {
-      return;
-    }
+    if (!configSelected) return;
     try {
+      if (existsSync(statusFile) && lstatSync(statusFile).isDirectory()) {
+        warn(`could not write host status: ${statusFile} is a directory`);
+        return;
+      }
       writeJsonAtomic(statusFile, {
         pid: process.pid,
         config: loadedConfig,
@@ -318,6 +341,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   };
 
   if (statusMode) {
+    if (!configSelected) fail('no host broker is running');
     if (args.value('repo') !== undefined || listFlag(args, 'root').length > 0) {
       fail('status reads the host-status file beside --config; pass --config instead of --repo/--root');
     }
