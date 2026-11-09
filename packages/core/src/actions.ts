@@ -416,6 +416,7 @@ const PR_COMMENT_EDIT: GhAction = {
   ...ISSUE_COMMENT_EDIT,
   name: 'pr:comment-edit',
   command: ['pr', 'comment-edit'],
+  permissions: { issues: 'write', pull_requests: 'write' },
 };
 
 // GitHub: GET /repos/{owner}/{repo}/issues/{issue_number}
