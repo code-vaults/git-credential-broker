@@ -29,8 +29,8 @@ import {
   removeRequest,
   requestProblems,
   writeHostBroker,
-  writePrivateJson,
-  readPrivateJson,
+  writeJsonAtomic,
+  readJson,
   writeResult,
   PACKAGE_VERSION,
   apiBodyJson,
@@ -252,7 +252,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   function writeStatus(): void {
     if (!existsSync(dirname(statusFile))) return;
     try {
-      writePrivateJson(statusFile, {
+      writeJsonAtomic(statusFile, {
         pid: process.pid,
         config: loadedConfig,
         cwd: process.cwd(),
@@ -305,7 +305,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     if (args.value('repo') !== undefined || listFlag(args, 'root').length > 0) {
       fail('status reads <dirname(--config)>/host-status.json; pass --config instead of --repo/--root');
     }
-    const parsed = readPrivateJson(statusFile);
+    const parsed = readJson(statusFile);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       fail('no host broker is running');
     }
@@ -358,7 +358,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   // coming.
   process.on('exit', () => {
     try {
-      const current = readPrivateJson(statusFile);
+      const current = readJson(statusFile);
       if (
         typeof current === 'object' &&
         current !== null &&

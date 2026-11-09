@@ -391,26 +391,6 @@ export function clearHostBroker(dir: string): void {
 }
 
 /**
- * Read a JSON sidecar without following a symlink or blocking on a FIFO.
- *
- * @param file - the sidecar path.
- * @returns the parsed value, or undefined when it is missing or not a regular JSON file.
- */
-export function readPrivateJson(file: string): unknown {
-  return readJson(file);
-}
-
-/**
- * Write a JSON sidecar atomically, through an exclusive temporary file.
- *
- * @param file - the sidecar path.
- * @param value - the value to encode.
- */
-export function writePrivateJson(file: string, value: unknown): void {
-  writeJsonAtomic(file, value);
-}
-
-/**
  * Name a new request, unique enough for one directory.
  *
  * @param now - the clock, for tests.
@@ -996,7 +976,7 @@ export async function waitForResult(
  * @param file - the path.
  * @returns the parsed value, or `undefined`.
  */
-function readJson(file: string): unknown {
+export function readJson(file: string): unknown {
   let fd: number | undefined;
   try {
     // Open without following a symlink and without blocking on a FIFO; lstat+read leaves a window
@@ -1032,7 +1012,7 @@ function readJson(file: string): unknown {
  * @param file - the path.
  * @param value - the value to write.
  */
-function writeJsonAtomic(file: string, value: unknown): void {
+export function writeJsonAtomic(file: string, value: unknown): void {
   mkdirSync(dirname(file), { recursive: true });
   const payload = `${JSON.stringify(value, null, 2)}\n`;
   const temp = `${file}.${process.pid}.tmp`;
