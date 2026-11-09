@@ -68,6 +68,30 @@ describe('host status', () => {
     }
   });
 
+  it('records status for an explicit config that does not exist', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-status-missing-config-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = join(root, 'missing.yml');
+    const dir = channelDir(join(repo, '.git'));
+    const captured = join(root, 'captured-status.json');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\ncp ' + join(root, 'host-status.json') + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    try {
+      writeRequest(dir, { head: 'feat/x', base: 'main', title: 't', body: '' });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.equal((JSON.parse(readFileSync(captured, 'utf8')) as { config: unknown }).config, null);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('does not overwrite a config named host-status.json', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-status-collision-'));
     const repo = join(root, 'checkout');

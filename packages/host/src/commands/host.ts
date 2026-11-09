@@ -197,7 +197,7 @@ fork, with the gh account each request names. The result is authored by a person
   --arg <token>         An extra argument for that program, before the subcommand (repeatable)
   --interval <seconds>  How often to look for requests (default: 5)
   --once                Fulfil what is waiting, then exit
-  status                Report the running host daemon (reads <config dir>/host-status.json)
+  status                Report the running host daemon (reads host-status.json beside --config)
   --json                With status, print JSON
   -h, --help            Show this help
 
@@ -319,7 +319,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
 
   if (statusMode) {
     if (args.value('repo') !== undefined || listFlag(args, 'root').length > 0) {
-      fail('status reads <dirname(--config)>/host-status.json; pass --config instead of --repo/--root');
+      fail('status reads the host-status file beside --config; pass --config instead of --repo/--root');
     }
     const parsed = readJson(statusFile);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
