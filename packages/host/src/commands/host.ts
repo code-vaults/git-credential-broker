@@ -249,9 +249,6 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const configPath = args.value('config');
   const resolvedConfig = resolveConfigPath(configPath);
   const statusFile = hostStatusPath();
-  if (canonicalPath(resolvedConfig) === canonicalPath(statusFile)) {
-    fail('the config cannot be the host status file');
-  }
   const startedAt = new Date().toISOString();
   let loadedConfig: string | null = null;
   /** Remove the status file only when this process owns it. */
@@ -273,6 +270,14 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   /** Rewrite the host-private status file; the channel marker is not trusted for this. */
   function writeStatus(): void {
     if (once) return;
+    let collision: boolean;
+    try {
+      collision = canonicalPath(resolvedConfig) === canonicalPath(statusFile);
+    } catch (error) {
+      warn(`could not compare the config and status paths: ${(error as Error).message}`);
+      return;
+    }
+    if (collision) fail('the config cannot be the host status file');
     try {
       writeJsonAtomic(statusFile, {
         pid: process.pid,

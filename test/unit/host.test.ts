@@ -205,7 +205,7 @@ describe('host status', () => {
     try {
       const run = spawnSync(
         process.execPath,
-        ['--conditions=development', hostBin, 'host', '--config', status, '--once'],
+        ['--conditions=development', hostBin, 'host', '--config', status],
         { cwd: process.cwd(), encoding: 'utf8' },
       );
       assert.equal(run.status, 1);
