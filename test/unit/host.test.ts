@@ -7,7 +7,7 @@
  * either the checkout the request was written in or the explicit allowlisted repo it names.
  */
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -162,6 +162,48 @@ describe('host status', () => {
       assert.equal(status.pid, process.ppid);
       assert.equal(status.config, '/service/broker.config.yml');
     } finally {
+      clearStatus();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('lets a fresh daemon override a stale live-pid record', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-status-fresh-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\nexit 0\n', 'utf8');
+    chmodSync(command, 0o755);
+    writeStatus({
+      pid: process.ppid,
+      config: '/stale/broker.config.yml',
+      cwd: '/stale',
+      version: 'stale',
+      startedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const child = spawn(
+      process.execPath,
+      ['--conditions=development', hostBin, 'host', '--repo', repo, '--command', command, '--interval', '60'],
+      { cwd: process.cwd(), stdio: 'ignore' },
+    );
+    try {
+      const deadline = Date.now() + 5_000;
+      let status: { pid?: number } | undefined;
+      while (Date.now() < deadline) {
+        try {
+          status = JSON.parse(readFileSync(hostStatusPath(), 'utf8')) as { pid?: number };
+          if (status.pid !== process.ppid) break;
+        } catch {
+          // The child has not written yet.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      assert.notEqual(status?.pid, process.ppid);
+      assert.equal(status?.pid, child.pid);
+    } finally {
+      child.kill('SIGTERM');
+      await new Promise((resolve) => child.once('exit', resolve));
       clearStatus();
       rmSync(root, { recursive: true, force: true });
     }

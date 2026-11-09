@@ -2,10 +2,23 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { it } from 'node:test';
+import { after, before, it } from 'node:test';
 
 import { channelDir, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 import { runHostBroker } from '../../packages/host/src/commands/host.ts';
+
+let statusFile = '';
+let previousStatusPath: string | undefined;
+before(() => {
+  statusFile = join(tmpdir(), `host-fork-status-${String(process.pid)}.json`);
+  previousStatusPath = process.env['GCB_HOST_STATUS'];
+  process.env['GCB_HOST_STATUS'] = statusFile;
+});
+after(() => {
+  rmSync(statusFile, { force: true });
+  if (previousStatusPath === undefined) delete process.env['GCB_HOST_STATUS'];
+  else process.env['GCB_HOST_STATUS'] = previousStatusPath;
+});
 
 it('runs an action on the parent of an allowlisted fork', async () => {
   const root = mkdtempSync(join(tmpdir(), 'host-broker-fork-'));
