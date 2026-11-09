@@ -418,7 +418,7 @@ describe('bounded action output', () => {
     const result = await runBounded(
       process.execPath,
       ['-e', 'setTimeout(() => {}, 5000);'],
-      { cwd: tmpdir(), env: process.env, timeoutMs: 3_000, writeCaveat: false },
+      { cwd: tmpdir(), env: process.env, timeoutMs: 500, writeCaveat: false },
     );
     assert.equal(result.code, 1);
     assert.match(result.stderr, /timed out/u);

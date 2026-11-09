@@ -252,7 +252,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const startedAt = new Date().toISOString();
   // The selected path is what a fork or explicit repository would load; it may not exist yet.
   const configSelected =
-    configPath !== undefined ||
+    Boolean(configPath) ||
     Boolean(process.env['GIT_BROKER_CONFIG']) ||
     existsSync(resolvedConfig);
   let loadedConfig: string | null = configSelected ? resolvedConfig : null;
