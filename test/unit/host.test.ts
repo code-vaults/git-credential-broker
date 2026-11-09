@@ -127,8 +127,6 @@ describe('host status', () => {
       ['--conditions=development', hostBin, 'host', '--repo', repo, '--command', command, '--interval', '60'],
       { cwd: process.cwd(), stdio: 'ignore' },
     );
-    let stderr = '';
-    child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
     try {
       const deadline = Date.now() + 5_000;
       let status: { pid?: number; config?: unknown } | undefined;
@@ -145,8 +143,11 @@ describe('host status', () => {
       assert.equal(status?.pid, child.pid);
       assert.equal(status?.config, null);
     } finally {
-      child.kill('SIGTERM');
-      await new Promise((resolve) => child.once('exit', resolve));
+      if (child.exitCode === null && child.signalCode === null) {
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.kill('SIGTERM');
+        await exited;
+      }
       clearStatus();
       rmSync(root, { recursive: true, force: true });
     }
@@ -182,8 +183,11 @@ describe('host status', () => {
       const status = JSON.parse(readFileSync(captured, 'utf8')) as { config: string };
       assert.equal(status.config, config);
     } finally {
-      child.kill('SIGTERM');
-      await new Promise((resolve) => child.once('exit', resolve));
+      if (child.exitCode === null && child.signalCode === null) {
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.kill('SIGTERM');
+        await exited;
+      }
       clearStatus();
       rmSync(root, { recursive: true, force: true });
     }
