@@ -696,6 +696,67 @@ const WORKFLOW_VIEW: GhAction = {
   appUser: true,
 };
 
+// GitHub: GET /repos/{owner}/{repo}/labels
+const LABEL_LIST: GhAction = {
+  name: 'label:list',
+  command: ['label', 'list'],
+  positionals: [],
+  flags: [
+    { name: 'json', type: 'string' },
+    { name: 'jq', type: 'string' },
+    { name: 'limit', type: 'number' },
+    { name: 'order', type: 'string' },
+    { name: 'search', type: 'string' },
+    { name: 'sort', type: 'string' },
+    { name: 'template', type: 'string' },
+  ],
+  permissions: { issues: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+};
+
+// GitHub: POST /repos/{owner}/{repo}/labels
+const LABEL_CREATE: GhAction = {
+  name: 'label:create',
+  command: ['label', 'create'],
+  positionals: [{ name: 'name', type: 'string', required: true }],
+  flags: [
+    { name: 'color', type: 'string' },
+    { name: 'description', type: 'string' },
+    { name: 'force', type: 'boolean' },
+  ],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+};
+
+// GitHub: PATCH /repos/{owner}/{repo}/labels/{name}
+const LABEL_EDIT: GhAction = {
+  name: 'label:edit',
+  command: ['label', 'edit'],
+  positionals: [{ name: 'label', type: 'string', required: true }],
+  flags: [
+    { name: 'color', type: 'string' },
+    { name: 'description', type: 'string' },
+    { name: 'name', type: 'string' },
+  ],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+};
+
+// GitHub: DELETE /repos/{owner}/{repo}/labels/{name}
+const LABEL_DELETE: GhAction = {
+  name: 'label:delete',
+  command: ['label', 'delete'],
+  positionals: [{ name: 'name', type: 'string', required: true }],
+  flags: [{ name: 'yes', type: 'boolean', required: true }],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+};
+
 /** Every built-in action, keyed by its action name. */
 export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:view': PR_VIEW,
@@ -738,6 +799,10 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'release:view': RELEASE_VIEW,
   'workflow:list': WORKFLOW_LIST,
   'workflow:view': WORKFLOW_VIEW,
+  'label:list': LABEL_LIST,
+  'label:create': LABEL_CREATE,
+  'label:edit': LABEL_EDIT,
+  'label:delete': LABEL_DELETE,
 });
 
 /** The built-in action names, in a stable order. */
@@ -859,6 +924,7 @@ export function buildGhArgv(
     }
     if (flag.type === 'boolean') {
       if (typeof value !== 'boolean') throw new ActionError(`--${flag.name} is a boolean`);
+      if (flag.required === true && value !== true) throw new ActionError(`${name} needs --${flag.name}`);
       if (value) {
         argv.push(`--${flag.name}`);
         present.add(flag.name);
