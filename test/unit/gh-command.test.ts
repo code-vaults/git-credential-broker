@@ -497,6 +497,47 @@ describe('gcb gh', () => {
     }
   });
 
+  it('preserves multiple search terms and quoted phrases through the client', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-search-'));
+    const socketPath = path.join(root, 'broker.sock');
+    const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] };
+    const config: BrokerConfig = {
+      socketPath,
+      socketMode: 0o600,
+      auditPath: null,
+      tokenCacheSkewSeconds: 300,
+      hosts: { 'github.com': block },
+    };
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() };
+    const seen: unknown[] = [];
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async (request) => {
+        seen.push(request.values['query']);
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false };
+      },
+    };
+    const broker = await startBroker({ config, audit, providers: new Map([['github.com', provider]]) });
+    try {
+      const terms = await runGhCli(
+        ['search', 'issues', 'is:issue', 'label:bug', '--repo', 'acme/widget', '--socket', socketPath],
+        root,
+      );
+      assert.equal(terms.status, 0, terms.stderr);
+      assert.deepEqual(seen[0], ['is:issue', 'label:bug']);
+      const phrase = await runGhCli(
+        ['search', 'issues', 'authentication bug', '--repo', 'acme/widget', '--socket', socketPath],
+        root,
+      );
+      assert.equal(phrase.status, 0, phrase.stderr);
+      assert.deepEqual(seen[1], ['authentication bug']);
+    } finally {
+      await broker.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('reports truncation and timed-out writes', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-output-'));
     const socketPath = path.join(root, 'broker.sock');
