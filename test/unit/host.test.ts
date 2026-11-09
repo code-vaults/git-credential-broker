@@ -198,6 +198,23 @@ describe('host status', () => {
     }
   });
 
+  it('refuses a config equal to the status file', () => {
+    const status = hostStatusPath();
+    mkdirSync(dirname(status), { recursive: true });
+    writeFileSync(status, 'hosts: {}\n', 'utf8');
+    try {
+      const run = spawnSync(
+        process.execPath,
+        ['--conditions=development', hostBin, 'host', '--config', status, '--once'],
+        { cwd: process.cwd(), encoding: 'utf8' },
+      );
+      assert.equal(run.status, 1);
+      assert.match(run.stderr, /the config cannot be the host status file/u);
+    } finally {
+      clearStatus();
+    }
+  });
+
   it('does not read a cwd status file', () => {
     clearStatus();
     const root = mkdtempSync(join(tmpdir(), 'host-status-no-config-'));

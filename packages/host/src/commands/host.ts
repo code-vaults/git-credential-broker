@@ -33,6 +33,7 @@ import {
   readJson,
   writeResult,
   PACKAGE_VERSION,
+  canonicalPath,
   apiBodyJson,
   HOST,
   REPOSITORY,
@@ -248,7 +249,9 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const configPath = args.value('config');
   const resolvedConfig = resolveConfigPath(configPath);
   const statusFile = hostStatusPath();
-  if (resolvedConfig === statusFile) fail('the config cannot be the host status file');
+  if (canonicalPath(resolvedConfig) === canonicalPath(statusFile)) {
+    fail('the config cannot be the host status file');
+  }
   const startedAt = new Date().toISOString();
   let loadedConfig: string | null = null;
   /** Remove the status file only when this process owns it. */
