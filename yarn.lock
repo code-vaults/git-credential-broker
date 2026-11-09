@@ -5,6 +5,19 @@ __metadata:
   version: 10
   cacheKey: 10c0
 
+"@1stg/simple-git-hooks@npm:^3.0.0":
+  version: 3.0.0
+  resolution: "@1stg/simple-git-hooks@npm:3.0.0"
+  dependencies:
+    "@pkgr/utils": "npm:^4.1.0"
+  peerDependencies:
+    "@commitlint/cli": ">=11.0.0"
+    nano-staged: ">=0.8.0"
+    simple-git-hooks: ">=2.12.1"
+  checksum: 10c0/a4ddd9a110fdaad80ccfe4cbeed8ee30bbbd12b2a3e405d647a1c0496479687720630eb254bad57b5915095e8abfd5c49ff045f416298cbf0ac2be61055cd418
+  languageName: node
+  linkType: hard
+
 "@changesets/apply-release-plan@npm:^8.1.1":
   version: 8.1.1
   resolution: "@changesets/apply-release-plan@npm:8.1.1"
@@ -257,6 +270,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@pkgr/core@npm:^0.3.0":
+  version: 0.3.6
+  resolution: "@pkgr/core@npm:0.3.6"
+  checksum: 10c0/153f0f4563f505faeba13c733efa0e05e467ce1c6b941055a5fd3b4560da60fbf1dff4b11da0075f034ddda11f2842b90395f60895dde5825875b616edccc11c
+  languageName: node
+  linkType: hard
+
+"@pkgr/utils@npm:^4.1.0":
+  version: 4.1.0
+  resolution: "@pkgr/utils@npm:4.1.0"
+  dependencies:
+    "@pkgr/core": "npm:^0.3.0"
+    tinyglobby: "npm:^0.2.14"
+  checksum: 10c0/d61cb1a2053c5b5eca97c2884bb238a4cf185f83345d36e272843588c483b5a51e84060189e0c87d2d8412929aeff473dad0667b5f369187d481dee61e75c2a9
+  languageName: node
+  linkType: hard
+
 "@pnpm/deps.graph-sequencer@npm:^1100.0.1":
   version: 1100.0.1
   resolution: "@pnpm/deps.graph-sequencer@npm:1100.0.1"
@@ -506,10 +536,12 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "gcb-workspace@workspace:."
   dependencies:
+    "@1stg/simple-git-hooks": "npm:^3.0.0"
     "@changesets/changelog-github": "npm:^1.0.1"
     "@changesets/cli": "npm:^3.0.3"
     "@types/node": "npm:^24.19.0"
     clean-pkg-json: "npm:^2.0.0"
+    simple-git-hooks: "npm:^2.12.1"
     typescript: "npm:^7.0.2"
     yaml: "npm:^2.9.1"
   languageName: unknown
@@ -599,6 +631,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"simple-git-hooks@npm:^2.12.1":
+  version: 2.14.0
+  resolution: "simple-git-hooks@npm:2.14.0"
+  bin:
+    simple-git-hooks: cli.js
+  checksum: 10c0/2ae4dc2583046b171b206e142f3dc277a363a6647df6e78766d2f26ab6598625011bad5251e3449890c2973c7a876eb93837efff1edf08cbdf84389bd59f51ca
+  languageName: node
+  linkType: hard
+
 "sisteransi@npm:^1.0.5":
   version: 1.0.5
   resolution: "sisteransi@npm:1.0.5"
@@ -613,7 +654,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tinyglobby@npm:^0.2.13":
+"tinyglobby@npm:^0.2.13, tinyglobby@npm:^0.2.14":
   version: 0.2.17
   resolution: "tinyglobby@npm:0.2.17"
   dependencies:

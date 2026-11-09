@@ -33,13 +33,15 @@
     "prepublishOnly": "yarn check",
     "version": "changeset version && yarn install --mode=update-lockfile",
     "release": "changeset publish",
-    "hooks:install": "node scripts/install-hooks.mjs"
+    "hooks:install": "simple-git-hooks"
   },
   "devDependencies": {
+    "@1stg/simple-git-hooks": "^3.0.0",
     "@changesets/changelog-github": "^1.0.1",
     "@changesets/cli": "^3.0.3",
     "@types/node": "^24.19.0",
     "clean-pkg-json": "^2.0.0",
+    "simple-git-hooks": "^2.12.1",
     "typescript": "^7.0.2",
     "yaml": "^2.9.1"
   }

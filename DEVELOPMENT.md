@@ -225,11 +225,10 @@ CI runs `tsc` over the tests; `node --test` alone strips types and would miss a 
 corepack yarn hooks:install   # once per checkout
 ```
 
-This installs `.githooks/pre-push`, which runs `tsc -p tsconfig.json` before a push. It is opt-in and
-not installed by `yarn install`; skip one push with:
+This installs the `simple-git-hooks` pre-push hook configured by `.simple-git-hooks.js`; the
+`@1stg/simple-git-hooks` base is used, with `pre-push: yarn typecheck` added. It is opt-in and not
+installed by `yarn install`. Skip one push with:
 
 ```sh
-GCB_SKIP_TYPECHECK=1 git push
+SKIP_SIMPLE_GIT_HOOKS=1 git push
 ```
-
-The hook is tracked in the repository, so updating it needs no reinstall after the first install.
