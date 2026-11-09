@@ -11,12 +11,15 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { after, before, describe, it } from 'node:test';
 
 import { runBounded, runHostBroker } from '../../packages/host/src/commands/host.ts';
 import { channelDir, claimRequest, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 
 describe('host status', () => {
+  const hostBin = fileURLToPath(new URL('../../packages/host/bin/gcb.js', import.meta.url));
+
   it('reports the config path the daemon recorded', () => {
     const root = mkdtempSync(join(tmpdir(), 'host-status-'));
     const config = join(root, 'broker.config.yml');
@@ -35,7 +38,7 @@ describe('host status', () => {
     try {
       const run = spawnSync(
         process.execPath,
-        ['--conditions=development', 'packages/host/bin/gcb.js', 'host', 'status', '--config', config, '--json'],
+        ['--conditions=development', hostBin, 'host', 'status', '--config', config, '--json'],
         { cwd: process.cwd(), encoding: 'utf8' },
       );
       assert.equal(run.status, 0, run.stderr);
@@ -43,6 +46,35 @@ describe('host status', () => {
       assert.equal(status?.config, '/deployment/broker.config.yml');
       assert.equal(status?.cwd, '/deployment');
       assert.equal(status?.version, 'test-version');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reports the running daemon before a config is loaded', () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-status-unloaded-'));
+    const config = join(root, 'broker.config.yml');
+    writeFileSync(config, 'hosts: {}\n', 'utf8');
+    writeFileSync(
+      join(root, 'host-status.json'),
+      JSON.stringify({
+        pid: process.pid,
+        config: null,
+        cwd: '/deployment',
+        version: 'test-version',
+        startedAt: '2026-01-01T00:00:00.000Z',
+      }),
+      'utf8',
+    );
+    try {
+      const run = spawnSync(
+        process.execPath,
+        ['--conditions=development', hostBin, 'host', 'status', '--config', config, '--json'],
+        { cwd: process.cwd(), encoding: 'utf8' },
+      );
+      assert.equal(run.status, 0, run.stderr);
+      const [status] = JSON.parse(run.stdout) as [{ config: unknown }];
+      assert.equal(status?.config, null);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

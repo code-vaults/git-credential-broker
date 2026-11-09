@@ -11,7 +11,7 @@
  * shell; the program it calls is configuration, and it is called with an argument list built here.
  */
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { StringDecoder } from 'node:string_decoder';
 import { dirname, join, resolve } from 'node:path';
@@ -29,6 +29,8 @@ import {
   removeRequest,
   requestProblems,
   writeHostBroker,
+  writePrivateJson,
+  readPrivateJson,
   writeResult,
   PACKAGE_VERSION,
   apiBodyJson,
@@ -195,7 +197,7 @@ fork, with the gh account each request names. The result is authored by a person
   --arg <token>         An extra argument for that program, before the subcommand (repeatable)
   --interval <seconds>  How often to look for requests (default: 5)
   --once                Fulfil what is waiting, then exit
-  status                Report the running host daemon, without serving
+  status                Report the running host daemon (reads <config dir>/host-status.json)
   --json                With status, print JSON
   -h, --help            Show this help
 
@@ -250,11 +252,13 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   function writeStatus(): void {
     if (!existsSync(dirname(statusFile))) return;
     try {
-      writeFileSync(
-        statusFile,
-        JSON.stringify({ pid: process.pid, config: loadedConfig, cwd: process.cwd(), version: PACKAGE_VERSION, startedAt }),
-        { encoding: 'utf8', mode: 0o600 },
-      );
+      writePrivateJson(statusFile, {
+        pid: process.pid,
+        config: loadedConfig,
+        cwd: process.cwd(),
+        version: PACKAGE_VERSION,
+        startedAt,
+      });
     } catch {
       // A status report is not worth taking the daemon down for.
     }
@@ -298,10 +302,11 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   };
 
   if (statusMode) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(readFileSync(statusFile, 'utf8'));
-    } catch {
+    if (args.value('repo') !== undefined || listFlag(args, 'root').length > 0) {
+      fail('status reads <dirname(--config)>/host-status.json; pass --config instead of --repo/--root');
+    }
+    const parsed = readPrivateJson(statusFile);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       fail('no host broker is running');
     }
     const status = parsed as Partial<HostStatus>;
@@ -333,7 +338,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     return 0;
   }
   if (args.has('json')) fail('--json needs status');
-
+  writeStatus();
 
   const advertised = new Set<string>();
   /** Advertise a channel, without rewriting the marker on every sweep. */
@@ -353,8 +358,15 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   // coming.
   process.on('exit', () => {
     try {
-      const current = JSON.parse(readFileSync(statusFile, 'utf8')) as { pid?: unknown };
-      if (current.pid === process.pid) rmSync(statusFile, { force: true });
+      const current = readPrivateJson(statusFile);
+      if (
+        typeof current === 'object' &&
+        current !== null &&
+        !Array.isArray(current) &&
+        (current as { pid?: unknown }).pid === process.pid
+      ) {
+        rmSync(statusFile, { force: true });
+      }
     } catch {
       // The file is already gone or unreadable; nothing to clean.
     }

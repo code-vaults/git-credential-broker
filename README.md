@@ -420,7 +420,7 @@ host, beside the same checkout, and ask for it with `--as-user <login>` from the
 ```sh
 # on the host, once — it serves every checkout below $HOME
 gcb host          # --root <dir> to narrow it, repeatable
-gcb host status --config <file> --json     # config, cwd, version and pid of the running daemon
+gcb host status --config <file> --json     # config, cwd, version and pid; reads <config dir>/host-status.json
 # for repo fork, reviews, review replies, pull request edit, issue edit/comment or an explicit
 # --repo, also pass --config <broker.config.yml> so its allowlist applies; reviews always carry a
 # repo, even from origin

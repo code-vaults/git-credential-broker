@@ -391,6 +391,26 @@ export function clearHostBroker(dir: string): void {
 }
 
 /**
+ * Read a JSON sidecar without following a symlink or blocking on a FIFO.
+ *
+ * @param file - the sidecar path.
+ * @returns the parsed value, or undefined when it is missing or not a regular JSON file.
+ */
+export function readPrivateJson(file: string): unknown {
+  return readJson(file);
+}
+
+/**
+ * Write a JSON sidecar atomically, through an exclusive temporary file.
+ *
+ * @param file - the sidecar path.
+ * @param value - the value to encode.
+ */
+export function writePrivateJson(file: string, value: unknown): void {
+  writeJsonAtomic(file, value);
+}
+
+/**
  * Name a new request, unique enough for one directory.
  *
  * @param now - the clock, for tests.
