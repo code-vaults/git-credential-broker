@@ -32,7 +32,8 @@
     "pack:check": "yarn build && node scripts/pack-check.mjs",
     "prepublishOnly": "yarn check",
     "version": "changeset version && yarn install --mode=update-lockfile",
-    "release": "changeset publish"
+    "release": "changeset publish",
+    "hooks:install": "node scripts/install-hooks.mjs"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.1",

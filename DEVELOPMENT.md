@@ -216,3 +216,20 @@ examples/              configuration snippets
 docker-compose.example.yml  tracked sidecar example
 .agents/notes/         the design, its review, the verified record, environment facts
 ```
+
+## Optional pre-push typecheck
+
+CI runs `tsc` over the tests; `node --test` alone strips types and would miss a type error.
+
+```sh
+corepack yarn hooks:install   # once per checkout
+```
+
+This installs `.githooks/pre-push`, which runs `tsc -p tsconfig.json` before a push. It is opt-in and
+not installed by `yarn install`; skip one push with:
+
+```sh
+GCB_SKIP_TYPECHECK=1 git push
+```
+
+The hook is tracked in the repository, so updating it needs no reinstall after the first install.
