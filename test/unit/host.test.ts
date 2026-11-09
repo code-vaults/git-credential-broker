@@ -206,7 +206,7 @@ describe('host status', () => {
       const run = spawnSync(
         process.execPath,
         ['--conditions=development', hostBin, 'host', '--config', status],
-        { cwd: process.cwd(), encoding: 'utf8' },
+        { cwd: process.cwd(), encoding: 'utf8', timeout: 5_000 },
       );
       assert.equal(run.status, 1);
       assert.match(run.stderr, /the config cannot be the host status file/u);
