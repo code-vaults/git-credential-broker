@@ -13,7 +13,12 @@ import { remoteRepo } from './remotes.ts';
 const ACTION_LINES = Object.values(GH_ACTIONS)
   .map((action) => {
     const positionals = action.positionals
-      .map((positional) => (positional.required === true ? `<${positional.name}>` : `[${positional.name}]`))
+      .map((positional) => {
+        const repeat = positional.repeatable === true ? '...' : '';
+        return positional.required === true
+          ? `<${positional.name}${repeat}>`
+          : `[${positional.name}${repeat}]`;
+      })
       .join(' ');
     const flags = action.flags
       .map((flag) => {
@@ -300,7 +305,18 @@ export async function runGh(
 
   const values: Record<string, string | boolean | string[]> = {};
   const bodyFile = args.value('body-file') !== undefined;
+  let repeatable = false;
   for (const [index, positional] of action.positionals.entries()) {
+    if (positional.repeatable === true) {
+      const rest = args.positionals.slice(index);
+      if (rest.length === 0) {
+        if (positional.required === true) fail(`gcb gh ${domain} ${command} needs ${positional.name}`);
+      } else {
+        values[positional.name] = rest;
+      }
+      repeatable = true;
+      break;
+    }
     const value = args.positionals[index];
     if (value === undefined) {
       if (positional.required === true) fail(`gcb gh ${domain} ${command} needs ${positional.name}`);
@@ -308,7 +324,7 @@ export async function runGh(
     }
     values[positional.name] = value;
   }
-  if (args.positionals.length > action.positionals.length) {
+  if (!repeatable && args.positionals.length > action.positionals.length) {
     fail(`gcb gh ${domain} ${command} has too many positional arguments`);
   }
   for (const flag of action.flags) {

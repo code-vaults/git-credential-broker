@@ -296,6 +296,15 @@ describe('buildGhArgv', () => {
     assert.doesNotThrow(() => buildGhArgv('search:issues', { query: 'is:issue label:bug' }, 'acme/widget'));
 
     assert.deepEqual(
+      buildGhArgv('search:issues', { query: ['is:issue', 'label:bug'] }, 'acme/widget'),
+      ['search', 'issues', '--repo', 'acme/widget', '--', 'is:issue', 'label:bug'],
+    );
+    assert.deepEqual(
+      buildGhArgv('search:issues', { query: ['"authentication bug"'] }, 'acme/widget'),
+      ['search', 'issues', '--repo', 'acme/widget', '--', '"authentication bug"'],
+    );
+
+    assert.deepEqual(
       buildGhArgv('search:prs', { query: 'fix', draft: true }, 'acme/widget'),
       ['search', 'prs', '--draft', '--repo', 'acme/widget', '--', 'fix'],
     );
