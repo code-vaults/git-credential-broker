@@ -7,17 +7,22 @@ import { after, before, it } from 'node:test';
 import { channelDir, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 import { runHostBroker } from '../../packages/host/src/commands/host.ts';
 
-let statusFile = '';
-let previousStatusPath: string | undefined;
+let statusHome = '';
+let previousHome: string | undefined;
+let previousUserProfile: string | undefined;
 before(() => {
-  statusFile = join(tmpdir(), `host-fork-status-${String(process.pid)}.json`);
-  previousStatusPath = process.env['GCB_HOST_STATUS'];
-  process.env['GCB_HOST_STATUS'] = statusFile;
+  statusHome = mkdtempSync(join(tmpdir(), 'host-fork-home-'));
+  previousHome = process.env['HOME'];
+  previousUserProfile = process.env['USERPROFILE'];
+  process.env['HOME'] = statusHome;
+  process.env['USERPROFILE'] = statusHome;
 });
 after(() => {
-  rmSync(statusFile, { force: true });
-  if (previousStatusPath === undefined) delete process.env['GCB_HOST_STATUS'];
-  else process.env['GCB_HOST_STATUS'] = previousStatusPath;
+  rmSync(statusHome, { recursive: true, force: true });
+  if (previousHome === undefined) delete process.env['HOME'];
+  else process.env['HOME'] = previousHome;
+  if (previousUserProfile === undefined) delete process.env['USERPROFILE'];
+  else process.env['USERPROFILE'] = previousUserProfile;
 });
 
 it('runs an action on the parent of an allowlisted fork', async () => {

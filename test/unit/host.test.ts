@@ -18,16 +18,21 @@ import { hostStatusPath, runBounded, runHostBroker } from '../../packages/host/s
 import { channelDir, claimRequest, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 
 let statusDirectory = '';
-let previousStatusPath: string | undefined;
+let previousHome: string | undefined;
+let previousUserProfile: string | undefined;
 before(() => {
   statusDirectory = mkdtempSync(join(tmpdir(), 'host-status-test-'));
-  previousStatusPath = process.env['GCB_HOST_STATUS'];
-  process.env['GCB_HOST_STATUS'] = join(statusDirectory, 'status.json');
+  previousHome = process.env['HOME'];
+  previousUserProfile = process.env['USERPROFILE'];
+  process.env['HOME'] = statusDirectory;
+  process.env['USERPROFILE'] = statusDirectory;
 });
 after(() => {
   rmSync(statusDirectory, { recursive: true, force: true });
-  if (previousStatusPath === undefined) delete process.env['GCB_HOST_STATUS'];
-  else process.env['GCB_HOST_STATUS'] = previousStatusPath;
+  if (previousHome === undefined) delete process.env['HOME'];
+  else process.env['HOME'] = previousHome;
+  if (previousUserProfile === undefined) delete process.env['USERPROFILE'];
+  else process.env['USERPROFILE'] = previousUserProfile;
 });
 
 describe('host status', () => {
@@ -164,14 +169,14 @@ describe('host status', () => {
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\ncp "$GCB_HOST_STATUS" ' + captured + '\necho "https://github.com/acme/widget"\n',
+      '#!/bin/sh\ncp ' + hostStatusPath() + ' ' + captured + '\necho "https://github.com/acme/widget"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
     const child = spawn(
       process.execPath,
       ['--conditions=development', hostBin, 'host', '--repo', repo, '--config', config, '--command', command, '--interval', '1'],
-      { cwd: process.cwd(), stdio: 'ignore', env: { ...process.env, GCB_HOST_STATUS: hostStatusPath() } },
+      { cwd: process.cwd(), stdio: 'ignore' },
     );
     try {
       const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' });

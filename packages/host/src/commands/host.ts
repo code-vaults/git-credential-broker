@@ -56,7 +56,7 @@ const CREATE_TIMEOUT_MS = 120_000;
 
 /** Host-private daemon status, independent of any config path. */
 export function hostStatusPath(): string {
-  return process.env['GCB_HOST_STATUS'] ?? join(homedir(), '.gcb-host', 'status.json');
+  return join(homedir(), '.gcb-host', 'status.json');
 }
 
 /** The daemon state `host status` reports. */
