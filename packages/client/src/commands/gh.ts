@@ -308,11 +308,11 @@ export async function runGh(
   let repeatable = false;
   for (const [index, positional] of action.positionals.entries()) {
     if (positional.repeatable === true) {
-      const rest = args.positionals.slice(index);
-      if (rest.length === 0) {
+      const remaining = args.positionals.slice(index);
+      if (remaining.length === 0) {
         if (positional.required === true) fail(`gcb gh ${domain} ${command} needs ${positional.name}`);
       } else {
-        values[positional.name] = rest;
+        values[positional.name] = remaining;
       }
       repeatable = true;
       break;
