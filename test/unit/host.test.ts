@@ -8,7 +8,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -237,7 +237,7 @@ describe('host status', () => {
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
       const status = JSON.parse(readFileSync(captured, 'utf8')) as { config: string };
-      assert.equal(status.config, config);
+      assert.equal(status.config, realpathSync(config));
     } finally {
       if (child.exitCode === null && child.signalCode === null) {
         const exited = new Promise((resolve) => child.once('exit', resolve));
