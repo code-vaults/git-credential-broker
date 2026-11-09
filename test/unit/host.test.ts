@@ -78,66 +78,6 @@ describe('host status', () => {
     assert.match(run.stderr, /no host broker is running/u);
   });
 
-  it('records status for an explicit config that does not exist', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-status-missing-config-'));
-    const repo = join(root, 'checkout');
-    mkdirSync(join(repo, '.git'), { recursive: true });
-    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    const config = join(root, 'missing.yml');
-    const dir = channelDir(join(repo, '.git'));
-    const captured = join(root, 'captured-status.json');
-    const command = join(root, 'not-gh');
-    writeFileSync(
-      command,
-      '#!/bin/sh\ncp ' + hostStatusPath() + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
-      'utf8',
-    );
-    chmodSync(command, 0o755);
-    try {
-      writeRequest(dir, { head: 'feat/x', base: 'main', title: 't', body: '' });
-      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
-      assert.equal((JSON.parse(readFileSync(captured, 'utf8')) as { config: unknown }).config, null);
-    } finally {
-      clearStatus();
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('writes startup state before a config is loaded', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-status-startup-'));
-    const repo = join(root, 'checkout');
-    mkdirSync(join(repo, '.git'), { recursive: true });
-    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    const config = forkConfig(root, 'acme/widget');
-    const dir = channelDir(join(repo, '.git'));
-    const captured = join(root, 'startup-status.json');
-    const command = join(root, 'not-gh');
-    writeFileSync(
-      command,
-      '#!/bin/sh\ncp ' + hostStatusPath() + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
-      'utf8',
-    );
-    chmodSync(command, 0o755);
-    try {
-      const id = writeRequest(dir, { head: 'feat/x', base: 'main', title: 't', body: '' });
-      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
-      assert.equal(readResult(dir, id)?.number, 7);
-      const status = JSON.parse(readFileSync(captured, 'utf8')) as {
-        pid: number;
-        config: unknown;
-        cwd: string;
-        version: string;
-      };
-      assert.equal(status.config, null);
-      assert.equal(status.pid, process.pid);
-      assert.equal(status.cwd, process.cwd());
-      assert.equal(typeof status.version, 'string');
-    } finally {
-      clearStatus();
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
   it('does not replace a live status owned by another process', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-status-live-'));
     const repo = join(root, 'checkout');
@@ -189,10 +129,10 @@ describe('host status', () => {
     );
     try {
       const deadline = Date.now() + 5_000;
-      let status: { pid?: number } | undefined;
+      let status: { pid?: number; config?: unknown } | undefined;
       while (Date.now() < deadline) {
         try {
-          status = JSON.parse(readFileSync(hostStatusPath(), 'utf8')) as { pid?: number };
+          status = JSON.parse(readFileSync(hostStatusPath(), 'utf8')) as { pid?: number; config?: unknown };
           if (status.pid !== process.ppid) break;
         } catch {
           // The child has not written yet.
@@ -201,6 +141,7 @@ describe('host status', () => {
       }
       assert.notEqual(status?.pid, process.ppid);
       assert.equal(status?.pid, child.pid);
+      assert.equal(status?.config, null);
     } finally {
       child.kill('SIGTERM');
       await new Promise((resolve) => child.once('exit', resolve));
@@ -710,11 +651,10 @@ describe('the host action route', () => {
     const config = forkConfig(root, 'acme/widget');
     const dir = channelDir(join(repo, '.git'));
     const argvFile = join(root, 'argv');
-    const statusCopy = join(root, 'status-copy.json');
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\ncp ' + hostStatusPath() + ' ' + statusCopy + '\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "action output"\n',
+      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "action output"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
@@ -730,10 +670,6 @@ describe('the host action route', () => {
       const result = readResult(dir, id);
       assert.equal(result?.stdout, 'action output\n');
       assert.equal(result?.code, 0);
-      const status = JSON.parse(readFileSync(statusCopy, 'utf8')) as { config: string; cwd: string; version: string };
-      assert.equal(status.config, config);
-      assert.equal(status.cwd, process.cwd());
-      assert.equal(typeof status.version, 'string');
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n');
       assert.deepEqual(argv.slice(0, 3), ['issue', 'comment', '7']);
       assert.equal(argv[argv.indexOf('--repo') + 1], 'acme/widget');

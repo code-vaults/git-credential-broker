@@ -199,7 +199,7 @@ fork, with the gh account each request names. The result is authored by a person
   --arg <token>         An extra argument for that program, before the subcommand (repeatable)
   --interval <seconds>  How often to look for requests (default: 5)
   --once                Fulfil what is waiting, then exit
-  status                Report the running host daemon; takes no options
+  status                Report the running host daemon (accepts --json only)
   --json                With status, print JSON
   -h, --help            Show this help
 
@@ -233,8 +233,8 @@ export function pullRequestUrl(output: string): { number: number; url: string } 
  */
 export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const statusMode = argv[0] === 'status';
-  const once = argv.includes('--once');
   const args = parseArgs(statusMode ? argv.slice(1) : argv, { booleans: ['help', 'once', 'json'] });
+  const once = args.has('once');
   if (args.has('help') || args.has('h')) {
     say(HOST_BROKER_USAGE);
     return 0;
@@ -268,25 +268,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     }
   }
   function writeStatus(): void {
-    if (once) {
-      const current = readJson(statusFile);
-      if (
-        typeof current === 'object' &&
-        current !== null &&
-        !Array.isArray(current) &&
-        typeof (current as { pid?: unknown }).pid === 'number'
-      ) {
-        const owner = (current as { pid: number }).pid;
-        if (owner !== process.pid) {
-          try {
-            process.kill(owner, 0);
-            return;
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return;
-          }
-        }
-      }
-    }
+    if (once) return;
     try {
       writeJsonAtomic(statusFile, {
         pid: process.pid,
@@ -427,10 +409,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         warn(`could not serve ${repo}: ${(error as Error).message}`);
       }
     }
-    if (once) {
-      removeOwnStatus();
-      return 0;
-    }
+    if (once) return 0;
     await new Promise((done) => setTimeout(done, Math.max(interval, 0) * 1000));
   }
 }
