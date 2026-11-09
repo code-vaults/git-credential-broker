@@ -51,6 +51,40 @@ describe('host status', () => {
     }
   });
 
+  it('writes startup state before a config is loaded', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-status-startup-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const captured = join(root, 'startup-status.json');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\ncp ' + join(root, 'host-status.json') + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, { head: 'feat/x', base: 'main', title: 't', body: '' });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.equal(readResult(dir, id)?.number, 7);
+      const status = JSON.parse(readFileSync(captured, 'utf8')) as {
+        pid: number;
+        config: unknown;
+        cwd: string;
+        version: string;
+      };
+      assert.equal(status.config, null);
+      assert.equal(status.pid, process.pid);
+      assert.equal(status.cwd, process.cwd());
+      assert.equal(typeof status.version, 'string');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('reports the running daemon before a config is loaded', () => {
     const root = mkdtempSync(join(tmpdir(), 'host-status-unloaded-'));
     const config = join(root, 'broker.config.yml');

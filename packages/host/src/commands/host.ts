@@ -250,7 +250,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   let loadedConfig: string | null = null;
   /** Rewrite the host-private status file; the channel marker is not trusted for this. */
   function writeStatus(): void {
-    if (!existsSync(dirname(statusFile))) return;
+    if (!existsSync(resolvedConfig) || !existsSync(dirname(statusFile))) return;
     try {
       writeJsonAtomic(statusFile, {
         pid: process.pid,
@@ -259,8 +259,8 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         version: PACKAGE_VERSION,
         startedAt,
       });
-    } catch {
-      // A status report is not worth taking the daemon down for.
+    } catch (error) {
+      warn(`could not write host status: ${(error as Error).message}`);
     }
   }
   let config: BrokerConfig | undefined;
@@ -330,9 +330,9 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     if (args.has('json')) {
       say(JSON.stringify([output]));
     } else {
-      const configText = output.config === null ? 'unknown' : output.config;
+      const show = (value: string | null): string => value ?? 'unknown';
       say(
-        `pid ${String(output.pid)} config ${configText} cwd ${String(output.cwd)} version ${String(output.version)}`,
+        `pid ${String(output.pid)} config ${show(output.config)} cwd ${show(output.cwd)} version ${show(output.version)}`,
       );
     }
     return 0;
