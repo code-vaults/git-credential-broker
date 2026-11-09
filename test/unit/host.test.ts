@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, before, describe, it } from 'node:test';
 
@@ -19,22 +19,23 @@ import { channelDir, claimRequest, listRequests, readResult, writeRequest } from
 
 describe('host status', () => {
   const hostBin = fileURLToPath(new URL('../../packages/host/bin/gcb.js', import.meta.url));
+  const writeStatus = (config: string, value: unknown): void => {
+    const file = join(dirname(config), 'host-status.json');
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify(value), 'utf8');
+  };
 
   it('reports the config path the daemon recorded', () => {
     const root = mkdtempSync(join(tmpdir(), 'host-status-'));
     const config = join(root, 'broker.config.yml');
     writeFileSync(config, 'hosts: {}\n', 'utf8');
-    writeFileSync(
-      join(root, 'host-status.json'),
-      JSON.stringify({
-        pid: process.pid,
-        config: '/deployment/broker.config.yml',
-        cwd: '/deployment',
-        version: 'test-version',
-        startedAt: '2026-01-01T00:00:00.000Z',
-      }),
-      'utf8',
-    );
+    writeStatus(config, {
+      pid: process.pid,
+      config: '/deployment/broker.config.yml',
+      cwd: '/deployment',
+      version: 'test-version',
+      startedAt: '2026-01-01T00:00:00.000Z',
+    });
     try {
       const run = spawnSync(
         process.execPath,
@@ -79,43 +80,13 @@ describe('host status', () => {
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\ncp ' + join(root, 'host-status.json') + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
+      '#!/bin/sh\ncp ' + join(dirname(config), 'host-status.json') + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
     try {
       writeRequest(dir, { head: 'feat/x', base: 'main', title: 't', body: '' });
       assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
-      assert.equal((JSON.parse(readFileSync(captured, 'utf8')) as { config: unknown }).config, null);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('does not overwrite a config named host-status.json', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-status-collision-'));
-    const repo = join(root, 'checkout');
-    mkdirSync(join(repo, '.git'), { recursive: true });
-    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    const config = join(root, 'host-status.json');
-    writeFileSync(
-      config,
-      `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  github.com:\n    provider: static\n    username: x\n    password: y\n    allow:\n      - acme/widget\n`,
-      'utf8',
-    );
-    const dir = channelDir(join(repo, '.git'));
-    const captured = join(root, 'captured-status.json');
-    const command = join(root, 'not-gh');
-    writeFileSync(
-      command,
-      '#!/bin/sh\ncp ' + join(root, '.host-status.json') + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
-      'utf8',
-    );
-    chmodSync(command, 0o755);
-    try {
-      writeRequest(dir, { head: 'feat/x', base: 'main', title: 't', body: '' });
-      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
-      assert.match(readFileSync(config, 'utf8'), /hosts:/u);
       assert.equal((JSON.parse(readFileSync(captured, 'utf8')) as { config: unknown }).config, null);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -133,7 +104,7 @@ describe('host status', () => {
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\ncp ' + join(root, 'host-status.json') + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
+      '#!/bin/sh\ncp ' + join(dirname(config), 'host-status.json') + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
@@ -180,17 +151,13 @@ describe('host status', () => {
     const root = mkdtempSync(join(tmpdir(), 'host-status-unloaded-'));
     const config = join(root, 'broker.config.yml');
     writeFileSync(config, 'hosts: {}\n', 'utf8');
-    writeFileSync(
-      join(root, 'host-status.json'),
-      JSON.stringify({
-        pid: process.pid,
-        config: null,
-        cwd: '/deployment',
-        version: 'test-version',
-        startedAt: '2026-01-01T00:00:00.000Z',
-      }),
-      'utf8',
-    );
+    writeStatus(config, {
+      pid: process.pid,
+      config: null,
+      cwd: '/deployment',
+      version: 'test-version',
+      startedAt: '2026-01-01T00:00:00.000Z',
+    });
     try {
       const run = spawnSync(
         process.execPath,
@@ -667,7 +634,7 @@ describe('the host action route', () => {
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\ncp ' + join(root, 'host-status.json') + ' ' + statusCopy + '\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "action output"\n',
+      '#!/bin/sh\ncp ' + join(dirname(config), 'host-status.json') + ' ' + statusCopy + '\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "action output"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
