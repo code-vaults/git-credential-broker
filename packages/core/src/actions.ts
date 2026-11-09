@@ -44,8 +44,10 @@ export interface FlagSpec {
 
 /** A fixed `gh api` request, with only typed values substituted. */
 export interface ApiSpec {
-  readonly method: 'GET';
+  readonly method: 'GET' | 'PATCH';
   readonly endpoint: string;
+  /** When true, the action sends `{ body }` as JSON through gh api --input. */
+  readonly jsonBody?: true;
 }
 
 /** One allowed `gh` action. */
@@ -80,6 +82,16 @@ export interface GhAction {
 
 /** Values supplied by the caller, keyed by positional or flag name. */
 export type ActionValues = Readonly<Record<string, string | number | boolean | readonly string[] | undefined>>;
+
+/**
+ * Encode the body payload for a gh api action that posts `{ body }` as JSON.
+ *
+ * @param body - the comment text.
+ * @returns the JSON payload for gh api --input.
+ */
+export function apiBodyJson(body: string): string {
+  return JSON.stringify({ body });
+}
 
 /** A failure the caller can act on, and that contains no provider output. */
 export class ActionError extends Error {
@@ -187,6 +199,7 @@ const PR_COMMENT: GhAction = {
   flags: [{ name: 'body', type: 'string', required: true, nonEmpty: true }],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
+  appUser: true,
 };
 
 // GitHub GraphQL: closePullRequest
@@ -391,6 +404,30 @@ const ISSUE_REOPEN: GhAction = {
   timeoutSeconds: 60,
   appUser: true,
   target: 'issue',
+};
+
+// GitHub: PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
+const ISSUE_COMMENT_EDIT: GhAction = {
+  name: 'issue:comment-edit',
+  command: ['issue', 'comment-edit'],
+  positionals: [{ name: 'commentId', type: 'number', required: true }],
+  flags: [{ name: 'body', type: 'string', required: true, nonEmpty: true }],
+  permissions: { issues: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+  api: {
+    method: 'PATCH',
+    endpoint: 'repos/{owner}/{repo}/issues/comments/{commentId}',
+    jsonBody: true,
+  },
+};
+
+// GitHub: PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}; a PR conversation comment is an issue comment
+const PR_COMMENT_EDIT: GhAction = {
+  ...ISSUE_COMMENT_EDIT,
+  name: 'pr:comment-edit',
+  command: ['pr', 'comment-edit'],
+  permissions: { pull_requests: 'write' },
 };
 
 // GitHub: GET /repos/{owner}/{repo}/issues/{issue_number}
@@ -652,11 +689,13 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:checks': PR_CHECKS,
   'pr:status': PR_STATUS,
   'pr:comment': PR_COMMENT,
+  'pr:comment-edit': PR_COMMENT_EDIT,
   'pr:review': PR_REVIEW,
   'pr:review-by-id': PR_REVIEW_BY_ID,
   'issue:create': ISSUE_CREATE,
   'issue:edit': ISSUE_EDIT,
   'issue:comment': ISSUE_COMMENT,
+  'issue:comment-edit': ISSUE_COMMENT_EDIT,
   'issue:close': ISSUE_CLOSE,
   'issue:reopen': ISSUE_REOPEN,
   'issue:lock': ISSUE_LOCK,
@@ -803,6 +842,16 @@ export function buildGhArgv(
       continue;
     }
 
+    if (flag.name === 'body' && action.api?.jsonBody === true) {
+      const text = asString(value, flag.name);
+      if (flag.nonEmpty === true && text.trim() === '') {
+        throw new ActionError(`${name} needs a non-empty --${flag.name}`);
+      }
+      if (bodyFile !== undefined) argv.push('--input', bodyFile);
+      present.add(flag.name);
+      provided.add(flag.name);
+      continue;
+    }
     if (flag.name === 'body' && bodyFile !== undefined) {
       const text = asString(value, flag.name);
       if (flag.nonEmpty === true && text.trim() === '') {
