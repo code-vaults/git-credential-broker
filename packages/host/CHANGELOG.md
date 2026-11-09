@@ -1,5 +1,16 @@
 # gcb-host
 
+## 0.7.1
+
+### Patch Changes
+
+- [#122](https://github.com/code-vaults/git-credential-broker/pull/122) [`aeaa644`](https://github.com/code-vaults/git-credential-broker/commit/aeaa644c387af82afaafa91ad13da49f5265acbc) Thanks [@JounQin](https://github.com/JounQin)! - `gcb host status` now records the selected configuration path at daemon startup, before the lazy
+  `loadConfig`, so a daemon started with `--config` (or `GIT_BROKER_CONFIG`, or an existing default)
+  never reports `config: null`. A config-less daemon still reports null. An empty `GIT_BROKER_CONFIG`
+  is treated as unset instead of resolving to the current directory.
+- Updated dependencies []:
+  - gcb-core@0.7.1
+
 ## 0.7.0
 
 ### Minor Changes
