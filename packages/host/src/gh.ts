@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { StringDecoder } from 'node:string_decoder';
 import path from 'node:path';
 
-import { buildGhArgv, getGhAction, type ActionValues } from 'gcb-core';
+import { apiBodyJson, buildGhArgv, getGhAction, type ActionValues } from 'gcb-core';
 import { applyProxyChoice, PROXY_ENV_KEYS } from './http.ts';
 
 /** The default stdout/stderr ceiling, in bytes per stream. */
@@ -231,9 +231,9 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
     // argv, so this is about the free-form body rather than everything the person wrote.
     let bodyFile: string | undefined;
     if (typeof options.values['body'] === 'string') {
-      const apiBody = action.api?.body !== undefined;
+      const apiBody = action.api?.jsonBody === true;
       bodyFile = path.join(home, apiBody ? 'body.json' : 'body.md');
-      const content = apiBody ? JSON.stringify({ body: options.values['body'] }) : options.values['body'];
+      const content = apiBody ? apiBodyJson(options.values['body']) : options.values['body'];
       writeFileSync(bodyFile, content, { mode: 0o600 });
     }
     const argv = buildGhArgv(action.name, options.values, options.repo, bodyFile);

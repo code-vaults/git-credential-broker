@@ -434,6 +434,36 @@ describe('the host action route', () => {
     }
   });
 
+  it('passes a comment edit body as JSON through --input', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-comment-edit-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const captured = join(root, 'captured.json');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\nwhile [ "$#" -gt 0 ]; do if [ "$1" = "--input" ]; then cat "$2" > ' + captured + '; fi; shift; done\necho ok\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    try {
+      const id = writeRequest(dir, {
+        kind: 'action',
+        action: 'pr:comment-edit',
+        repo: 'acme/widget',
+        values: { commentId: 123, body: 'secret edit' },
+      });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      assert.equal(readResult(dir, id)?.stdout, 'ok\n');
+      assert.equal(readFileSync(captured, 'utf8'), '{"body":"secret edit"}');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('runs a catalogued action and returns its output', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-action-'));
     const repo = join(root, 'checkout');

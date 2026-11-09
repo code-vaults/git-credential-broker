@@ -30,6 +30,7 @@ import {
   requestProblems,
   writeHostBroker,
   writeResult,
+  apiBodyJson,
   HOST,
   REPOSITORY,
   ANSWER_TIMEOUT_MS,
@@ -524,10 +525,11 @@ async function personRun(
 async function withBodyFile(
   body: string,
   work: (bodyFile: string) => Promise<HostResult>,
+  name = 'body.md',
 ): Promise<HostResult> {
   const scratch = mkdtempSync(join(tmpdir(), 'gcb-body-'));
   try {
-    const bodyFile = join(scratch, 'body.md');
+    const bodyFile = join(scratch, name);
     writeFileSync(bodyFile, body, 'utf8');
     return await work(bodyFile);
   } finally {
@@ -644,15 +646,8 @@ async function openOne(
         return result;
       };
       if (body === undefined) return invoke();
-      if (action.api?.body !== undefined) {
-        const scratch = mkdtempSync(join(tmpdir(), 'gcb-api-body-'));
-        try {
-          const bodyFile = join(scratch, 'body.json');
-          writeFileSync(bodyFile, JSON.stringify({ body }), { mode: 0o600 });
-          return await invoke(bodyFile);
-        } finally {
-          rmSync(scratch, { recursive: true, force: true });
-        }
+      if (action.api?.jsonBody === true) {
+        return withBodyFile(apiBodyJson(body), invoke, 'body.json');
       }
       return withBodyFile(body, invoke);
     };

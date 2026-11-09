@@ -46,8 +46,8 @@ export interface FlagSpec {
 export interface ApiSpec {
   readonly method: 'GET' | 'PATCH';
   readonly endpoint: string;
-  /** When set, the action sends `{ body }` as JSON through gh api --input. */
-  readonly body?: 'issue-comment';
+  /** When true, the action sends `{ body }` as JSON through gh api --input. */
+  readonly jsonBody?: true;
 }
 
 /** One allowed `gh` action. */
@@ -82,6 +82,16 @@ export interface GhAction {
 
 /** Values supplied by the caller, keyed by positional or flag name. */
 export type ActionValues = Readonly<Record<string, string | number | boolean | readonly string[] | undefined>>;
+
+/**
+ * Encode the body payload for a gh api action that posts `{ body }` as JSON.
+ *
+ * @param body - the comment text.
+ * @returns the JSON payload for gh api --input.
+ */
+export function apiBodyJson(body: string): string {
+  return JSON.stringify({ body });
+}
 
 /** A failure the caller can act on, and that contains no provider output. */
 export class ActionError extends Error {
@@ -407,7 +417,7 @@ const ISSUE_COMMENT_EDIT: GhAction = {
   api: {
     method: 'PATCH',
     endpoint: 'repos/{owner}/{repo}/issues/comments/{commentId}',
-    body: 'issue-comment',
+    jsonBody: true,
   },
 };
 
@@ -416,7 +426,7 @@ const PR_COMMENT_EDIT: GhAction = {
   ...ISSUE_COMMENT_EDIT,
   name: 'pr:comment-edit',
   command: ['pr', 'comment-edit'],
-  permissions: { issues: 'write', pull_requests: 'write' },
+  permissions: { pull_requests: 'write' },
 };
 
 // GitHub: GET /repos/{owner}/{repo}/issues/{issue_number}
@@ -831,7 +841,7 @@ export function buildGhArgv(
       continue;
     }
 
-    if (flag.name === 'body' && action.api?.body !== undefined) {
+    if (flag.name === 'body' && action.api?.jsonBody === true) {
       const text = asString(value, flag.name);
       if (flag.nonEmpty === true && text.trim() === '') {
         throw new ActionError(`${name} needs a non-empty --${flag.name}`);
