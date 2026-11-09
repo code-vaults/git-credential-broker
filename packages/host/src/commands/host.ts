@@ -333,9 +333,10 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
       args.value('config') !== undefined ||
       args.value('command') !== undefined ||
       args.value('repo') !== undefined ||
+      args.has('once') ||
       listFlag(args, 'root').length > 0
     ) {
-      fail('status takes no --config/--command/--repo/--root');
+      fail('status takes no options');
     }
     const parsed = readJson(statusFile);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
