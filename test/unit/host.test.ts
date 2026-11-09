@@ -127,8 +127,9 @@ describe('host status', () => {
     }
   });
 
-  it('does not trust a status file without a selected config', () => {
+  it('does not trust a status file without an explicit config', () => {
     const root = mkdtempSync(join(tmpdir(), 'host-status-no-config-'));
+    writeFileSync(join(root, 'broker.config.yml'), 'hosts: {}\n', 'utf8');
     writeFileSync(
       join(root, 'host-status.json'),
       JSON.stringify({ pid: process.pid, config: '/forged', cwd: '/', version: 'x', startedAt: 'x' }),
