@@ -976,7 +976,7 @@ export async function waitForResult(
  * @param file - the path.
  * @returns the parsed value, or `undefined`.
  */
-function readJson(file: string): unknown {
+export function readJson(file: string): unknown {
   let fd: number | undefined;
   try {
     // Open without following a symlink and without blocking on a FIFO; lstat+read leaves a window
@@ -1012,7 +1012,7 @@ function readJson(file: string): unknown {
  * @param file - the path.
  * @param value - the value to write.
  */
-function writeJsonAtomic(file: string, value: unknown): void {
+export function writeJsonAtomic(file: string, value: unknown): void {
   mkdirSync(dirname(file), { recursive: true });
   const payload = `${JSON.stringify(value, null, 2)}\n`;
   const temp = `${file}.${process.pid}.tmp`;

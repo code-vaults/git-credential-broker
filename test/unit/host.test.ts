@@ -7,13 +7,257 @@
  * either the checkout the request was written in or the explicit allowlisted repo it names.
  */
 import assert from 'node:assert/strict';
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { after, before, describe, it } from 'node:test';
 
-import { runBounded, runHostBroker } from '../../packages/host/src/commands/host.ts';
+import { hostStatusPath, runBounded, runHostBroker } from '../../packages/host/src/commands/host.ts';
 import { channelDir, claimRequest, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
+
+let statusDirectory = '';
+let previousHome: string | undefined;
+let previousUserProfile: string | undefined;
+before(() => {
+  statusDirectory = mkdtempSync(join(tmpdir(), 'host-status-test-'));
+  previousHome = process.env['HOME'];
+  previousUserProfile = process.env['USERPROFILE'];
+  process.env['HOME'] = statusDirectory;
+  process.env['USERPROFILE'] = statusDirectory;
+});
+after(() => {
+  rmSync(statusDirectory, { recursive: true, force: true });
+  if (previousHome === undefined) delete process.env['HOME'];
+  else process.env['HOME'] = previousHome;
+  if (previousUserProfile === undefined) delete process.env['USERPROFILE'];
+  else process.env['USERPROFILE'] = previousUserProfile;
+});
+
+describe('host status', () => {
+  const hostBin = fileURLToPath(new URL('../../packages/host/bin/gcb.js', import.meta.url));
+
+  const writeStatus = (value: unknown): void => {
+    const file = hostStatusPath();
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify(value), 'utf8');
+  };
+
+  const clearStatus = (): void => {
+    rmSync(hostStatusPath(), { force: true });
+  };
+
+  it('reports the config path the daemon recorded', () => {
+    writeStatus({
+      pid: process.pid,
+      config: '/deployment/broker.config.yml',
+      cwd: '/deployment',
+      version: 'test-version',
+      startedAt: '2026-01-01T00:00:00.000Z',
+    });
+    try {
+      const run = spawnSync(
+        process.execPath,
+        ['--conditions=development', hostBin, 'host', 'status'],
+        { cwd: process.cwd(), encoding: 'utf8' },
+      );
+      assert.equal(run.status, 0, run.stderr);
+      const [status] = JSON.parse(run.stdout) as [{ config: string; cwd: string; version: string }];
+      assert.equal(status?.config, '/deployment/broker.config.yml');
+      assert.equal(status?.cwd, '/deployment');
+      assert.equal(status?.version, 'test-version');
+    } finally {
+      clearStatus();
+    }
+  });
+
+  it('exits 1 when no daemon is running', () => {
+    clearStatus();
+    const run = spawnSync(
+      process.execPath,
+      ['--conditions=development', hostBin, 'host', 'status'],
+      { cwd: process.cwd(), encoding: 'utf8' },
+    );
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /no host broker is running/u);
+  });
+
+  it('a one-shot leaves a live service record alone', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-status-live-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\necho "https://github.com/acme/widget/pull/7"\n', 'utf8');
+    chmodSync(command, 0o755);
+    writeStatus({
+      pid: process.ppid,
+      config: '/service/broker.config.yml',
+      cwd: '/service',
+      version: 'service',
+      startedAt: '2026-01-01T00:00:00.000Z',
+    });
+    try {
+      writeRequest(dir, { head: 'feat/x', base: 'main', title: 't', body: '' });
+      assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']), 0);
+      const status = JSON.parse(readFileSync(hostStatusPath(), 'utf8')) as { pid: number; config: string };
+      assert.equal(status.pid, process.ppid);
+      assert.equal(status.config, '/service/broker.config.yml');
+    } finally {
+      clearStatus();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('lets a fresh daemon override a stale live-pid record', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-status-fresh-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\nexit 0\n', 'utf8');
+    chmodSync(command, 0o755);
+    writeStatus({
+      pid: process.ppid,
+      config: '/stale/broker.config.yml',
+      cwd: '/stale',
+      version: 'stale',
+      startedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const child = spawn(
+      process.execPath,
+      ['--conditions=development', hostBin, 'host', '--repo', repo, '--command', command, '--interval', '60'],
+      { cwd: process.cwd(), stdio: 'ignore' },
+    );
+    try {
+      const deadline = Date.now() + 5_000;
+      let status: { pid?: number; config?: unknown } | undefined;
+      while (Date.now() < deadline) {
+        try {
+          status = JSON.parse(readFileSync(hostStatusPath(), 'utf8')) as { pid?: number; config?: unknown };
+          if (status.pid !== process.ppid) break;
+        } catch {
+          // The child has not written yet.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      assert.notEqual(status?.pid, process.ppid);
+      assert.equal(status?.pid, child.pid);
+      assert.equal(status?.config, null);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.kill('SIGTERM');
+        await exited;
+      }
+      clearStatus();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('updates the record after loading config', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-status-loaded-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const captured = join(root, 'captured-status.json');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\ncp ' + hostStatusPath() + ' ' + captured + '\necho "https://github.com/acme/widget"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    const child = spawn(
+      process.execPath,
+      ['--conditions=development', hostBin, 'host', '--repo', repo, '--config', config, '--command', command, '--interval', '1'],
+      { cwd: process.cwd(), stdio: 'ignore' },
+    );
+    try {
+      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' });
+      const deadline = Date.now() + 5_000;
+      while (Date.now() < deadline) {
+        if (readResult(dir, id) !== undefined) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      const status = JSON.parse(readFileSync(captured, 'utf8')) as { config: string };
+      assert.equal(status.config, config);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.kill('SIGTERM');
+        await exited;
+      }
+      clearStatus();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a config equal to the status file', () => {
+    const status = hostStatusPath();
+    mkdirSync(dirname(status), { recursive: true });
+    writeFileSync(status, 'hosts: {}\n', 'utf8');
+    try {
+      const run = spawnSync(
+        process.execPath,
+        ['--conditions=development', hostBin, 'host', '--config', status],
+        { cwd: process.cwd(), encoding: 'utf8', timeout: 5_000 },
+      );
+      assert.equal(run.status, 1);
+      assert.match(run.stderr, /the config cannot be the host status file/u);
+    } finally {
+      clearStatus();
+    }
+  });
+
+  it('does not read a cwd status file', () => {
+    clearStatus();
+    const root = mkdtempSync(join(tmpdir(), 'host-status-no-config-'));
+    writeFileSync(
+      join(root, 'host-status.json'),
+      JSON.stringify({ pid: process.pid, config: '/forged', cwd: '/', version: 'x', startedAt: 'x' }),
+      'utf8',
+    );
+    try {
+      const run = spawnSync(
+        process.execPath,
+        ['--conditions=development', hostBin, 'host', 'status'],
+        { cwd: root, encoding: 'utf8' },
+      );
+      assert.equal(run.status, 1);
+      assert.match(run.stderr, /no host broker is running/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('reports the running daemon before a config is loaded', () => {
+    writeStatus({
+      pid: process.pid,
+      config: null,
+      cwd: '/deployment',
+      version: 'test-version',
+      startedAt: '2026-01-01T00:00:00.000Z',
+    });
+    try {
+      const run = spawnSync(
+        process.execPath,
+        ['--conditions=development', hostBin, 'host', 'status'],
+        { cwd: process.cwd(), encoding: 'utf8' },
+      );
+      assert.equal(run.status, 0, run.stderr);
+      const [status] = JSON.parse(run.stdout) as [{ config: unknown }];
+      assert.equal(status?.config, null);
+    } finally {
+      clearStatus();
+    }
+  });
+});
 
 describe('the host broker, once', () => {
   let root = '';

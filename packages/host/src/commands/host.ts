@@ -29,7 +29,11 @@ import {
   removeRequest,
   requestProblems,
   writeHostBroker,
+  writeJsonAtomic,
+  readJson,
   writeResult,
+  PACKAGE_VERSION,
+  canonicalPath,
   apiBodyJson,
   HOST,
   REPOSITORY,
@@ -40,7 +44,7 @@ import {
   getGhAction,
   type BrokerConfig,
 } from 'gcb-core';
-import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
+import { fail, listFlag, parseArgs, say, validateArgs, warn } from 'gcb-core';
 import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts';
 import { loadConfig, resolveConfigPath } from '../config.ts';
 import { hostConfig, parseAllowEntry, repoAllowed } from '../policy.ts';
@@ -50,6 +54,20 @@ const run = promisify(execFile);
 
 /** How long one create, review, reply, edit or fork program may take. */
 const CREATE_TIMEOUT_MS = 120_000;
+
+/** Host-private daemon status, independent of any config path. */
+export function hostStatusPath(): string {
+  return join(homedir(), '.gcb-host', 'status.json');
+}
+
+/** The daemon state `host status` reports. */
+interface HostStatus {
+  readonly pid: number;
+  readonly config: string | null;
+  readonly cwd: string;
+  readonly version: string;
+  readonly startedAt: string;
+}
 
 /** Per-stream byte budget for a host action, small enough that JSON escaping stays under readResult's cap. */
 const HOST_ACTION_OUTPUT_BYTES = 48_000;
@@ -182,6 +200,7 @@ fork, with the gh account each request names. The result is authored by a person
   --arg <token>         An extra argument for that program, before the subcommand (repeatable)
   --interval <seconds>  How often to look for requests (default: 5)
   --once                Fulfil what is waiting, then exit
+  status                Report the running host daemon as JSON
   -h, --help            Show this help
 
 The container asks for this by passing --as-user to \`pr\`. Requests are files under
@@ -213,7 +232,9 @@ export function pullRequestUrl(output: string): { number: number; url: string } 
  * @returns the process exit code.
  */
 export async function runHostBroker(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help', 'once'] });
+  const statusMode = argv[0] === 'status';
+  const args = parseArgs(statusMode ? argv.slice(1) : argv, { booleans: ['help', 'once'] });
+  const once = args.has('once');
   if (args.has('help') || args.has('h')) {
     say(HOST_BROKER_USAGE);
     return 0;
@@ -226,12 +247,57 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const depth = Number(args.value('depth') ?? '4');
   const command = args.value('command') ?? process.env['GCB_HOST_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
+  const resolvedConfig = resolveConfigPath(configPath);
+  const statusFile = hostStatusPath();
+  const startedAt = new Date().toISOString();
+  let loadedConfig: string | null = null;
+  /** Remove the status file only when this process owns it. */
+  function removeOwnStatus(): void {
+    try {
+      const current = readJson(statusFile);
+      if (
+        typeof current === 'object' &&
+        current !== null &&
+        !Array.isArray(current) &&
+        (current as { pid?: unknown }).pid === process.pid
+      ) {
+        rmSync(statusFile, { force: true });
+      }
+    } catch {
+      // Nothing to clean up.
+    }
+  }
+  /** Rewrite the host-private status file; the channel marker is not trusted for this. */
+  function writeStatus(): void {
+    if (once) return;
+    let collision: boolean;
+    try {
+      collision = canonicalPath(resolvedConfig) === canonicalPath(statusFile);
+    } catch (error) {
+      warn(`could not compare the config and status paths: ${(error as Error).message}`);
+      return;
+    }
+    if (collision) fail('the config cannot be the host status file');
+    try {
+      writeJsonAtomic(statusFile, {
+        pid: process.pid,
+        config: loadedConfig,
+        cwd: process.cwd(),
+        version: PACKAGE_VERSION,
+        startedAt,
+      });
+    } catch (error) {
+      warn(`could not write host status: ${(error as Error).message}`);
+    }
+  }
   let config: BrokerConfig | undefined;
   /** Resolve one host block, loading the configuration on first use. */
   const blockFor = (host: string) => {
     if (config === undefined) {
       try {
         config = loadConfig(resolveConfigPath(configPath));
+        loadedConfig = resolvedConfig;
+        writeStatus();
       } catch (error) {
         throw new Error(
           `a fork, reply or explicit repository needs the broker config allowlist: ${(error as Error).message}; pass --config or set GIT_BROKER_CONFIG`,
@@ -262,6 +328,36 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     return [{ repo: single, dir: channelDir(gitDir) }];
   };
 
+  if (statusMode) {
+    validateArgs(args, argv.slice(1), new Set(), 'status');
+    if (args.positionals.length > 0) fail('status takes no arguments');
+    const parsed = readJson(statusFile);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      fail('no host broker is running');
+    }
+    const status = parsed as Partial<HostStatus>;
+    const text = (value: unknown): string | null => (typeof value === 'string' ? value : null);
+    const pid = status.pid;
+    if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0 || pid > 0x7fffffff) {
+      fail('no host broker is running');
+    }
+    try {
+      process.kill(pid, 0);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') fail('no host broker is running');
+    }
+    const output = {
+      pid,
+      config: text(status.config),
+      cwd: text(status.cwd),
+      version: text(status.version),
+      startedAt: text(status.startedAt),
+    };
+    say(JSON.stringify([output]));
+    return 0;
+  }
+  writeStatus();
+
   const advertised = new Set<string>();
   /** Advertise a channel, without rewriting the marker on every sweep. */
   const advertise = (dir: string): void => {
@@ -279,6 +375,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   // marker would tell the container a host broker is there and make it wait for an answer that is not
   // coming.
   process.on('exit', () => {
+    removeOwnStatus();
     for (const dir of advertised) {
       try {
         if (readHostBroker(dir)?.pid === process.pid) clearHostBroker(dir);
@@ -307,7 +404,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         warn(`could not serve ${repo}: ${(error as Error).message}`);
       }
     }
-    if (args.has('once')) return 0;
+    if (once) return 0;
     await new Promise((done) => setTimeout(done, Math.max(interval, 0) * 1000));
   }
 }

@@ -2,10 +2,28 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { it } from 'node:test';
+import { after, before, it } from 'node:test';
 
 import { channelDir, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 import { runHostBroker } from '../../packages/host/src/commands/host.ts';
+
+let statusHome = '';
+let previousHome: string | undefined;
+let previousUserProfile: string | undefined;
+before(() => {
+  statusHome = mkdtempSync(join(tmpdir(), 'host-fork-home-'));
+  previousHome = process.env['HOME'];
+  previousUserProfile = process.env['USERPROFILE'];
+  process.env['HOME'] = statusHome;
+  process.env['USERPROFILE'] = statusHome;
+});
+after(() => {
+  rmSync(statusHome, { recursive: true, force: true });
+  if (previousHome === undefined) delete process.env['HOME'];
+  else process.env['HOME'] = previousHome;
+  if (previousUserProfile === undefined) delete process.env['USERPROFILE'];
+  else process.env['USERPROFILE'] = previousUserProfile;
+});
 
 it('runs an action on the parent of an allowlisted fork', async () => {
   const root = mkdtempSync(join(tmpdir(), 'host-broker-fork-'));
