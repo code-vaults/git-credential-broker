@@ -55,16 +55,7 @@ const run = promisify(execFile);
 const CREATE_TIMEOUT_MS = 120_000;
 
 /** Host-private daemon status, independent of any config path. */
-const HOST_STATUS_FILE = join(homedir(), '.gcb-host', 'status.json');
-
-/**
- * The fixed host-private status path.
- *
- * @returns the status file path.
- */
-export function hostStatusPath(): string {
-  return HOST_STATUS_FILE;
-}
+export const HOST_STATUS_PATH = join(homedir(), '.gcb-host', 'status.json');
 
 /** The daemon state `host status` reports. */
 interface HostStatus {
@@ -254,7 +245,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const command = args.value('command') ?? process.env['GCB_HOST_COMMAND'] ?? 'gh';
   const configPath = args.value('config');
   const resolvedConfig = resolveConfigPath(configPath);
-  const statusFile = hostStatusPath();
+  const statusFile = HOST_STATUS_PATH;
   const startedAt = new Date().toISOString();
   let loadedConfig: string | null = null;
   /** Rewrite the host-private status file; the channel marker is not trusted for this. */

@@ -14,20 +14,20 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, before, describe, it } from 'node:test';
 
-import { hostStatusPath, runBounded, runHostBroker } from '../../packages/host/src/commands/host.ts';
+import { HOST_STATUS_PATH, runBounded, runHostBroker } from '../../packages/host/src/commands/host.ts';
 import { channelDir, claimRequest, listRequests, readResult, writeRequest } from '../../packages/core/src/host-request.ts';
 
 describe('host status', () => {
   const hostBin = fileURLToPath(new URL('../../packages/host/bin/gcb.js', import.meta.url));
 
   const writeStatus = (value: unknown): void => {
-    const file = hostStatusPath();
+    const file = HOST_STATUS_PATH;
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, JSON.stringify(value), 'utf8');
   };
 
   const clearStatus = (): void => {
-    rmSync(hostStatusPath(), { force: true });
+    rmSync(HOST_STATUS_PATH, { force: true });
   };
 
   it('reports the config path the daemon recorded', () => {
@@ -76,7 +76,7 @@ describe('host status', () => {
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\ncp ' + hostStatusPath() + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
+      '#!/bin/sh\ncp ' + HOST_STATUS_PATH + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
@@ -101,7 +101,7 @@ describe('host status', () => {
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\ncp ' + hostStatusPath() + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
+      '#!/bin/sh\ncp ' + HOST_STATUS_PATH + ' ' + captured + '\necho "https://github.com/acme/widget/pull/7"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
@@ -630,7 +630,7 @@ describe('the host action route', () => {
     const command = join(root, 'not-gh');
     writeFileSync(
       command,
-      '#!/bin/sh\ncp ' + hostStatusPath() + ' ' + statusCopy + '\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "action output"\n',
+      '#!/bin/sh\ncp ' + HOST_STATUS_PATH + ' ' + statusCopy + '\nprintf \'%s\\n\' "$@" > ' + argvFile + '\necho "action output"\n',
       'utf8',
     );
     chmodSync(command, 0o755);
