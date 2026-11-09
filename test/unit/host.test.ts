@@ -78,7 +78,7 @@ describe('host status', () => {
     assert.match(run.stderr, /no host broker is running/u);
   });
 
-  it('does not replace a live status owned by another process', async () => {
+  it('a one-shot leaves a live service record alone', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-status-live-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
@@ -127,6 +127,8 @@ describe('host status', () => {
       ['--conditions=development', hostBin, 'host', '--repo', repo, '--command', command, '--interval', '60'],
       { cwd: process.cwd(), stdio: 'ignore' },
     );
+    let stderr = '';
+    child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
     try {
       const deadline = Date.now() + 5_000;
       let status: { pid?: number; config?: unknown } | undefined;
@@ -142,6 +144,43 @@ describe('host status', () => {
       assert.notEqual(status?.pid, process.ppid);
       assert.equal(status?.pid, child.pid);
       assert.equal(status?.config, null);
+    } finally {
+      child.kill('SIGTERM');
+      await new Promise((resolve) => child.once('exit', resolve));
+      clearStatus();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('updates the record after loading config', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-status-loaded-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const dir = channelDir(join(repo, '.git'));
+    const captured = join(root, 'captured-status.json');
+    const command = join(root, 'not-gh');
+    writeFileSync(
+      command,
+      '#!/bin/sh\ncp "$GCB_HOST_STATUS" ' + captured + '\necho "https://github.com/acme/widget"\n',
+      'utf8',
+    );
+    chmodSync(command, 0o755);
+    const child = spawn(
+      process.execPath,
+      ['--conditions=development', hostBin, 'host', '--repo', repo, '--config', config, '--command', command, '--interval', '1'],
+      { cwd: process.cwd(), stdio: 'ignore', env: { ...process.env, GCB_HOST_STATUS: hostStatusPath() } },
+    );
+    try {
+      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' });
+      const deadline = Date.now() + 5_000;
+      while (Date.now() < deadline) {
+        if (readResult(dir, id) !== undefined) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      const status = JSON.parse(readFileSync(captured, 'utf8')) as { config: string };
+      assert.equal(status.config, config);
     } finally {
       child.kill('SIGTERM');
       await new Promise((resolve) => child.once('exit', resolve));
