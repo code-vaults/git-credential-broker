@@ -54,7 +54,7 @@ describe('host status', () => {
     try {
       const run = spawnSync(
         process.execPath,
-        ['--conditions=development', hostBin, 'host', 'status', '--json'],
+        ['--conditions=development', hostBin, 'host', 'status'],
         { cwd: process.cwd(), encoding: 'utf8' },
       );
       assert.equal(run.status, 0, run.stderr);
@@ -71,7 +71,7 @@ describe('host status', () => {
     clearStatus();
     const run = spawnSync(
       process.execPath,
-      ['--conditions=development', hostBin, 'host', 'status', '--json'],
+      ['--conditions=development', hostBin, 'host', 'status'],
       { cwd: process.cwd(), encoding: 'utf8' },
     );
     assert.equal(run.status, 1);
@@ -161,7 +161,7 @@ describe('host status', () => {
     try {
       const run = spawnSync(
         process.execPath,
-        ['--conditions=development', hostBin, 'host', 'status', '--json'],
+        ['--conditions=development', hostBin, 'host', 'status'],
         { cwd: root, encoding: 'utf8' },
       );
       assert.equal(run.status, 1);
@@ -182,7 +182,7 @@ describe('host status', () => {
     try {
       const run = spawnSync(
         process.execPath,
-        ['--conditions=development', hostBin, 'host', 'status', '--json'],
+        ['--conditions=development', hostBin, 'host', 'status'],
         { cwd: process.cwd(), encoding: 'utf8' },
       );
       assert.equal(run.status, 0, run.stderr);

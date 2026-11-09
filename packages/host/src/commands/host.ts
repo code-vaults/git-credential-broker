@@ -199,7 +199,7 @@ fork, with the gh account each request names. The result is authored by a person
   --arg <token>         An extra argument for that program, before the subcommand (repeatable)
   --interval <seconds>  How often to look for requests (default: 5)
   --once                Fulfil what is waiting, then exit
-  status                Report the running host daemon (accepts --json only)
+  status                Report the running host daemon as JSON
   --json                With status, print JSON
   -h, --help            Show this help
 
@@ -233,7 +233,7 @@ export function pullRequestUrl(output: string): { number: number; url: string } 
  */
 export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const statusMode = argv[0] === 'status';
-  const args = parseArgs(statusMode ? argv.slice(1) : argv, { booleans: ['help', 'once', 'json'] });
+  const args = parseArgs(statusMode ? argv.slice(1) : argv, { booleans: ['help', 'once'] });
   const once = args.has('once');
   if (args.has('help') || args.has('h')) {
     say(HOST_BROKER_USAGE);
@@ -350,17 +350,9 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
       version: text(status.version),
       startedAt: text(status.startedAt),
     };
-    if (args.has('json')) {
-      say(JSON.stringify([output]));
-    } else {
-      const show = (value: string | null): string => value ?? 'unknown';
-      say(
-        `pid ${String(output.pid)} config ${show(output.config)} cwd ${show(output.cwd)} version ${show(output.version)}`,
-      );
-    }
+    say(JSON.stringify([output]));
     return 0;
   }
-  if (args.has('json')) fail('--json needs status');
   writeStatus();
 
   const advertised = new Set<string>();
