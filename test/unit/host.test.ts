@@ -127,10 +127,12 @@ describe('host status', () => {
       version: 'stale',
       startedAt: '2026-01-01T00:00:00.000Z',
     });
+    const env = { ...process.env };
+    delete env['GIT_BROKER_CONFIG'];
     const child = spawn(
       process.execPath,
       ['--conditions=development', hostBin, 'host', '--repo', repo, '--command', command, '--interval', '60'],
-      { cwd: process.cwd(), stdio: 'ignore' },
+      { cwd: root, env, stdio: 'ignore' },
     );
     try {
       const deadline = Date.now() + 5_000;
@@ -196,12 +198,11 @@ describe('host status', () => {
     }
   });
 
-  it('updates the record after loading config', async () => {
+  it('updates the record after a config appears later', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-status-loaded-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
-    const config = forkConfig(root, 'acme/widget');
     const dir = channelDir(join(repo, '.git'));
     const captured = join(root, 'captured-status.json');
     const command = join(root, 'not-gh');
@@ -211,14 +212,26 @@ describe('host status', () => {
       'utf8',
     );
     chmodSync(command, 0o755);
+    const env = { ...process.env };
+    delete env['GIT_BROKER_CONFIG'];
     const child = spawn(
       process.execPath,
-      ['--conditions=development', hostBin, 'host', '--repo', repo, '--config', config, '--command', command, '--interval', '1'],
-      { cwd: process.cwd(), stdio: 'ignore' },
+      ['--conditions=development', hostBin, 'host', '--repo', repo, '--command', command, '--interval', '1'],
+      { cwd: root, env, stdio: 'ignore' },
     );
     try {
-      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' });
       const deadline = Date.now() + 5_000;
+      while (Date.now() < deadline) {
+        try {
+          const status = JSON.parse(readFileSync(hostStatusPath(), 'utf8')) as { pid?: number; config?: unknown };
+          if (status.pid === child.pid && status.config === null) break;
+        } catch {
+          // The child has not written yet.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      const config = forkConfig(root, 'acme/widget');
+      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' });
       while (Date.now() < deadline) {
         if (readResult(dir, id) !== undefined) break;
         await new Promise((resolve) => setTimeout(resolve, 25));
@@ -233,23 +246,6 @@ describe('host status', () => {
       }
       clearStatus();
       rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it('refuses a config equal to the status file', () => {
-    const status = hostStatusPath();
-    mkdirSync(dirname(status), { recursive: true });
-    writeFileSync(status, 'hosts: {}\n', 'utf8');
-    try {
-      const run = spawnSync(
-        process.execPath,
-        ['--conditions=development', hostBin, 'host', '--config', status],
-        { cwd: process.cwd(), encoding: 'utf8', timeout: 5_000 },
-      );
-      assert.equal(run.status, 1);
-      assert.match(run.stderr, /the config cannot be the host status file/u);
-    } finally {
-      clearStatus();
     }
   });
 

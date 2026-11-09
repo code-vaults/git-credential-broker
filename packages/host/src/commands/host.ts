@@ -250,10 +250,11 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const resolvedConfig = resolveConfigPath(configPath);
   const statusFile = hostStatusPath();
   const startedAt = new Date().toISOString();
+  // The selected path is what a fork or explicit repository would load; it may not exist yet.
   const configSelected =
-    existsSync(resolvedConfig) ||
     configPath !== undefined ||
-    process.env['GIT_BROKER_CONFIG'] !== undefined;
+    Boolean(process.env['GIT_BROKER_CONFIG']) ||
+    existsSync(resolvedConfig);
   let loadedConfig: string | null = configSelected ? resolvedConfig : null;
   /** Remove the status file only when this process owns it. */
   function removeOwnStatus(): void {
@@ -299,7 +300,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const blockFor = (host: string) => {
     if (config === undefined) {
       try {
-        config = loadConfig(resolveConfigPath(configPath));
+        config = loadConfig(resolvedConfig);
         loadedConfig = resolvedConfig;
         writeStatus();
       } catch (error) {
