@@ -57,6 +57,8 @@ describe('gh action catalog', () => {
       'label:create',
       'label:edit',
       'label:delete',
+      'search:issues',
+      'search:prs',
     ]);
     assert.equal('pr:merge' in GH_ACTIONS, false);
     assert.equal(getGhAction('pr:create').command.join(' '), 'pr create');
@@ -117,6 +119,8 @@ describe('gh action catalog', () => {
     assert.deepEqual(getGhAction('label:create').permissions, { issues: 'write' });
     assert.deepEqual(getGhAction('label:edit').permissions, { issues: 'write' });
     assert.deepEqual(getGhAction('label:delete').permissions, { issues: 'write' });
+    assert.deepEqual(getGhAction('search:issues').permissions, { issues: 'read' });
+    assert.deepEqual(getGhAction('search:prs').permissions, { pull_requests: 'read' });
     assert.equal(getGhAction('pr:checks').timeoutSeconds, 300);
   });
 
@@ -147,6 +151,8 @@ describe('gh action catalog', () => {
       'workflow:list',
       'workflow:view',
       'label:list',
+      'search:issues',
+      'search:prs',
     ]) {
       assert.equal(getGhAction(name).readOnly, true, name);
       assert.equal(getGhAction(name).appUser, true, name);
@@ -252,6 +258,28 @@ describe('buildGhArgv', () => {
     assert.throws(
       () => buildGhArgv('label:delete', { name: 'bug', yes: false }, 'acme/widget'),
       /needs --yes/u,
+    );
+
+    assert.deepEqual(
+      buildGhArgv('search:issues', { query: 'bug', label: ['one', 'two'], limit: 5 }, 'acme/widget'),
+      [
+        'search',
+        'issues',
+        '--label',
+        'one',
+        '--label',
+        'two',
+        '--limit',
+        '5',
+        '--repo',
+        'acme/widget',
+        '--',
+        'bug',
+      ],
+    );
+    assert.deepEqual(
+      buildGhArgv('search:prs', { query: 'fix', draft: true }, 'acme/widget'),
+      ['search', 'prs', '--draft', '--repo', 'acme/widget', '--', 'fix'],
     );
 
     assert.deepEqual(
