@@ -221,7 +221,7 @@ host_broker:
 - [ ] Deny rules evaluated before allow. Unknown command, unknown flag, or missing whitelist entry
       is refused.
 - [ ] Built-in hard denies (not configurable on): `api`, `auth`, `extension`, `alias`, `config`,
-      `secret`, `repo delete`, `release`, `gist`, `ssh-key`, `gpg-key`, `codespace`,
+      `secret`, `repo delete`, `release create/edit/upload/download/delete`, `gist`, `ssh-key`, `gpg-key`, `codespace`,
       `run download`, `workflow run`, `pr checkout`, `pr merge`; flags `--web`, `--hostname`,
       `--input`, `--template-file`, `--body-file` (the client converts a body file to `--body`).
 - [ ] Resolve the repository:
