@@ -51,6 +51,23 @@ describe('host status', () => {
     }
   });
 
+  it('exits 1 when no daemon is running', () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-status-none-'));
+    const config = join(root, 'broker.config.yml');
+    writeFileSync(config, 'hosts: {}\n', 'utf8');
+    try {
+      const run = spawnSync(
+        process.execPath,
+        ['--conditions=development', hostBin, 'host', 'status', '--config', config, '--json'],
+        { cwd: process.cwd(), encoding: 'utf8' },
+      );
+      assert.equal(run.status, 1);
+      assert.match(run.stderr, /no host broker is running/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('writes startup state before a config is loaded', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-status-startup-'));
     const repo = join(root, 'checkout');
