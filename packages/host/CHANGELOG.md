@@ -1,5 +1,48 @@
 # gcb-host
 
+## 0.7.0
+
+### Minor Changes
+
+- [#103](https://github.com/code-vaults/git-credential-broker/pull/103) [`c040d5e`](https://github.com/code-vaults/git-credential-broker/commit/c040d5e73f7eede891800f1cae8ad9b3903dbab6) Thanks [@JounQin](https://github.com/JounQin)! - Add `gcb config allow add|remove <host> <owner/name>` for one exact entry. Globs, URLs,
+  wildcards and a `.git` suffix are refused. It edits the entry with `parseDocument`, so comments and
+  formatting survive, keeps LF or CRLF line endings, rejects mixed endings, validates the result with
+  the same loader as the daemon, and replaces the file atomically. It also rejects host keys that
+  differ only by case, which would otherwise leave one block silently unreachable. It serializes
+  allow updates with a target-keyed lock, refuses to remove the last entry, and reports one line with
+  `entry=… reload=unconfirmed signal=unavailable`: the daemon watches the config directory, but the
+  command does not signal it, and restart-only keys still need a restart. `config edit` stays an
+  in-place editor and needs no directory write. A lock left by a crash fails closed and names the path
+  for an operator to remove.
+
+- [#119](https://github.com/code-vaults/git-credential-broker/pull/119) [`80e697f`](https://github.com/code-vaults/git-credential-broker/commit/80e697fe2183952f5612a7f29d2a6ba3830e489e) Thanks [@JounQin](https://github.com/JounQin)! - Record the resolved config path, working directory and package version in a fixed host-private
+  `~/.gcb-host/status.json` (not beside a config and not in the container-writable channel marker), and
+  add `gcb host status` (JSON, no options, no config argument). The status file is written at daemon startup
+  with `config: null`, updated after a successful config load, is read/written with
+  `readJson`/`writeJsonAtomic`, and is never read from the caller's cwd.
+
+- [#108](https://github.com/code-vaults/git-credential-broker/pull/108) [`f596356`](https://github.com/code-vaults/git-credential-broker/commit/f596356b30413001c9dee30621b978cb2bd69e88) Thanks [@JounQin](https://github.com/JounQin)! - Serve host-broker channels for submodules nested in a checkout, while keeping the one-level scan
+  bounded. Read `.git` pointers as bounded, non-blocking regular files. Check the App installation
+  before an app-routed action and refuse an uninstalled target with a `--as-user` hint, and add
+  `allowFork` so an allowlisted public fork can authorize a catalogued action on its public
+  parent/source after GitHub verifies the relationship.
+
+### Patch Changes
+
+- [#104](https://github.com/code-vaults/git-credential-broker/pull/104) [`68eb0ff`](https://github.com/code-vaults/git-credential-broker/commit/68eb0ff8080226f2f6eb1d03ba9517da5278b7c2) Thanks [@JounQin](https://github.com/JounQin)! - Report requests left in a working file by a host broker that exited, instead of leaving them to
+  disappear silently. Recovery never executes the action again: it writes an explicit outcome-unknown
+  error for the caller to verify before retrying, and keeps an answer that was already written.
+  A claim whose recorded owner is still alive is never recovered, regardless of age, and the recovery
+  error is published only if no result exists, so it cannot overwrite a real answer.
+
+- [#113](https://github.com/code-vaults/git-credential-broker/pull/113) [`5c35831`](https://github.com/code-vaults/git-credential-broker/commit/5c358312b303da5b590a6b333c313854cbda7169) Thanks [@i1stG](https://github.com/i1stG)! - Close the remaining `--jq` environment leak: gh already receives a whitelisted environment with the
+  token in its isolated config, but a proxy URL carrying a username or password was still visible as
+  `HTTPS_PROXY`. Such a proxy now makes `--jq` fail, so the expression
+  cannot read proxy credentials. The host-broker route rejects `--jq` entirely, because its gh
+  program inherits the selected host account environment.
+- Updated dependencies [[`d247ec5`](https://github.com/code-vaults/git-credential-broker/commit/d247ec5cdd624e1c45376f887ae25405bdbeb1c9), [`b83dd51`](https://github.com/code-vaults/git-credential-broker/commit/b83dd51e012f7566202b5d31c8dca7a9580087e5), [`70eff30`](https://github.com/code-vaults/git-credential-broker/commit/70eff304474522fba9b0383d90918bbe9470abdb), [`68eb0ff`](https://github.com/code-vaults/git-credential-broker/commit/68eb0ff8080226f2f6eb1d03ba9517da5278b7c2), [`80e697f`](https://github.com/code-vaults/git-credential-broker/commit/80e697fe2183952f5612a7f29d2a6ba3830e489e), [`eee2074`](https://github.com/code-vaults/git-credential-broker/commit/eee207439cb643d1d0f49895609bb17f6bbda639), [`f596356`](https://github.com/code-vaults/git-credential-broker/commit/f596356b30413001c9dee30621b978cb2bd69e88)]:
+  - gcb-core@0.7.0
+
 ## 0.6.0
 
 ### Patch Changes

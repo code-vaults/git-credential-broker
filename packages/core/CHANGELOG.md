@@ -1,5 +1,45 @@
 # gcb-core
 
+## 0.7.0
+
+### Minor Changes
+
+- [#117](https://github.com/code-vaults/git-credential-broker/pull/117) [`d247ec5`](https://github.com/code-vaults/git-credential-broker/commit/d247ec5cdd624e1c45376f887ae25405bdbeb1c9) Thanks [@JounQin](https://github.com/JounQin)! - Add the label domain to the catalog: `label:list` (issues read) and `label:create`/`label:edit`/
+  `label:delete` (issues write). Deleting requires `--yes`, so the host broker never waits for an
+  interactive prompt.
+
+- [#114](https://github.com/code-vaults/git-credential-broker/pull/114) [`b83dd51`](https://github.com/code-vaults/git-credential-broker/commit/b83dd51e012f7566202b5d31c8dca7a9580087e5) Thanks [@i1stG](https://github.com/i1stG)! - Add read-only release and workflow actions to the catalog: `release:list`, `release:view`,
+  `workflow:list`, and `workflow:view`, with their GitHub permissions, flags and tests.
+
+- [#116](https://github.com/code-vaults/git-credential-broker/pull/116) [`70eff30`](https://github.com/code-vaults/git-credential-broker/commit/70eff304474522fba9b0383d90918bbe9470abdb) Thanks [@JounQin](https://github.com/JounQin)! - Add `issue:comment-delete` (`issues: write`) and `pr:comment-delete`
+  (`pull_requests: write`), which DELETE one issue/PR conversation comment through the same fixed
+  gh api endpoint as the edit actions.
+
+- [#119](https://github.com/code-vaults/git-credential-broker/pull/119) [`80e697f`](https://github.com/code-vaults/git-credential-broker/commit/80e697fe2183952f5612a7f29d2a6ba3830e489e) Thanks [@JounQin](https://github.com/JounQin)! - Record the resolved config path, working directory and package version in a fixed host-private
+  `~/.gcb-host/status.json` (not beside a config and not in the container-writable channel marker), and
+  add `gcb host status` (JSON, no options, no config argument). The status file is written at daemon startup
+  with `config: null`, updated after a successful config load, is read/written with
+  `readJson`/`writeJsonAtomic`, and is never read from the caller's cwd.
+
+- [#115](https://github.com/code-vaults/git-credential-broker/pull/115) [`eee2074`](https://github.com/code-vaults/git-credential-broker/commit/eee207439cb643d1d0f49895609bb17f6bbda639) Thanks [@i1stG](https://github.com/i1stG)! - Add `issue:comment-edit` (`issues: write`) and `pr:comment-edit` (`pull_requests: write`), which
+  PATCH one issue/PR conversation comment through a fixed gh api endpoint. The body travels in an
+  `--input` JSON file, never in argv. `pr:comment` also gains the person route, matching
+  `issue:comment`.
+
+- [#108](https://github.com/code-vaults/git-credential-broker/pull/108) [`f596356`](https://github.com/code-vaults/git-credential-broker/commit/f596356b30413001c9dee30621b978cb2bd69e88) Thanks [@JounQin](https://github.com/JounQin)! - Serve host-broker channels for submodules nested in a checkout, while keeping the one-level scan
+  bounded. Read `.git` pointers as bounded, non-blocking regular files. Check the App installation
+  before an app-routed action and refuse an uninstalled target with a `--as-user` hint, and add
+  `allowFork` so an allowlisted public fork can authorize a catalogued action on its public
+  parent/source after GitHub verifies the relationship.
+
+### Patch Changes
+
+- [#104](https://github.com/code-vaults/git-credential-broker/pull/104) [`68eb0ff`](https://github.com/code-vaults/git-credential-broker/commit/68eb0ff8080226f2f6eb1d03ba9517da5278b7c2) Thanks [@JounQin](https://github.com/JounQin)! - Report requests left in a working file by a host broker that exited, instead of leaving them to
+  disappear silently. Recovery never executes the action again: it writes an explicit outcome-unknown
+  error for the caller to verify before retrying, and keeps an answer that was already written.
+  A claim whose recorded owner is still alive is never recovered, regardless of age, and the recovery
+  error is published only if no result exists, so it cannot overwrite a real answer.
+
 ## 0.6.0
 
 ### Minor Changes
