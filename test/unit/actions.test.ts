@@ -310,8 +310,8 @@ describe('buildGhArgv', () => {
       ['search', 'issues', '--repo', 'acme/widget', '--', 'is:issue', 'label:bug'],
     );
     assert.deepEqual(
-      buildGhArgv('search:issues', { query: ['"authentication bug"'] }, 'acme/widget'),
-      ['search', 'issues', '--repo', 'acme/widget', '--', '"authentication bug"'],
+      buildGhArgv('search:issues', { query: ['authentication bug'] }, 'acme/widget'),
+      ['search', 'issues', '--repo', 'acme/widget', '--', 'authentication bug'],
     );
 
     assert.deepEqual(
