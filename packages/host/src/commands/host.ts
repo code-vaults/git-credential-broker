@@ -44,7 +44,7 @@ import {
   getGhAction,
   type BrokerConfig,
 } from 'gcb-core';
-import { fail, listFlag, parseArgs, say, warn } from 'gcb-core';
+import { fail, listFlag, parseArgs, say, validateArgs, warn } from 'gcb-core';
 import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts';
 import { loadConfig, resolveConfigPath } from '../config.ts';
 import { hostConfig, parseAllowEntry, repoAllowed } from '../policy.ts';
@@ -329,15 +329,8 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   };
 
   if (statusMode) {
-    if (
-      args.value('config') !== undefined ||
-      args.value('command') !== undefined ||
-      args.value('repo') !== undefined ||
-      args.has('once') ||
-      listFlag(args, 'root').length > 0
-    ) {
-      fail('status takes no options');
-    }
+    validateArgs(args, argv.slice(1), new Set(), 'status');
+    if (args.positionals.length > 0) fail('status takes no arguments');
     const parsed = readJson(statusFile);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       fail('no host broker is running');
