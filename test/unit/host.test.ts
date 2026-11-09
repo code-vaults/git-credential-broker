@@ -158,6 +158,44 @@ describe('host status', () => {
     }
   });
 
+  it('records the selected config before it is loaded', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-status-selected-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
+    const config = forkConfig(root, 'acme/widget');
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\nexit 0\n', 'utf8');
+    chmodSync(command, 0o755);
+    const child = spawn(
+      process.execPath,
+      ['--conditions=development', hostBin, 'host', '--repo', repo, '--config', config, '--command', command, '--interval', '1'],
+      { cwd: process.cwd(), stdio: 'ignore' },
+    );
+    try {
+      const deadline = Date.now() + 5_000;
+      let recorded: unknown;
+      while (Date.now() < deadline) {
+        try {
+          recorded = (JSON.parse(readFileSync(hostStatusPath(), 'utf8')) as { config?: unknown }).config;
+          if (recorded === config) break;
+        } catch {
+          // The child has not written yet.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      assert.equal(recorded, config);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.kill('SIGTERM');
+        await exited;
+      }
+      clearStatus();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('updates the record after loading config', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-status-loaded-'));
     const repo = join(root, 'checkout');

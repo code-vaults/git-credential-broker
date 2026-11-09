@@ -250,7 +250,11 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const resolvedConfig = resolveConfigPath(configPath);
   const statusFile = hostStatusPath();
   const startedAt = new Date().toISOString();
-  let loadedConfig: string | null = null;
+  const configSelected =
+    existsSync(resolvedConfig) ||
+    configPath !== undefined ||
+    process.env['GIT_BROKER_CONFIG'] !== undefined;
+  let loadedConfig: string | null = configSelected ? resolvedConfig : null;
   /** Remove the status file only when this process owns it. */
   function removeOwnStatus(): void {
     try {
@@ -296,7 +300,6 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     if (config === undefined) {
       try {
         config = loadConfig(resolveConfigPath(configPath));
-        loadedConfig = resolvedConfig;
         writeStatus();
       } catch (error) {
         throw new Error(
