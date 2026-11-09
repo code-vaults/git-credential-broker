@@ -757,6 +757,57 @@ const LABEL_DELETE: GhAction = {
   appUser: true,
 };
 
+// GitHub: GET /search/issues (issues)
+const SEARCH_ISSUES: GhAction = {
+  name: 'search:issues',
+  command: ['search', 'issues'],
+  positionals: [{ name: 'query', type: 'string' }],
+  flags: [
+    { name: 'assignee', type: 'string' },
+    { name: 'author', type: 'string' },
+    { name: 'json', type: 'string' },
+    { name: 'jq', type: 'string' },
+    { name: 'label', type: 'string', repeatable: true },
+    { name: 'limit', type: 'number' },
+    { name: 'match', type: 'string', repeatable: true },
+    { name: 'order', type: 'string' },
+    { name: 'sort', type: 'string' },
+    { name: 'state', type: 'string' },
+    { name: 'template', type: 'string' },
+  ],
+  permissions: { issues: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+};
+
+// GitHub: GET /search/issues (pull requests)
+const SEARCH_PRS: GhAction = {
+  name: 'search:prs',
+  command: ['search', 'prs'],
+  positionals: [{ name: 'query', type: 'string' }],
+  flags: [
+    { name: 'assignee', type: 'string' },
+    { name: 'author', type: 'string' },
+    { name: 'base', type: 'string' },
+    { name: 'draft', type: 'boolean' },
+    { name: 'head', type: 'string' },
+    { name: 'json', type: 'string' },
+    { name: 'jq', type: 'string' },
+    { name: 'label', type: 'string', repeatable: true },
+    { name: 'limit', type: 'number' },
+    { name: 'match', type: 'string', repeatable: true },
+    { name: 'order', type: 'string' },
+    { name: 'sort', type: 'string' },
+    { name: 'state', type: 'string' },
+    { name: 'template', type: 'string' },
+  ],
+  permissions: { pull_requests: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+};
+
 /** Every built-in action, keyed by its action name. */
 export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:view': PR_VIEW,
@@ -803,6 +854,8 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'label:create': LABEL_CREATE,
   'label:edit': LABEL_EDIT,
   'label:delete': LABEL_DELETE,
+  'search:issues': SEARCH_ISSUES,
+  'search:prs': SEARCH_PRS,
 });
 
 /** The built-in action names, in a stable order. */
@@ -1000,6 +1053,15 @@ export function buildGhArgv(
     }
   }
 
+  if (
+    action.command[0] === 'search' &&
+    typeof values['query'] === 'string' &&
+    /(?:^|[\s(])-?(?:repo|org|user):/iu.test(values['query'])
+  ) {
+    throw new ActionError(
+      'search query cannot contain repo:, org: or user:; the broker scopes it to --repo',
+    );
+  }
   if (typeof values['title'] === 'string') {
     if (values['title'].trim() === '') {
       throw new ActionError('the title must not be empty');

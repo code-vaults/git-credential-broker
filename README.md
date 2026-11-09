@@ -832,6 +832,8 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `label create` | `issues: write` |
 | `label edit` | `issues: write` |
 | `label delete` | `issues: write` |
+| `search issues` | `issues: read` |
+| `search prs` | `pull_requests: read` |
 <!-- action-permissions:end -->
 
 `pr status` with `--repo` reports the app identity's relevant pull requests and review requests
