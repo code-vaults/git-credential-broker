@@ -26,7 +26,7 @@ export const DEFAULT_CONFIG_FILE = 'broker.config.yml';
  * @returns an absolute path.
  */
 export function resolveConfigPath(explicit?: string, env: NodeJS.ProcessEnv = process.env): string {
-  return path.resolve(explicit ?? env['GIT_BROKER_CONFIG'] ?? DEFAULT_CONFIG_FILE);
+  return path.resolve(explicit || env['GIT_BROKER_CONFIG'] || DEFAULT_CONFIG_FILE);
 }
 
 /**

@@ -1497,6 +1497,7 @@ describe('config discovery', () => {
     assert.equal(resolveConfigPath('/a/b.json', {}), '/a/b.json');
     assert.equal(resolveConfigPath(undefined, { GIT_BROKER_CONFIG: '/c/d.json' }), '/c/d.json');
     assert.equal(resolveConfigPath(undefined, {}), path.resolve('broker.config.yml'));
+    assert.equal(resolveConfigPath('', { GIT_BROKER_CONFIG: '' }), path.resolve('broker.config.yml'));
   });
 
   it('takes the deployment directory from the config path, so --dir is not needed', () => {

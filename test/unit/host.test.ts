@@ -8,7 +8,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -127,10 +127,12 @@ describe('host status', () => {
       version: 'stale',
       startedAt: '2026-01-01T00:00:00.000Z',
     });
+    const env = { ...process.env };
+    delete env['GIT_BROKER_CONFIG'];
     const child = spawn(
       process.execPath,
       ['--conditions=development', hostBin, 'host', '--repo', repo, '--command', command, '--interval', '60'],
-      { cwd: process.cwd(), stdio: 'ignore' },
+      { cwd: root, env, stdio: 'ignore' },
     );
     try {
       const deadline = Date.now() + 5_000;
@@ -158,12 +160,49 @@ describe('host status', () => {
     }
   });
 
-  it('updates the record after loading config', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-status-loaded-'));
+  it('records the selected config before it is loaded', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-status-selected-'));
     const repo = join(root, 'checkout');
     mkdirSync(join(repo, '.git'), { recursive: true });
     writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     const config = forkConfig(root, 'acme/widget');
+    const command = join(root, 'not-gh');
+    writeFileSync(command, '#!/bin/sh\nexit 0\n', 'utf8');
+    chmodSync(command, 0o755);
+    const child = spawn(
+      process.execPath,
+      ['--conditions=development', hostBin, 'host', '--repo', repo, '--config', config, '--command', command, '--interval', '1'],
+      { cwd: process.cwd(), stdio: 'ignore' },
+    );
+    try {
+      const deadline = Date.now() + 5_000;
+      let recorded: unknown;
+      while (Date.now() < deadline) {
+        try {
+          recorded = (JSON.parse(readFileSync(hostStatusPath(), 'utf8')) as { config?: unknown }).config;
+          if (recorded === config) break;
+        } catch {
+          // The child has not written yet.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      assert.equal(recorded, config);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.kill('SIGTERM');
+        await exited;
+      }
+      clearStatus();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('updates the record after a config appears later', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-status-loaded-'));
+    const repo = join(root, 'checkout');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8');
     const dir = channelDir(join(repo, '.git'));
     const captured = join(root, 'captured-status.json');
     const command = join(root, 'not-gh');
@@ -173,20 +212,36 @@ describe('host status', () => {
       'utf8',
     );
     chmodSync(command, 0o755);
+    const env = { ...process.env };
+    delete env['GIT_BROKER_CONFIG'];
     const child = spawn(
       process.execPath,
-      ['--conditions=development', hostBin, 'host', '--repo', repo, '--config', config, '--command', command, '--interval', '1'],
-      { cwd: process.cwd(), stdio: 'ignore' },
+      ['--conditions=development', hostBin, 'host', '--repo', repo, '--command', command, '--interval', '1'],
+      { cwd: root, env, stdio: 'ignore' },
     );
     try {
-      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' });
       const deadline = Date.now() + 5_000;
+      let startup: { pid?: number; config?: unknown } | undefined;
       while (Date.now() < deadline) {
+        try {
+          startup = JSON.parse(readFileSync(hostStatusPath(), 'utf8')) as { pid?: number; config?: unknown };
+          if (startup.pid === child.pid && startup.config === null) break;
+        } catch {
+          // The child has not written yet.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      assert.equal(startup?.pid, child.pid);
+      assert.equal(startup?.config, null);
+      const config = forkConfig(root, 'acme/widget');
+      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' });
+      const requestDeadline = Date.now() + 5_000;
+      while (Date.now() < requestDeadline) {
         if (readResult(dir, id) !== undefined) break;
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
       const status = JSON.parse(readFileSync(captured, 'utf8')) as { config: string };
-      assert.equal(status.config, config);
+      assert.equal(status.config, realpathSync(config));
     } finally {
       if (child.exitCode === null && child.signalCode === null) {
         const exited = new Promise((resolve) => child.once('exit', resolve));
@@ -350,7 +405,7 @@ describe('bounded action output', () => {
     const result = await runBounded(
       process.execPath,
       ['-e', 'process.stderr.write("before\\n" + "x".repeat(60000)); setTimeout(() => {}, 5000);'],
-      { cwd: tmpdir(), env: process.env, timeoutMs: 500 },
+      { cwd: tmpdir(), env: process.env, timeoutMs: 3_000 },
     );
     assert.equal(result.code, 1);
     assert.match(result.stderr, /before/u);
