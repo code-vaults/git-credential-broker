@@ -28,6 +28,8 @@ export interface PositionalSpec {
   readonly name: string;
   readonly type: 'number' | 'string';
   readonly required?: boolean;
+  /** The final positional collects all remaining arguments as a list. */
+  readonly repeatable?: boolean;
 }
 
 /** A long flag an action accepts. */
@@ -761,7 +763,7 @@ const LABEL_DELETE: GhAction = {
 const SEARCH_ISSUES: GhAction = {
   name: 'search:issues',
   command: ['search', 'issues'],
-  positionals: [{ name: 'query', type: 'string' }],
+  positionals: [{ name: 'query', type: 'string', repeatable: true }],
   flags: [
     { name: 'assignee', type: 'string' },
     { name: 'author', type: 'string' },
@@ -785,7 +787,7 @@ const SEARCH_ISSUES: GhAction = {
 const SEARCH_PRS: GhAction = {
   name: 'search:prs',
   command: ['search', 'prs'],
-  positionals: [{ name: 'query', type: 'string' }],
+  positionals: [{ name: 'query', type: 'string', repeatable: true }],
   flags: [
     { name: 'assignee', type: 'string' },
     { name: 'author', type: 'string' },
@@ -956,10 +958,16 @@ export function buildGhArgv(
         if (positional.required === true) throw new ActionError(`${name} needs ${positional.name}`);
         continue;
       }
-      if (positional.type === 'number') {
-        argv.push(String(asNumber(value, positional.name)));
-      } else {
-        trailingPositionals.push(asString(value, positional.name));
+      const items = positional.repeatable && Array.isArray(value) ? value : [value];
+      if (positional.repeatable !== true && Array.isArray(value)) {
+        throw new ActionError(`positional ${positional.name} is not repeatable`);
+      }
+      for (const item of items) {
+        if (positional.type === 'number') {
+          argv.push(String(asNumber(item, positional.name)));
+        } else {
+          trailingPositionals.push(asString(item, positional.name));
+        }
       }
     }
   }
@@ -1053,14 +1061,17 @@ export function buildGhArgv(
     }
   }
 
-  if (
-    action.command[0] === 'search' &&
-    typeof values['query'] === 'string' &&
-    /(?:^|[\s(])-?(?:repo|org|user):/iu.test(values['query'])
-  ) {
-    throw new ActionError(
-      'search query cannot contain repo:, org: or user:; the broker scopes it to --repo',
-    );
+  if (action.command[0] === 'search') {
+    const terms = Array.isArray(values['query']) ? values['query'] : [values['query']];
+    if (
+      terms.some(
+        (term) => typeof term === 'string' && /(?:^|[\s(])-?(?:repo|org|user):/iu.test(term),
+      )
+    ) {
+      throw new ActionError(
+        'search query cannot contain repo:, org: or user:; the broker scopes it to --repo',
+      );
+    }
   }
   if (typeof values['title'] === 'string') {
     if (values['title'].trim() === '') {
