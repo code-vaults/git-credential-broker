@@ -1053,6 +1053,15 @@ export function buildGhArgv(
     }
   }
 
+  if (
+    action.command[0] === 'search' &&
+    typeof values['query'] === 'string' &&
+    /(?:^|\s)-?(?:repo|org|user):/iu.test(values['query'])
+  ) {
+    throw new ActionError(
+      'search query cannot contain repo:, org: or user:; the broker scopes it to --repo',
+    );
+  }
   if (typeof values['title'] === 'string') {
     if (values['title'].trim() === '') {
       throw new ActionError('the title must not be empty');

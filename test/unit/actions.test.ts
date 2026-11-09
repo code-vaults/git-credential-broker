@@ -277,6 +277,15 @@ describe('buildGhArgv', () => {
         'bug',
       ],
     );
+    for (const query of ['repo:other/repo bug', 'org:other bug', 'user:other bug', '-repo:other/repo']) {
+      assert.throws(
+        () => buildGhArgv('search:issues', { query }, 'acme/widget'),
+        /cannot contain repo:, org: or user:/u,
+        query,
+      );
+    }
+    assert.doesNotThrow(() => buildGhArgv('search:issues', { query: 'is:issue label:bug' }, 'acme/widget'));
+
     assert.deepEqual(
       buildGhArgv('search:prs', { query: 'fix', draft: true }, 'acme/widget'),
       ['search', 'prs', '--draft', '--repo', 'acme/widget', '--', 'fix'],
