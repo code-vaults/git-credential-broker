@@ -13,6 +13,7 @@
  * Exit codes: 0 stored, 1 refused.
  */
 
+import { accessSync, constants, existsSync } from 'node:fs'
 import { dirname, join, resolve as resolvePath } from 'node:path'
 
 import {
@@ -119,6 +120,18 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
     )
   }
 
+  const target = args.value('to') ?? refreshTokenPath(configPath)
+  const brokerContainer = args.has('broker-container')
+  if (brokerContainer) {
+    try {
+      accessSync(existsSync(target) ? target : dirname(target), constants.W_OK)
+    } catch {
+      fail(
+        `${target} is not writable inside the broker container; mount a writable token path or pass --to <writable path>`,
+      )
+    }
+  }
+
   const fetcher: Fetcher = fetcherFor(proxy)
   const code = await startDeviceFlow(block.clientId, fetcher)
   say(`Open ${code.verificationUri} and enter: ${code.userCode}`)
@@ -137,11 +150,9 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
     )
   }
 
-  const target = args.value('to') ?? refreshTokenPath(configPath)
   // The same two checks init and stage apply, for the same reason: this is a credential of a person, and
   // the container that pushes must not be able to read it. It is written outside every mount or not at all,
   // unless the operator explicitly says this is the broker-container side of the deployment.
-  const brokerContainer = args.has('broker-container')
   if (brokerContainer) {
     warn(
       'writing inside the broker container\'s mounts; this is only safe when the target is not shared with the agent container',
