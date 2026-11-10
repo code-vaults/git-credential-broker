@@ -206,6 +206,9 @@ describe('the host request channel', () => {
       commit: '0123456789abcdef0123456789abcdef01234567',
     }
     assert.deepEqual(requestProblems(push), [])
+    assert.deepEqual(requestProblems({ ...push, remote: 'upstream', force: true }), [])
+    assert.match(requestProblems({ ...push, remote: 'bad name' }).join(' '), /remote/)
+    assert.match(requestProblems({ ...push, force: 'yes' as unknown as boolean }).join(' '), /force/)
     assert.match(requestProblems({ ...push, branch: '../escape' }).join(' '), /branch/)
     assert.match(requestProblems({ ...push, branch: 'a:b' }).join(' '), /branch/)
     assert.match(requestProblems({ ...push, repo: 'not a repo' }).join(' '), /repository/)

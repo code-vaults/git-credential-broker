@@ -776,8 +776,9 @@ async function openOne(
       return { error: (error as Error).message }
     }
     let transport: 'https' | 'ssh' = 'https'
+    const remote = request.remote ?? 'origin'
     try {
-      const { stdout } = await run('git', ['config', '--get', 'remote.origin.url'], {
+      const { stdout } = await run('git', ['config', '--get', `remote.${remote}.url`], {
         cwd: repo,
         timeout: CREATE_TIMEOUT_MS,
         maxBuffer: 1 << 20,
@@ -823,6 +824,7 @@ async function openOne(
           '--git-dir',
           scratch,
           ...credentials,
+          ...(request.force === true ? ['--force'] : []),
           '--no-verify',
           'push',
           url,

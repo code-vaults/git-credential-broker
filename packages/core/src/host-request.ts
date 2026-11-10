@@ -155,8 +155,12 @@ export interface HostPushRequest {
   readonly repo: string
   readonly host?: string
   readonly branch: string
+  /** Git remote whose protocol selects HTTPS or SSH; the URL itself is rebuilt. */
+  readonly remote?: string
   /** The exact commit to push; the branch may move after the request is written. */
   readonly commit: string
+  /** Allow overwriting the remote branch. */
+  readonly force?: boolean
   readonly proxy?: string | null
   readonly account?: string
   readonly session?: string
@@ -588,6 +592,12 @@ export function requestProblems(request: HostRequest): string[] {
     if (request.host !== undefined && !HOST.test(request.host)) {
       problems.push('the host is not a usable host')
     }
+    if (request.remote !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) {
+      problems.push('the remote name is not usable')
+    }
+    if (request.force !== undefined && typeof request.force !== 'boolean') {
+      problems.push('the force flag is not a boolean')
+    }
     if (!COMMIT.test(request.commit)) {
       problems.push('the commit is not a full Git object id')
     }
@@ -986,6 +996,9 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
                   REPOSITORY.test(request.repo) &&
                   typeof request.branch === 'string' &&
                   typeof request.commit === 'string' &&
+                  (request.remote === undefined ||
+                    /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) &&
+                  (request.force === undefined || typeof request.force === 'boolean') &&
                   COMMIT.test(request.commit) &&
                   BRANCH.test(request.branch) &&
                   !request.branch.includes('..') &&

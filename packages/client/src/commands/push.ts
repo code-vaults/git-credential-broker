@@ -20,6 +20,8 @@ const KNOWN_FLAGS = new Set([
   'as-user',
   'repo',
   'branch',
+  'remote',
+  'force',
   'host',
   'proxy',
   'no-proxy',
@@ -32,6 +34,8 @@ never crosses into this container.
 
   --repo <owner/name>  Repository to push to (default: the origin remote)
   --branch <name>      Branch to push (default: the current branch)
+  --remote <name>      Remote whose protocol to use (default: origin)
+  --force              Overwrite the remote branch
   --host <host>        Host as configured (default: the origin remote's host, else github.com)
   --as-user            Use the host broker's own gh account
   --as-user <login>    Use ~/.config/gh-<login> on the host
@@ -96,7 +100,7 @@ function currentBranch(): string {
  * @returns The process exit code.
  */
 export async function runPush(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help', 'h', 'no-proxy'] })
+  const args = parseArgs(argv, { booleans: ['help', 'h', 'no-proxy', 'force'] })
   if (args.has('help') || args.has('h')) {
     say(PUSH_USAGE)
     return 0
@@ -126,7 +130,11 @@ export async function runPush(argv: readonly string[]): Promise<number> {
   }
   const proxy = args.has('no-proxy') ? null : args.value('proxy')
 
-  const origin = remoteRepo('origin', process.cwd())
+  const remote = args.value('remote') ?? 'origin'
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(remote)) {
+    fail(`--remote is not a usable remote name: ${JSON.stringify(remote)}`)
+  }
+  const origin = remoteRepo(remote, process.cwd())
   const explicitRepo = args.value('repo')
   const repo = explicitRepo ?? (origin === undefined ? undefined : `${origin.owner}/${origin.repo}`)
   if (repo === undefined) {
@@ -161,7 +169,9 @@ export async function runPush(argv: readonly string[]): Promise<number> {
       repo,
       host,
       branch,
+      remote,
       commit,
+      ...(args.has('force') ? { force: true } : {}),
       session: 'push',
       pid: process.pid,
       ...(account === undefined ? {} : { account }),
