@@ -221,6 +221,9 @@ export function runCompose(argv: readonly string[]): number {
     say(COMPOSE_USAGE)
     return 0
   }
+  if (argv.some(argument => argument === '--package' || argument.startsWith('--package='))) {
+    fail('--package is not supported; pin the released image with --image instead')
+  }
   const explicitConfig = args.value('config')
   const dirArg = args.value('dir')
   const configPath = path.resolve(

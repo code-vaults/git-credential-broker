@@ -1727,6 +1727,16 @@ describe('compose', () => {
     name: 'git-cred-broker',
   })
 
+  it('rejects the removed --package option', () => {
+    const result = spawnSync(
+      'node',
+      ['--conditions=development', 'packages/host/bin/gcb.js', 'compose', '--socket-dir', '/tmp', '--package', 'gcb-host@0.7.0'],
+      { cwd: path.resolve('.'), encoding: 'utf8' },
+    )
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /--package is not supported/u)
+  })
+
   it('mounts the key read-only and publishes no ports', () => {
     assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/)
     assert.match(rendered, /volume1\/docker\/git-cred-broker:\/etc\/git-cred-broker\/config:ro/)

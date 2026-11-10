@@ -792,18 +792,9 @@ or CI builds the same Dockerfile and tags, rather than pulling `:dev`.
 Pin a released `gcb-host` image by version or digest; do not use `:dev` or `pull_policy: never` for
 updates. The generated service is named `gcb` by default (`gcb compose --name <name>` changes it).
 
-The released image contains the `gcb` binary and starts `gcb daemon`. Ensure the compose command
-runs that binary:
-
-```yaml
-command:
-  - gcb
-  - daemon
-  - --config
-  - /etc/git-cred-broker/config/broker.config.yml
-```
-
-Use the mounted config path from the compose command; the path above is the generated default.
+The released image contains the `gcb` binary and starts `gcb daemon`. Keep the generated `sh -c`
+wrapper: it applies `GCB_PROXY`, and its final `exec` already runs the installed binary. Do not replace
+the whole `command` with a bare `gcb daemon` list.
 
 ```sh
 docker compose pull gcb
