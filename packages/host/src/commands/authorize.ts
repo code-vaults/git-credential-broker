@@ -17,9 +17,10 @@ import {
   accessSync,
   closeSync,
   constants,
-  ftruncateSync,
   existsSync,
   fchmodSync,
+  fstatSync,
+  ftruncateSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -108,6 +109,10 @@ export function openTokenTarget(target: string): number {
   const flags = constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0)
   const fd = openSync(target, flags, 0o600)
   try {
+    const uid = process.geteuid?.()
+    if (uid !== undefined && uid !== 0 && fstatSync(fd).uid !== uid) {
+      throw new Error(`${target} is not owned by the current user`)
+    }
     fchmodSync(fd, 0o600)
     return fd
   } catch (error) {
