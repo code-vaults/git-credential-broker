@@ -1455,6 +1455,36 @@ describe('createGithubAppProvider', () => {
 
       rmSync(dir, { recursive: true, force: true })
     })
+
+    it('treats an empty pre-created token file as absent', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'personal-token-empty-'))
+      writeFileSync(join(dir, 'user.refresh'), '', 'utf8')
+      const stub = createStubFetch({
+        installations: [{ id: 42, account: { login: 'acme' } }],
+        nowMs,
+        appPermissions: { pull_requests: 'write', contents: 'read' },
+        installationPermissions: { pull_requests: 'write', contents: 'read' },
+      })
+
+      const pr = await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
+        action: 'open',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        head: 'feat/thing',
+        base: 'main',
+        title: 'a title',
+        body: 'a body',
+      })
+
+      assert.equal(pr.number, 42)
+      assert.equal(
+        stub.calls.some(call => call.url.includes('/login/oauth/access_token')),
+        false,
+        'an empty placeholder must not be exchanged as a refresh token',
+      )
+      rmSync(dir, { recursive: true, force: true })
+    })
   })
 
   it('replies with the authorized user token', async () => {

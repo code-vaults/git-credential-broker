@@ -551,8 +551,11 @@ broker-container bind mount; it must not also be mounted into the agent containe
 that the target is writable before starting the device flow.
 
 Compose only adds the writable `user.refresh` mount when that file exists at render time. Create an
-empty `user.refresh` (mode `0600`, owned by the sidecar uid) before running `gcb compose`, or rerender
-and recreate the sidecar after `authorize` has written it.
+empty `user.refresh` (mode `0600`) as the host user who will run `authorize`, before running
+`gcb compose`. Run `authorize` before starting the sidecar; an empty file is now treated as absent,
+but the supported flow does not rely on that fallback. If the sidecar uid differs, `chown` the token
+to the sidecar uid after `authorize` and before starting the sidecar, so the broker can read and
+rotate it.
 
 The user token is used where the person identity is required or preferred: authoring a pull request,
 submitting a review, resolving a review thread (GraphQL refuses that for an app), replying to or
