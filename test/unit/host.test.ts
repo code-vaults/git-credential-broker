@@ -619,11 +619,17 @@ describe('the host broker explicit-repository route', () => {
   })
 })
 
-function forkConfig(root: string, allow: string, host = 'github.com', publicRead = false): string {
+function forkConfig(
+  root: string,
+  allow: string,
+  host = 'github.com',
+  publicRead = false,
+  allowForkPush = false,
+): string {
   const path = join(root, 'broker.config.yml')
   writeFileSync(
     path,
-    `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  ${host}:\n    provider: static\n    username: x\n    password: y\n${publicRead ? '    allowPublicRead: true\n' : ''}    allow:\n      - ${allow}\n`,
+    `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  ${host}:\n    provider: static\n    username: x\n    password: y\n${publicRead ? '    allowPublicRead: true\n' : ''}${allowForkPush ? '    allowForkPush: true\n' : ''}    allow:\n      - ${allow}\n`,
     'utf8',
   )
   return path
@@ -664,6 +670,57 @@ describe('the host broker push route', () => {
       assert.equal(code, 0)
       assert.match(String(readResult(dir, id)?.error), /allowlist/)
       assert.equal(existsSync(marker), false, 'git must not run for a refused repository')
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env['PATH']
+      } else {
+        process.env['PATH'] = previousPath
+      }
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('allows a fork when its source repository is allowlisted', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-push-fork-'))
+    const repo = join(root, 'checkout')
+    mkdirSync(join(repo, '.git'), { recursive: true })
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8')
+    const config = forkConfig(root, 'org/repo', 'github.com', false, true)
+    const dir = channelDir(join(repo, '.git'))
+    const argvFile = join(root, 'argv')
+    const bin = join(root, 'bin')
+    mkdirSync(bin)
+    const git = join(bin, 'git')
+    writeFileSync(git, `#!/bin/sh\nprintf '%s\\n' "$@" > ${argvFile}\n`, 'utf8')
+    chmodSync(git, 0o755)
+    const command = join(root, 'not-gh')
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf \'%s\' \'{"fork":true,"parent":{"full_name":"org/repo"}}\'\n',
+      'utf8',
+    )
+    chmodSync(command, 0o755)
+    const previousPath = process.env['PATH']
+    try {
+      process.env['PATH'] = `${bin}:${previousPath ?? ''}`
+      const id = writeRequest(dir, {
+        kind: 'push',
+        repo: 'alice/repo',
+        branch: 'feat/x',
+        commit: '0123456789abcdef0123456789abcdef01234567',
+      })
+      const code = await runHostBroker([
+        '--repo',
+        repo,
+        '--command',
+        command,
+        '--config',
+        config,
+        '--once',
+      ])
+      assert.equal(code, 0)
+      assert.equal(readResult(dir, id)?.error, undefined)
+      assert.match(readFileSync(argvFile, 'utf8'), /alice\/repo\.git/)
     } finally {
       if (previousPath === undefined) {
         delete process.env['PATH']

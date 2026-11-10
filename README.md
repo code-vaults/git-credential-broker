@@ -145,7 +145,9 @@ pull-request token.
 `gcb push` pushes the current branch from the host, not from this container. The host broker runs
 `git push` with its own gh account and rebuilds the target URL from the allowlisted repository; no
 token or remote URL from the container is used. It requires a host broker and a checkout on the
-host, defaults to `origin` and the current branch; `--remote` selects another remote, `--force` is an explicit overwrite and `--force-with-lease`
+host. The destination must be allowlisted, or be a verified fork whose parent/source is
+allowlisted when `allowForkPush` is on; host push checks the source relationship, not the fork's own
+allowlist entry. It defaults to `origin` and the current branch; `--remote` selects another remote, `--force` is an explicit overwrite and `--force-with-lease`
 only overwrites if the remote branch still has the sha fetched by the host (there is no arbitrary
 push-argument pass-through). `--as-user <login>`
 selects `~/.config/gh-<login>` on the host; the host reads the selected remote's protocol only to choose `https` or `ssh`; the

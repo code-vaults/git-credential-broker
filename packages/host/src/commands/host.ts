@@ -768,12 +768,34 @@ async function openOne(
 
   if (request.kind === 'push') {
     const host = request.host ?? 'github.com'
+    let allowedPush = false
     try {
-      if (!allowed(host, request.repo)) {
-        return { error: `repository ${request.repo} is not in the allowlist for ${host}` }
+      allowedPush = allowed(host, request.repo)
+      if (!allowedPush && blockFor(host)?.allowForkPush === true) {
+        const { stdout } = await run(command, [...extra, 'api', `repos/${request.repo}`], {
+          cwd: repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env: forkEnv(request.proxy, request.account, host),
+        })
+        const body = JSON.parse(stdout) as {
+          fork?: unknown
+          parent?: { full_name?: unknown } | null
+          source?: { full_name?: unknown } | null
+        }
+        const source =
+          typeof body?.source?.full_name === 'string'
+            ? body.source.full_name
+            : typeof body?.parent?.full_name === 'string'
+              ? body.parent.full_name
+              : undefined
+        allowedPush = body?.fork === true && source !== undefined && allowed(host, source)
       }
     } catch (error) {
       return { error: (error as Error).message }
+    }
+    if (!allowedPush) {
+      return { error: `repository ${request.repo} is not in the allowlist for ${host}` }
     }
     let transport: 'https' | 'ssh' = 'https'
     const remote = request.remote ?? 'origin'
