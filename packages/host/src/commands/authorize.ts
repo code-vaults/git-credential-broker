@@ -15,7 +15,6 @@
 
 import {
   accessSync,
-  chmodSync,
   closeSync,
   constants,
   ftruncateSync,
@@ -97,18 +96,30 @@ export interface AuthorizationPlacement {
   readonly warning?: string
 }
 
-/** Open the token target before authorization so the write cannot be redirected by a later path swap. */
-function openTokenTarget(target: string): number {
+/**
+ * Open and secure the token target before authorization, so a later path swap cannot redirect the
+ * write and a permission failure surfaces before the device flow.
+ *
+ * @param target - The token path.
+ * @returns The open descriptor, already mode 0600.
+ */
+export function openTokenTarget(target: string): number {
   mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
   const flags = constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0)
-  return openSync(target, flags, 0o600)
+  const fd = openSync(target, flags, 0o600)
+  try {
+    fchmodSync(fd, 0o600)
+    return fd
+  } catch (error) {
+    closeSync(fd)
+    throw error
+  }
 }
 
 /** Write the refresh token through the descriptor opened before the device flow. */
 function writeToken(fd: number, token: string): void {
   ftruncateSync(fd, 0)
   writeFileSync(fd, `${token}\n`)
-  fchmodSync(fd, 0o600)
 }
 
 /** Whether the target or its parent is writable, so a read-only sidecar mount fails before the flow. */
@@ -127,9 +138,6 @@ function writableTarget(target: string): boolean {
         return false
       }
       accessSync(target, constants.W_OK)
-      // Secure an existing placeholder now, before the device flow; if this fails, the write later
-      // would leave a token readable to a group or another user.
-      chmodSync(target, 0o600)
       return true
     }
     let ancestor = dirname(target)

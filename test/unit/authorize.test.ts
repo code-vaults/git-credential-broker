@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 import {
   brokerReadsPath,
+  openTokenTarget,
   refreshTokenPath,
   resolveAuthorizationPlacement,
 } from '../../packages/host/src/commands/authorize.ts'
@@ -124,12 +125,8 @@ describe('gcb authorize', () => {
     try {
       const target = path.join(root, 'user.refresh')
       fs.writeFileSync(target, '', { mode: 0o664 })
-      resolveAuthorizationPlacement({
-        configPath,
-        to: target,
-        brokerContainer: true,
-        isInsideContainer: () => false,
-      })
+      const fd = openTokenTarget(target)
+      fs.closeSync(fd)
       assert.equal(fs.statSync(target).mode & 0o777, 0o600)
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
