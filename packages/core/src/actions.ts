@@ -693,7 +693,7 @@ const WORKFLOW_RUN: GhAction = {
   positionals: [{ name: 'workflow', type: 'string', required: true }],
   flags: [
     { name: 'ref', type: 'string' },
-    { name: 'field', type: 'string', repeatable: true },
+    { name: 'raw-field', type: 'string', repeatable: true },
   ],
   permissions: { actions: 'write', contents: 'read' },
   timeoutSeconds: 120,

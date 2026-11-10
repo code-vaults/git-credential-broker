@@ -397,7 +397,7 @@ describe('buildGhArgv', () => {
     assert.deepEqual(
       buildGhArgv(
         'workflow:run',
-        { workflow: 'ci.yml', ref: 'main', field: ['a=1', 'b=2'] },
+        { workflow: 'ci.yml', ref: 'main', 'raw-field': ['a=1', 'b=@file'] },
         'acme/widget',
       ),
       [
@@ -405,10 +405,10 @@ describe('buildGhArgv', () => {
         'run',
         '--ref',
         'main',
-        '--field',
+        '--raw-field',
         'a=1',
-        '--field',
-        'b=2',
+        '--raw-field',
+        'b=@file',
         '--repo',
         'acme/widget',
         '--',
