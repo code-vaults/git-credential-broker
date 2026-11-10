@@ -161,6 +161,8 @@ export interface HostPushRequest {
   readonly commit: string
   /** Allow overwriting the remote branch. */
   readonly force?: boolean
+  /** Overwrite only if the remote branch still has the sha fetched by the host. */
+  readonly forceWithLease?: boolean
   readonly proxy?: string | null
   readonly account?: string
   readonly session?: string
@@ -598,6 +600,15 @@ export function requestProblems(request: HostRequest): string[] {
     if (request.force !== undefined && typeof request.force !== 'boolean') {
       problems.push('the force flag is not a boolean')
     }
+    if (
+      request.forceWithLease !== undefined &&
+      typeof request.forceWithLease !== 'boolean'
+    ) {
+      problems.push('the force-with-lease flag is not a boolean')
+    }
+    if (request.force === true && request.forceWithLease === true) {
+      problems.push('force and force-with-lease are mutually exclusive')
+    }
     if (!COMMIT.test(request.commit)) {
       problems.push('the commit is not a full Git object id')
     }
@@ -999,6 +1010,8 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
                   (request.remote === undefined ||
                     /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) &&
                   (request.force === undefined || typeof request.force === 'boolean') &&
+                  (request.forceWithLease === undefined ||
+                    typeof request.forceWithLease === 'boolean') &&
                   COMMIT.test(request.commit) &&
                   BRANCH.test(request.branch) &&
                   !request.branch.includes('..') &&

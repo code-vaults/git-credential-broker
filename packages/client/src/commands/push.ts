@@ -22,6 +22,7 @@ const KNOWN_FLAGS = new Set([
   'branch',
   'remote',
   'force',
+  'force-with-lease',
   'host',
   'proxy',
   'no-proxy',
@@ -36,6 +37,7 @@ never crosses into this container.
   --branch <name>      Branch to push (default: the current branch)
   --remote <name>      Remote whose protocol to use (default: origin)
   --force              Overwrite the remote branch
+  --force-with-lease   Overwrite only if the remote branch has not moved
   --host <host>        Host as configured (default: the origin remote's host, else github.com)
   --as-user            Use the host broker's own gh account
   --as-user <login>    Use ~/.config/gh-<login> on the host
@@ -100,7 +102,7 @@ function currentBranch(): string {
  * @returns The process exit code.
  */
 export async function runPush(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help', 'h', 'no-proxy', 'force'] })
+  const args = parseArgs(argv, { booleans: ['help', 'h', 'no-proxy', 'force', 'force-with-lease'] })
   if (args.has('help') || args.has('h')) {
     say(PUSH_USAGE)
     return 0
@@ -120,6 +122,9 @@ export async function runPush(argv: readonly string[]): Promise<number> {
   const account = accounts[0]
   if (account !== undefined && !LOGIN.test(account)) {
     fail(`--as-user must be a GitHub login or no value, got ${JSON.stringify(account)}`)
+  }
+  if (args.has('force') && args.has('force-with-lease')) {
+    fail('--force and --force-with-lease are mutually exclusive')
   }
   const proxyValues = args.values('proxy')
   if (args.has('proxy') && proxyValues.length === 0) {
@@ -172,6 +177,7 @@ export async function runPush(argv: readonly string[]): Promise<number> {
       remote,
       commit,
       ...(args.has('force') ? { force: true } : {}),
+      ...(args.has('force-with-lease') ? { forceWithLease: true } : {}),
       session: 'push',
       pid: process.pid,
       ...(account === undefined ? {} : { account }),

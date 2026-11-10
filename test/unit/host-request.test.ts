@@ -207,6 +207,11 @@ describe('the host request channel', () => {
     }
     assert.deepEqual(requestProblems(push), [])
     assert.deepEqual(requestProblems({ ...push, remote: 'upstream', force: true }), [])
+    assert.deepEqual(requestProblems({ ...push, forceWithLease: true }), [])
+    assert.match(
+      requestProblems({ ...push, force: true, forceWithLease: true }).join(' '),
+      /mutually exclusive/,
+    )
     assert.match(requestProblems({ ...push, remote: 'bad name' }).join(' '), /remote/)
     assert.match(requestProblems({ ...push, force: 'yes' as unknown as boolean }).join(' '), /force/)
     assert.match(requestProblems({ ...push, branch: '../escape' }).join(' '), /branch/)
