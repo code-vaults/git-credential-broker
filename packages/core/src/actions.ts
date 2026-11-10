@@ -686,42 +686,6 @@ const RELEASE_VIEW: GhAction = {
   appUser: true,
 }
 
-// GitHub: POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches
-const WORKFLOW_RUN: GhAction = {
-  name: 'workflow:run',
-  command: ['workflow', 'run'],
-  positionals: [{ name: 'workflow', type: 'string', required: true }],
-  flags: [
-    { name: 'ref', type: 'string' },
-    { name: 'raw-field', type: 'string', repeatable: true },
-  ],
-  permissions: { actions: 'write', contents: 'read' },
-  timeoutSeconds: 120,
-  appUser: true,
-}
-
-// GitHub: PUT /repos/{owner}/{repo}/actions/workflows/{workflow_id}/enable
-const WORKFLOW_ENABLE: GhAction = {
-  name: 'workflow:enable',
-  command: ['workflow', 'enable'],
-  positionals: [{ name: 'workflow', type: 'string', required: true }],
-  flags: [],
-  permissions: { actions: 'write' },
-  timeoutSeconds: 60,
-  appUser: true,
-}
-
-// GitHub: PUT /repos/{owner}/{repo}/actions/workflows/{workflow_id}/disable
-const WORKFLOW_DISABLE: GhAction = {
-  name: 'workflow:disable',
-  command: ['workflow', 'disable'],
-  positionals: [{ name: 'workflow', type: 'string', required: true }],
-  flags: [],
-  permissions: { actions: 'write' },
-  timeoutSeconds: 60,
-  appUser: true,
-}
-
 // GitHub: GET /repos/{owner}/{repo}/actions/workflows
 const WORKFLOW_LIST: GhAction = {
   name: 'workflow:list',
@@ -909,9 +873,6 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'run:rerun': RUN_RERUN,
   'release:list': RELEASE_LIST,
   'release:view': RELEASE_VIEW,
-  'workflow:run': WORKFLOW_RUN,
-  'workflow:enable': WORKFLOW_ENABLE,
-  'workflow:disable': WORKFLOW_DISABLE,
   'workflow:list': WORKFLOW_LIST,
   'workflow:view': WORKFLOW_VIEW,
   'label:list': LABEL_LIST,
