@@ -21,6 +21,7 @@ const KNOWN_FLAGS = new Set([
   'host',
   'proxy',
   'no-proxy',
+  'ssh',
 ])
 
 export const PUSH_USAGE = `Usage: gcb push [options]
@@ -33,6 +34,7 @@ never crosses into this container.
   --host <host>        Host as configured (default: the origin remote's host, else github.com)
   --as-user            Use the host broker's own gh account
   --as-user <login>    Use ~/.config/gh-<login> on the host
+  --ssh                Push over SSH using the host's SSH agent/key
   --proxy <url>        Use this proxy for the host git call
   --no-proxy           Reach GitHub directly for the host git call
   -h, --help           Show this help
@@ -54,8 +56,14 @@ function currentBranch(): string {
   fail('no current branch: pass --branch, or check out a branch')
 }
 
+/**
+ * Parse `gcb push` and submit one host-side push request.
+ *
+ * @param argv - Arguments after `push`.
+ * @returns The process exit code.
+ */
 export async function runPush(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help', 'h', 'no-proxy'] })
+  const args = parseArgs(argv, { booleans: ['help', 'h', 'no-proxy', 'ssh'] })
   if (args.has('help') || args.has('h')) {
     say(PUSH_USAGE)
     return 0
@@ -111,6 +119,7 @@ export async function runPush(argv: readonly string[]): Promise<number> {
       branch,
       session: 'push',
       pid: process.pid,
+      ...(args.has('ssh') ? { transport: 'ssh' as const } : {}),
       ...(account === undefined ? {} : { account }),
       ...(proxy === undefined ? {} : { proxy }),
     },

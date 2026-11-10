@@ -705,6 +705,11 @@ async function withBodyFile(
   }
 }
 
+/** Quote one value for the shell git uses to run a credential helper. */
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`
+}
+
 /**
  * Create one pull request, issue, review, reply, edit or comment.
  *
@@ -770,22 +775,20 @@ async function openOne(
     } catch (error) {
       return { error: (error as Error).message }
     }
-    const url = `https://${host}/${request.repo}.git`
-    const helper = `!${JSON.stringify(command)} auth git-credential`
+    const transport = request.transport ?? 'https'
+    const url =
+      transport === 'ssh'
+        ? `ssh://git@${host}/${request.repo}.git`
+        : `https://${host}/${request.repo}.git`
+    const helper = `!${[command, ...extra].map(shellQuote).join(' ')} auth git-credential`
+    const credentials =
+      transport === 'ssh'
+        ? []
+        : ['-c', 'credential.helper=', '-c', `credential.helper=${helper}`, '-c', 'credential.useHttpPath=true']
     try {
       const { stdout, stderr } = await run(
         'git',
-        [
-          '-c',
-          'credential.helper=',
-          '-c',
-          `credential.helper=${helper}`,
-          '-c',
-          'credential.useHttpPath=true',
-          'push',
-          url,
-          `${request.branch}:${request.branch}`,
-        ],
+        [...credentials, 'push', url, `refs/heads/${request.branch}:refs/heads/${request.branch}`],
         {
           cwd: repo,
           timeout: CREATE_TIMEOUT_MS,
@@ -799,7 +802,8 @@ async function openOne(
       return { url: `https://${host}/${request.repo}/tree/${request.branch}`, stdout, stderr }
     } catch (error) {
       const failure = error as { stderr?: string; message?: string }
-      return { error: (failure.stderr ?? failure.message ?? 'git push failed').trim().slice(0, 300) }
+      const reason = (failure.stderr ?? failure.message ?? '').trim().slice(0, 300)
+      return { error: reason || 'git push failed' }
     }
   }
 

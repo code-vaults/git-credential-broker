@@ -152,6 +152,8 @@ export interface HostPushRequest {
   readonly repo: string
   readonly host?: string
   readonly branch: string
+  /** Transport for the host-side push; defaults to HTTPS with gh credentials. */
+  readonly transport?: 'https' | 'ssh'
   readonly proxy?: string | null
   readonly account?: string
   readonly session?: string
@@ -583,6 +585,13 @@ export function requestProblems(request: HostRequest): string[] {
     if (request.host !== undefined && !HOST.test(request.host)) {
       problems.push('the host is not a usable host')
     }
+    if (
+      request.transport !== undefined &&
+      request.transport !== 'https' &&
+      request.transport !== 'ssh'
+    ) {
+      problems.push('the push transport is not https or ssh')
+    }
     if (!BRANCH.test(request.branch) || request.branch.includes('..') || request.branch.includes(':')) {
       problems.push('the branch name is not usable')
     }
@@ -977,6 +986,12 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
                 ? typeof request.repo === 'string' &&
                   REPOSITORY.test(request.repo) &&
                   typeof request.branch === 'string' &&
+                  (request.transport === undefined ||
+                    request.transport === 'https' ||
+                    request.transport === 'ssh') &&
+                  BRANCH.test(request.branch) &&
+                  !request.branch.includes('..') &&
+                  !request.branch.includes(':') &&
                   (request.host === undefined ||
                     (typeof request.host === 'string' && HOST.test(request.host)))
                 : typeof request.title === 'string' &&

@@ -146,7 +146,9 @@ pull-request token.
 `git push` with its own gh account and rebuilds the target URL from the allowlisted repository; no
 token or remote URL from the container is used. It requires a host broker and a checkout on the
 host, defaults to `origin` and the current branch, and refuses force pushes. `--as-user <login>`
-selects `~/.config/gh-<login>` on the host. Because git's credential helper has no push delegation,
+selects `~/.config/gh-<login>` on the host; `--ssh` uses the host's SSH agent/key instead of gh
+credentials. The URL is rebuilt from the allowlisted repository rather than read from the
+container-writable remote, so a changed `.git/config` cannot redirect the host push. Because git's credential helper has no push delegation,
 this is an explicit `gcb push` instead of a transparent `git push`.
 
 `gcb repo fork [owner/name]` creates a fork under a person's account. An app cannot own a fork, so

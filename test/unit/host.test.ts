@@ -630,6 +630,45 @@ function forkConfig(root: string, allow: string, host = 'github.com', publicRead
 }
 
 describe('the host broker push route', () => {
+  it('refuses a non-allowlisted repository before invoking git', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-push-denied-'))
+    const repo = join(root, 'checkout')
+    mkdirSync(join(repo, '.git'), { recursive: true })
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8')
+    const config = forkConfig(root, 'acme/widget')
+    const dir = channelDir(join(repo, '.git'))
+    const marker = join(root, 'git-ran')
+    const bin = join(root, 'bin')
+    mkdirSync(bin)
+    const git = join(bin, 'git')
+    writeFileSync(git, '#!/bin/sh\ntouch ' + marker + '\nexit 0\n', 'utf8')
+    chmodSync(git, 0o755)
+    const previousPath = process.env['PATH']
+    try {
+      process.env['PATH'] = `${bin}:${previousPath ?? ''}`
+      const id = writeRequest(dir, { kind: 'push', repo: 'evil/other', branch: 'main' })
+      const code = await runHostBroker([
+        '--repo',
+        repo,
+        '--command',
+        join(root, 'not-gh'),
+        '--config',
+        config,
+        '--once',
+      ])
+      assert.equal(code, 0)
+      assert.match(String(readResult(dir, id)?.error), /allowlist/)
+      assert.equal(existsSync(marker), false, 'git must not run for a refused repository')
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env['PATH']
+      } else {
+        process.env['PATH'] = previousPath
+      }
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('pushes a branch through the host git with its gh credential helper', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-push-'))
     const repo = join(root, 'checkout')
@@ -668,7 +707,7 @@ describe('the host broker push route', () => {
       const result = readResult(dir, id)
       assert.equal(result?.url, 'https://github.com/acme/widget/tree/feat/x')
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
-      assert.deepEqual(argv.slice(-3), ['push', 'https://github.com/acme/widget.git', 'feat/x:feat/x'])
+      assert.deepEqual(argv.slice(-3), ['push', 'https://github.com/acme/widget.git', 'refs/heads/feat/x:refs/heads/feat/x'])
       assert.equal(
         argv.some(argument => argument.startsWith('credential.helper=') && argument.includes('auth git-credential')),
         true,
