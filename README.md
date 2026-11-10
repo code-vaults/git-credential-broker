@@ -797,9 +797,19 @@ or CI builds the same Dockerfile and tags, rather than pulling `:dev`.
 Pin a released `gcb-host` image by version or digest; do not use `:dev` or `pull_policy: never` for
 updates. The generated service is named `gcb` by default (`gcb compose --name <name>` changes it).
 
-Changing the image tag alone does not change the default `npx --package gcb-host@<version>` command.
-Either render compose again, set the package spec to the same version, or change the command to use
-the image's installed binary: `["gcb", "daemon", "--config", "/etc/git-cred-broker/config/broker.config.yml"]`.
+The released image contains the `gcb` binary and starts `gcb daemon`. If a generated compose still
+uses `npx --package gcb-host@...`, replace its command with that binary; npx is not an update
+mechanism:
+
+```yaml
+command:
+  - gcb
+  - daemon
+  - --config
+  - /etc/git-cred-broker/config/broker.config.yml
+```
+
+Use the mounted config path from the compose command; the path above is the generated default.
 
 ```sh
 docker compose pull gcb
@@ -809,9 +819,8 @@ docker compose up -d --no-deps --force-recreate gcb
 Verify the running sidecar, not just the host CLI:
 
 ```sh
-docker compose exec gcb npx --yes --package 'gcb-host@0.8.0' gcb --version
-docker compose exec gcb npx --yes --package 'gcb-host@0.8.0' gcb doctor \
-  --config /etc/git-cred-broker/config/broker.config.yml
+docker compose exec gcb gcb --version
+docker compose exec gcb gcb doctor --config /etc/git-cred-broker/config/broker.config.yml
 gcb --version   # in the pushing environment; must be the same release line
 ```
 
