@@ -240,7 +240,7 @@ const PR_READY: GhAction = {
   timeoutSeconds: 60,
 }
 
-// GitHub: POST /repos/{owner}/{repo}/pulls/{pull_number}/reverts (gh pr revert)
+// GitHub GraphQL: https://docs.github.com/en/graphql/reference/mutations#revertpullrequest
 const PR_REVERT: GhAction = {
   name: 'pr:revert',
   command: ['pr', 'revert'],
