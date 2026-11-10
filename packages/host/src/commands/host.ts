@@ -12,7 +12,7 @@
  * shell; the program it calls is configuration, and it is called with an argument list built here.
  */
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
@@ -797,18 +797,42 @@ async function openOne(
       transport === 'ssh'
         ? []
         : ['-c', 'credential.helper=', '-c', `credential.helper=${helper}`, '-c', 'credential.useHttpPath=true']
+    const cleanEnv: NodeJS.ProcessEnv = {
+      ...forkEnv(request.proxy, request.account, host),
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+      GIT_TERMINAL_PROMPT: '0',
+    }
+    const scratch = mkdtempSync(join(tmpdir(), 'gcb-push-'))
     try {
+      await run('git', ['init', '--bare', '--quiet', scratch], {
+        timeout: CREATE_TIMEOUT_MS,
+        maxBuffer: 1 << 20,
+        env: cleanEnv,
+      })
+      const { stdout: objects } = await run(
+        'git',
+        ['rev-parse', '--path-format=absolute', '--git-path', 'objects'],
+        { cwd: repo, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20 },
+      )
+      mkdirSync(join(scratch, 'objects', 'info'), { recursive: true })
+      writeFileSync(join(scratch, 'objects', 'info', 'alternates'), `${objects.trim()}\n`)
       const { stdout, stderr } = await run(
         'git',
-        [...credentials, '--no-verify', 'push', url, `${request.commit}:refs/heads/${request.branch}`],
+        [
+          '--git-dir',
+          scratch,
+          ...credentials,
+          '--no-verify',
+          'push',
+          url,
+          `${request.commit}:refs/heads/${request.branch}`,
+        ],
         {
-          cwd: repo,
+          cwd: scratch,
           timeout: CREATE_TIMEOUT_MS,
           maxBuffer: 1 << 20,
-          env: {
-            ...forkEnv(request.proxy, request.account, host),
-            GIT_TERMINAL_PROMPT: '0',
-          },
+          env: cleanEnv,
         },
       )
       return { url: `https://${host}/${request.repo}/tree/${request.branch}`, stdout, stderr }
@@ -816,6 +840,8 @@ async function openOne(
       const failure = error as { stderr?: string; message?: string }
       const reason = (failure.stderr ?? failure.message ?? '').trim().slice(0, 300)
       return { error: reason || 'git push failed' }
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
     }
   }
 

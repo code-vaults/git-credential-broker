@@ -714,6 +714,7 @@ describe('the host broker push route', () => {
       assert.equal(result?.url, 'https://github.com/acme/widget/tree/feat/x')
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
       assert.deepEqual(argv.slice(-3), ['push', 'https://github.com/acme/widget.git', '0123456789abcdef0123456789abcdef01234567:refs/heads/feat/x'])
+      assert.equal(argv.some(argument => argument === '--git-dir'), true)
       assert.equal(
         argv.some(argument => argument.startsWith('credential.helper=') && argument.includes('auth git-credential')),
         true,
