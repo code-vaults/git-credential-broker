@@ -22,3 +22,4 @@ node_modules/
 # The person's refresh token, if anyone keeps one here by mistake.
 user.refresh
 user.token
+.eslintcache
