@@ -1,5 +1,5 @@
 ---
-"gcb-core": minor
+'gcb-core': minor
 ---
 
 Add repo-scoped search actions: `search:issues` (`issues: read`) and `search:prs`

@@ -1,6 +1,6 @@
 ---
-"gcb-core": minor
-"gcb-client": minor
+'gcb-core': minor
+'gcb-client': minor
 ---
 
 Search actions accept multiple positional terms (or one quoted phrase): the final positional is

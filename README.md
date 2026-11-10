@@ -225,7 +225,7 @@ podman or nerdctl, whichever is there — for the host paths its containers bind
 stopped; a process inside the container reads `/proc/self/mountinfo`. When neither can answer — no
 runtime, a runtime that knows of no container at all, or a host whose only runtime is plain
 `containerd`, which has no interface this knows — `init`, `stage` and `authorize` refuse rather than
-guess. The runtime route is deliberately a superset: a directory bind-mounted into _any_ container
+guess. The runtime route is deliberately a superset: a directory bind-mounted into *any* container
 counts as shared, because any container that can rewrite the broker's code is as good a reason not to
 stage there as the agent is.
 
@@ -275,11 +275,11 @@ https **inside the container only** so the host's SSH workflow is untouched, and
 when the image has none. In compose:
 
 ```yaml
-environment:
-  - GIT_BROKER_SOCKET=/run/git-broker/broker.sock
-  - GIT_BROKER_REQUIRE=1
-volumes:
-  - /srv/git-broker-socket:/run/git-broker
+    environment:
+      - GIT_BROKER_SOCKET=/run/git-broker/broker.sock
+      - GIT_BROKER_REQUIRE=1
+    volumes:
+      - /srv/git-broker-socket:/run/git-broker
 ```
 
 ## Everyday changes
@@ -499,9 +499,9 @@ reviewers are entitled to skip those. The simplest way to have one authored by y
     "github.com": {
       "provider": "github-app",
       "privateKeyPath": "/etc/git-cred-broker/app.pem",
-      "userTokens": { "an-org": "/etc/git-cred-broker/an-org.token" },
-    },
-  },
+      "userTokens": { "an-org": "/etc/git-cred-broker/an-org.token" }
+    }
+  }
 }
 ```
 
@@ -521,14 +521,14 @@ exists. A plain `gcb pr` stays on the app's installation token. Dropping the fie
 fail with `no authorized user token`.
 
 #### Authorizing as a person instead
-
 Two things the app needs: its **client id** in the configuration (the App ID will not do), and
 **Enable Device Flow** selected in its settings, and **Expire user authorization tokens** left on — the
 broker renews with the refresh token, and GitHub only issues one while that is selected. No client secret: the device flow does not use one,
 so no second long-lived secret joins the key.
 
+
 A token per owner is one way to be the author; authorizing the app once is another, and it needs no
-token per owner, because GitHub issues it for the app _and_ the person together. Run this on the host:
+token per owner, because GitHub issues it for the app *and* the person together. Run this on the host:
 
 ```sh
 gcb authorize --config /srv/git-cred-broker/broker.config.yml
@@ -599,6 +599,9 @@ The broker, `authorize` and `diagnose` **refuse to start** when a proxy variable
 not `1`, instead of reaching GitHub directly by a route nobody chose. `gh`, which the host broker runs,
 reads those variables itself (it is Go), so it only needs them to arrive.
 
+
+
+
 #### Keeping it running
 
 On a host with user services, `examples/gcb-host.service` is a unit for it:
@@ -635,23 +638,23 @@ mount.
 
 Top level:
 
-| Key                     | Default      | Meaning                                                                           |
-| ----------------------- | ------------ | --------------------------------------------------------------------------------- |
-| `socketPath`            | — (required) | Absolute path of the unix socket the broker binds.                                |
-| `socketMode`            | `432` (0660) | Socket permissions, in decimal. `0660` is right when broker uid == container uid. |
-| `auditPath`             | `null`       | Append-only JSONL. Keep it outside the container's mounts.                        |
-| `tokenCacheSkewSeconds` | `300`        | Re-mint a cached credential this long before it expires.                          |
+| Key | Default | Meaning |
+|---|---|---|
+| `socketPath` | — (required) | Absolute path of the unix socket the broker binds. |
+| `socketMode` | `432` (0660) | Socket permissions, in decimal. `0660` is right when broker uid == container uid. |
+| `auditPath` | `null` | Append-only JSONL. Keep it outside the container's mounts. |
+| `tokenCacheSkewSeconds` | `300` | Re-mint a cached credential this long before it expires. |
 
 Per host, keyed exactly as git reports it (`github.com`, or `host:port` for other ports):
 
-| Key                 | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `provider`          | `github-app` or `static`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `allow`             | Default-deny list: `owner/repo`, or a whole-segment wildcard `owner/*`. Malformed entries (no slash, three segments, a partial wildcard like `wid*`) are rejected at load time rather than silently matching nothing.                                                                                                                                                                                                                                                                               |
-| `allowInsecureHttp` | Default `false`. Permit a plaintext `http` remote for this host.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `allowPublicRead`   | Default `false`. Let explicit `readOnly` actions run on a repository verified public without an allowlist entry, on both the app and host routes. The app identity uses a metadata-only token and requires the App to be installed with metadata read. Bare `--as-user` uses the authorized person token; `--as-user <login>` uses the host account token. Both may have private access; an exhausted 403/429 is reported as a rate limit, a plain 403 as a refusal, never as a private repository. |
-| `allowForkPush`     | Default `false`. Mint a credential for a **public** fork whose parent/source is an allowlisted repository. The App must be installed on the fork owner.                                                                                                                                                                                                                                                                                                                                             |
-| `allowFork`         | Default `false`. Allow a **catalogued action** (`gcb gh …`, `gcb issue …`) on the public parent/source of an allowlisted **public** fork, after GitHub confirms the relationship. Wildcard entries are not used for inference. It does not cover the lifecycle `gcb pr create` path; that still needs the target repository in `allow`.                                                                                                                                                             |
+| Key | Meaning |
+|---|---|
+| `provider` | `github-app` or `static`. |
+| `allow` | Default-deny list: `owner/repo`, or a whole-segment wildcard `owner/*`. Malformed entries (no slash, three segments, a partial wildcard like `wid*`) are rejected at load time rather than silently matching nothing. |
+| `allowInsecureHttp` | Default `false`. Permit a plaintext `http` remote for this host. |
+| `allowPublicRead` | Default `false`. Let explicit `readOnly` actions run on a repository verified public without an allowlist entry, on both the app and host routes. The app identity uses a metadata-only token and requires the App to be installed with metadata read. Bare `--as-user` uses the authorized person token; `--as-user <login>` uses the host account token. Both may have private access; an exhausted 403/429 is reported as a rate limit, a plain 403 as a refusal, never as a private repository. |
+| `allowForkPush` | Default `false`. Mint a credential for a **public** fork whose parent/source is an allowlisted repository. The App must be installed on the fork owner. |
+| `allowFork` | Default `false`. Allow a **catalogued action** (`gcb gh …`, `gcb issue …`) on the public parent/source of an allowlisted **public** fork, after GitHub confirms the relationship. Wildcard entries are not used for inference. It does not cover the lifecycle `gcb pr create` path; that still needs the target repository in `allow`. |
 
 `github-app`: `clientId` (preferred `iss`), `appId` (fallback), `privateKeyPath` or `privateKeyPem`,
 `permissions`, `apiBaseUrl` (GitHub Enterprise, must be HTTPS), `apiVersion`, `installationCacheSeconds`,
@@ -666,16 +669,16 @@ Only top-level `_comment*` keys are ignored.
 
 ## Troubleshooting
 
-| Symptom                                                                    | Cause and fix                                                                                                                                             |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cannot reach the broker at <path>: ENOENT`                                | The broker is not running, or `GIT_BROKER_SOCKET` is wrong. Start it; check the socket file exists.                                                       |
-| `... exists only inside the sidecar container`                             | The config suits the other deployment. `init --mode sidecar` or `--mode host`.                                                                            |
-| `denied [repo-not-allowed]`                                                | Not in the allowlist: `init --allow owner/repo`.                                                                                                          |
-| `refusing to replace <path>: something that is not a socket is in the way` | A leftover file sits on the socket path. Remove it and start again.                                                                                       |
-| `'credential-node' is not a git command`                                   | The helper value is `node x.ts` without the `!` git needs: `git config --global credential.helper '!node /path/packages/client/bin/gcb.js'`.              |
-| `could not mint a credential`                                              | Deliberately generic, because provider errors can embed API responses. `diagnose --config …` for the real reason.                                         |
-| `server certificate verification failed. CAfile: none`                     | The image has no CA bundle. `setup` writes one; better, add `ca-certificates` to the image.                                                               |
-| A host's HTTPS push suddenly asks for a password                           | The helper stays silent when unconfigured, so the next helper runs; it only refuses (`quit=1`) when `GIT_BROKER_SOCKET` is set or `GIT_BROKER_REQUIRE=1`. |
+| Symptom | Cause and fix |
+|---|---|
+| `cannot reach the broker at <path>: ENOENT` | The broker is not running, or `GIT_BROKER_SOCKET` is wrong. Start it; check the socket file exists. |
+| `... exists only inside the sidecar container` | The config suits the other deployment. `init --mode sidecar` or `--mode host`. |
+| `denied [repo-not-allowed]` | Not in the allowlist: `init --allow owner/repo`. |
+| `refusing to replace <path>: something that is not a socket is in the way` | A leftover file sits on the socket path. Remove it and start again. |
+| `'credential-node' is not a git command` | The helper value is `node x.ts` without the `!` git needs: `git config --global credential.helper '!node /path/packages/client/bin/gcb.js'`. |
+| `could not mint a credential` | Deliberately generic, because provider errors can embed API responses. `diagnose --config …` for the real reason. |
+| `server certificate verification failed. CAfile: none` | The image has no CA bundle. `setup` writes one; better, add `ca-certificates` to the image. |
+| A host's HTTPS push suddenly asks for a password | The helper stays silent when unconfigured, so the next helper runs; it only refuses (`quit=1`) when `GIT_BROKER_SOCKET` is set or `GIT_BROKER_REQUIRE=1`. |
 
 ## Security notes
 
@@ -741,10 +744,10 @@ The contract between the pushing container and the broker is deliberately small:
 
 Two local dev images mirror the two packages; the release publishes the same repositories on GHCR:
 
-| Image                        | Contents                              | Use                          |
-| ---------------------------- | ------------------------------------- | ---------------------------- |
-| `code-vaults/gcb-client:dev` | `gcb` client and Node runtime only    | idsh base / `COPY --from`    |
-| `code-vaults/gcb-host:dev`   | broker, `gh`, and broker dependencies | run `gcb daemon` on the host |
+| Image | Contents | Use |
+|---|---|---|
+| `code-vaults/gcb-client:dev` | `gcb` client and Node runtime only | idsh base / `COPY --from` |
+| `code-vaults/gcb-host:dev` | broker, `gh`, and broker dependencies | run `gcb daemon` on the host |
 
 The release publishes both repositories with `latest`, `<version>` and `sha-<sha>` tags. The
 `:dev` tags are local build tags and are not published; do not pull them from GHCR.
@@ -783,56 +786,54 @@ The action catalog is the source for these requirements; `gcb gh --help` prints 
 actions. Grant them on the App, then approve any changed permissions on each installation.
 
 <!-- action-permissions:start -->
-
-| Action                               | App permissions                                                           |
-| ------------------------------------ | ------------------------------------------------------------------------- |
-| `pr view`                            | `pull_requests: read`, `contents: read`, `checks: read`, `statuses: read` |
-| `pr list`                            | `pull_requests: read`                                                     |
-| `pr diff`                            | `pull_requests: read`, `contents: read`                                   |
-| `pr create`                          | `pull_requests: write`, `contents: read`                                  |
-| `pr edit`                            | `pull_requests: write`                                                    |
-| `pr close`                           | `pull_requests: write`                                                    |
-| `pr reopen`                          | `pull_requests: write`                                                    |
-| `pr ready`                           | `pull_requests: write`                                                    |
-| `pr lock`                            | `pull_requests: write`                                                    |
-| `pr unlock`                          | `pull_requests: write`                                                    |
-| `pr update-branch`                   | `pull_requests: write`, `contents: write`                                 |
-| `pr checks`                          | `pull_requests: read`, `checks: read`, `statuses: read`                   |
-| `pr status`                          | `pull_requests: read`, `checks: read`, `statuses: read`                   |
-| `pr comment`                         | `pull_requests: write`                                                    |
-| `pr comment-edit`                    | `pull_requests: write`                                                    |
-| `pr comment-delete`                  | `pull_requests: write`                                                    |
-| `pr review`                          | `pull_requests: write`                                                    |
-| `pr review --id` (`pr:review-by-id`) | `pull_requests: read`                                                     |
-| `issue create`                       | `issues: write`                                                           |
-| `issue edit`                         | `issues: write`                                                           |
-| `issue comment`                      | `issues: write`                                                           |
-| `issue comment-edit`                 | `issues: write`                                                           |
-| `issue comment-delete`               | `issues: write`                                                           |
-| `issue close`                        | `issues: write`                                                           |
-| `issue reopen`                       | `issues: write`                                                           |
-| `issue lock`                         | `issues: write`                                                           |
-| `issue unlock`                       | `issues: write`                                                           |
-| `issue pin`                          | `issues: write`                                                           |
-| `issue unpin`                        | `issues: write`                                                           |
-| `issue view`                         | `issues: read`                                                            |
-| `issue list`                         | `issues: read`                                                            |
-| `run view`                           | `actions: read`                                                           |
-| `run list`                           | `actions: read`                                                           |
-| `run watch`                          | `actions: read`, `checks: read`                                           |
-| `run cancel`                         | `actions: write`                                                          |
-| `run rerun`                          | `actions: write`                                                          |
-| `release list`                       | `contents: read`                                                          |
-| `release view`                       | `contents: read`                                                          |
-| `workflow list`                      | `actions: read`                                                           |
-| `workflow view`                      | `actions: read`, `contents: read`                                         |
-| `label list`                         | `issues: read`                                                            |
-| `label create`                       | `issues: write`                                                           |
-| `label edit`                         | `issues: write`                                                           |
-| `label delete`                       | `issues: write`                                                           |
-| `search issues`                      | `issues: read`                                                            |
-| `search prs`                         | `pull_requests: read`                                                     |
-
+| Action | App permissions |
+|---|---|
+| `pr view` | `pull_requests: read`, `contents: read`, `checks: read`, `statuses: read` |
+| `pr list` | `pull_requests: read` |
+| `pr diff` | `pull_requests: read`, `contents: read` |
+| `pr create` | `pull_requests: write`, `contents: read` |
+| `pr edit` | `pull_requests: write` |
+| `pr close` | `pull_requests: write` |
+| `pr reopen` | `pull_requests: write` |
+| `pr ready` | `pull_requests: write` |
+| `pr lock` | `pull_requests: write` |
+| `pr unlock` | `pull_requests: write` |
+| `pr update-branch` | `pull_requests: write`, `contents: write` |
+| `pr checks` | `pull_requests: read`, `checks: read`, `statuses: read` |
+| `pr status` | `pull_requests: read`, `checks: read`, `statuses: read` |
+| `pr comment` | `pull_requests: write` |
+| `pr comment-edit` | `pull_requests: write` |
+| `pr comment-delete` | `pull_requests: write` |
+| `pr review` | `pull_requests: write` |
+| `pr review --id` (`pr:review-by-id`) | `pull_requests: read` |
+| `issue create` | `issues: write` |
+| `issue edit` | `issues: write` |
+| `issue comment` | `issues: write` |
+| `issue comment-edit` | `issues: write` |
+| `issue comment-delete` | `issues: write` |
+| `issue close` | `issues: write` |
+| `issue reopen` | `issues: write` |
+| `issue lock` | `issues: write` |
+| `issue unlock` | `issues: write` |
+| `issue pin` | `issues: write` |
+| `issue unpin` | `issues: write` |
+| `issue view` | `issues: read` |
+| `issue list` | `issues: read` |
+| `run view` | `actions: read` |
+| `run list` | `actions: read` |
+| `run watch` | `actions: read`, `checks: read` |
+| `run cancel` | `actions: write` |
+| `run rerun` | `actions: write` |
+| `release list` | `contents: read` |
+| `release view` | `contents: read` |
+| `workflow list` | `actions: read` |
+| `workflow view` | `actions: read`, `contents: read` |
+| `label list` | `issues: read` |
+| `label create` | `issues: write` |
+| `label edit` | `issues: write` |
+| `label delete` | `issues: write` |
+| `search issues` | `issues: read` |
+| `search prs` | `pull_requests: read` |
 <!-- action-permissions:end -->
 
 `pr status` with `--repo` reports the app identity's relevant pull requests and review requests

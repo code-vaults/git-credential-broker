@@ -60,15 +60,22 @@ Two consequences:
 corepack yarn build        # tsc per package + scripts/postbuild.mjs
 corepack yarn typecheck    # tsc, no emit
 corepack yarn docs:actions # regenerate the README action permission table (or --check)
-corepack yarn lint          # eslint + oxlint + tsc
-corepack yarn fix           # apply the linters' fixes
-corepack yarn format        # oxfmt + prettier
 ```
 
 Output goes to `packages/*/lib/`. `scripts/postbuild.mjs` exists for one reason: the two
 `packages/*/bin/gcb.js` files are the package `bin` entries, so they need the
 `#!/usr/bin/env node` shebang and the executable bit. This repository cannot track that bit (the share it lives on defeats git's
 exec-bit detection), so the build applies it every time.
+
+Lint and format use the @1stg configs:
+
+```sh
+corepack yarn lint    # eslint + oxlint + tsc
+corepack yarn fix     # apply the linters' fixes
+corepack yarn format  # oxfmt + prettier
+```
+
+Markdown prose is deliberately not oxfmt-formatted; it flattens nested lists.
 
 ## Use your build
 
