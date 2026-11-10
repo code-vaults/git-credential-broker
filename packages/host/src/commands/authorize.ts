@@ -96,7 +96,19 @@ export interface AuthorizationPlacement {
 /** Whether the target or its parent is writable, so a read-only sidecar mount fails before the flow. */
 function writableTarget(target: string): boolean {
   try {
-    accessSync(existsSync(target) ? target : dirname(target), constants.W_OK)
+    if (existsSync(target)) {
+      accessSync(target, constants.W_OK)
+      return true
+    }
+    let ancestor = dirname(target)
+    while (!existsSync(ancestor)) {
+      const parent = dirname(ancestor)
+      if (parent === ancestor) {
+        return false
+      }
+      ancestor = parent
+    }
+    accessSync(ancestor, constants.W_OK)
     return true
   } catch {
     return false

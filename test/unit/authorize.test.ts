@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -67,6 +70,19 @@ describe('gcb authorize', () => {
       }).target,
       refreshTokenPath(configPath),
     )
+  })
+
+  it('accepts a new subdirectory beneath a writable mount', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-authorize-'))
+    try {
+      const target = path.join(root, 'new', 'user.refresh')
+      assert.equal(
+        resolveAuthorizationPlacement({ configPath, to: target, brokerContainer: true }).target,
+        target,
+      )
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('refuses a read-only broker-container target', () => {

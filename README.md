@@ -550,6 +550,10 @@ This writes `/srv/git-cred-broker/user.refresh`, which the sidecar mount maps to
 broker-container bind mount; it must not also be mounted into the agent container. The command checks
 that the target is writable before starting the device flow.
 
+Compose only adds the writable `user.refresh` mount when that file exists at render time. Create an
+empty `user.refresh` (mode `0600`, owned by the sidecar uid) before running `gcb compose`, or rerender
+and recreate the sidecar after `authorize` has written it.
+
 The user token is used where the person identity is required or preferred: authoring a pull request,
 submitting a review, resolving a review thread (GraphQL refuses that for an app), replying to or
 editing a review comment, and creating an issue through the broker action path.
