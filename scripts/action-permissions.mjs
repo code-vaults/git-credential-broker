@@ -4,7 +4,10 @@
  *
  * Run with no arguments to rewrite the marked block; run with --check to fail when it is stale.
  */
-import { readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { GH_ACTIONS } from '../packages/core/src/actions.ts'
@@ -35,20 +38,19 @@ function render() {
   return lines.join('\n')
 }
 
-/** Compare the table semantics, not the whitespace oxfmt/prettier own. */
-function normalize(block) {
-  return block
-    .replaceAll('\r\n', '\n')
-    .split('\n')
-    .map(line =>
-      line
-        .replace(/\s+/gu, ' ')
-        .replace(/\s*\|\s*/gu, '|')
-        .replace(/-+/gu, '-')
-        .trim(),
-    )
-    .filter(line => line !== '')
-    .join('\n')
+/** Format the table with oxfmt; the script does not own alignment. */
+function formatTable(block) {
+  const directory = mkdtempSync(join(tmpdir(), 'gcb-actions-'));
+  const file = join(directory, 'table.md');
+  try {
+    writeFileSync(file, `${block}\n`);
+    execFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules/.bin/oxfmt'), [file], {
+      stdio: 'ignore',
+    });
+    return readFileSync(file, 'utf8').trimEnd();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 const readme = readFileSync(README, 'utf8')
@@ -58,10 +60,10 @@ if (start < 0 || end < start) {
   throw new Error(`README is missing ${START} ... ${END}`)
 }
 const eol = readme.includes('\r\n') ? '\r\n' : '\n'
-const expected = `${START}${eol}${render().replaceAll('\n', eol)}${eol}${END}`
+const expected = `${START}${eol}${formatTable(render()).replaceAll('\n', eol)}${eol}${END}`
 const actual = readme.slice(start, end + END.length)
 if (process.argv.includes('--check')) {
-  if (normalize(actual) !== normalize(expected)) {
+  if (actual !== expected) {
     throw new Error('README action permission table is stale; run `yarn docs:actions`')
   }
 } else {
