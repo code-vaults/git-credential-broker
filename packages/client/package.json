@@ -1,6 +1,6 @@
 {
   "name": "gcb-client",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "type": "module",
   "description": "Container-side gcb client: credential helper, setup, and socket-backed commands.",
   "repository": {
@@ -31,7 +31,7 @@
     "prepack": "clean-pkg-json"
   },
   "dependencies": {
-    "gcb-core": "0.7.1"
+    "gcb-core": "0.8.0"
   },
   "publishConfig": {
     "access": "public",

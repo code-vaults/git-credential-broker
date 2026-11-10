@@ -1,5 +1,15 @@
 # gcb-host
 
+## 0.8.0
+
+### Patch Changes
+
+- [#132](https://github.com/code-vaults/git-credential-broker/pull/132) [`338d969`](https://github.com/code-vaults/git-credential-broker/commit/338d969a5431652cd7783d0889b32eb7d2a180c3) Thanks [@JounQin](https://github.com/JounQin)! - Add `gcb authorize --broker-container` for the sidecar deployment: it explicitly allows writing the
+  refresh token inside the broker container's mounts, with a warning, instead of requiring a copy through
+  `/tmp`. It must not be used when the target is shared with the agent container.
+- Updated dependencies [[`9ae646c`](https://github.com/code-vaults/git-credential-broker/commit/9ae646c2df2d6c9fc0f8b4e73e1e597e8cba9063), [`5d93ad4`](https://github.com/code-vaults/git-credential-broker/commit/5d93ad4f05d54150afd66bcb2b531e70a38c86a8), [`d311cb0`](https://github.com/code-vaults/git-credential-broker/commit/d311cb09b88766f3fce6f7877d6da81d205526a0)]:
+  - gcb-core@0.8.0
+
 ## 0.7.1
 
 ### Patch Changes
