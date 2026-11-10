@@ -775,7 +775,7 @@ async function openOne(
     } catch (error) {
       return { error: (error as Error).message }
     }
-    const transport = request.transport ?? 'https'
+    const transport = (blockFor(host)?.pushTransport ?? 'https') as 'https' | 'ssh'
     const url =
       transport === 'ssh'
         ? `ssh://git@${host}/${request.repo}.git`
@@ -788,7 +788,7 @@ async function openOne(
     try {
       const { stdout, stderr } = await run(
         'git',
-        [...credentials, '--no-verify', 'push', url, `refs/heads/${request.branch}:refs/heads/${request.branch}`],
+        [...credentials, '--no-verify', 'push', url, `${request.commit}:refs/heads/${request.branch}`],
         {
           cwd: repo,
           timeout: CREATE_TIMEOUT_MS,

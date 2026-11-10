@@ -199,12 +199,18 @@ describe('the host request channel', () => {
   })
 
   it('validates a host push request', () => {
-    const push = { kind: 'push' as const, repo: 'acme/widget', branch: 'feat/thing' }
+    const push = {
+      kind: 'push' as const,
+      repo: 'acme/widget',
+      branch: 'feat/thing',
+      commit: '0123456789abcdef0123456789abcdef01234567',
+    }
     assert.deepEqual(requestProblems(push), [])
     assert.match(requestProblems({ ...push, branch: '../escape' }).join(' '), /branch/)
     assert.match(requestProblems({ ...push, branch: 'a:b' }).join(' '), /branch/)
     assert.match(requestProblems({ ...push, repo: 'not a repo' }).join(' '), /repository/)
     assert.match(requestProblems({ ...push, account: 'not a login' }).join(' '), /account/)
+    assert.match(requestProblems({ ...push, commit: 'abc' }).join(' '), /commit/)
   })
 
   it('carries a typed review reply', async () => {

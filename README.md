@@ -146,8 +146,9 @@ pull-request token.
 `git push` with its own gh account and rebuilds the target URL from the allowlisted repository; no
 token or remote URL from the container is used. It requires a host broker and a checkout on the
 host, defaults to `origin` and the current branch, and refuses force pushes. `--as-user <login>`
-selects `~/.config/gh-<login>` on the host; `--ssh` uses the host's SSH agent/key instead of gh
-credentials. The URL is rebuilt from the allowlisted repository rather than read from the
+selects `~/.config/gh-<login>` on the host; the host's `pushTransport: ssh` setting uses its SSH
+agent/key instead of gh credentials. `gcb push` runs the container's own `pre-push` hook before
+writing the request; the host never runs container-owned hooks. The URL is rebuilt from the allowlisted repository rather than read from the
 container-writable remote, so a changed `.git/config` cannot redirect the host push. Because git's credential helper has no push delegation,
 this is an explicit `gcb push` instead of a transparent `git push`.
 
@@ -688,6 +689,7 @@ Per host, keyed exactly as git reports it (`github.com`, or `host:port` for othe
 | `allowInsecureHttp` | Default `false`. Permit a plaintext `http` remote for this host.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `allowPublicRead`   | Default `false`. Let explicit `readOnly` actions run on a repository verified public without an allowlist entry, on both the app and host routes. The app identity uses a metadata-only token and requires the App to be installed with metadata read. Bare `--as-user` uses the authorized person token; `--as-user <login>` uses the host account token. Both may have private access; an exhausted 403/429 is reported as a rate limit, a plain 403 as a refusal, never as a private repository. |
 | `allowForkPush`     | Default `false`. Mint a credential for a **public** fork whose parent/source is an allowlisted repository. The App must be installed on the fork owner.                                                                                                                                                                                                                                                                                                                                             |
+| `pushTransport`     | Default `https`. Transport for `gcb push`: `https` uses the host's gh credentials, `ssh` uses the host's SSH agent/key.                                                                                                                                                                                                                                                                                                                                                                         |
 | `allowFork`         | Default `false`. Allow a **catalogued action** (`gcb gh …`, `gcb issue …`) on the public parent/source of an allowlisted **public** fork, after GitHub confirms the relationship. Wildcard entries are not used for inference. It does not cover the lifecycle `gcb pr create` path; that still needs the target repository in `allow`.                                                                                                                                                             |
 
 `github-app`: `clientId` (preferred `iss`), `appId` (fallback), `privateKeyPath` or `privateKeyPem`,

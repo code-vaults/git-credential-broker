@@ -646,7 +646,12 @@ describe('the host broker push route', () => {
     const previousPath = process.env['PATH']
     try {
       process.env['PATH'] = `${bin}:${previousPath ?? ''}`
-      const id = writeRequest(dir, { kind: 'push', repo: 'evil/other', branch: 'main' })
+      const id = writeRequest(dir, {
+        kind: 'push',
+        repo: 'evil/other',
+        branch: 'main',
+        commit: '0123456789abcdef0123456789abcdef01234567',
+      })
       const code = await runHostBroker([
         '--repo',
         repo,
@@ -693,6 +698,7 @@ describe('the host broker push route', () => {
         repo: 'acme/widget',
         host: 'github.com',
         branch: 'feat/x',
+        commit: '0123456789abcdef0123456789abcdef01234567',
       })
       const code = await runHostBroker([
         '--repo',
@@ -707,7 +713,7 @@ describe('the host broker push route', () => {
       const result = readResult(dir, id)
       assert.equal(result?.url, 'https://github.com/acme/widget/tree/feat/x')
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
-      assert.deepEqual(argv.slice(-3), ['push', 'https://github.com/acme/widget.git', 'refs/heads/feat/x:refs/heads/feat/x'])
+      assert.deepEqual(argv.slice(-3), ['push', 'https://github.com/acme/widget.git', '0123456789abcdef0123456789abcdef01234567:refs/heads/feat/x'])
       assert.equal(
         argv.some(argument => argument.startsWith('credential.helper=') && argument.includes('auth git-credential')),
         true,

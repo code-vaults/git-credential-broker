@@ -62,6 +62,9 @@ export const BRANCH = /^([A-Za-z0-9][A-Za-z0-9._-]{0,38}:)?[A-Za-z0-9][A-Za-z0-9
 /** `owner/name`, as a fork request names its source. */
 export const REPOSITORY = /^(?!\.+(?:\/|$))[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/
 
+/** A full Git object id: SHA-1 or SHA-256. */
+export const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+
 /** A host key, optionally with a port; never a URL, slash or newline. */
 export const HOST = /^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::\d{1,5})?$/
 
@@ -152,8 +155,8 @@ export interface HostPushRequest {
   readonly repo: string
   readonly host?: string
   readonly branch: string
-  /** Transport for the host-side push; defaults to HTTPS with gh credentials. */
-  readonly transport?: 'https' | 'ssh'
+  /** The exact commit to push; the branch may move after the request is written. */
+  readonly commit: string
   readonly proxy?: string | null
   readonly account?: string
   readonly session?: string
@@ -585,12 +588,8 @@ export function requestProblems(request: HostRequest): string[] {
     if (request.host !== undefined && !HOST.test(request.host)) {
       problems.push('the host is not a usable host')
     }
-    if (
-      request.transport !== undefined &&
-      request.transport !== 'https' &&
-      request.transport !== 'ssh'
-    ) {
-      problems.push('the push transport is not https or ssh')
+    if (!COMMIT.test(request.commit)) {
+      problems.push('the commit is not a full Git object id')
     }
     if (!BRANCH.test(request.branch) || request.branch.includes('..') || request.branch.includes(':')) {
       problems.push('the branch name is not usable')
@@ -986,9 +985,8 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
                 ? typeof request.repo === 'string' &&
                   REPOSITORY.test(request.repo) &&
                   typeof request.branch === 'string' &&
-                  (request.transport === undefined ||
-                    request.transport === 'https' ||
-                    request.transport === 'ssh') &&
+                  typeof request.commit === 'string' &&
+                  COMMIT.test(request.commit) &&
                   BRANCH.test(request.branch) &&
                   !request.branch.includes('..') &&
                   !request.branch.includes(':') &&

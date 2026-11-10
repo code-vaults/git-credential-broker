@@ -191,6 +191,8 @@ export interface BaseHostConfig {
   readonly allowForkPush?: boolean
   /** Allow actions on a repository whose fork is allowlisted, after verifying the fork relationship. */
   readonly allowFork?: boolean
+  /** Transport the host uses for `gcb push`; defaults to https. */
+  readonly pushTransport?: 'https' | 'ssh'
 }
 
 /** Host block backed by one fixed username/password pair. */
