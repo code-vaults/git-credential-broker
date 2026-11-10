@@ -13,7 +13,18 @@
  * Exit codes: 0 stored, 1 refused.
  */
 
-import { accessSync, chmodSync, closeSync, constants, existsSync, fchmodSync, lstatSync, openSync, writeFileSync } from 'node:fs'
+import {
+  accessSync,
+  chmodSync,
+  closeSync,
+  constants,
+  existsSync,
+  fchmodSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join, resolve as resolvePath } from 'node:path'
 
 import { fail, insideMountedPath, isInsideContainer, parseArgs, say, warn } from 'gcb-core'
@@ -85,9 +96,9 @@ export interface AuthorizationPlacement {
   readonly warning?: string
 }
 
-/** Whether the target or its parent is writable, so a read-only sidecar mount fails before the flow. */
 /** Write the token through a no-follow descriptor so a replaceable symlink cannot redirect it. */
 function writeToken(target: string, token: string): void {
+  mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
   const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0)
   const fd = openSync(target, flags, 0o600)
   try {
@@ -98,10 +109,12 @@ function writeToken(target: string, token: string): void {
   }
 }
 
+/** Whether the target or its parent is writable, so a read-only sidecar mount fails before the flow. */
 function writableTarget(target: string): boolean {
   try {
     if (existsSync(target)) {
-      if (lstatSync(target).isSymbolicLink() || !lstatSync(target).isFile()) {
+      const info = lstatSync(target)
+      if (info.isSymbolicLink() || !info.isFile()) {
         return false
       }
       accessSync(target, constants.W_OK)
