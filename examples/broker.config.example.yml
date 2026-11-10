@@ -55,7 +55,7 @@ hosts:
     allowFork: false
 
   # A host:port key must be quoted so YAML does not read the colon as a mapping separator.
-  "git.example.internal:8443":
+  'git.example.internal:8443':
     provider: static
     allowInsecureHttp: true
     username: git

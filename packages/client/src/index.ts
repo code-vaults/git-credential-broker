@@ -3,11 +3,12 @@
  *
  * The host commands are not imported here; installing `gcb-client` never pulls `yaml`.
  */
-import { CLIENT_COMMANDS, GH_ACTIONS } from 'gcb-core';
-import type { CommandBackend } from 'gcb-core';
-import type { Primary } from './primary.ts';
+import { CLIENT_COMMANDS, GH_ACTIONS } from 'gcb-core'
+import type { CommandBackend } from 'gcb-core'
 
-export { runHelper } from './helper.ts';
+import type { Primary } from './primary.ts'
+
+export { runHelper } from './helper.ts'
 
 /**
  * The catalogued subcommands of one domain, for the help text.
@@ -15,14 +16,14 @@ export { runHelper } from './helper.ts';
  * The dispatch below reads the same table, so this cannot list a subcommand that does not run and a
  * new action shows up in the help without a second edit.
  *
- * @param domain - the command before the colon, e.g. `pr`.
- * @returns the subcommands, joined for one usage line.
+ * @param domain - The command before the colon, e.g. `pr`.
+ * @returns The subcommands, joined for one usage line.
  */
 function cataloguedSubcommands(domain: string): string {
   return Object.values(GH_ACTIONS)
-    .filter((action) => action.command[0] === domain)
-    .map((action) => action.command[1])
-    .join('|');
+    .filter(action => action.command[0] === domain)
+    .map(action => action.command[1])
+    .join('|')
 }
 
 export const CLIENT_HELP = `gcb-client — container-side git credential helper and broker client.
@@ -50,66 +51,81 @@ Environment
   GCB_PROXY               Per-push broker proxy: a URL, or empty for direct
   GCB_PRIMARY             CLI that runs catalogued actions (default: gh)
 
-Host commands such as init/stage/compose/diagnose are in gcb-host.`;
+Host commands such as init/stage/compose/diagnose are in gcb-host.`
 
 /** Ask the selected action's own scan, rather than a second interpretation of its argv. */
-async function actionAsksHelp(domain: string, sub: string | undefined, argv: readonly string[]): Promise<boolean> {
+async function actionAsksHelp(
+  domain: string,
+  sub: string | undefined,
+  argv: readonly string[],
+): Promise<boolean> {
   if (sub === undefined || sub.startsWith('-')) {
-    return argv.includes('--help') || argv.includes('-h');
+    return argv.includes('--help') || argv.includes('-h')
   }
-  return (await import('./commands/gh.ts')).actionHelpRequested(`${domain}:${sub}`, argv);
+  return (await import('./commands/gh.ts')).actionHelpRequested(`${domain}:${sub}`, argv)
 }
 
 export async function runClient(argv: readonly string[], primary?: Primary): Promise<number> {
-  const choose = async (): Promise<Primary> => primary ?? (await import('./primary.ts')).primaryFromEnv();
-  const [command, ...rest] = argv;
+  const choose = async (): Promise<Primary> =>
+    primary ?? (await import('./primary.ts')).primaryFromEnv()
+  const [command, ...rest] = argv
   switch (command) {
     case 'setup':
-      return (await import('./commands/setup.ts')).runSetup(rest);
+      return (await import('./commands/setup.ts')).runSetup(rest)
     case 'probe':
-      return (await import('./commands/probe.ts')).runProbe(rest);
+      return (await import('./commands/probe.ts')).runProbe(rest)
     case 'logs':
-      return (await import('./commands/logs.ts')).runLogs(rest);
+      return (await import('./commands/logs.ts')).runLogs(rest)
     case 'pr': {
       // The catalog is the one source for an action, so the shorthand asks it rather than keeping a
       // second list: a subcommand the catalog does not have stays with the flag-only lifecycle.
       // Bare `pr` asks the catalog too, where `run` needs no branch: the flag-only path would only
       // tell it that --repo is required.
-      if (rest.length === 0) return (await choose()).run(['pr']);
-      const sub = rest[0];
-      if (sub === 'review' && rest.some((argument) => argument === '--id' || argument.startsWith('--id='))) {
-        return (await import('./commands/pr.ts')).runPr(rest.slice(1));
+      if (rest.length === 0) {
+        return (await choose()).run(['pr'])
       }
-      if (sub === 'create' && (await import('./commands/gh.ts')).actionHasAsUser('pr:create', rest)) {
+      const sub = rest[0]
+      if (
+        sub === 'review' &&
+        rest.some(argument => argument === '--id' || argument.startsWith('--id='))
+      ) {
+        return (await import('./commands/pr.ts')).runPr(rest.slice(1))
+      }
+      if (
+        sub === 'create' &&
+        (await import('./commands/gh.ts')).actionHasAsUser('pr:create', rest)
+      ) {
         // `pr create` is the catalogued action, but `--as-user` is the flag-only lifecycle's flag.
         // Accept the obvious spelling instead of making the caller discover that `create` must go.
-        return (await import('./commands/pr.ts')).runPr(rest.slice(1));
+        return (await import('./commands/pr.ts')).runPr(rest.slice(1))
       }
       if (sub !== undefined && Object.hasOwn(GH_ACTIONS, `pr:${sub}`)) {
         if (await actionAsksHelp('pr', sub, rest)) {
-          return (await import('./commands/gh.ts')).runGh(['pr', ...rest], { unreachableExitCode: 3 });
+          return (await import('./commands/gh.ts')).runGh(['pr', ...rest], {
+            unreachableExitCode: 3,
+          })
         }
-        return (await choose()).run(['pr', ...rest], { unreachableExitCode: 3 });
+        return (await choose()).run(['pr', ...rest], { unreachableExitCode: 3 })
       }
-      return (await import('./commands/pr.ts')).runPr(rest);
+      return (await import('./commands/pr.ts')).runPr(rest)
     }
     case 'run':
       if (await actionAsksHelp('run', rest[0], rest)) {
-        return (await import('./commands/gh.ts')).runGh(['run', ...rest]);
+        return (await import('./commands/gh.ts')).runGh(['run', ...rest])
       }
-      return (await choose()).run(['run', ...rest]);
+      return (await choose()).run(['run', ...rest])
     case 'issue':
       if (await actionAsksHelp('issue', rest[0], rest)) {
-        return (await import('./commands/gh.ts')).runGh(['issue', ...rest]);
+        return (await import('./commands/gh.ts')).runGh(['issue', ...rest])
       }
-      return (await choose()).run(['issue', ...rest]);
+      return (await choose()).run(['issue', ...rest])
     case 'repo':
-      return (await import('./commands/repo.ts')).runRepo(rest);
+      return (await import('./commands/repo.ts')).runRepo(rest)
     case 'gh':
-      return (await import('./commands/gh.ts')).runGh(rest);
+      return (await import('./commands/gh.ts')).runGh(rest)
     default:
-      process.stderr.write(`gcb: unknown client command \`${command ?? ''}\`.\n`);
-      return 1;
+      process.stderr.write(`gcb: unknown client command \`${command ?? ''}\`.\n`)
+      return 1
   }
 }
 
@@ -118,4 +134,4 @@ export const clientBackend: CommandBackend = {
   commands: CLIENT_COMMANDS,
   help: CLIENT_HELP,
   run: runClient,
-};
+}

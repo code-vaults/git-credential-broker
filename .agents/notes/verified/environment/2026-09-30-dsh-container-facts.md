@@ -12,13 +12,13 @@
 
 ## 1. 挂载与身份（决定"什么能活过重建"）
 
-| 容器内路径 | 宿主来源 | 说明 |
-|---|---|---|
-| `/` | btrfs docker subvolume | 容器自己的可写层 |
-| `/home/app/Workspaces` | `~/Workspaces` | 全量可写共享 |
-| `/home/app/.dsh` | `~/Workspaces/my-project/.dsh` | ⚠️ **位于 Workspaces 挂载之内** |
-| `/home/app/.dotfiles` | `~/.dotfiles` | 宿主 dotfiles（宿主全局 gitconfig 在这里） |
-| `/volume1` | — | **容器内不存在**，宿主侧路径 agent 完全够不到 |
+| 容器内路径             | 宿主来源                       | 说明                                          |
+| ---------------------- | ------------------------------ | --------------------------------------------- |
+| `/`                    | btrfs docker subvolume         | 容器自己的可写层                              |
+| `/home/app/Workspaces` | `~/Workspaces`                 | 全量可写共享                                  |
+| `/home/app/.dsh`       | `~/Workspaces/my-project/.dsh` | ⚠️ **位于 Workspaces 挂载之内**               |
+| `/home/app/.dotfiles`  | `~/.dotfiles`                  | 宿主 dotfiles（宿主全局 gitconfig 在这里）    |
+| `/volume1`             | —                              | **容器内不存在**，宿主侧路径 agent 完全够不到 |
 
 ```sh
 grep -E '/home/app' /proc/self/mountinfo   # 宿主源路径
@@ -103,7 +103,7 @@ env | grep -i proxy
   - 正确做法：按 magic `28 B5 2F FD` 切帧逐帧解压
 
 ```js
-const MAGIC = Buffer.from([0x28,0xb5,0x2f,0xfd]);   // 逐帧切分后 zstdDecompressSync
+const MAGIC = Buffer.from([0x28, 0xb5, 0x2f, 0xfd]) // 逐帧切分后 zstdDecompressSync
 ```
 
 > 实际教训：一次性凭据（client secret）被贴进对话后，我据此误判"没有落盘"，其实**明文就在里面**（正对照：同一消息里的 client_id 也能搜到）。而 `.dsh` 位于 Workspaces 挂载之内 → 等于落在 NAS 共享上。**聊天里贴过的东西，要当作已落盘处理。**
@@ -112,11 +112,11 @@ const MAGIC = Buffer.from([0x28,0xb5,0x2f,0xfd]);   // 逐帧切分后 zstdDecom
 
 实测（`/home/app/Workspaces` 与 `/tmp` 各建一次同样的文件/目录）：
 
-| 调用 | 共享（`synoacl`） | tmpfs |
-|---|---|---|
-| `mkdirSync(p, { mode: 0o700 })` | **777** | 700 |
-| `writeFileSync(p, s, { mode: 0o600 })` | **777** | 600 |
-| `closeSync(openSync(p, 'w', 0o600))` | **777** | 600 |
+| 调用                                   | 共享（`synoacl`） | tmpfs |
+| -------------------------------------- | ----------------- | ----- |
+| `mkdirSync(p, { mode: 0o700 })`        | **777**           | 700   |
+| `writeFileSync(p, s, { mode: 0o600 })` | **777**           | 600   |
+| `closeSync(openSync(p, 'w', 0o600))`   | **777**           | 600   |
 
 即：**在这块共享上，创建时给的 mode 只是建议，实际一律 777；只有显式 `chmod` 才生效**
 （`chmod 600` → 600，`chmod 000` → 000，都实测过）。`/tmp` 是 tmpfs，行为正常 —— 所以这类

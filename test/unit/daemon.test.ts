@@ -1,101 +1,122 @@
 /**
  * The daemon's start-up diagnostics.
  *
- * The case that motivated this file: a configuration written for the sidecar deployment, started
- * as a host process, used to report `ENOENT ... /etc/git-cred-broker/app.pem` and nothing else.
- * That path only exists inside the container, and the file the operator is staring at says nothing
- * about deployments, so the error has to say it for them.
+ * The case that motivated this file: a configuration written for the sidecar deployment, started as
+ * a host process, used to report `ENOENT ... /etc/git-cred-broker/app.pem` and nothing else. That
+ * path only exists inside the container, and the file the operator is staring at says nothing about
+ * deployments, so the error has to say it for them.
  */
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import type { Writable } from 'node:stream';
-import { after, before, describe, it } from 'node:test';
-import { stringify as stringifyYaml } from 'yaml';
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import type { Writable } from 'node:stream'
+import { after, before, describe, it } from 'node:test'
 
-import { runDaemon } from '../../packages/host/src/daemon.ts';
+import { stringify as stringifyYaml } from 'yaml'
+
+import { runDaemon } from '../../packages/host/src/daemon.ts'
 
 /** Scratch space for the file. */
-const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-daemon-'));
-after(() => fs.rmSync(scratch, { recursive: true, force: true }));
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-daemon-'))
+after(() => fs.rmSync(scratch, { recursive: true, force: true }))
 
 /**
  * A write stream that collects what the daemon reports.
  *
- * @returns the stream and its contents so far.
+ * @returns The stream and its contents so far.
  */
 function capture(): { stream: Writable; text: () => string } {
-  const chunks: string[] = [];
+  const chunks: string[] = []
   return {
     stream: {
       write: (chunk: string) => {
-        chunks.push(chunk);
-        return true;
+        chunks.push(chunk)
+        return true
       },
     } as unknown as Writable,
     text: () => chunks.join(''),
-  };
+  }
 }
 
 /**
  * Write a configuration into its own directory.
  *
- * @param name - the directory to use.
- * @param config - the configuration object.
- * @returns the configuration file path.
+ * @param name - The directory to use.
+ * @param config - The configuration object.
+ * @returns The configuration file path.
  */
 function writeConfig(name: string, config: unknown): string {
-  const dir = path.join(scratch, name);
-  fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, 'broker.config.yml');
-  fs.writeFileSync(file, `${stringifyYaml(config)}\n`);
-  return file;
+  const dir = path.join(scratch, name)
+  fs.mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, 'broker.config.yml')
+  fs.writeFileSync(file, `${stringifyYaml(config)}\n`)
+  return file
 }
 
 /** A github-app host block, with the key path left to the caller. */
 function githubAppHost(privateKeyPath: string) {
-  return { provider: 'github-app', allow: ['a/one'], clientId: 'Iv1.x', appId: 1, privateKeyPath, permissions: { contents: 'write' } };
+  return {
+    provider: 'github-app',
+    allow: ['a/one'],
+    clientId: 'Iv1.x',
+    appId: 1,
+    privateKeyPath,
+    permissions: { contents: 'write' },
+  }
 }
 
 describe('daemon start-up diagnostics', () => {
   // No --config is passed on purpose, and the default is resolved against the working directory: a
   // broker.config.yml in this checkout — gitignored, so it happens — would be loaded instead of nothing.
   before(() => {
-    process.env['GIT_BROKER_CONFIG'] = path.join(os.tmpdir(), 'git-credential-broker-no-such-config.yml');
-  });
+    process.env['GIT_BROKER_CONFIG'] = path.join(
+      os.tmpdir(),
+      'git-credential-broker-no-such-config.yml',
+    )
+  })
   it('names the deployment mismatch instead of a bare ENOENT', async () => {
     const file = writeConfig('sidecar', {
       socketPath: '/run/git-broker/broker.sock',
       auditPath: '/var/log/git-cred-broker/audit.jsonl',
       hosts: { 'github.com': githubAppHost('/etc/git-cred-broker/app.pem') },
-    });
+    })
 
-    const err = capture();
-    const code = await runDaemon(['--config', file, '--check'], { stderr: err.stream, stdout: capture().stream });
+    const err = capture()
+    const code = await runDaemon(['--config', file, '--check'], {
+      stderr: err.stream,
+      stdout: capture().stream,
+    })
 
-    assert.equal(code, 1);
-    assert.match(err.text(), /exists only inside the sidecar container/);
-    assert.match(err.text(), /init --mode host/, 'and says how to move to a host process');
-  });
+    assert.equal(code, 1)
+    assert.match(err.text(), /exists only inside the sidecar container/)
+    assert.match(err.text(), /init --mode host/, 'and says how to move to a host process')
+  })
 
   it('points at the key when the layout matches how it is being run', async () => {
     const file = writeConfig('host', {
       socketPath: '/run/git-cred-broker/broker.sock',
       hosts: { 'github.com': githubAppHost(path.join(scratch, 'host', 'app.pem')) },
-    });
+    })
 
-    const err = capture();
-    const code = await runDaemon(['--config', file, '--check'], { stderr: err.stream, stdout: capture().stream });
+    const err = capture()
+    const code = await runDaemon(['--config', file, '--check'], {
+      stderr: err.stream,
+      stdout: capture().stream,
+    })
 
-    assert.equal(code, 1);
-    assert.match(err.text(), /is the host's path/);
-    assert.match(err.text(), /--mode sidecar/, 'and mentions the other deployment, in case that was the intent');
-  });
+    assert.equal(code, 1)
+    assert.match(err.text(), /is the host's path/)
+    assert.match(
+      err.text(),
+      /--mode sidecar/,
+      'and mentions the other deployment, in case that was the intent',
+    )
+  })
 
   it('--help prints the usage and exits 0', async () => {
-    const out = capture();
-    assert.equal(await runDaemon(['--help'], { stdout: out.stream, stderr: capture().stream }), 0);
-    assert.match(out.text(), /GIT_BROKER_CONFIG/);
-  });
-});
+    const out = capture()
+    assert.equal(await runDaemon(['--help'], { stdout: out.stream, stderr: capture().stream }), 0)
+    assert.match(out.text(), /GIT_BROKER_CONFIG/)
+  })
+})

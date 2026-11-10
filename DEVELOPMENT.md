@@ -67,6 +67,17 @@ Output goes to `packages/*/lib/`. `scripts/postbuild.mjs` exists for one reason:
 `#!/usr/bin/env node` shebang and the executable bit. This repository cannot track that bit (the share it lives on defeats git's
 exec-bit detection), so the build applies it every time.
 
+Lint and format use the @1stg configs:
+
+```sh
+corepack yarn lint    # eslint + oxlint + tsc
+corepack yarn fix     # apply the linters' fixes
+corepack yarn format  # oxfmt + prettier (code/config only)
+```
+
+Markdown prose is not formatted: oxfmt and Prettier both flatten the nested task lists used by
+AGENTS/ROADMAP/README. It is still linted by ESLint's Markdown processor.
+
 ## Use your build
 
 As the CLI, without installing anything:
@@ -216,3 +227,12 @@ examples/              configuration snippets
 docker-compose.example.yml  tracked sidecar example
 .agents/notes/         the design, its review, the verified record, environment facts
 ```
+
+## Git hooks
+
+`yarn install` runs `prepare` through the prepare-lifecycle plugin and installs the hooks from
+`.simple-git-hooks.js`: pre-commit runs `corepack yarn nano-staged`, commit-msg runs
+`corepack yarn commitlint -e`. Type checking is `yarn lint:tsc` (part of `yarn lint` / `yarn check`);
+there is no pre-push hook.
+
+Skip the hooks for one command with `SKIP_SIMPLE_GIT_HOOKS=1`.

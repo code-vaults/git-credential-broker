@@ -18,8 +18,8 @@ chore nobody keeps up.
 
 ## The decision
 
-Enable **Device Flow**, and leave *Expire user authorization tokens* selected, which is what produces the refresh token the broker renews with, on the *existing* App, and use the
-**user access token** it yields — the user-to-server flow. GitHub issues that token for the app *and*
+Enable **Device Flow**, and leave _Expire user authorization tokens_ selected, which is what produces the refresh token the broker renews with, on the _existing_ App, and use the
+**user access token** it yields — the user-to-server flow. GitHub issues that token for the app _and_
 the person, so it covers however many owners the person can reach, and it renews itself.
 
 This began as a second App, holding only pull requests read and write plus contents read, so that the

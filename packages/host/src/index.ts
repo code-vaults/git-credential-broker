@@ -3,10 +3,11 @@
  *
  * This is the only side that imports `yaml` (through config.ts) and holds the App key.
  */
-import { HOST_COMMANDS, type CommandBackend } from 'gcb-core';
-import { assertProxyEnabled } from './proxy.ts';
+import { HOST_COMMANDS, type CommandBackend } from 'gcb-core'
 
-export * from './gh.ts';
+import { assertProxyEnabled } from './proxy.ts'
+
+export * from './gh.ts'
 
 export const HOST_HELP = `gcb-host — host-side gcb broker and administration commands.
 
@@ -24,36 +25,36 @@ Commands
   doctor       Report config digest, last reload and socket state
   authorize    Authorize this app once for person-authored pull requests
 
-Client commands such as setup/probe/logs/pr are in gcb-client.`;
+Client commands such as setup/probe/logs/pr are in gcb-client.`
 
 async function run(argv: readonly string[]): Promise<number> {
-  const [command, ...rest] = argv;
+  const [command, ...rest] = argv
   switch (command) {
     case 'app':
     case 'daemon': {
-      assertProxyEnabled();
-      const { runDaemon } = await import('./daemon.ts');
-      return runDaemon(rest);
+      assertProxyEnabled()
+      const { runDaemon } = await import('./daemon.ts')
+      return runDaemon(rest)
     }
     case 'init':
-      return (await import('./commands/init.ts')).runInit(rest);
+      return (await import('./commands/init.ts')).runInit(rest)
     case 'stage':
-      return (await import('./commands/stage.ts')).runStage(rest);
+      return (await import('./commands/stage.ts')).runStage(rest)
     case 'compose':
-      return (await import('./commands/compose.ts')).runCompose(rest);
+      return (await import('./commands/compose.ts')).runCompose(rest)
     case 'config':
-      return (await import('./commands/config.ts')).runConfig(rest);
+      return (await import('./commands/config.ts')).runConfig(rest)
     case 'diagnose':
-      return (await import('./commands/diagnose.ts')).runDiagnose(rest);
+      return (await import('./commands/diagnose.ts')).runDiagnose(rest)
     case 'doctor':
-      return (await import('./commands/doctor.ts')).runDoctor(rest);
+      return (await import('./commands/doctor.ts')).runDoctor(rest)
     case 'authorize':
-      return (await import('./commands/authorize.ts')).runAuthorize(rest);
+      return (await import('./commands/authorize.ts')).runAuthorize(rest)
     case 'host':
-      return (await import('./commands/host.ts')).runHostBroker(rest);
+      return (await import('./commands/host.ts')).runHostBroker(rest)
     default:
-      process.stderr.write(`gcb: unknown host command \`${command ?? ''}\`.\n`);
-      return 1;
+      process.stderr.write(`gcb: unknown host command \`${command ?? ''}\`.\n`)
+      return 1
   }
 }
 
@@ -62,4 +63,4 @@ export const hostBackend: CommandBackend = {
   commands: HOST_COMMANDS,
   help: HOST_HELP,
   run,
-};
+}

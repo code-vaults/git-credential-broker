@@ -1,142 +1,170 @@
+import { createSign } from 'node:crypto'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+
+import {
+  getGhAction,
+  ProviderConfigError,
+  tokenFingerprint,
+  type ActionRunResult,
+  type Credential,
+  type FetchLike,
+  type FetchResponseLike,
+  type GithubAppHostConfig,
+  type Provider,
+  type JobLog,
+  type JobLogRequest,
+  type PullRequest,
+  type PullRequestRequest,
+} from 'gcb-core'
+
 /**
- * GitHub App provider: the broker mints a short-lived installation access token with
- * `node:crypto` only, so the host needs no `openssl`, no SDK and no runtime dependency.
+ * GitHub App provider: the broker mints a short-lived installation access token with `node:crypto`
+ * only, so the host needs no `openssl`, no SDK and no runtime dependency.
  *
- * Everything GitHub documents as a prerequisite for a successful mint is implemented
- * explicitly, because each omission fails in a way that is painful to diagnose:
- *  - `RS256` signature;
- *  - `iat` one minute in the past (clock drift);
- *  - `exp` at most ten minutes after `iat`;
- *  - `iss` set to the client ID when configured, otherwise the app ID;
- *  - the account's installation is resolved by matching `account.login` case-insensitively,
- *    which is what makes multiple owners work;
- *  - the token is scoped to exactly one repository by name (`repositories` takes the
- *    repository name, not `owner/name`) and to explicitly narrowed permissions;
- *  - a minted token is cached and reused until shortly before it expires, instead of being
- *    re-minted on every helper invocation.
+ * Everything GitHub documents as a prerequisite for a successful mint is implemented explicitly,
+ * because each omission fails in a way that is painful to diagnose:
  *
- * Reference: https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app
+ * - `RS256` signature;
+ * - `iat` one minute in the past (clock drift);
+ * - `exp` at most ten minutes after `iat`;
+ * - `iss` set to the client ID when configured, otherwise the app ID;
+ * - The account's installation is resolved by matching `account.login` case-insensitively, which is
+ *   what makes multiple owners work;
+ * - The token is scoped to exactly one repository by name (`repositories` takes the repository name,
+ *   not `owner/name`) and to explicitly narrowed permissions;
+ * - A minted token is cached and reused until shortly before it expires, instead of being re-minted
+ *   on every helper invocation.
+ *
+ * Reference:
+ * https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app
  */
-import { userTokenPath } from '../config.ts';
-import { repoAllowed } from '../policy.ts';
-import { currentProxyKey, proxyFetch } from '../http.ts';
-import { createSign } from 'node:crypto';
-import { getGhAction, ProviderConfigError, tokenFingerprint, type ActionRunResult } from 'gcb-core';
-import { runGhAction } from '../gh.ts';
-import { isPublicRepository as checkPublicRepository, withRepositoryResponse } from '../public-repo.ts';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-
-import { refreshUserToken } from '../device-flow.ts';
-
-import type { Credential, FetchLike, FetchResponseLike, GithubAppHostConfig, Provider } from 'gcb-core';
-import type { JobLog, JobLogRequest } from 'gcb-core';
-import type { PullRequest, PullRequestRequest } from 'gcb-core';
+import { userTokenPath } from '../config.ts'
+import { refreshUserToken } from '../device-flow.ts'
+import { runGhAction } from '../gh.ts'
+import { currentProxyKey, proxyFetch } from '../http.ts'
+import { repoAllowed } from '../policy.ts'
+import {
+  isPublicRepository as checkPublicRepository,
+  withRepositoryResponse,
+} from '../public-repo.ts'
 
 /** REST API origin. Overridable for GitHub Enterprise. */
-const DEFAULT_API = 'https://api.github.com';
+const DEFAULT_API = 'https://api.github.com'
 
 /** GitHub refuses a JWT whose `exp` is more than this many seconds after `iat`. */
-const MAX_JWT_LIFETIME_SECONDS = 600;
+const MAX_JWT_LIFETIME_SECONDS = 600
 
 /** Access levels, ordered, so a requested level can be compared against the granted one. */
-const ACCESS_LEVELS: Record<string, number> = { read: 1, write: 2, admin: 3 };
+const ACCESS_LEVELS: Record<string, number> = { read: 1, write: 2, admin: 3 }
 
 /** One account's installation of this app. */
 interface CachedInstallation {
-  readonly id: number;
-  readonly expiresAt: number;
+  readonly id: number
+  readonly expiresAt: number
 }
 
 /** Options for {@link createGithubAppProvider}. */
 export interface GithubAppProviderOptions {
   /** The host this provider serves. */
-  readonly host: string;
-  readonly cfg: GithubAppHostConfig;
+  readonly host: string
+  readonly cfg: GithubAppHostConfig
   /** Re-mint a cached token this many seconds before it expires. */
-  readonly skewSeconds?: number;
+  readonly skewSeconds?: number
   /** Transport, injectable for tests. */
-  readonly fetchImpl?: FetchLike;
+  readonly fetchImpl?: FetchLike
   /** Clock, injectable for tests. */
-  readonly now?: () => number;
-  /** gh executable, injectable for tests. */
-  readonly ghPath?: string;
+  readonly now?: () => number
+  /** Gh executable, injectable for tests. */
+  readonly ghPath?: string
   /** Host-side diagnostics. */
-  readonly log?: (message: string) => void;
+  readonly log?: (message: string) => void
 }
 
 /** Options for {@link signAppJwt}. */
 export interface SignAppJwtOptions {
-  readonly privateKeyPem: string;
-  readonly iss: string | number;
-  readonly nowMs: number;
-  readonly lifetimeSeconds?: number;
-  readonly skewSeconds?: number;
+  readonly privateKeyPem: string
+  readonly iss: string | number
+  readonly nowMs: number
+  readonly lifetimeSeconds?: number
+  readonly skewSeconds?: number
 }
 
 /**
  * Base64url-encode a string or buffer, without padding, as JWS requires.
  *
- * @param input - the value to encode.
- * @returns the base64url encoding.
+ * @param input - The value to encode.
+ * @returns The base64url encoding.
  */
 export function base64url(input: string | Buffer): string {
-  return Buffer.from(input).toString('base64url');
+  return Buffer.from(input).toString('base64url')
 }
 
 /**
  * Sign a GitHub App JWT.
  *
- * @param options - signing options.
- * @returns the compact JWS.
- * @throws {Error} when required inputs are missing or the lifetime exceeds GitHub's limit.
+ * @param options - Signing options.
+ * @returns The compact JWS.
+ * @throws {Error} When required inputs are missing or the lifetime exceeds GitHub's limit.
  */
 export function signAppJwt(options: SignAppJwtOptions): string {
-  const { privateKeyPem, iss, nowMs, lifetimeSeconds = MAX_JWT_LIFETIME_SECONDS, skewSeconds = 60 } = options;
-  if (!privateKeyPem) throw new Error('signAppJwt: privateKeyPem is required');
+  const {
+    privateKeyPem,
+    iss,
+    nowMs,
+    lifetimeSeconds = MAX_JWT_LIFETIME_SECONDS,
+    skewSeconds = 60,
+  } = options
+  if (!privateKeyPem) {
+    throw new Error('signAppJwt: privateKeyPem is required')
+  }
   if (iss === undefined || iss === null || iss === '') {
-    throw new Error('signAppJwt: iss (client ID or app ID) is required');
+    throw new Error('signAppJwt: iss (client ID or app ID) is required')
   }
   if (lifetimeSeconds > MAX_JWT_LIFETIME_SECONDS) {
     throw new Error(
       `signAppJwt: exp must be at most ${MAX_JWT_LIFETIME_SECONDS} seconds after iat (GitHub rejects anything longer)`,
-    );
+    )
   }
 
-  const nowSeconds = Math.floor(nowMs / 1000);
-  const header = { typ: 'JWT', alg: 'RS256' };
+  const nowSeconds = Math.floor(nowMs / 1000)
+  const header = { typ: 'JWT', alg: 'RS256' }
   const payload = {
     iat: nowSeconds - skewSeconds,
     exp: nowSeconds + lifetimeSeconds,
     iss: String(iss),
-  };
+  }
 
-  const signingInput = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(payload))}`;
-  const signature = createSign('RSA-SHA256').update(signingInput).sign(privateKeyPem);
-  return `${signingInput}.${base64url(signature)}`;
+  const signingInput = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(payload))}`
+  const signature = createSign('RSA-SHA256').update(signingInput).sign(privateKeyPem)
+  return `${signingInput}.${base64url(signature)}`
 }
 
 /**
  * Extract the `rel="next"` URL from a `Link` header.
  *
- * @param linkHeader - the raw header value.
- * @returns the next page URL, or null when there is none.
+ * @param linkHeader - The raw header value.
+ * @returns The next page URL, or null when there is none.
  */
 export function nextLink(linkHeader: string | null): string | null {
-  if (typeof linkHeader !== 'string') return null;
-  for (const part of linkHeader.split(',')) {
-    const match = /<([^>]+)>\s*;\s*rel="next"/.exec(part);
-    const url = match?.[1];
-    if (url) return url;
+  if (typeof linkHeader !== 'string') {
+    return null
   }
-  return null;
+  for (const part of linkHeader.split(',')) {
+    const match = /<([^>]+)>\s*;\s*rel="next"/.exec(part)
+    const url = match?.[1]
+    if (url) {
+      return url
+    }
+  }
+  return null
 }
 
 /**
  * Build a GitHub App provider for one host.
  *
- * @param options - provider options.
- * @returns the provider.
- * @throws {Error} when the private key or app identity is missing (fail fast).
+ * @param options - Provider options.
+ * @returns The provider.
+ * @throws {Error} When the private key or app identity is missing (fail fast).
  */
 export function createGithubAppProvider(options: GithubAppProviderOptions): Provider {
   const {
@@ -147,70 +175,82 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     now = () => Date.now(),
     ghPath,
     log = () => {},
-  } = options;
+  } = options
 
   const privateKeyPem = cfg.privateKeyPem
     ? cfg.privateKeyPem
     : cfg.privateKeyPath
       ? readFileSync(cfg.privateKeyPath, 'utf8')
-      : null;
+      : null
   if (!privateKeyPem) {
-    throw new Error(`github-app provider for ${host}: privateKeyPath (or privateKeyPem) is required`);
+    throw new Error(
+      `github-app provider for ${host}: privateKeyPath (or privateKeyPem) is required`,
+    )
   }
-  const keyPem: string = privateKeyPem;
+  const keyPem: string = privateKeyPem
 
   // Captured as an explicitly-typed local so the narrowing survives into `call`, which is
   // invoked later: `cfg.clientId ?? cfg.appId` is `string | number | undefined`.
-  const issuer: string | number | undefined = cfg.clientId ?? cfg.appId;
+  const issuer: string | number | undefined = cfg.clientId ?? cfg.appId
   if (issuer === undefined || issuer === null || issuer === '') {
-    throw new Error(`github-app provider for ${host}: clientId (preferred) or appId is required`);
+    throw new Error(`github-app provider for ${host}: clientId (preferred) or appId is required`)
   }
-  const iss: string | number = issuer;
+  const iss: string | number = issuer
 
-  const api = cfg.apiBaseUrl ?? DEFAULT_API;
-  const apiVersion = cfg.apiVersion ?? '2022-11-28';
-  const permissions = cfg.permissions ?? { contents: 'write' };
-  const checkPermissions = cfg.verifyAppPermissions !== false;
+  const api = cfg.apiBaseUrl ?? DEFAULT_API
+  const apiVersion = cfg.apiVersion ?? '2022-11-28'
+  const permissions = cfg.permissions ?? { contents: 'write' }
+  const checkPermissions = cfg.verifyAppPermissions !== false
   const installationTtlMs =
-    (typeof cfg.installationCacheSeconds === 'number' ? cfg.installationCacheSeconds : 600) * 1000;
+    (typeof cfg.installationCacheSeconds === 'number' ? cfg.installationCacheSeconds : 600) * 1000
 
   /**
    * What a log read asks for: nothing but the log.
    *
    * Deliberately not the configured `permissions`, which describe the credential git needs. A token
    * minted for those should not also be able to read CI logs, so a log read gets its own token,
-   * narrowed to `actions: read`. Whether the agent may read logs at all is then a question about the
-   * app's grant, not about anything running in the container.
+   * narrowed to `actions: read`. Whether the agent may read logs at all is then a question about
+   * the app's grant, not about anything running in the container.
    */
-  const LOG_PERMISSIONS: Record<string, string> = { actions: 'read' };
+  const LOG_PERMISSIONS: Record<string, string> = { actions: 'read' }
 
   /** How much of one log to return: enough to diagnose, bounded so one response stays sane. */
-  const LOG_LIMIT_CHARS = 200_000;
+  const LOG_LIMIT_CHARS = 200_000
 
   /**
    * What opening a pull request asks for: the permission the operation needs, plus read access to
    * the branches it names. Not the configured `permissions`, for the same reason a log read is not:
    * a token minted for git should not also be able to open a pull request.
    */
-  const PULL_REQUEST_PERMISSIONS: Record<string, string> = { pull_requests: 'write', contents: 'read' };
+  const PULL_REQUEST_PERMISSIONS: Record<string, string> = {
+    pull_requests: 'write',
+    contents: 'read',
+  }
   /** The result of an action that never reached the executor. */
-  const NO_RUN = { stdout: '', stderr: '', code: null, signal: null, truncated: false, timedOut: false };
-  const REVOKE_WARNING = 'the action token could not be revoked; it expires on its own';
+  const NO_RUN = {
+    stdout: '',
+    stderr: '',
+    code: null,
+    signal: null,
+    truncated: false,
+    timedOut: false,
+  }
+  const REVOKE_WARNING = 'the action token could not be revoked; it expires on its own'
 
-  /** owner login (lowercased) -> installation */
-  const installations = new Map<string, CachedInstallation>();
-  /** owner/repo -> minted credential */
-  const tokens = new Map<string, Credential>();
+  /** Owner login (lowercased) -> installation */
+  const installations = new Map<string, CachedInstallation>()
+  /** Owner/repo -> minted credential */
+  const tokens = new Map<string, Credential>()
   /** Cached pre-flight result, per owner: installations differ, so the answer does too. */
-  const permissionsChecked = new Map<string, Promise<void>>();
+  const permissionsChecked = new Map<string, Promise<void>>()
 
   /**
    * Name every configured permission a grant does not cover.
    *
-   * @param granted - the permission map to check against.
-   * @param from - how to refer to that map in the message.
-   * @param absent - how to describe a permission that is missing entirely.
-   * @returns one message per problem; empty when the grant covers the configuration.
+   * @param granted - The permission map to check against.
+   * @param from - How to refer to that map in the message.
+   * @param absent - How to describe a permission that is missing entirely.
+   * @returns One message per problem; empty when the grant covers the configuration.
    */
   function missingPermissions(
     wantedPermissions: Readonly<Record<string, string>>,
@@ -218,65 +258,69 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     from: string,
     absent: string,
   ): string[] {
-    const problems: string[] = [];
+    const problems: string[] = []
     for (const [name, wanted] of Object.entries(wantedPermissions)) {
-      const have = granted[name];
+      const have = granted[name]
       if (!have) {
-        problems.push(`${name}: ${absent}`);
-        continue;
+        problems.push(`${name}: ${absent}`)
+        continue
       }
       if ((ACCESS_LEVELS[wanted] ?? 0) > (ACCESS_LEVELS[have] ?? 0)) {
-        problems.push(`${name}: requested "${wanted}" but ${from} only has "${have}"`);
+        problems.push(`${name}: requested "${wanted}" but ${from} only has "${have}"`)
       }
     }
-    return problems;
+    return problems
   }
 
   /**
    * Call the REST API with a freshly signed app JWT.
    *
    * @param method - HTTP method.
-   * @param url - absolute URL.
-   * @param body - optional JSON body.
-   * @returns the parsed body and the Link header.
-   * @throws {Error} for a non-2xx response.
+   * @param url - Absolute URL.
+   * @param body - Optional JSON body.
+   * @returns The parsed body and the Link header.
+   * @throws {Error} For a non-2xx response.
    */
   async function call(
     method: string,
     url: string,
     body?: Record<string, unknown>,
   ): Promise<{ json: unknown; link: string | null }> {
-    const jwt = signAppJwt({ privateKeyPem: keyPem, iss, nowMs: now() });
+    const jwt = signAppJwt({ privateKeyPem: keyPem, iss, nowMs: now() })
     const headers: Record<string, string> = {
       accept: 'application/vnd.github+json',
       authorization: `Bearer ${jwt}`,
       'x-github-api-version': apiVersion,
       'user-agent': 'gcb',
-    };
-    if (body) headers['content-type'] = 'application/json';
+    }
+    if (body) {
+      headers['content-type'] = 'application/json'
+    }
 
     const response: FetchResponseLike = await fetchImpl(url, {
       method,
       headers,
       ...(body ? { body: JSON.stringify(body) } : {}),
-    });
+    })
 
-    const text = await response.text();
-    let json: unknown = null;
+    const text = await response.text()
+    let json: unknown = null
     try {
-      json = JSON.parse(text);
+      json = JSON.parse(text)
     } catch {
-      json = null;
+      json = null
     }
     if (!response.ok) {
       const message =
         json !== null && typeof json === 'object' && 'message' in json
           ? String((json as { message: unknown }).message)
-          : text.slice(0, 200);
+          : text.slice(0, 200)
       // The URL is safe to log (no secret); neither the JWT nor any token is included.
-      throw new Error(`GitHub API ${method} ${url.replace(api, '')} failed with ${response.status}: ${message}`);
+      throw new Error(
+        `GitHub API ${method} ${url.replace(api, '')} failed with ${response.status}: ${message}`,
+      )
     }
-    return { json, link: response.headers.get('link') };
+    return { json, link: response.headers.get('link') }
   }
 
   /**
@@ -286,10 +330,10 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
    * authorization — fetch drops the header across origins, which is what GitHub intends.
    *
    * @param method - HTTP method.
-   * @param url - absolute URL.
-   * @param token - the installation token to authenticate with.
-   * @returns the status and the body text.
-   * @throws {Error} for a non-2xx response.
+   * @param url - Absolute URL.
+   * @param token - The installation token to authenticate with.
+   * @returns The status and the body text.
+   * @throws {Error} For a non-2xx response.
    */
   async function callWithToken(
     method: string,
@@ -302,104 +346,120 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       authorization: `Bearer ${token}`,
       'x-github-api-version': apiVersion,
       'user-agent': 'gcb',
-    };
-    if (body) headers['content-type'] = 'application/json';
+    }
+    if (body) {
+      headers['content-type'] = 'application/json'
+    }
 
     const response = await fetchImpl(url, {
       method,
       headers,
       ...(body ? { body: JSON.stringify(body) } : {}),
-    });
-    const text = await response.text();
+    })
+    const text = await response.text()
     if (!response.ok) {
       // The URL is safe to name — the token is a header, not part of it — but the body is not: it can quote
       // the request, and it must never reach the container. So the message carries the endpoint and the
       // status, which is what a pusher may see, and the body rides beside it where only the host log looks.
       // The decision to write it there belongs to the broker, which owns that boundary; an error class
       // cannot make it, because a caller that re-wraps this to name a permission wraps it in the same class.
-      const detail = text.replace(/\s+/g, ' ').trim().slice(0, 400);
+      const detail = text.replace(/\s+/g, ' ').trim().slice(0, 400)
       const failure = new ProviderConfigError(
         `GitHub API ${method} ${url.replace(api, '')} answered ${response.status} for that request`,
-      );
-      if (detail !== '') Object.assign(failure, { hostDetail: detail });
-      throw failure;
+      )
+      if (detail !== '') {
+        Object.assign(failure, { hostDetail: detail })
+      }
+      throw failure
     }
-    return { status: response.status, text };
+    return { status: response.status, text }
   }
 
   /**
    * Resolve the installation id for an account, cached per owner.
    *
-   * @param owner - the repository owner as it appeared in the path.
-   * @returns the installation id.
-   * @throws {Error} when this app is not installed for that account.
+   * @param owner - The repository owner as it appeared in the path.
+   * @returns The installation id.
+   * @throws {Error} When this app is not installed for that account.
    */
   async function resolveInstallationId(owner: string): Promise<number> {
-    const key = owner.toLowerCase();
-    const cached = installations.get(key);
-    if (cached && cached.expiresAt > now()) return cached.id;
+    const key = owner.toLowerCase()
+    const cached = installations.get(key)
+    if (cached && cached.expiresAt > now()) {
+      return cached.id
+    }
 
-    let url: string | null = `${api}/app/installations?per_page=100`;
+    let url: string | null = `${api}/app/installations?per_page=100`
     for (let page = 0; page < 10 && url; page += 1) {
-      const { json, link } = await call('GET', url);
+      const { json, link } = await call('GET', url)
       if (Array.isArray(json)) {
         for (const entry of json) {
-          const installation = entry as { id?: unknown; account?: { login?: unknown } };
-          const login = installation.account?.login;
-          if (typeof login === 'string' && login.toLowerCase() === key && typeof installation.id === 'number') {
-            installations.set(key, { id: installation.id, expiresAt: now() + installationTtlMs });
-            return installation.id;
+          const installation = entry as { id?: unknown; account?: { login?: unknown } }
+          const login = installation.account?.login
+          if (
+            typeof login === 'string' &&
+            login.toLowerCase() === key &&
+            typeof installation.id === 'number'
+          ) {
+            installations.set(key, { id: installation.id, expiresAt: now() + installationTtlMs })
+            return installation.id
           }
         }
       }
-      url = nextLink(link);
+      url = nextLink(link)
     }
-    throw new Error(`no installation of this app has access to account "${owner}"`);
+    throw new Error(`no installation of this app has access to account "${owner}"`)
   }
 
   /**
    * Confirm both grants cover every permission the token request will ask for.
    *
-   * Two checks, because there are two ceilings. The app's permissions are what the app may ask for at
-   * all; the **installation's** are what it actually has, and a permission can be granted on the app
-   * while an installation has not approved the update. Checking only the app passes in that case and
-   * then fails at the token request, where the message is GitHub's and so cannot be handed to the
-   * container — which is how a permission problem became "see the broker log".
+   * Two checks, because there are two ceilings. The app's permissions are what the app may ask for
+   * at all; the **installation's** are what it actually has, and a permission can be granted on the
+   * app while an installation has not approved the update. Checking only the app passes in that
+   * case and then fails at the token request, where the message is GitHub's and so cannot be handed
+   * to the container — which is how a permission problem became "see the broker log".
    *
    * Cached per owner, since installations differ; a failed check is not cached, so fixing the
    * settings does not require restarting the broker.
    *
-   * @param owner - the account whose installation will be asked for a token.
-   * @returns resolves when the configured permissions are a subset of both grants.
-   * @throws {ProviderConfigError} naming each permission that is missing or granted at a lower level.
+   * @param owner - The account whose installation will be asked for a token.
+   * @returns Resolves when the configured permissions are a subset of both grants.
+   * @throws {ProviderConfigError} Naming each permission that is missing or granted at a lower
+   *   level.
    */
   function ensurePermissions(
     owner: string,
     wantedPermissions: Readonly<Record<string, string>> = permissions,
   ): Promise<void> {
-    if (!checkPermissions) return Promise.resolve();
+    if (!checkPermissions) {
+      return Promise.resolve()
+    }
     // Keyed by both, because a log read checks a different set than a credential does.
     const key = `${owner.toLowerCase()}|${currentProxyKey()}|${Object.entries(wantedPermissions)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([name, level]) => `${name}=${level}`)
-      .join(',')}`;
-    const cached = permissionsChecked.get(key);
-    if (cached) return cached;
+      .join(',')}`
+    const cached = permissionsChecked.get(key)
+    if (cached) {
+      return cached
+    }
 
     const pending = (async (): Promise<void> => {
-      const { json } = await call('GET', `${api}/app`);
-      const appGranted = (json as { permissions?: Record<string, string> } | null)?.permissions ?? {};
+      const { json } = await call('GET', `${api}/app`)
+      const appGranted =
+        (json as { permissions?: Record<string, string> } | null)?.permissions ?? {}
       const problems = missingPermissions(
         wantedPermissions,
         appGranted,
         'the app',
         'the app is not granted this permission at all',
-      );
+      )
 
-      const installationId = await resolveInstallationId(owner);
-      const { json: installation } = await call('GET', `${api}/app/installations/${installationId}`);
+      const installationId = await resolveInstallationId(owner)
+      const { json: installation } = await call('GET', `${api}/app/installations/${installationId}`)
       const installationGranted =
-        (installation as { permissions?: Record<string, string> } | null)?.permissions ?? {};
+        (installation as { permissions?: Record<string, string> } | null)?.permissions ?? {}
       problems.push(
         ...missingPermissions(
           wantedPermissions,
@@ -407,22 +467,22 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
           'this installation',
           'this installation has not approved it',
         ),
-      );
+      )
 
       if (problems.length > 0) {
         throw new ProviderConfigError(
           `the configured permissions for ${host} are not available (${problems.join('; ')}); ` +
             'grant them on the app, approve the update on the installation, or lower `permissions` ' +
             'in the broker config, or set "verifyAppPermissions": false to skip this check',
-        );
+        )
       }
     })().catch((error: unknown) => {
-      permissionsChecked.delete(key);
-      throw error;
-    });
+      permissionsChecked.delete(key)
+      throw error
+    })
 
-    permissionsChecked.set(key, pending);
-    return pending;
+    permissionsChecked.set(key, pending)
+    return pending
   }
 
   /**
@@ -433,64 +493,70 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
    * review", which `mergeable_state: blocked` alone cannot. Both are repository-scoped, so the
    * allowlist binds them.
    *
-   * @param request - which pull request.
-   * @param token - the installation token.
-   * @param collection - the repository's pull request route.
-   * @returns the number, URL, state and a short report.
+   * @param request - Which pull request.
+   * @param token - The installation token.
+   * @param collection - The repository's pull request route.
+   * @returns The number, URL, state and a short report.
    */
   async function readPullRequestStatus(
     request: PullRequestRequest,
     token: string,
     collection: string,
   ): Promise<PullRequest> {
-    const { text } = await callWithToken('GET', `${collection}/${request.number}`, token);
-    let parsed: unknown = null;
+    const { text } = await callWithToken('GET', `${collection}/${request.number}`, token)
+    let parsed: unknown = null
     try {
-      parsed = JSON.parse(text);
+      parsed = JSON.parse(text)
     } catch {
-      parsed = null;
+      parsed = null
     }
     const payload = (parsed ?? {}) as {
-      number?: unknown;
-      html_url?: unknown;
-      state?: unknown;
-      merged?: unknown;
-      mergeable_state?: unknown;
-      draft?: unknown;
-      head?: { sha?: unknown };
-    };
+      number?: unknown
+      html_url?: unknown
+      state?: unknown
+      merged?: unknown
+      mergeable_state?: unknown
+      draft?: unknown
+      head?: { sha?: unknown }
+    }
     if (typeof payload.number !== 'number' || typeof payload.html_url !== 'string') {
-      throw new ProviderConfigError('GitHub did not answer with a pull request');
+      throw new ProviderConfigError('GitHub did not answer with a pull request')
     }
 
     const lines = [
       `#${payload.number} ${String(payload.state ?? '?')}${payload.merged === true ? ' (merged)' : ''}${payload.draft === true ? ' (draft)' : ''}`,
       payload.html_url,
-    ];
+    ]
     if (typeof payload.mergeable_state === 'string') {
-      lines.push(`mergeable: ${payload.mergeable_state}`);
+      lines.push(`mergeable: ${payload.mergeable_state}`)
     }
 
-    const sha = (payload.head ?? {}).sha;
+    const sha = (payload.head ?? {}).sha
     if (typeof sha === 'string' && sha !== '') {
       const { text: listed } = await callWithToken(
         'GET',
         `${api}/repos/${request.owner}/${request.repo}/actions/runs?head_sha=${sha}&per_page=20`,
         token,
-      );
-      let runs: unknown = null;
+      )
+      let runs: unknown = null
       try {
-        runs = JSON.parse(listed);
+        runs = JSON.parse(listed)
       } catch {
-        runs = null;
+        runs = null
       }
-      const batch = ((runs ?? {}) as { workflow_runs?: unknown }).workflow_runs;
+      const batch = ((runs ?? {}) as { workflow_runs?: unknown }).workflow_runs
       if (Array.isArray(batch) && batch.length > 0) {
-        for (const run of batch as Array<{ name?: unknown; status?: unknown; conclusion?: unknown }>) {
-          lines.push(`run ${String(run.name ?? '?')}: ${String(run.conclusion ?? run.status ?? '?')}`);
+        for (const run of batch as Array<{
+          name?: unknown
+          status?: unknown
+          conclusion?: unknown
+        }>) {
+          lines.push(
+            `run ${String(run.name ?? '?')}: ${String(run.conclusion ?? run.status ?? '?')}`,
+          )
         }
       } else {
-        lines.push('no workflow run for that commit yet');
+        lines.push('no workflow run for that commit yet')
       }
     }
 
@@ -500,10 +566,10 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       state: typeof payload.state === 'string' ? payload.state : undefined,
       merged: payload.merged === true,
       status: lines.join('\n'),
-    };
+    }
   }
 
-  let cachedPersonToken: { token: string; until: number; source: string } | undefined;
+  let cachedPersonToken: { token: string; until: number; source: string } | undefined
   // One renewal at a time. GitHub documents neither what happens to a refresh token used twice nor a
   // grace period for it, so the honest reason is the failure that is certain rather than the one that is
   // documented: two exchanges racing means one of them renews from a token the other has already
@@ -511,133 +577,148 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
   // The refresh token on disk is one shared value; two renewals racing can invalidate it. Serialize
   // the exchange even when the commands selected different proxy routes, then let the waiter re-read
   // the cache the winner wrote. Each exchange still uses its own command's fetch.
-  let renewingPersonToken: Promise<string | undefined> | undefined;
+  let renewingPersonToken: Promise<string | undefined> | undefined
 
   /**
    * The token of the person this deployment authorized, when there is one.
    *
    * Only person-relevant actions may use it; GitHub will not author a pull request as a person for
    * an app, refuses to resolve a review thread for one, and a reply must be attributable to the
-   * person answering.
-   * The refresh token lives beside the private key, and GitHub rotates it on every use, so the new
-   * one is written back — keeping the old would work once and then stop.
+   * person answering. The refresh token lives beside the private key, and GitHub rotates it on
+   * every use, so the new one is written back — keeping the old would work once and then stop.
    *
-   * @returns the user token, or `undefined` when nobody has authorized one.
+   * @returns The user token, or `undefined` when nobody has authorized one.
    */
   async function personalToken(): Promise<string | undefined> {
     while (renewingPersonToken !== undefined) {
       try {
-        await renewingPersonToken;
+        await renewingPersonToken
       } catch {
         // The winner failed; this command retries after the lock is released.
       }
     }
-    const pending = renewPersonToken();
-    renewingPersonToken = pending;
+    const pending = renewPersonToken()
+    renewingPersonToken = pending
     try {
-      return await pending;
+      return await pending
     } finally {
-      if (renewingPersonToken === pending) renewingPersonToken = undefined;
+      if (renewingPersonToken === pending) {
+        renewingPersonToken = undefined
+      }
     }
   }
 
   /** The authorized person's token, falling back to the per-owner token for this owner. */
   async function personTokenFor(owner: string): Promise<string | undefined> {
-    const personal = await personalToken();
-    if (personal !== undefined) return personal;
-    const file = cfg.userTokens?.[owner];
-    if (file === undefined) return undefined;
-    const token = readFileSync(file, 'utf8').trim();
-    return token === '' ? undefined : token;
+    const personal = await personalToken()
+    if (personal !== undefined) {
+      return personal
+    }
+    const file = cfg.userTokens?.[owner]
+    if (file === undefined) {
+      return undefined
+    }
+    const token = readFileSync(file, 'utf8').trim()
+    return token === '' ? undefined : token
   }
 
   async function renewPersonToken(): Promise<string | undefined> {
-    if (cfg.clientId === undefined || cfg.privateKeyPath === undefined) return undefined;
-    const path = userTokenPath(cfg.privateKeyPath);
-    if (!existsSync(path)) return undefined;
-    const now = Date.now();
+    if (cfg.clientId === undefined || cfg.privateKeyPath === undefined) {
+      return undefined
+    }
+    const path = userTokenPath(cfg.privateKeyPath)
+    if (!existsSync(path)) {
+      return undefined
+    }
+    const now = Date.now()
     // The file is the only thing that says who the broker may act as, so it is read before the cache is
     // trusted: running `authorize` again — the documented way to change that person, and the only one —
     // has to take effect now rather than when the cached token happens to expire.
-    const held = readFileSync(path, 'utf8').trim();
+    const held = readFileSync(path, 'utf8').trim()
     if (
       cachedPersonToken !== undefined &&
       cachedPersonToken.until > now + 60_000 &&
       cachedPersonToken.source === held
     ) {
-      return cachedPersonToken.token;
+      return cachedPersonToken.token
     }
-    let next;
+    let next
     try {
-      next = await refreshUserToken(cfg.clientId, held, (url, init) => fetchImpl(url, init));
+      next = await refreshUserToken(cfg.clientId, held, (url, init) => fetchImpl(url, init))
     } catch (error) {
       // This is the one place a renewal failure is explained: the caller is an action that failed,
       // and "fetch failed" on its own names neither the host nor the reason.
       throw new Error(
         `could not renew the authorized token from ${path}: ${(error as Error).message}${describeCause(error)}`,
-      );
+        { cause: error },
+      )
     }
     if (next.refreshToken !== undefined) {
       try {
-        writeFileSync(path, `${next.refreshToken}\n`, { mode: 0o600 });
+        writeFileSync(path, `${next.refreshToken}\n`, { mode: 0o600 })
       } catch (error) {
         // GitHub invalidated the token on disk the moment it answered, so this is not transient and not
         // recoverable: the next renewal reads a dead token. Nothing else in the log would say so.
         throw new Error(
           `could not store the new refresh token in ${path}: ${(error as Error).message}; the previous ` +
             'one is no longer valid, so run authorize again',
-        );
+          { cause: error },
+        )
       }
     }
     cachedPersonToken = {
       token: next.token,
       until: now + (next.expiresInSeconds ?? 28_800) * 1_000,
       source: next.refreshToken ?? held,
-    };
-    return cachedPersonToken.token;
+    }
+    return cachedPersonToken.token
   }
 
-/**
- * One more sentence about a failure, when there is one worth having.
- *
- * `fetch failed` is the whole message undici gives for a connection problem and it names nothing useful;
- * the reason is on `cause`. This is for the host log, so it is allowed to carry detail.
- *
- * @param error - whatever was thrown.
- * @returns an empty string, or ` (the reason)`.
- */
-function describeCause(error: unknown): string {
-  const cause = (error as { cause?: { message?: unknown } } | null)?.cause?.message;
-  return typeof cause === 'string' && cause !== '' ? ` (${cause})` : '';
-}
+  /**
+   * One more sentence about a failure, when there is one worth having.
+   *
+   * `fetch failed` is the whole message undici gives for a connection problem and it names nothing
+   * useful; the reason is on `cause`. This is for the host log, so it is allowed to carry detail.
+   *
+   * @param error - Whatever was thrown.
+   * @returns An empty string, or ` (the reason)`.
+   */
+  function describeCause(error: unknown): string {
+    const cause = (error as { cause?: { message?: unknown } } | null)?.cause?.message
+    return typeof cause === 'string' && cause !== '' ? ` (${cause})` : ''
+  }
 
-/**
- * The pull request number in the URL GitHub returns for a pull request.
- *
- * A review comment carries the pull request it belongs to as `pull_request_url`, which is how a comment
- * id — one for the whole repository, not one per pull request — is tied back to the pull request named
- * on the command line.
- *
- * @param value - an `.../pulls/{number}` URL, as GitHub returns it.
- * @returns the number, or undefined when the value names none.
- */
-function pullRequestNumber(value: unknown): number | undefined {
-  if (typeof value !== 'string') return undefined;
-  const match = /\/pulls\/(\d+)\/?$/.exec(value);
-  if (match?.[1] === undefined) return undefined;
-  const number = Number(match[1]);
-  return Number.isInteger(number) && number > 0 ? number : undefined;
-}
+  /**
+   * The pull request number in the URL GitHub returns for a pull request.
+   *
+   * A review comment carries the pull request it belongs to as `pull_request_url`, which is how a
+   * comment id — one for the whole repository, not one per pull request — is tied back to the pull
+   * request named on the command line.
+   *
+   * @param value - An `.../pulls/{number}` URL, as GitHub returns it.
+   * @returns The number, or undefined when the value names none.
+   */
+  function pullRequestNumber(value: unknown): number | undefined {
+    if (typeof value !== 'string') {
+      return undefined
+    }
+    const match = /\/pulls\/(\d+)\/?$/.exec(value)
+    if (match?.[1] === undefined) {
+      return undefined
+    }
+    const number = Number(match[1])
+    return Number.isInteger(number) && number > 0 ? number : undefined
+  }
 
   /**
    * The installation ID GitHub reports for a specific repository.
    *
-   * @param owner - the repository owner.
-   * @param repo - the repository name.
-   * @returns the installation id, or undefined when the app is not installed there.
+   * @param owner - The repository owner.
+   * @param repo - The repository name.
+   * @returns The installation id, or undefined when the app is not installed there.
    */
   async function repositoryInstallation(owner: string, repo: string): Promise<number | undefined> {
-    const jwt = signAppJwt({ privateKeyPem: keyPem, iss, nowMs: now() });
+    const jwt = signAppJwt({ privateKeyPem: keyPem, iss, nowMs: now() })
     const response = await fetchImpl(`${api}/repos/${owner}/${repo}/installation`, {
       method: 'GET',
       headers: {
@@ -646,92 +727,110 @@ function pullRequestNumber(value: unknown): number | undefined {
         'x-github-api-version': apiVersion,
         'user-agent': 'gcb',
       },
-    });
-    if (response.status === 404) return undefined;
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`GitHub API GET /repos/${owner}/${repo}/installation failed with ${response.status}: ${text.slice(0, 200)}`);
+    })
+    if (response.status === 404) {
+      return undefined
     }
-    const body = JSON.parse(await response.text()) as { id?: unknown } | null;
-    return typeof body?.id === 'number' && Number.isInteger(body.id) && body.id > 0 ? body.id : undefined;
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(
+        `GitHub API GET /repos/${owner}/${repo}/installation failed with ${response.status}: ${text.slice(0, 200)}`,
+      )
+    }
+    const body = JSON.parse(await response.text()) as { id?: unknown } | null
+    return typeof body?.id === 'number' && Number.isInteger(body.id) && body.id > 0
+      ? body.id
+      : undefined
   }
 
   return {
     name: 'github-app',
 
     async runAction(request) {
-      const spec = getGhAction(request.action);
-      const identity = request.identity ?? 'app';
+      const spec = getGhAction(request.action)
+      const identity = request.identity ?? 'app'
       if (identity === 'app') {
-        const installationId = await repositoryInstallation(request.owner, request.repo);
+        const installationId = await repositoryInstallation(request.owner, request.repo)
         if (installationId === undefined) {
           throw new ProviderConfigError(
             `the app is not installed on ${request.owner}/${request.repo}; use --as-user, or install the app there`,
-          );
+          )
         }
-        const key = request.owner.toLowerCase();
-        const cached = installations.get(key);
+        const key = request.owner.toLowerCase()
+        const cached = installations.get(key)
         if (cached?.id !== installationId) {
-          installations.set(key, { id: installationId, expiresAt: now() + installationTtlMs });
+          installations.set(key, { id: installationId, expiresAt: now() + installationTtlMs })
           for (const permissionKey of permissionsChecked.keys()) {
-            if (permissionKey.startsWith(`${key}|`)) permissionsChecked.delete(permissionKey);
+            if (permissionKey.startsWith(`${key}|`)) {
+              permissionsChecked.delete(permissionKey)
+            }
           }
         }
       }
-      let token = '';
-      let minted = false;
+      let token = ''
+      let minted = false
       if (request.publicRead === true && identity === 'user') {
-        const person = await personTokenFor(request.owner);
+        const person = await personTokenFor(request.owner)
         if (person === undefined) {
           throw new ProviderConfigError(
             'no authorized user token for this action; run gcb authorize or configure userTokens',
-          );
+          )
         }
-        token = person;
+        token = person
       } else if (request.publicRead === true) {
         try {
-          const installationId = await resolveInstallationId(request.owner);
-          const { json } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
-            repositories: [request.repo],
-            permissions: { metadata: 'read' },
-          });
-          const publicToken = (json as { token?: unknown } | null)?.token;
+          const installationId = await resolveInstallationId(request.owner)
+          const { json } = await call(
+            'POST',
+            `${api}/app/installations/${installationId}/access_tokens`,
+            {
+              repositories: [request.repo],
+              permissions: { metadata: 'read' },
+            },
+          )
+          const publicToken = (json as { token?: unknown } | null)?.token
           if (typeof publicToken !== 'string' || publicToken === '') {
-            throw new ProviderConfigError('GitHub returned no metadata token for the public read');
+            throw new ProviderConfigError('GitHub returned no metadata token for the public read')
           }
-          token = publicToken;
-          minted = true;
+          token = publicToken
+          minted = true
         } catch (error) {
-          if (error instanceof ProviderConfigError) throw error;
+          if (error instanceof ProviderConfigError) {
+            throw error
+          }
           throw new ProviderConfigError(
             'the app needs an installation on this repository to read it with a metadata-only token',
-          );
+          )
         }
       } else if (identity === 'user') {
-        const person = await personTokenFor(request.owner);
+        const person = await personTokenFor(request.owner)
         if (person === undefined) {
           throw new ProviderConfigError(
             'no authorized user token for this action; run gcb authorize or configure userTokens',
-          );
+          )
         }
-        token = person;
+        token = person
       } else {
-        const wanted: Record<string, string> = { ...spec.permissions };
-        await ensurePermissions(request.owner, wanted);
-        const installationId = await resolveInstallationId(request.owner);
-        const { json } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
-          repositories: [request.repo],
-          permissions: wanted,
-        });
-        const mintedToken = (json as { token?: unknown } | null)?.token;
+        const wanted: Record<string, string> = { ...spec.permissions }
+        await ensurePermissions(request.owner, wanted)
+        const installationId = await resolveInstallationId(request.owner)
+        const { json } = await call(
+          'POST',
+          `${api}/app/installations/${installationId}/access_tokens`,
+          {
+            repositories: [request.repo],
+            permissions: wanted,
+          },
+        )
+        const mintedToken = (json as { token?: unknown } | null)?.token
         if (typeof mintedToken !== 'string' || !mintedToken) {
-          throw new ProviderConfigError('GitHub returned no installation token for the action');
+          throw new ProviderConfigError('GitHub returned no installation token for the action')
         }
-        token = mintedToken;
-        minted = true;
+        token = mintedToken
+        minted = true
       }
-      let result: ActionRunResult;
-      let warning: string | undefined;
+      let result: ActionRunResult
+      let warning: string | undefined
       try {
         result = await runGhAction({
           action: request.action,
@@ -742,9 +841,9 @@ function pullRequestNumber(value: unknown): number | undefined {
           ghPath,
           env: process.env,
           proxy: request.proxy,
-        });
+        })
       } catch (error) {
-        result = { ...NO_RUN, error: error instanceof Error ? error.message : String(error) };
+        result = { ...NO_RUN, error: error instanceof Error ? error.message : String(error) }
       } finally {
         if (minted) {
           try {
@@ -756,53 +855,63 @@ function pullRequestNumber(value: unknown): number | undefined {
                 'x-github-api-version': apiVersion,
                 'user-agent': 'gcb',
               },
-            });
+            })
             if (!response.ok) {
-              let detail = '';
+              let detail = ''
               try {
-                detail = (await response.text()).replace(/\s+/g, ' ').trim().slice(0, 200);
+                detail = (await response.text()).replace(/\s+/g, ' ').trim().slice(0, 200)
               } catch {
                 // The status is enough; a body that cannot be read is still not a successful revoke.
               }
-              log(`could not revoke the action token: GitHub answered ${response.status}${detail ? ` ${detail}` : ''}`);
-              warning = REVOKE_WARNING;
+              log(
+                `could not revoke the action token: GitHub answered ${response.status}${detail ? ` ${detail}` : ''}`,
+              )
+              warning = REVOKE_WARNING
             }
           } catch (error) {
-            log(`could not revoke the action token: ${String((error as Error).message ?? error)}`);
-            warning = REVOKE_WARNING;
+            log(`could not revoke the action token: ${String((error as Error).message ?? error)}`)
+            warning = REVOKE_WARNING
           }
         }
       }
-      return { ...result, tokenFingerprint: tokenFingerprint(token), ...(warning === undefined ? {} : { warning }) };
+      return {
+        ...result,
+        tokenFingerprint: tokenFingerprint(token),
+        ...(warning === undefined ? {} : { warning }),
+      }
     },
 
     async getCredential(request): Promise<Credential> {
-      const cached = tokens.get(request.full);
+      const cached = tokens.get(request.full)
       if (cached && cached.expiresAt - now() > skewSeconds * 1000) {
-        return { ...cached, cached: true };
+        return { ...cached, cached: true }
       }
 
-      await ensurePermissions(request.owner);
-      const installationId = await resolveInstallationId(request.owner);
-      const { json } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
-        repositories: [request.repo],
-        permissions,
-      });
+      await ensurePermissions(request.owner)
+      const installationId = await resolveInstallationId(request.owner)
+      const { json } = await call(
+        'POST',
+        `${api}/app/installations/${installationId}/access_tokens`,
+        {
+          repositories: [request.repo],
+          permissions,
+        },
+      )
 
-      const payload = (json ?? {}) as { token?: unknown; expires_at?: unknown };
+      const payload = (json ?? {}) as { token?: unknown; expires_at?: unknown }
       if (typeof payload.token !== 'string' || !payload.token) {
-        throw new Error('GitHub API returned no token for the installation access token request');
+        throw new Error('GitHub API returned no token for the installation access token request')
       }
       const expiresAt =
-        typeof payload.expires_at === 'string' ? Date.parse(payload.expires_at) : now() + 3_600_000;
+        typeof payload.expires_at === 'string' ? Date.parse(payload.expires_at) : now() + 3_600_000
 
       const credential: Credential = {
         username: 'x-access-token',
         password: payload.token,
         expiresAt,
-      };
-      tokens.set(request.full, credential);
-      return { ...credential, cached: false };
+      }
+      tokens.set(request.full, credential)
+      return { ...credential, cached: false }
     },
     /** Check a public fork with no credential; only confirmed fork relationships pass. */
     async isForkOf(owner: string, repo: string, bases: readonly string[]): Promise<boolean> {
@@ -811,31 +920,37 @@ function pullRequestNumber(value: unknown): number | undefined {
         api,
         `${owner}/${repo}`,
         { apiVersion, label: 'fork' },
-        async (response) => {
-          if (!response.ok) return false;
-          const text = await response.text();
+        async response => {
+          if (!response.ok) {
+            return false
+          }
+          const text = await response.text()
           let body: {
-            fork?: unknown;
-            parent?: { full_name?: unknown } | null;
-            source?: { full_name?: unknown } | null;
-          } | null;
+            fork?: unknown
+            parent?: { full_name?: unknown } | null
+            source?: { full_name?: unknown } | null
+          } | null
           try {
-            body = JSON.parse(text) as typeof body;
+            body = JSON.parse(text) as typeof body
           } catch {
-            return false;
+            return false
           }
-          if (body?.fork !== true) return false;
+          if (body?.fork !== true) {
+            return false
+          }
           for (const candidate of [body.parent?.full_name, body.source?.full_name]) {
-            if (typeof candidate === 'string' && repoAllowed(bases, candidate)) return true;
+            if (typeof candidate === 'string' && repoAllowed(bases, candidate)) {
+              return true
+            }
           }
-          return false;
+          return false
         },
-      );
+      )
     },
 
     /** Verify a public repository with no credential; a 403/429 is a provider error. */
     async isPublicRepository(owner: string, repo: string): Promise<boolean> {
-      return checkPublicRepository(fetchImpl, api, `${owner}/${repo}`, apiVersion);
+      return checkPublicRepository(fetchImpl, api, `${owner}/${repo}`, apiVersion)
     },
 
     /**
@@ -846,42 +961,48 @@ function pullRequestNumber(value: unknown): number | undefined {
      * repository could name any job this app can see — and it is the one that answers "Must have
      * admin rights", which is a permission this broker should never want.
      *
-     * @param request - the job to read.
-     * @returns the log text, bounded.
+     * @param request - The job to read.
+     * @returns The log text, bounded.
      */
     async getJobLog(request: JobLogRequest): Promise<JobLog> {
-      await ensurePermissions(request.owner, LOG_PERMISSIONS);
-      const installationId = await resolveInstallationId(request.owner);
-      const { json } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
-        repositories: [request.repo],
-        permissions: LOG_PERMISSIONS,
-      });
-      const token = (json as { token?: unknown } | null)?.token;
+      await ensurePermissions(request.owner, LOG_PERMISSIONS)
+      const installationId = await resolveInstallationId(request.owner)
+      const { json } = await call(
+        'POST',
+        `${api}/app/installations/${installationId}/access_tokens`,
+        {
+          repositories: [request.repo],
+          permissions: LOG_PERMISSIONS,
+        },
+      )
+      const token = (json as { token?: unknown } | null)?.token
       if (typeof token !== 'string' || !token) {
-        throw new ProviderConfigError('GitHub returned no installation token for the log request');
+        throw new ProviderConfigError('GitHub returned no installation token for the log request')
       }
 
-      let text: string;
+      let text: string
       try {
         const body = await callWithToken(
           'GET',
           `${api}/repos/${request.owner}/${request.repo}/actions/jobs/${request.jobId}/logs`,
           token,
-        );
-        text = body.text;
+        )
+        text = body.text
       } catch (error) {
         // A 404 here has two ordinary causes, and neither is a broker fault: the job is not in that
         // repository, or the run it belongs to has not finished — the endpoint serves no log at all
         // while a job is still running.
         throw new ProviderConfigError(
           `${(error as Error).message}; the job has to exist in that repository, and a run that is still in progress has no log yet`,
-        );
+        )
       }
-      if (text.length <= LOG_LIMIT_CHARS) return { text, truncated: false };
+      if (text.length <= LOG_LIMIT_CHARS) {
+        return { text, truncated: false }
+      }
       return {
         text: `${text.slice(0, LOG_LIMIT_CHARS)}\n… log truncated at ${LOG_LIMIT_CHARS} characters\n`,
         truncated: true,
-      };
+      }
     },
 
     /**
@@ -890,73 +1011,86 @@ function pullRequestNumber(value: unknown): number | undefined {
      * The same shape as a log read: its own token, narrowed to what the operation needs, and the
      * repository-scoped route, so the allowlist binds it by construction.
      *
-     * @param request - the branches and the text.
-     * @returns the number and the URL GitHub answered with.
+     * @param request - The branches and the text.
+     * @returns The number and the URL GitHub answered with.
      */
     async pullRequest(request: PullRequestRequest): Promise<PullRequest> {
       if (request.action === 'fork') {
-        const token = await personTokenFor(request.owner);
+        const token = await personTokenFor(request.owner)
         if (token === undefined) {
-          throw new ProviderConfigError('no user token for fork; run gcb authorize or configure userTokens');
+          throw new ProviderConfigError(
+            'no user token for fork; run gcb authorize or configure userTokens',
+          )
         }
-        const { text } = await callWithToken('POST', `${api}/repos/${request.owner}/${request.repo}/forks`, token);
-        let payload: unknown = null;
+        const { text } = await callWithToken(
+          'POST',
+          `${api}/repos/${request.owner}/${request.repo}/forks`,
+          token,
+        )
+        let payload: unknown = null
         try {
-          payload = JSON.parse(text);
+          payload = JSON.parse(text)
         } catch {
-          payload = null;
+          payload = null
         }
-        const forked = (payload ?? {}) as { full_name?: unknown; html_url?: unknown };
+        const forked = (payload ?? {}) as { full_name?: unknown; html_url?: unknown }
         if (typeof forked.full_name !== 'string' || typeof forked.html_url !== 'string') {
-          throw new ProviderConfigError('GitHub did not answer with a fork');
+          throw new ProviderConfigError('GitHub did not answer with a fork')
         }
-        return { number: 0, url: forked.html_url };
+        return { number: 0, url: forked.html_url }
       }
 
       // The person is selected explicitly, and by default for the two operations an installation token
       // cannot perform (open/resolve): requiring an installation as well would refuse a repository the
       // app was never installed on — the fork-to-upstream case the allowlist exists to permit. Reply,
       // edit and comment stay on the app unless identity is explicitly 'user'.
-      const wantsApp = request.identity === 'app';
+      const wantsApp = request.identity === 'app'
       const personalForThis =
         request.identity === 'user' ||
-        (!wantsApp && (request.action === 'open' || request.action === 'resolve'));
-      const actingToken = personalForThis ? await personTokenFor(request.owner) : undefined;
+        (!wantsApp && (request.action === 'open' || request.action === 'resolve'))
+      const actingToken = personalForThis ? await personTokenFor(request.owner) : undefined
       // Resolving has no app route: the thread mutation is refused for an installation token, so a
       // missing person token is a configuration error, not a reason to mint the wrong credential.
-      const personRequired = request.identity === 'user' || request.action === 'resolve';
+      const personRequired = request.identity === 'user' || request.action === 'resolve'
       if (personRequired && actingToken === undefined) {
         throw new ProviderConfigError(
           `no authorized user token for ${request.action === 'resolve' ? 'resolving this thread' : 'this request'}; run gcb authorize or configure userTokens`,
-        );
+        )
       }
 
       // `--status` also reads /actions/runs, which is checked against actions: read. Pre-flighting
       // pull_requests alone passed a grant that could not make that call, which is the opposite of what a
       // pre-flight is for.
       const wanted =
-        request.action === 'status' ? { ...PULL_REQUEST_PERMISSIONS, actions: 'read' } : PULL_REQUEST_PERMISSIONS;
+        request.action === 'status'
+          ? { ...PULL_REQUEST_PERMISSIONS, actions: 'read' }
+          : PULL_REQUEST_PERMISSIONS
 
       // One variable, so every branch below holds a token without having to ask which kind it is.
-      let token: string | undefined;
+      let token: string | undefined
       if (actingToken === undefined) {
-        await ensurePermissions(request.owner, wanted);
-        const installationId = await resolveInstallationId(request.owner);
-        const { json: minted } = await call('POST', `${api}/app/installations/${installationId}/access_tokens`, {
-          repositories: [request.repo],
-          permissions: wanted,
-        });
-        const mintedToken = (minted as { token?: unknown } | null)?.token;
+        await ensurePermissions(request.owner, wanted)
+        const installationId = await resolveInstallationId(request.owner)
+        const { json: minted } = await call(
+          'POST',
+          `${api}/app/installations/${installationId}/access_tokens`,
+          {
+            repositories: [request.repo],
+            permissions: wanted,
+          },
+        )
+        const mintedToken = (minted as { token?: unknown } | null)?.token
         if (typeof mintedToken !== 'string' || !mintedToken) {
-          throw new ProviderConfigError('GitHub returned no installation token for the pull request');
+          throw new ProviderConfigError(
+            'GitHub returned no installation token for the pull request',
+          )
         }
-        token = mintedToken;
+        token = mintedToken
       } else {
-        token = actingToken;
+        token = actingToken
       }
 
-      const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`;
-
+      const collection = `${api}/repos/${request.owner}/${request.repo}/pulls`
 
       if (request.action === 'resolve') {
         // Resolving has no REST endpoint either. The thread id is the one `--threads` prints.
@@ -967,15 +1101,15 @@ function pullRequestNumber(value: unknown): number | undefined {
           query:
             'query($threadId:ID!){node(id:$threadId){... on PullRequestReviewThread{pullRequest{repository{nameWithOwner}}}}}',
           variables: { threadId: request.threadId },
-        });
-        let belongsTo: unknown;
+        })
+        let belongsTo: unknown
         try {
           const parsed = JSON.parse(scoped) as {
-            data?: { node?: { pullRequest?: { repository?: { nameWithOwner?: unknown } } } };
-          };
-          belongsTo = parsed.data?.node?.pullRequest?.repository?.nameWithOwner;
+            data?: { node?: { pullRequest?: { repository?: { nameWithOwner?: unknown } } } }
+          }
+          belongsTo = parsed.data?.node?.pullRequest?.repository?.nameWithOwner
         } catch {
-          belongsTo = undefined;
+          belongsTo = undefined
         }
         if (
           typeof belongsTo !== 'string' ||
@@ -984,37 +1118,44 @@ function pullRequestNumber(value: unknown): number | undefined {
           // A plain Error on purpose: this is the host log's business, not the container's.
           throw new Error(
             `refusing to resolve ${request.threadId}: it is not a review thread of ${request.owner}/${request.repo}` +
-              (typeof belongsTo === 'string' ? ` (it belongs to ${belongsTo})` : ' (or it could not be read)'),
-          );
+              (typeof belongsTo === 'string'
+                ? ` (it belongs to ${belongsTo})`
+                : ' (or it could not be read)'),
+          )
         }
 
         const { text: raw } = await callWithToken('POST', `${api}/graphql`, token, {
           query:
             'mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}',
           variables: { threadId: request.threadId ?? '' },
-        });
-        let answer: unknown = null;
+        })
+        let answer: unknown = null
         try {
-          answer = JSON.parse(raw);
+          answer = JSON.parse(raw)
         } catch {
-          answer = null;
+          answer = null
         }
         const state = (answer ?? {}) as {
-          data?: { resolveReviewThread?: { thread?: { isResolved?: unknown } } };
-          errors?: unknown;
-        };
+          data?: { resolveReviewThread?: { thread?: { isResolved?: unknown } } }
+          errors?: unknown
+        }
         // A plain Error, not a ProviderConfigError: GraphQL answers in a response body, and those
         // are not passed to the container.
         if (Array.isArray(state.errors) && state.errors.length > 0) {
           // The reason belongs in the host log, which is where a plain Error goes: the broker answers
           // the container generically for one, so nothing from a response body crosses the socket.
-          throw new Error(`GitHub refused to resolve that review thread: ${JSON.stringify(state.errors).slice(0, 300)}`);
+          throw new Error(
+            `GitHub refused to resolve that review thread: ${JSON.stringify(state.errors).slice(0, 300)}`,
+          )
         }
         return {
           number: request.number ?? 0,
           url: '',
-          status: state.data?.resolveReviewThread?.thread?.isResolved === true ? 'resolved' : 'still open',
-        };
+          status:
+            state.data?.resolveReviewThread?.thread?.isResolved === true
+              ? 'resolved'
+              : 'still open',
+        }
       }
 
       if (request.action === 'reply') {
@@ -1025,8 +1166,8 @@ function pullRequestNumber(value: unknown): number | undefined {
           `${collection}/${request.number}/comments/${String(request.commentId ?? 0)}/replies`,
           token,
           { body: request.body ?? '' },
-        );
-        return { number: request.number ?? 0, url: '' };
+        )
+        return { number: request.number ?? 0, url: '' }
       }
 
       if (request.action === 'edit') {
@@ -1034,19 +1175,21 @@ function pullRequestNumber(value: unknown): number | undefined {
         // one per pull request. The route therefore carries no pull request number and the CLI asks for
         // none: the number to report is the one the comment itself names, read back from the answer
         // rather than echoed from the request. The repository in the path is what the allowlist binds.
-        const endpoint = `${api}/repos/${request.owner}/${request.repo}/pulls/comments/${String(request.commentId ?? 0)}`;
-        const { text: edited } = await callWithToken('PATCH', endpoint, token, { body: request.body ?? '' });
-        let changed: unknown = null;
+        const endpoint = `${api}/repos/${request.owner}/${request.repo}/pulls/comments/${String(request.commentId ?? 0)}`
+        const { text: edited } = await callWithToken('PATCH', endpoint, token, {
+          body: request.body ?? '',
+        })
+        let changed: unknown = null
         try {
-          changed = JSON.parse(edited);
+          changed = JSON.parse(edited)
         } catch {
-          changed = null;
+          changed = null
         }
-        const html = (changed ?? {}) as { html_url?: unknown; pull_request_url?: unknown };
+        const html = (changed ?? {}) as { html_url?: unknown; pull_request_url?: unknown }
         return {
           number: pullRequestNumber(html.pull_request_url) ?? request.number ?? 0,
           url: typeof html.html_url === 'string' ? html.html_url : '',
-        };
+        }
       }
 
       if (request.action === 'threads') {
@@ -1056,103 +1199,131 @@ function pullRequestNumber(value: unknown): number | undefined {
           query:
             'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:50){totalCount nodes{id isResolved path line comments(first:10){nodes{databaseId author{login} body}}}}}}}',
           variables: { owner: request.owner, name: request.repo, number: request.number },
-        });
-        let listed: unknown;
+        })
+        let listed: unknown
         try {
-          listed = JSON.parse(raw);
+          listed = JSON.parse(raw)
         } catch {
-          throw new Error('GitHub did not answer with review-thread JSON');
+          throw new Error('GitHub did not answer with review-thread JSON')
         }
         // A refusal that reads as "no threads" is worse than one that reads as a refusal: malformed
         // JSON, a GraphQL error, and a missing reviewThreads shape are all failures, not an empty list.
         if (listed === null || typeof listed !== 'object') {
-          throw new Error('GitHub did not answer with review-thread JSON');
+          throw new Error('GitHub did not answer with review-thread JSON')
         }
-        const refused = listed as { errors?: unknown };
+        const refused = listed as { errors?: unknown }
         if (Array.isArray(refused.errors) && refused.errors.length > 0) {
-          throw new Error(`GitHub refused to list the review threads: ${JSON.stringify(refused.errors).slice(0, 300)}`);
+          throw new Error(
+            `GitHub refused to list the review threads: ${JSON.stringify(refused.errors).slice(0, 300)}`,
+          )
         }
         const data = listed as {
-          data?: { repository?: { pullRequest?: { reviewThreads?: { nodes?: unknown; totalCount?: unknown } } } };
-        };
-        const threads = data.data?.repository?.pullRequest?.reviewThreads;
+          data?: {
+            repository?: {
+              pullRequest?: { reviewThreads?: { nodes?: unknown; totalCount?: unknown } }
+            }
+          }
+        }
+        const threads = data.data?.repository?.pullRequest?.reviewThreads
         if (threads === undefined || threads === null) {
-          throw new Error('GitHub did not answer with reviewThreads');
+          throw new Error('GitHub did not answer with reviewThreads')
         }
         if (!Array.isArray(threads.nodes)) {
-          throw new Error('GitHub did not answer with reviewThreads.nodes');
+          throw new Error('GitHub did not answer with reviewThreads.nodes')
         }
-        if (typeof threads.totalCount !== 'number' || !Number.isInteger(threads.totalCount) || threads.totalCount < 0) {
-          throw new Error('GitHub did not answer with reviewThreads.totalCount');
+        if (
+          typeof threads.totalCount !== 'number' ||
+          !Number.isInteger(threads.totalCount) ||
+          threads.totalCount < 0
+        ) {
+          throw new Error('GitHub did not answer with reviewThreads.totalCount')
         }
         if (threads.totalCount > 0 && threads.nodes.length === 0) {
-          throw new Error('GitHub answered with a thread count but no threads');
+          throw new Error('GitHub answered with a thread count but no threads')
         }
-        const nodes = threads.nodes;
-        const report: string[] = [];
+        const nodes = threads.nodes
+        const report: string[] = []
         for (const node of nodes as Array<{
-          id?: unknown;
-          isResolved?: unknown;
-          path?: unknown;
-          line?: unknown;
-          comments?: { nodes?: unknown };
+          id?: unknown
+          isResolved?: unknown
+          path?: unknown
+          line?: unknown
+          comments?: { nodes?: unknown }
         }>) {
           if (typeof node.id !== 'string' || node.id === '') {
-            throw new Error('GitHub did not answer with a review-thread id');
+            throw new Error('GitHub did not answer with a review-thread id')
           }
           // The id is the handle `--resolve` needs; the body is the finding. Both are required.
           report.push(
             `${node.isResolved === true ? 'resolved' : 'open    '} ${node.id}  ${String(node.path ?? '')}:${String(node.line ?? '')}`,
-          );
-          const comments = node.comments?.nodes;
+          )
+          const comments = node.comments?.nodes
           if (!Array.isArray(comments)) {
-            throw new Error('GitHub did not answer with review-thread comments');
+            throw new Error('GitHub did not answer with review-thread comments')
           }
           for (const comment of comments as Array<{
-            databaseId?: unknown;
-            author?: { login?: unknown };
-            body?: unknown;
+            databaseId?: unknown
+            author?: { login?: unknown }
+            body?: unknown
           }>) {
             // The whole comment, not its first line and not 120 characters of it: a review bot puts the finding
             // in the lines below the header, and a report that drops them sends the reader to the web UI for the
             // one thing this command exists to show.
             if (typeof comment.body !== 'string') {
-              throw new Error('GitHub did not answer with a review-comment body');
+              throw new Error('GitHub did not answer with a review-comment body')
             }
-            const body = comment.body;
+            const body = comment.body
             // The prose, not the first twelve lines of the comment: a review bot prefixes its finding with the
             // commands it ran and a fence of their output, so counting raw lines reads the preamble and never
             // reaches the claim. Fences and the bot's own metadata lines are dropped, and the cap then applies to
             // what is left, which is what the reader wants and what the writer meant.
-            const bodyLines = body.split('\n');
-            const kept: string[] = [];
-            let inFence = false;
+            const bodyLines = body.split('\n')
+            const kept: string[] = []
+            let inFence = false
             for (const raw of bodyLines) {
-              const line = raw.trim();
-              if (line.startsWith('```')) { inFence = !inFence; continue; }
-              if (inFence) continue;
-              if (/^(🏁|🔎|⚙️|🌐|💡|💬|🔗|Repository:|Length of output:|Proposed fix$|---$|_?\s*[🔒📐🎯🩺🟡🟠])/u.test(line)) continue;
-              kept.push(line.replace(/<\/?[a-z][^>]*>/gi, '').trim());
+              const line = raw.trim()
+              if (line.startsWith('```')) {
+                inFence = !inFence
+                continue
+              }
+              if (inFence) {
+                continue
+              }
+              if (
+                /^(🏁|🔎|⚙️|🌐|💡|💬|🔗|Repository:|Length of output:|Proposed fix$|---$|_?\s*[🔒📐🎯🩺🟡🟠])/u.test(
+                  line,
+                )
+              ) {
+                continue
+              }
+              kept.push(line.replace(/<\/?[a-z][^>]*>/gi, '').trim())
             }
-            const visible = kept.filter((line) => line !== '');
-            const shown = visible.slice(0, 14);
-            const more = visible.length > shown.length ? ` (+${visible.length - shown.length} more lines)` : '';
-            report.push(`    ${String(comment.databaseId ?? '')} @${String(comment.author?.login ?? '?')}:${more}`);
-            for (const line of shown) report.push(`      ${line.slice(0, 300)}`);
+            const visible = kept.filter(line => line !== '')
+            const shown = visible.slice(0, 14)
+            const more =
+              visible.length > shown.length ? ` (+${visible.length - shown.length} more lines)` : ''
+            report.push(
+              `    ${String(comment.databaseId ?? '')} @${String(comment.author?.login ?? '?')}:${more}`,
+            )
+            for (const line of shown) {
+              report.push(`      ${line.slice(0, 300)}`)
+            }
           }
         }
         // A page is not the whole list. Saying which it is is the difference between a report and a guess.
-        const shown = nodes.length;
-        const total = threads.totalCount;
+        const shown = nodes.length
+        const total = threads.totalCount
         if (total > shown) {
-          report.push(`... and ${total - shown} more: this asks for the first 50 threads, and the first 10 comments of each`);
+          report.push(
+            `... and ${total - shown} more: this asks for the first 50 threads, and the first 10 comments of each`,
+          )
         }
 
         return {
           number: request.number ?? 0,
           url: '',
           status: report.length > 0 ? report.join('\n') : 'no review threads on this pull request',
-        };
+        }
       }
 
       if (request.action === 'comment') {
@@ -1176,28 +1347,34 @@ function pullRequestNumber(value: unknown): number | undefined {
                   },
                 ],
               }),
-        });
-        const { text: after } = await callWithToken('GET', `${collection}/${request.number}`, token);
-        let read: unknown = null;
+        })
+        const { text: after } = await callWithToken('GET', `${collection}/${request.number}`, token)
+        let read: unknown = null
         try {
-          read = JSON.parse(after);
+          read = JSON.parse(after)
         } catch {
-          read = null;
+          read = null
         }
-        const html = (read ?? {}) as { html_url?: unknown };
+        const html = (read ?? {}) as { html_url?: unknown }
         return {
           number: request.number ?? 0,
           url: typeof html.html_url === 'string' ? html.html_url : '',
-        };
+        }
       }
 
       if (request.action === 'status') {
-        return readPullRequestStatus(request, token, collection);
+        return readPullRequestStatus(request, token, collection)
       }
-      let text: string;
-      const method = 'POST';
-      const url = collection;
-      const body: Record<string, unknown> = { title: request.title, body: request.body, head: request.head, base: request.base, draft: request.draft === true };
+      let text: string
+      const method = 'POST'
+      const url = collection
+      const body: Record<string, unknown> = {
+        title: request.title,
+        body: request.body,
+        head: request.head,
+        base: request.base,
+        draft: request.draft === true,
+      }
 
       try {
         // as theirs, which is what automated reviewers recognise. The token itself is as wide as that person —
@@ -1206,36 +1383,42 @@ function pullRequestNumber(value: unknown): number | undefined {
         // Creating a pull request as a person, and resolving a review thread: the two things an
         // installation token is refused for. A token per owner is the older, narrower way and is still
         // used when there is one; the authorized token answers for every owner at once.
-      // Resolved above, where it also decided whether the app had to be asked at all.
-        ({ text } = await callWithToken(method, url, actingToken ?? token, body));
+        // Resolved above, where it also decided whether the app had to be asked at all.
+        ;({ text } = await callWithToken(method, url, actingToken ?? token, body))
       } catch (error) {
         // A permission sentence is composed here and is worth passing through; the host-only detail, if
         // the failure carried any, is carried across rather than put in the message the pusher sees.
         const wrapped = new ProviderConfigError(
           `${(error as Error).message}${describeCause(error)}; this needs the pull_requests: write permission on both the app and this installation`,
-        );
-        const detail = (error as { hostDetail?: string }).hostDetail;
-        if (detail !== undefined) Object.assign(wrapped, { hostDetail: detail });
-        throw wrapped;
+        )
+        const detail = (error as { hostDetail?: string }).hostDetail
+        if (detail !== undefined) {
+          Object.assign(wrapped, { hostDetail: detail })
+        }
+        throw wrapped
       }
 
-      let parsed: unknown = null;
+      let parsed: unknown = null
       try {
-        parsed = JSON.parse(text);
+        parsed = JSON.parse(text)
       } catch {
-        parsed = null;
+        parsed = null
       }
-      const payload = (parsed ?? {}) as { number?: unknown; html_url?: unknown; state?: unknown; merged?: unknown };
+      const payload = (parsed ?? {}) as {
+        number?: unknown
+        html_url?: unknown
+        state?: unknown
+        merged?: unknown
+      }
       if (typeof payload.number !== 'number' || typeof payload.html_url !== 'string') {
-        throw new ProviderConfigError('GitHub did not answer with a pull request');
+        throw new ProviderConfigError('GitHub did not answer with a pull request')
       }
       return {
         number: payload.number,
         url: payload.html_url,
         state: typeof payload.state === 'string' ? payload.state : undefined,
         merged: payload.merged === true,
-      };
+      }
     },
-
-  };
+  }
 }

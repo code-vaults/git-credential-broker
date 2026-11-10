@@ -1,72 +1,72 @@
 /**
  * Shared types for the broker, the helper and their tests.
  *
- * Everything here is a compile-time-only construct (`interface`/`type`), which keeps the
- * sources erasable: Node can run the `.ts` files directly by stripping the annotations,
- * and `tsc` produces the shipped JavaScript without any runtime helper.
+ * Everything here is a compile-time-only construct (`interface`/`type`), which keeps the sources
+ * erasable: Node can run the `.ts` files directly by stripping the annotations, and `tsc` produces
+ * the shipped JavaScript without any runtime helper.
  */
 
-import type { ActionValues } from './actions.ts';
+import type { ActionValues } from './actions.ts'
 
 /** A repository reference, normalized out of git's `path=` field. */
 export interface RepoRef {
-  readonly owner: string;
-  readonly repo: string;
+  readonly owner: string
+  readonly repo: string
   /** The normalized `owner/repo` form used for allowlist matching and audit records. */
-  readonly full: string;
+  readonly full: string
 }
 
 /** What the broker asks a provider to run. */
 export interface ActionRequest {
-  readonly host: string;
-  readonly owner: string;
-  readonly repo: string;
+  readonly host: string
+  readonly owner: string
+  readonly repo: string
   /** The normalized owner/repo form. */
-  readonly full: string;
-  readonly action: string;
-  readonly values: ActionValues;
+  readonly full: string
+  readonly action: string
+  readonly values: ActionValues
   /** Who acts for an action that supports a person: `user` uses the authorized token. */
-  readonly identity?: 'app' | 'user';
+  readonly identity?: 'app' | 'user'
   /** Per-command proxy override: absent = host env, null = direct, string = proxy URL. */
-  readonly proxy?: string | null;
+  readonly proxy?: string | null
   /** Run through the public-read path after the repository was verified public. */
-  readonly publicRead?: boolean;
+  readonly publicRead?: boolean
 }
 
 /** The bounded result of one action. */
 export interface ActionRunResult {
-  readonly stdout: string;
-  readonly stderr: string;
-  readonly code: number | null;
-  readonly signal: NodeJS.Signals | null;
-  readonly truncated: boolean;
-  readonly timedOut: boolean;
-  readonly error?: string;
+  readonly stdout: string
+  readonly stderr: string
+  readonly code: number | null
+  readonly signal: NodeJS.Signals | null
+  readonly truncated: boolean
+  readonly timedOut: boolean
+  readonly error?: string
   /** SHA-256 prefix of the action token, for the audit record only. */
-  readonly tokenFingerprint?: string;
+  readonly tokenFingerprint?: string
   /** Set when the token could not be revoked and so expires on its own. */
-  readonly warning?: string;
+  readonly warning?: string
 }
 
 /** One credential, as handed to git by the helper. */
 export interface Credential {
-  readonly username: string;
-  readonly password: string;
+  readonly username: string
+  readonly password: string
   /** Epoch milliseconds after which this credential must not be reused. */
-  readonly expiresAt: number;
+  readonly expiresAt: number
   /** Whether the broker answered from its cache instead of minting. */
-  readonly cached?: boolean;
+  readonly cached?: boolean
 }
 
 /** What a provider is asked to produce a credential for. */
 export interface CredentialRequest {
   /** Per-command proxy override: absent = host env, null = direct, string = proxy URL. */
-  readonly proxy?: string | null;
+  readonly proxy?: string | null
   /** The configured host key, not the raw value the client sent. */
-  readonly host: string;
-  readonly owner: string;
-  readonly repo: string;
-  readonly full: string;
+  readonly host: string
+  readonly owner: string
+  readonly repo: string
+  readonly full: string
 }
 
 /** A credential source for exactly one host. */
@@ -77,38 +77,38 @@ export interface Provider {
    * The broker has already validated the action name, repository and values; this method owns the
    * token and the host process.
    */
-  runAction?(request: ActionRequest): Promise<ActionRunResult>;
+  runAction?(request: ActionRequest): Promise<ActionRunResult>
   /** Whether an unauthenticated request sees this repository as public. */
-  isPublicRepository?(owner: string, repo: string): Promise<boolean>;
+  isPublicRepository?(owner: string, repo: string): Promise<boolean>
   /** Whether this repository is a fork of one of the allowed repositories. */
-  isForkOf?(owner: string, repo: string, bases: readonly string[]): Promise<boolean>;
-  readonly name: string;
-  getCredential(request: CredentialRequest): Promise<Credential>;
+  isForkOf?(owner: string, repo: string, bases: readonly string[]): Promise<boolean>
+  readonly name: string
+  getCredential(request: CredentialRequest): Promise<Credential>
   /**
    * Read one workflow job's log, when this provider can.
    *
    * Optional, and separate from {@link Provider.getCredential} on purpose: reading a log is not
    * minting a credential. The broker refuses the operation when a provider does not implement it.
    */
-  getJobLog?(request: JobLogRequest): Promise<JobLog>;
+  getJobLog?(request: JobLogRequest): Promise<JobLog>
   /**
    * Open one pull request, when this provider can.
    *
    * Separate from {@link Provider.getCredential} for the same reason as {@link Provider.getJobLog}:
    * the token this mints asks for what a pull request needs, and nothing that a push needs.
    */
-  pullRequest?(request: PullRequestRequest): Promise<PullRequest>;
+  pullRequest?(request: PullRequestRequest): Promise<PullRequest>
 }
 
 /** What a provider is asked to read a log for. */
 export interface JobLogRequest {
-  readonly host: string;
-  readonly owner: string;
-  readonly repo: string;
+  readonly host: string
+  readonly owner: string
+  readonly repo: string
   /** The workflow job id, which is also the check run id. */
-  readonly jobId: number;
+  readonly jobId: number
   /** Per-command proxy override: absent = host env, null = direct, string = proxy URL. */
-  readonly proxy?: string | null;
+  readonly proxy?: string | null
 }
 
 /** What can be done to a pull request. */
@@ -120,97 +120,97 @@ export type PullRequestAction =
   | 'reply'
   | 'edit'
   | 'resolve'
-  | 'fork';
+  | 'fork'
 
 /** What a provider is asked to do to a pull request. */
 export interface PullRequestRequest {
   /** Who acts: `app` = installation token, `user` = the authorized person or per-owner token. */
-  readonly identity?: 'app' | 'user';
-  readonly host: string;
-  readonly owner: string;
-  readonly repo: string;
-  readonly action: PullRequestAction;
+  readonly identity?: 'app' | 'user'
+  readonly host: string
+  readonly owner: string
+  readonly repo: string
+  readonly action: PullRequestAction
   /** Per-command proxy override: absent = host env, null = direct, string = proxy URL. */
-  readonly proxy?: string | null;
+  readonly proxy?: string | null
   /** The pull request number. Not needed to open one, to resolve a thread, or to edit a comment. */
-  readonly number?: number;
+  readonly number?: number
   /** The review comment being answered or changed, for `action: "reply"` or `"edit"`. */
-  readonly commentId?: number;
+  readonly commentId?: number
   /** The review thread being resolved, for `action: "resolve"`. */
-  readonly threadId?: string;
+  readonly threadId?: string
   /** The branch holding the change, when opening. */
-  readonly head?: string;
+  readonly head?: string
   /** The branch it merges into. */
-  readonly base?: string;
-  readonly title?: string;
-  readonly body?: string;
+  readonly base?: string
+  readonly title?: string
+  readonly body?: string
   /** The file a review comment is anchored to, repository-relative, without a leading slash. */
-  readonly filePath?: string;
+  readonly filePath?: string
   /** The line in that file: in the new file for `side: "right"`, in the old one for `"left"`. */
-  readonly line?: number;
+  readonly line?: number
   /** Which side of the diff the line counts on. The new file, unless told otherwise. */
-  readonly side?: 'left' | 'right';
-  readonly draft?: boolean;
+  readonly side?: 'left' | 'right'
+  readonly draft?: boolean
 }
 
 /** One pull request, as GitHub describes it after an action. */
 export interface PullRequest {
-  readonly number: number;
-  readonly url: string;
+  readonly number: number
+  readonly url: string
   /** `open` or `closed`, when GitHub said. */
-  readonly state?: string;
+  readonly state?: string
   /** Whether the action merged it. */
-  readonly merged?: boolean;
+  readonly merged?: boolean
   /** A short report, when the action was to look. */
-  readonly status?: string;
+  readonly status?: string
 }
 
 /** One job log, as returned to the caller. */
 export interface JobLog {
-  readonly text: string;
+  readonly text: string
   /** Whether the provider cut the log short, which it says in the text too. */
-  readonly truncated: boolean;
+  readonly truncated: boolean
 }
 
 /** Fields every host block shares. */
 export interface BaseHostConfig {
   /** Default-deny allowlist of `owner/repo` entries; a whole segment may be a wildcard. */
-  readonly allow: readonly string[];
+  readonly allow: readonly string[]
   /**
    * Whether a plaintext `http` remote is acceptable for this host.
    *
-   * Off by default, and deliberately a *broker-side* decision: it is read from host-side
-   * configuration the agent cannot edit, so nothing running in the container can widen it.
-   * It exists for a self-hosted forge reached over a trusted network, and for the test
-   * suite's local plaintext git server.
+   * Off by default, and deliberately a _broker-side_ decision: it is read from host-side
+   * configuration the agent cannot edit, so nothing running in the container can widen it. It
+   * exists for a self-hosted forge reached over a trusted network, and for the test suite's local
+   * plaintext git server.
    */
-  readonly allowInsecureHttp?: boolean;
+  readonly allowInsecureHttp?: boolean
   /** Allow explicit read-only actions on a verified public repository without an allowlist entry. */
-  readonly allowPublicRead?: boolean;
+  readonly allowPublicRead?: boolean
   /** Allow git credentials for a fork whose source is an allowlisted repository. */
-  readonly allowForkPush?: boolean;
+  readonly allowForkPush?: boolean
   /** Allow actions on a repository whose fork is allowlisted, after verifying the fork relationship. */
-  readonly allowFork?: boolean;
+  readonly allowFork?: boolean
 }
 
 /** Host block backed by one fixed username/password pair. */
 export interface StaticHostConfig extends BaseHostConfig {
-  readonly provider: 'static';
-  readonly username?: string;
-  readonly password?: string;
-  readonly passwordPath?: string;
-  readonly passwordEnv?: string;
-  readonly expiresInSeconds?: number;
+  readonly provider: 'static'
+  readonly username?: string
+  readonly password?: string
+  readonly passwordPath?: string
+  readonly passwordEnv?: string
+  readonly expiresInSeconds?: number
 }
 
 /** Host block backed by a GitHub App installation access token. */
 export interface GithubAppHostConfig extends BaseHostConfig {
-  readonly provider: 'github-app';
+  readonly provider: 'github-app'
   /** Preferred `iss` claim. */
-  readonly clientId?: string;
+  readonly clientId?: string
   /** Fallback `iss` claim when no client ID is configured. */
-  readonly appId?: string | number;
-  readonly privateKeyPath?: string;
+  readonly appId?: string | number
+  readonly privateKeyPath?: string
   /**
    * A person's fine-grained tokens, keyed by the owner whose repositories they cover.
    *
@@ -218,121 +218,122 @@ export interface GithubAppHostConfig extends BaseHostConfig {
    * user or organization and cannot span two. Scoped as the README says — pull requests read and
    * write, contents read, metadata read, and only the repositories the allowlist names — GitHub
    * itself refuses to let such a token push or merge, because neither is possible without contents
-   * write. Used for creating and resolving a pull request, and nothing else; every other action stays on the app.
+   * write. Used for creating and resolving a pull request, and nothing else; every other action
+   * stays on the app.
    */
-  readonly userTokens?: Readonly<Record<string, string>>;
-  readonly privateKeyPem?: string;
+  readonly userTokens?: Readonly<Record<string, string>>
+  readonly privateKeyPem?: string
   /** REST permission names, e.g. `{ contents: 'write', pull_requests: 'write' }`. */
-  readonly permissions?: Readonly<Record<string, string>>;
-  readonly apiBaseUrl?: string;
-  readonly apiVersion?: string;
-  readonly installationCacheSeconds?: number;
+  readonly permissions?: Readonly<Record<string, string>>
+  readonly apiBaseUrl?: string
+  readonly apiVersion?: string
+  readonly installationCacheSeconds?: number
   /**
-   * Whether to confirm, once per process, that the app is actually granted every permission
-   * the token request will ask for. Defaults to true: GitHub answers 422 for an ungranted
-   * permission, which is easy to mistake for a broker fault.
+   * Whether to confirm, once per process, that the app is actually granted every permission the
+   * token request will ask for. Defaults to true: GitHub answers 422 for an ungranted permission,
+   * which is easy to mistake for a broker fault.
    */
-  readonly verifyAppPermissions?: boolean;
+  readonly verifyAppPermissions?: boolean
 }
 
 /** One configured host. */
-export type HostConfig = StaticHostConfig | GithubAppHostConfig;
+export type HostConfig = StaticHostConfig | GithubAppHostConfig
 
 /** A validated broker configuration. */
 export interface BrokerConfig {
-  readonly socketPath: string;
-  readonly socketMode: number;
-  readonly auditPath: string | null;
-  readonly tokenCacheSkewSeconds: number;
-  readonly hosts: Readonly<Record<string, HostConfig>>;
+  readonly socketPath: string
+  readonly socketMode: number
+  readonly auditPath: string | null
+  readonly tokenCacheSkewSeconds: number
+  readonly hosts: Readonly<Record<string, HostConfig>>
 }
 
 /** One request line on the broker socket. */
 export interface WireRequest {
-  readonly op: string;
-  readonly protocol?: string;
-  readonly host?: string;
-  readonly path?: string;
-  readonly session?: string | null;
-  readonly pid?: number;
+  readonly op: string
+  readonly protocol?: string
+  readonly host?: string
+  readonly path?: string
+  readonly session?: string | null
+  readonly pid?: number
   /** Workflow job id, for `op: "logs"`. */
-  readonly jobId?: number;
+  readonly jobId?: number
   /** For `op: "action"`: a catalogued gh action. */
-  readonly ghAction?: string;
+  readonly ghAction?: string
   /** For `op: "action"`: validated value names. */
-  readonly values?: Record<string, unknown>;
+  readonly values?: Record<string, unknown>
   /** For `op: "pull-request"`. */
-  readonly action?: string;
-  readonly identity?: 'app' | 'user';
-  readonly number?: number;
-  readonly commentId?: number;
-  readonly threadId?: string;
-  readonly method?: string;
-  readonly head?: string;
-  readonly base?: string;
-  readonly title?: string;
-  readonly body?: string;
-  readonly draft?: boolean;
+  readonly action?: string
+  readonly identity?: 'app' | 'user'
+  readonly number?: number
+  readonly commentId?: number
+  readonly threadId?: string
+  readonly method?: string
+  readonly head?: string
+  readonly base?: string
+  readonly title?: string
+  readonly body?: string
+  readonly draft?: boolean
 }
 
 /** One response line on the broker socket. */
 export interface WireResponse {
-  readonly ok: boolean;
-  readonly code?: string;
-  readonly reason?: string;
-  readonly username?: string;
-  readonly password?: string;
-  readonly expires_at?: string;
-  readonly version?: string;
-  readonly hosts?: readonly string[];
+  readonly ok: boolean
+  readonly code?: string
+  readonly reason?: string
+  readonly username?: string
+  readonly password?: string
+  readonly expires_at?: string
+  readonly version?: string
+  readonly hosts?: readonly string[]
   /** The active audit path, reported by `ping`; caller-visible, so it must stay non-secret. */
-  readonly auditPath?: string | null;
+  readonly auditPath?: string | null
   /** The job log, for `op: "logs"`. */
-  readonly log?: string;
-  readonly truncated?: boolean;
+  readonly log?: string
+  readonly truncated?: boolean
   /** The opened pull request, for `op: "pull-request"`. */
-  readonly prUrl?: string;
-  readonly prNumber?: number;
-  readonly prState?: string;
+  readonly prUrl?: string
+  readonly prNumber?: number
+  readonly prState?: string
   /** The report, for `action: "status"`. */
-  readonly prStatus?: string;
+  readonly prStatus?: string
   /** For `op: "action"`. */
-  readonly stdout?: string;
-  readonly stderr?: string;
-  readonly exitCode?: number | null;
-  readonly timedOut?: boolean;
+  readonly stdout?: string
+  readonly stderr?: string
+  readonly exitCode?: number | null
+  readonly timedOut?: boolean
   /** A non-fatal action warning, for example a failed token revoke. */
-  readonly warning?: string;
+  readonly warning?: string
 }
 
 /** Where audit records go. */
 export interface AuditSink {
-  readonly path: string | null;
-  record(event: Record<string, unknown>): void;
-  close(): Promise<void>;
+  readonly path: string | null
+  record(event: Record<string, unknown>): void
+  close(): Promise<void>
 }
 
 /**
  * The slice of the Fetch API the GitHub App provider uses.
  *
- * Declared structurally rather than as `typeof fetch` so tests can inject a stub without
- * casts, and so the provider never depends on ambient DOM/Node fetch types.
+ * Declared structurally rather than as `typeof fetch` so tests can inject a stub without casts, and
+ * so the provider never depends on ambient DOM/Node fetch types.
  */
 export interface FetchResponseLike {
-  readonly ok: boolean;
-  readonly status: number;
-  readonly headers: { get(name: string): string | null };
-  text(): Promise<string>;
+  readonly ok: boolean
+  readonly status: number
+  readonly headers: { get(name: string): string | null }
+  text(): Promise<string>
 }
 
 /** The request half of {@link FetchLike}. */
 export interface FetchInitLike {
-  readonly method: string;
-  readonly headers: Record<string, string>;
-  readonly body?: string;
-  readonly signal?: AbortSignal;
-  readonly redirect?: 'error' | 'follow' | 'manual';
+  readonly method: string
+  readonly headers: Record<string, string>
+  readonly body?: string
+  readonly signal?: AbortSignal
+  readonly redirect?: 'error' | 'follow' | 'manual'
 }
 
 /** A minimal fetch implementation. */
-export type FetchLike = (url: string, init: FetchInitLike) => Promise<FetchResponseLike>;
+export type FetchLike = (url: string, init: FetchInitLike) => Promise<FetchResponseLike>

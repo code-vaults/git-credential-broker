@@ -2,14 +2,15 @@
  * The one table that describes an allowed `gh` action.
  *
  * The broker never forwards a caller's argv. It looks an action up here, validates the values, and
- * rebuilds a canonical argv. Everything that needs to agree about an action — the command table, the
- * token permissions, the creation preflight and the docs — reads this table.
+ * rebuilds a canonical argv. Everything that needs to agree about an action — the command table,
+ * the token permissions, the creation preflight and the docs — reads this table.
  *
- * The table is intentionally small and curated: `gh` exposes no machine-readable command-to-permission
- * mapping. Adding an action requires the GitHub endpoint documentation for its command and a test.
+ * The table is intentionally small and curated: `gh` exposes no machine-readable
+ * command-to-permission mapping. Adding an action requires the GitHub endpoint documentation for
+ * its command and a test.
  */
 
-import { MAX_BODY_CHARS, MAX_TITLE_CHARS } from './host-request.ts';
+import { MAX_BODY_CHARS, MAX_TITLE_CHARS } from './host-request.ts'
 
 /** The installation permissions these actions may need. */
 export type GhPermission =
@@ -18,88 +19,93 @@ export type GhPermission =
   | 'contents'
   | 'issues'
   | 'pull_requests'
-  | 'statuses';
+  | 'statuses'
 
 /** The level requested for one permission. */
-export type PermissionLevel = 'read' | 'write';
+export type PermissionLevel = 'read' | 'write'
 
 /** A positional argument an action requires or accepts. */
 export interface PositionalSpec {
-  readonly name: string;
-  readonly type: 'number' | 'string';
-  readonly required?: boolean;
+  readonly name: string
+  readonly type: 'number' | 'string'
+  readonly required?: boolean
   /** The final positional collects all remaining arguments as a list. */
-  readonly repeatable?: boolean;
+  readonly repeatable?: boolean
 }
 
 /** A long flag an action accepts. */
 export interface FlagSpec {
-  readonly name: string;
-  readonly type: 'boolean' | 'number' | 'string';
+  readonly name: string
+  readonly type: 'boolean' | 'number' | 'string'
   /** The flag may be repeated, and the value is a list. */
-  readonly repeatable?: boolean;
+  readonly repeatable?: boolean
   /** The flag must be present. */
-  readonly required?: boolean;
+  readonly required?: boolean
   /** The value must not be empty or whitespace-only. */
-  readonly nonEmpty?: boolean;
+  readonly nonEmpty?: boolean
 }
 
 /** A fixed `gh api` request, with only typed values substituted. */
 export interface ApiSpec {
-  readonly method: 'GET' | 'PATCH' | 'DELETE';
-  readonly endpoint: string;
+  readonly method: 'GET' | 'PATCH' | 'DELETE'
+  readonly endpoint: string
   /** When true, the action sends `{ body }` as JSON through gh api --input. */
-  readonly jsonBody?: true;
+  readonly jsonBody?: true
 }
 
 /** One allowed `gh` action. */
 export interface GhAction {
-  readonly name: string;
+  readonly name: string
   /** The subcommand after the `gh` binary, e.g. `['pr', 'view']`. */
-  readonly command: readonly string[];
-  readonly positionals: readonly PositionalSpec[];
-  readonly flags: readonly FlagSpec[];
+  readonly command: readonly string[]
+  readonly positionals: readonly PositionalSpec[]
+  readonly flags: readonly FlagSpec[]
   /** Exactly one of these values (positional or flag) must be present, when set. */
-  readonly exactlyOneOf?: readonly string[];
+  readonly exactlyOneOf?: readonly string[]
   /** At least one of these flags must be present. */
-  readonly atLeastOneOf?: readonly string[];
+  readonly atLeastOneOf?: readonly string[]
   /** This body must be present when any of these flags is present. */
-  readonly bodyRequiredWith?: readonly string[];
+  readonly bodyRequiredWith?: readonly string[]
   /** Flag pairs that may not be present together. */
-  readonly conflicts?: readonly (readonly [string, string])[];
+  readonly conflicts?: readonly (readonly [string, string])[]
   /** When the first flag is present, the second must be present too. */
-  readonly requires?: readonly (readonly [string, string])[];
-  /** This action only reads; publicRead may run it on a verified public repository with the route's public-read token. */
-  readonly readOnly?: boolean;
-  readonly permissions: Readonly<Partial<Record<GhPermission, PermissionLevel>>>;
+  readonly requires?: readonly (readonly [string, string])[]
+  /**
+   * This action only reads; publicRead may run it on a verified public repository with the route's
+   * public-read token.
+   */
+  readonly readOnly?: boolean
+  readonly permissions: Readonly<Partial<Record<GhPermission, PermissionLevel>>>
   /** The default per-action timeout, in seconds. */
-  readonly timeoutSeconds: number;
+  readonly timeoutSeconds: number
   /** The object kind this action may target, when the CLI command also accepts the other kind. */
-  readonly target?: 'issue' | 'pr';
+  readonly target?: 'issue' | 'pr'
   /** Whether the app broker may run this with `identity: 'user'`. */
-  readonly appUser?: boolean;
+  readonly appUser?: boolean
   /** When set, the executor runs `gh api` for this fixed request instead of the command above. */
-  readonly api?: ApiSpec;
+  readonly api?: ApiSpec
 }
 
 /** Values supplied by the caller, keyed by positional or flag name. */
-export type ActionValues = Readonly<Record<string, string | number | boolean | readonly string[] | undefined>>;
+export type ActionValues = Readonly<
+  Record<string, string | number | boolean | readonly string[] | undefined>
+>
 
 /**
  * Encode the body payload for a gh api action that posts `{ body }` as JSON.
  *
- * @param body - the comment text.
- * @returns the JSON payload for gh api --input.
+ * @param body - The comment text.
+ * @returns The JSON payload for gh api --input.
  */
 export function apiBodyJson(body: string): string {
-  return JSON.stringify({ body });
+  return JSON.stringify({ body })
 }
 
 /** A failure the caller can act on, and that contains no provider output. */
 export class ActionError extends Error {
   constructor(message: string) {
-    super(message);
-    this.name = 'ActionError';
+    super(message)
+    this.name = 'ActionError'
   }
 }
 
@@ -117,7 +123,7 @@ const PR_VIEW: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: GraphQL repository.pullRequests (gh pr list uses GraphQL)
 const PR_LIST: GhAction = {
@@ -140,7 +146,7 @@ const PR_LIST: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number} (diff media type)
 const PR_DIFF: GhAction = {
@@ -156,7 +162,7 @@ const PR_DIFF: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: POST /repos/{owner}/{repo}/pulls
 const PR_CREATE: GhAction = {
@@ -175,7 +181,7 @@ const PR_CREATE: GhAction = {
   ],
   permissions: { pull_requests: 'write', contents: 'read' },
   timeoutSeconds: 180,
-};
+}
 
 // GitHub: PATCH /repos/{owner}/{repo}/pulls/{pull_number}
 const PR_EDIT: GhAction = {
@@ -191,7 +197,7 @@ const PR_EDIT: GhAction = {
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
   appUser: true,
-};
+}
 
 // GitHub: POST /repos/{owner}/{repo}/issues/{issue_number}/comments
 const PR_COMMENT: GhAction = {
@@ -202,7 +208,7 @@ const PR_COMMENT: GhAction = {
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
   appUser: true,
-};
+}
 
 // GitHub GraphQL: closePullRequest
 const PR_CLOSE: GhAction = {
@@ -212,7 +218,7 @@ const PR_CLOSE: GhAction = {
   flags: [],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 60,
-};
+}
 
 // GitHub: PATCH /repos/{owner}/{repo}/pulls/{pull_number}
 const PR_REOPEN: GhAction = {
@@ -222,7 +228,7 @@ const PR_REOPEN: GhAction = {
   flags: [],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 60,
-};
+}
 
 // GitHub GraphQL: markPullRequestReadyForReview and convertPullRequestToDraft
 const PR_READY: GhAction = {
@@ -232,7 +238,7 @@ const PR_READY: GhAction = {
   flags: [{ name: 'undo', type: 'boolean' }],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 60,
-};
+}
 
 // GitHub GraphQL:
 // https://docs.github.com/en/graphql/reference/pulls#mutation-updatepullrequestbranch
@@ -244,7 +250,7 @@ const PR_UPDATE_BRANCH: GhAction = {
   permissions: { pull_requests: 'write', contents: 'write' },
   timeoutSeconds: 120,
   appUser: true,
-};
+}
 
 // GitHub GraphQL:
 // https://docs.github.com/en/graphql/reference/issues#mutation-locklockable
@@ -256,7 +262,7 @@ const PR_LOCK: GhAction = {
   flags: [{ name: 'reason', type: 'string' }],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 60,
-};
+}
 
 const PR_UNLOCK: GhAction = {
   name: 'pr:unlock',
@@ -265,7 +271,7 @@ const PR_UNLOCK: GhAction = {
   flags: [],
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 60,
-};
+}
 
 // GitHub: GET /repos/{owner}/{repo}/pulls/{number} then its check-runs and commit statuses
 const PR_CHECKS: GhAction = {
@@ -285,7 +291,7 @@ const PR_CHECKS: GhAction = {
   timeoutSeconds: 300,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: the app's authored pull requests and review requests, with checks. A --repo override
 // suppresses gh's current-branch section.
@@ -303,7 +309,7 @@ const PR_STATUS: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
 const PR_REVIEW_BY_ID: GhAction = {
@@ -322,7 +328,7 @@ const PR_REVIEW_BY_ID: GhAction = {
     method: 'GET',
     endpoint: 'repos/{owner}/{repo}/pulls/{number}/reviews/{id}',
   },
-};
+}
 
 // GitHub: POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
 const PR_REVIEW: GhAction = {
@@ -340,7 +346,7 @@ const PR_REVIEW: GhAction = {
   permissions: { pull_requests: 'write' },
   timeoutSeconds: 120,
   appUser: true,
-};
+}
 
 // GitHub: POST /repos/{owner}/{repo}/issues
 const ISSUE_CREATE: GhAction = {
@@ -356,7 +362,7 @@ const ISSUE_CREATE: GhAction = {
   permissions: { issues: 'write' },
   timeoutSeconds: 120,
   appUser: true,
-};
+}
 
 // GitHub: PATCH /repos/{owner}/{repo}/issues/{issue_number}
 const ISSUE_EDIT: GhAction = {
@@ -371,7 +377,7 @@ const ISSUE_EDIT: GhAction = {
   permissions: { issues: 'write' },
   timeoutSeconds: 120,
   appUser: true,
-};
+}
 
 // GitHub: POST /repos/{owner}/{repo}/issues/{issue_number}/comments
 const ISSUE_COMMENT: GhAction = {
@@ -382,7 +388,7 @@ const ISSUE_COMMENT: GhAction = {
   permissions: { issues: 'write' },
   timeoutSeconds: 120,
   appUser: true,
-};
+}
 
 // GitHub: PATCH /repos/{owner}/{repo}/issues/{issue_number}
 const ISSUE_CLOSE: GhAction = {
@@ -394,7 +400,7 @@ const ISSUE_CLOSE: GhAction = {
   timeoutSeconds: 60,
   appUser: true,
   target: 'issue',
-};
+}
 
 // GitHub: PATCH /repos/{owner}/{repo}/issues/{issue_number}
 const ISSUE_REOPEN: GhAction = {
@@ -406,7 +412,7 @@ const ISSUE_REOPEN: GhAction = {
   timeoutSeconds: 60,
   appUser: true,
   target: 'issue',
-};
+}
 
 // GitHub: PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}
 const ISSUE_COMMENT_EDIT: GhAction = {
@@ -422,7 +428,7 @@ const ISSUE_COMMENT_EDIT: GhAction = {
     endpoint: 'repos/{owner}/{repo}/issues/comments/{commentId}',
     jsonBody: true,
   },
-};
+}
 
 // GitHub: PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}; a PR conversation comment is an issue comment
 const PR_COMMENT_EDIT: GhAction = {
@@ -430,7 +436,7 @@ const PR_COMMENT_EDIT: GhAction = {
   name: 'pr:comment-edit',
   command: ['pr', 'comment-edit'],
   permissions: { pull_requests: 'write' },
-};
+}
 
 // GitHub: DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}
 const ISSUE_COMMENT_DELETE: GhAction = {
@@ -445,7 +451,7 @@ const ISSUE_COMMENT_DELETE: GhAction = {
     method: 'DELETE',
     endpoint: 'repos/{owner}/{repo}/issues/comments/{commentId}',
   },
-};
+}
 
 // GitHub: DELETE /repos/{owner}/{repo}/issues/comments/{comment_id}; a PR conversation comment is an issue comment
 const PR_COMMENT_DELETE: GhAction = {
@@ -453,7 +459,7 @@ const PR_COMMENT_DELETE: GhAction = {
   name: 'pr:comment-delete',
   command: ['pr', 'comment-delete'],
   permissions: { pull_requests: 'write' },
-};
+}
 
 // GitHub: GET /repos/{owner}/{repo}/issues/{issue_number}
 const ISSUE_VIEW: GhAction = {
@@ -470,7 +476,7 @@ const ISSUE_VIEW: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: GET /repos/{owner}/{repo}/issues
 const ISSUE_LIST: GhAction = {
@@ -496,7 +502,7 @@ const ISSUE_LIST: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub GraphQL:
 // https://docs.github.com/en/graphql/reference/issues#mutation-locklockable
@@ -509,7 +515,7 @@ const ISSUE_LOCK: GhAction = {
   permissions: { issues: 'write' },
   timeoutSeconds: 60,
   appUser: true,
-};
+}
 
 const ISSUE_UNLOCK: GhAction = {
   name: 'issue:unlock',
@@ -519,7 +525,7 @@ const ISSUE_UNLOCK: GhAction = {
   permissions: { issues: 'write' },
   timeoutSeconds: 60,
   appUser: true,
-};
+}
 
 // GitHub GraphQL:
 // https://docs.github.com/en/graphql/reference/issues#mutation-pinissue
@@ -533,7 +539,7 @@ const ISSUE_PIN: GhAction = {
   timeoutSeconds: 60,
   appUser: true,
   target: 'issue',
-};
+}
 
 const ISSUE_UNPIN: GhAction = {
   name: 'issue:unpin',
@@ -544,7 +550,7 @@ const ISSUE_UNPIN: GhAction = {
   timeoutSeconds: 60,
   appUser: true,
   target: 'issue',
-};
+}
 
 // GitHub: POST /repos/{owner}/{repo}/actions/runs/{run_id}/cancel, or .../force-cancel with --force
 const RUN_CANCEL: GhAction = {
@@ -555,7 +561,7 @@ const RUN_CANCEL: GhAction = {
   permissions: { actions: 'write' },
   timeoutSeconds: 60,
   appUser: true,
-};
+}
 
 // GitHub: POST .../actions/runs/{run_id}/rerun; --failed selects rerun-failed-jobs, and --job
 // selects .../actions/jobs/{job_id}/rerun. gh ignores a run id and --failed when --job is present.
@@ -573,7 +579,7 @@ const RUN_RERUN: GhAction = {
   permissions: { actions: 'write' },
   timeoutSeconds: 120,
   appUser: true,
-};
+}
 
 // GitHub: poll GET /repos/{owner}/{repo}/actions/runs/{run_id} until it finishes; fetch
 // GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations for annotations
@@ -590,7 +596,7 @@ const RUN_WATCH: GhAction = {
   timeoutSeconds: 3300,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: GET /repos/{owner}/{repo}/actions/runs/{run_id}
 const RUN_VIEW: GhAction = {
@@ -608,7 +614,7 @@ const RUN_VIEW: GhAction = {
   timeoutSeconds: 300,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: GET /repos/{owner}/{repo}/actions/runs
 const RUN_LIST: GhAction = {
@@ -626,7 +632,7 @@ const RUN_LIST: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: GET /repos/{owner}/{repo}/releases
 const RELEASE_LIST: GhAction = {
@@ -646,7 +652,7 @@ const RELEASE_LIST: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: GET /repos/{owner}/{repo}/releases/tags/{tag}
 const RELEASE_VIEW: GhAction = {
@@ -662,7 +668,7 @@ const RELEASE_VIEW: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: GET /repos/{owner}/{repo}/actions/workflows
 const WORKFLOW_LIST: GhAction = {
@@ -680,7 +686,7 @@ const WORKFLOW_LIST: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: GET /repos/{owner}/{repo}/actions/workflows/{workflow_id} (and contents for --yaml/--ref)
 const WORKFLOW_VIEW: GhAction = {
@@ -696,7 +702,7 @@ const WORKFLOW_VIEW: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: GET /repos/{owner}/{repo}/labels
 const LABEL_LIST: GhAction = {
@@ -716,7 +722,7 @@ const LABEL_LIST: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: POST /repos/{owner}/{repo}/labels
 const LABEL_CREATE: GhAction = {
@@ -731,7 +737,7 @@ const LABEL_CREATE: GhAction = {
   permissions: { issues: 'write' },
   timeoutSeconds: 120,
   appUser: true,
-};
+}
 
 // GitHub: PATCH /repos/{owner}/{repo}/labels/{name}
 const LABEL_EDIT: GhAction = {
@@ -746,7 +752,7 @@ const LABEL_EDIT: GhAction = {
   permissions: { issues: 'write' },
   timeoutSeconds: 120,
   appUser: true,
-};
+}
 
 // GitHub: DELETE /repos/{owner}/{repo}/labels/{name}
 const LABEL_DELETE: GhAction = {
@@ -757,7 +763,7 @@ const LABEL_DELETE: GhAction = {
   permissions: { issues: 'write' },
   timeoutSeconds: 120,
   appUser: true,
-};
+}
 
 // GitHub: GET /search/issues (issues)
 const SEARCH_ISSUES: GhAction = {
@@ -781,7 +787,7 @@ const SEARCH_ISSUES: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
-};
+}
 
 // GitHub: GET /search/issues (pull requests)
 const SEARCH_PRS: GhAction = {
@@ -808,7 +814,7 @@ const SEARCH_PRS: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
-};
+}
 
 /** Every built-in action, keyed by its action name. */
 export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
@@ -858,29 +864,31 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'label:delete': LABEL_DELETE,
   'search:issues': SEARCH_ISSUES,
   'search:prs': SEARCH_PRS,
-});
+})
 
 /** The built-in action names, in a stable order. */
-export const GH_ACTION_NAMES = Object.freeze(Object.keys(GH_ACTIONS));
+export const GH_ACTION_NAMES = Object.freeze(Object.keys(GH_ACTIONS))
 
 /**
  * Look up one action.
  *
- * @param name - the action name, e.g. `pr:create`.
- * @returns the action.
- * @throws {ActionError} when the action is not in the catalog.
+ * @param name - The action name, e.g. `pr:create`.
+ * @returns The action.
+ * @throws {ActionError} When the action is not in the catalog.
  */
 export function getGhAction(name: string): GhAction {
   if (!Object.hasOwn(GH_ACTIONS, name)) {
-    throw new ActionError(`unknown gh action ${JSON.stringify(name)}`);
+    throw new ActionError(`unknown gh action ${JSON.stringify(name)}`)
   }
-  const action = GH_ACTIONS[name];
-  if (action === undefined) throw new ActionError(`unknown gh action ${JSON.stringify(name)}`);
-  return action;
+  const action = GH_ACTIONS[name]
+  if (action === undefined) {
+    throw new ActionError(`unknown gh action ${JSON.stringify(name)}`)
+  }
+  return action
 }
 
 /** A repository as `owner/name`; the slashes are the only structural characters. */
-const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 
 /**
  * Build the canonical argv for one action.
@@ -889,14 +897,14 @@ const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
  * missing required value is refused rather than passed to `gh`. The repository is injected by the
  * broker and is not accepted as a flag value from the caller.
  *
- * @param name - the action name.
- * @param values - the caller's positional and flag values.
- * @param repo - the validated `owner/name` repository, injected as `--repo` for a command
- *   action or substituted into the endpoint for an API action.
- * @param bodyFile - when set, the action's `body` flag is emitted as `--body-file` with this path;
+ * @param name - The action name.
+ * @param values - The caller's positional and flag values.
+ * @param repo - The validated `owner/name` repository, injected as `--repo` for a command action or
+ *   substituted into the endpoint for an API action.
+ * @param bodyFile - When set, the action's `body` flag is emitted as `--body-file` with this path;
  *   only the path reaches argv.
- * @returns the argv after the `gh` binary.
- * @throws {ActionError} on an unknown action, key, flag type, or missing required value.
+ * @returns The argv after the `gh` binary.
+ * @throws {ActionError} On an unknown action, key, flag type, or missing required value.
  */
 export function buildGhArgv(
   name: string,
@@ -904,8 +912,8 @@ export function buildGhArgv(
   repo: string,
   bodyFile?: string,
 ): string[] {
-  const action = getGhAction(name);
-  const [owner, repository] = repo.split('/');
+  const action = getGhAction(name)
+  const [owner, repository] = repo.split('/')
   if (
     !REPO.test(repo) ||
     owner === undefined ||
@@ -915,226 +923,264 @@ export function buildGhArgv(
     repository === '.' ||
     repository === '..'
   ) {
-    throw new ActionError(`invalid repository ${JSON.stringify(repo)}`);
+    throw new ActionError(`invalid repository ${JSON.stringify(repo)}`)
   }
 
   const known = new Set<string>([
-    ...action.positionals.map((positional) => positional.name),
-    ...action.flags.map((flag) => flag.name),
-  ]);
+    ...action.positionals.map(positional => positional.name),
+    ...action.flags.map(flag => flag.name),
+  ])
   for (const key of Object.keys(values)) {
-    if (!known.has(key)) throw new ActionError(`unknown option ${JSON.stringify(key)} for ${name}`);
+    if (!known.has(key)) {
+      throw new ActionError(`unknown option ${JSON.stringify(key)} for ${name}`)
+    }
   }
 
-  let argv: string[];
-  const trailingPositionals: string[] = [];
-  if (action.api !== undefined) {
+  let argv: string[]
+  const trailingPositionals: string[] = []
+  if (action.api === undefined) {
+    argv = [...action.command]
+    for (const positional of action.positionals) {
+      const value = values[positional.name]
+      if (value === undefined) {
+        if (positional.required === true) {
+          throw new ActionError(`${name} needs ${positional.name}`)
+        }
+        continue
+      }
+      const items = positional.repeatable && Array.isArray(value) ? value : [value]
+      if (positional.repeatable !== true && Array.isArray(value)) {
+        throw new ActionError(`positional ${positional.name} is not repeatable`)
+      }
+      for (const item of items) {
+        if (positional.type === 'number') {
+          argv.push(String(asNumber(item, positional.name)))
+        } else {
+          trailingPositionals.push(asString(item, positional.name))
+        }
+      }
+    }
+  } else {
     const substitutions: Record<string, string> = {
       owner,
       repo: repository,
       ...Object.fromEntries(
-        action.positionals.flatMap((positional) => {
-          const value = values[positional.name];
+        action.positionals.flatMap(positional => {
+          const value = values[positional.name]
           if (value === undefined) {
-            if (positional.required === true) throw new ActionError(`${name} needs ${positional.name}`);
-            return [];
+            if (positional.required === true) {
+              throw new ActionError(`${name} needs ${positional.name}`)
+            }
+            return []
           }
-          return [[positional.name, positional.type === 'number' ? String(asNumber(value, positional.name)) : asString(value, positional.name)]];
+          return [
+            [
+              positional.name,
+              positional.type === 'number'
+                ? String(asNumber(value, positional.name))
+                : asString(value, positional.name),
+            ],
+          ]
         }),
       ),
-    };
-    const endpoint = action.api.endpoint.replace(/\{([a-zA-Z_]+)\}/g, (_match, key: string) => {
-      const value = substitutions[key];
-      if (value === undefined) throw new ActionError(`${name} has no value for {${key}}`);
-      return encodeURIComponent(value);
-    });
-    if (endpoint.includes('{')) throw new ActionError(`${name} left an endpoint placeholder unresolved`);
-    argv = ['api', '--method', action.api.method, endpoint];
-  } else {
-    argv = [...action.command];
-    for (const positional of action.positionals) {
-      const value = values[positional.name];
-      if (value === undefined) {
-        if (positional.required === true) throw new ActionError(`${name} needs ${positional.name}`);
-        continue;
-      }
-      const items = positional.repeatable && Array.isArray(value) ? value : [value];
-      if (positional.repeatable !== true && Array.isArray(value)) {
-        throw new ActionError(`positional ${positional.name} is not repeatable`);
-      }
-      for (const item of items) {
-        if (positional.type === 'number') {
-          argv.push(String(asNumber(item, positional.name)));
-        } else {
-          trailingPositionals.push(asString(item, positional.name));
-        }
-      }
     }
+    const endpoint = action.api.endpoint.replace(/\{([a-zA-Z_]+)\}/g, (_match, key: string) => {
+      const value = substitutions[key]
+      if (value === undefined) {
+        throw new ActionError(`${name} has no value for {${key}}`)
+      }
+      return encodeURIComponent(value)
+    })
+    if (endpoint.includes('{')) {
+      throw new ActionError(`${name} left an endpoint placeholder unresolved`)
+    }
+    argv = ['api', '--method', action.api.method, endpoint]
   }
 
-  const present = new Set<string>();
-  const provided = new Set<string>();
+  const present = new Set<string>()
+  const provided = new Set<string>()
   for (const positional of action.positionals) {
-    if (values[positional.name] !== undefined) provided.add(positional.name);
+    if (values[positional.name] !== undefined) {
+      provided.add(positional.name)
+    }
   }
   for (const flag of action.flags) {
-    const value = values[flag.name];
+    const value = values[flag.name]
     if (value === undefined) {
-      if (flag.required === true) throw new ActionError(`${name} needs --${flag.name}`);
-      continue;
+      if (flag.required === true) {
+        throw new ActionError(`${name} needs --${flag.name}`)
+      }
+      continue
     }
     if (flag.type === 'boolean') {
-      if (typeof value !== 'boolean') throw new ActionError(`--${flag.name} is a boolean`);
-      if (flag.required === true && value !== true) throw new ActionError(`${name} needs --${flag.name}`);
-      if (value) {
-        argv.push(`--${flag.name}`);
-        present.add(flag.name);
-        provided.add(flag.name);
+      if (typeof value !== 'boolean') {
+        throw new ActionError(`--${flag.name} is a boolean`)
       }
-      continue;
+      if (flag.required === true && value !== true) {
+        throw new ActionError(`${name} needs --${flag.name}`)
+      }
+      if (value) {
+        argv.push(`--${flag.name}`)
+        present.add(flag.name)
+        provided.add(flag.name)
+      }
+      continue
     }
 
     if (flag.name === 'body' && action.api?.jsonBody === true) {
-      const text = asString(value, flag.name);
+      const text = asString(value, flag.name)
       if (flag.nonEmpty === true && text.trim() === '') {
-        throw new ActionError(`${name} needs a non-empty --${flag.name}`);
+        throw new ActionError(`${name} needs a non-empty --${flag.name}`)
       }
-      if (bodyFile !== undefined) argv.push('--input', bodyFile);
-      present.add(flag.name);
-      provided.add(flag.name);
-      continue;
+      if (bodyFile !== undefined) {
+        argv.push('--input', bodyFile)
+      }
+      present.add(flag.name)
+      provided.add(flag.name)
+      continue
     }
     if (flag.name === 'body' && bodyFile !== undefined) {
-      const text = asString(value, flag.name);
+      const text = asString(value, flag.name)
       if (flag.nonEmpty === true && text.trim() === '') {
-        throw new ActionError(`${name} needs a non-empty --${flag.name}`);
+        throw new ActionError(`${name} needs a non-empty --${flag.name}`)
       }
-      argv.push('--body-file', bodyFile);
-      present.add(flag.name);
-      continue;
+      argv.push('--body-file', bodyFile)
+      present.add(flag.name)
+      continue
     }
     if (flag.repeatable === true) {
       for (const item of asStringList(value, flag.name)) {
-        argv.push(`--${flag.name}`, flag.type === 'number' ? String(asNumber(item, flag.name)) : item);
+        argv.push(
+          `--${flag.name}`,
+          flag.type === 'number' ? String(asNumber(item, flag.name)) : item,
+        )
       }
     } else if (flag.type === 'number') {
-      argv.push(`--${flag.name}`, String(asNumber(value, flag.name)));
+      argv.push(`--${flag.name}`, String(asNumber(value, flag.name)))
     } else {
-      const text = asString(value, flag.name);
+      const text = asString(value, flag.name)
       if (flag.nonEmpty === true && text.trim() === '') {
-        throw new ActionError(`${name} needs a non-empty --${flag.name}`);
+        throw new ActionError(`${name} needs a non-empty --${flag.name}`)
       }
-      argv.push(`--${flag.name}`, text);
+      argv.push(`--${flag.name}`, text)
     }
-    present.add(flag.name);
-    provided.add(flag.name);
+    present.add(flag.name)
+    provided.add(flag.name)
   }
 
-  if (action.atLeastOneOf !== undefined && !action.atLeastOneOf.some((flag) => present.has(flag))) {
+  if (action.atLeastOneOf !== undefined && !action.atLeastOneOf.some(flag => present.has(flag))) {
     throw new ActionError(
-      `${name} needs at least one of ${action.atLeastOneOf.map((flag) => `--${flag}`).join(', ')}`,
-    );
+      `${name} needs at least one of ${action.atLeastOneOf.map(flag => `--${flag}`).join(', ')}`,
+    )
   }
   if (action.exactlyOneOf !== undefined) {
-    const chosen = action.exactlyOneOf.filter((field) => provided.has(field));
+    const chosen = action.exactlyOneOf.filter(field => provided.has(field))
     if (chosen.length !== 1) {
       const spell = (field: string): string =>
-        action.positionals.some((positional) => positional.name === field) ? field : `--${field}`;
+        action.positionals.some(positional => positional.name === field) ? field : `--${field}`
       throw new ActionError(
         `${name} needs exactly one of ${action.exactlyOneOf.map(spell).join(', ')}`,
-      );
+      )
     }
   }
   for (const flag of action.bodyRequiredWith ?? []) {
     if (present.has(flag) && (typeof values.body !== 'string' || values.body.trim() === '')) {
-      throw new ActionError(`${name} needs a non-empty --body with --${flag}`);
+      throw new ActionError(`${name} needs a non-empty --body with --${flag}`)
     }
   }
   for (const [left, right] of action.conflicts ?? []) {
     if (present.has(left) && present.has(right)) {
-      throw new ActionError(`${name} does not allow --${left} with --${right}`);
+      throw new ActionError(`${name} does not allow --${left} with --${right}`)
     }
   }
   for (const [left, right] of action.requires ?? []) {
     if (present.has(left) && !present.has(right)) {
-      throw new ActionError(`${name} needs --${right} with --${left}`);
+      throw new ActionError(`${name} needs --${right} with --${left}`)
     }
   }
 
   if (action.command[0] === 'search') {
-    const terms = Array.isArray(values['query']) ? values['query'] : [values['query']];
+    const terms = Array.isArray(values['query']) ? values['query'] : [values['query']]
     if (
-      terms.some(
-        (term) => typeof term === 'string' && /(?:^|[\s(])-?(?:repo|org|user):/iu.test(term),
-      )
+      terms.some(term => typeof term === 'string' && /(?:^|[\s(])-?(?:repo|org|user):/iu.test(term))
     ) {
       throw new ActionError(
         'search query cannot contain repo:, org: or user:; the broker scopes it to --repo',
-      );
+      )
     }
   }
   if (typeof values['title'] === 'string') {
     if (values['title'].trim() === '') {
-      throw new ActionError('the title must not be empty');
+      throw new ActionError('the title must not be empty')
     }
     if (values['title'].length > MAX_TITLE_CHARS) {
-      throw new ActionError(`the title must be at most ${MAX_TITLE_CHARS} characters`);
+      throw new ActionError(`the title must be at most ${MAX_TITLE_CHARS} characters`)
     }
   }
   if (typeof values['body'] === 'string' && values['body'].length > MAX_BODY_CHARS) {
-    throw new ActionError(`the body must be at most ${MAX_BODY_CHARS} characters`);
+    throw new ActionError(`the body must be at most ${MAX_BODY_CHARS} characters`)
   }
 
   if (action.api === undefined) {
-    argv.push('--repo', repo);
+    argv.push('--repo', repo)
     if (trailingPositionals.length > 0) {
       // Keep caller-controlled strings after -- so a tag or workflow name cannot become a flag.
-      argv.push('--', ...trailingPositionals);
+      argv.push('--', ...trailingPositionals)
     }
   }
-  return argv;
+  return argv
 }
 
 /**
  * Convert one value to a positive integer.
  *
- * @param value - the caller's value.
- * @param label - the field name for the error.
- * @returns the integer.
- * @throws {ActionError} when the value is not a positive integer.
+ * @param value - The caller's value.
+ * @param label - The field name for the error.
+ * @returns The integer.
+ * @throws {ActionError} When the value is not a positive integer.
  */
 function asNumber(value: unknown, label: string): number {
-  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) return value;
-  if (typeof value === 'string' && /^[1-9][0-9]*$/.test(value)) {
-    const parsed = Number(value);
-    if (Number.isSafeInteger(parsed)) return parsed;
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value > 0) {
+    return value
   }
-  throw new ActionError(`${label} must be a positive integer`);
+  if (typeof value === 'string' && /^[1-9][0-9]*$/.test(value)) {
+    const parsed = Number(value)
+    if (Number.isSafeInteger(parsed)) {
+      return parsed
+    }
+  }
+  throw new ActionError(`${label} must be a positive integer`)
 }
 
 /**
  * Convert one value to a string.
  *
- * @param value - the caller's value.
- * @param label - the flag name for the error.
- * @returns the string.
- * @throws {ActionError} when the value is not a string.
+ * @param value - The caller's value.
+ * @param label - The flag name for the error.
+ * @returns The string.
+ * @throws {ActionError} When the value is not a string.
  */
 function asString(value: unknown, label: string): string {
-  if (typeof value === 'string') return value;
-  throw new ActionError(`${label} must be a string`);
+  if (typeof value === 'string') {
+    return value
+  }
+  throw new ActionError(`${label} must be a string`)
 }
 
 /**
  * Convert one value to a list of strings.
  *
- * @param value - the caller's value.
- * @param label - the flag name for the error.
- * @returns the list.
- * @throws {ActionError} when the value is not a string or a list of strings.
+ * @param value - The caller's value.
+ * @param label - The flag name for the error.
+ * @returns The list.
+ * @throws {ActionError} When the value is not a string or a list of strings.
  */
 function asStringList(value: unknown, label: string): string[] {
-  if (typeof value === 'string') return [value];
-  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) return [...value];
-  throw new ActionError(`${label} must be a string or a list of strings`);
+  if (typeof value === 'string') {
+    return [value]
+  }
+  if (Array.isArray(value) && value.every(item => typeof item === 'string')) {
+    return [...value]
+  }
+  throw new ActionError(`${label} must be a string or a list of strings`)
 }
