@@ -794,21 +794,34 @@ or CI builds the same Dockerfile and tags, rather than pulling `:dev`.
 
 ### Updating the sidecar
 
-Pin a released `gcb-host` image by version or digest; do not use `:dev` or `pull_policy: never` for updates.
+Pin a released `gcb-host` image by version or digest; do not use `:dev` or `pull_policy: never` for
+updates. The generated service is named `gcb` by default (`gcb compose --name <name>` changes it).
+
+Changing the image tag alone does not change the default `npx --package gcb-host@<version>` command.
+Either render compose again, set the package spec to the same version, or change the command to use
+the image's installed binary: `["gcb", "daemon", "--config", "/etc/git-cred-broker/config/broker.config.yml"]`.
 
 ```sh
-docker compose pull gcb-host
-docker compose up -d --no-deps --force-recreate gcb-host
+docker compose pull gcb
+docker compose up -d --no-deps --force-recreate gcb
 ```
 
-Verify `gcb --version`, the socket, and `gcb doctor` after the recreate. To roll back, put the previous
-version or digest back in compose and run the same pull/recreate steps.
+Verify the running sidecar, not just the host CLI:
+
+```sh
+docker compose exec gcb npx --yes --package 'gcb-host@0.8.0' gcb --version
+docker compose exec gcb npx --yes --package 'gcb-host@0.8.0' gcb doctor \
+  --config /etc/git-cred-broker/config/broker.config.yml
+gcb --version   # in the pushing environment; must be the same release line
+```
+
+`gcb doctor` checks configuration and the audit path; it is not a daemon-liveness probe. Check
+liveness from the pushing environment with `gcb probe --repo <owner/name>`: exit `0` means allowed,
+`1` denied, and `3` means the broker is unreachable. Alert on a non-zero doctor result; restart only
+when `probe` returns `3` or the socket is gone; a configuration error needs an operator.
 
 Use the same release line on both sides. Typed host replies and the active-audit ping need at least
-`0.7.0` on the host and client; `gcb authorize --broker-container` needs `0.8.0` on the host. `gcb doctor`
-is the update health check: a non-zero result should alert, not trigger an automatic restart; a failed
-socket or daemon check is the restart case, while a configuration error needs an operator to fix the file.
-
+`0.7.0`; `gcb authorize --broker-container` needs host `0.8.0`.
 For idsh's dev image, name the client image as a stage and copy only the gcb packages into the base:
 
 ```dockerfile
