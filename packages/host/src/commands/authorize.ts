@@ -18,6 +18,7 @@ import {
   chmodSync,
   closeSync,
   constants,
+  ftruncateSync,
   existsSync,
   fchmodSync,
   lstatSync,
@@ -96,24 +97,32 @@ export interface AuthorizationPlacement {
   readonly warning?: string
 }
 
-/** Write the token through a no-follow descriptor so a replaceable symlink cannot redirect it. */
-function writeToken(target: string, token: string): void {
+/** Open the token target before authorization so the write cannot be redirected by a later path swap. */
+function openTokenTarget(target: string): number {
   mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
-  const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0)
-  const fd = openSync(target, flags, 0o600)
-  try {
-    writeFileSync(fd, `${token}\n`)
-    fchmodSync(fd, 0o600)
-  } finally {
-    closeSync(fd)
-  }
+  const flags = constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0)
+  return openSync(target, flags, 0o600)
+}
+
+/** Write the refresh token through the descriptor opened before the device flow. */
+function writeToken(fd: number, token: string): void {
+  ftruncateSync(fd, 0)
+  writeFileSync(fd, `${token}\n`)
+  fchmodSync(fd, 0o600)
 }
 
 /** Whether the target or its parent is writable, so a read-only sidecar mount fails before the flow. */
 function writableTarget(target: string): boolean {
   try {
-    if (existsSync(target)) {
-      const info = lstatSync(target)
+    let info
+    try {
+      info = lstatSync(target)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        return false
+      }
+    }
+    if (info !== undefined) {
       if (info.isSymbolicLink() || !info.isFile()) {
         return false
       }
@@ -237,25 +246,36 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
   }
   say(`the refresh token will be written to ${placement.target}`)
 
-  const fetcher: Fetcher = fetcherFor(proxy)
-  const code = await startDeviceFlow(block.clientId, fetcher)
-  say(`Open ${code.verificationUri} and enter: ${code.userCode}`)
-  say(`Waiting up to ${Math.round(code.expiresIn / 60)} minutes for that to be authorized…`)
-
-  const token = await collectUserToken(
-    block.clientId,
-    code,
-    fetcher,
-    ms => new Promise(done => setTimeout(done, ms)),
-  )
-  if (token.refreshToken === undefined) {
-    fail(
-      'GitHub returned no refresh token, so the token would expire in eight hours with no way to renew.\n' +
-        '  Select "Expire user authorization tokens" in the app settings and authorize again.',
-    )
+  let tokenFd: number
+  try {
+    tokenFd = openTokenTarget(placement.target)
+  } catch (error) {
+    fail(`could not open ${placement.target}: ${(error as Error).message}`)
   }
 
-  writeToken(placement.target, token.refreshToken)
+  try {
+    const fetcher: Fetcher = fetcherFor(proxy)
+    const code = await startDeviceFlow(block.clientId, fetcher)
+    say(`Open ${code.verificationUri} and enter: ${code.userCode}`)
+    say(`Waiting up to ${Math.round(code.expiresIn / 60)} minutes for that to be authorized…`)
+
+    const token = await collectUserToken(
+      block.clientId,
+      code,
+      fetcher,
+      ms => new Promise(done => setTimeout(done, ms)),
+    )
+    if (token.refreshToken === undefined) {
+      fail(
+        'GitHub returned no refresh token, so the token would expire in eight hours with no way to renew.\n' +
+          '  Select "Expire user authorization tokens" in the app settings and authorize again.',
+      )
+    }
+
+    writeToken(tokenFd, token.refreshToken)
+  } finally {
+    closeSync(tokenFd)
+  }
   say(`stored the refresh token in ${placement.target} (mode 600)`)
   const readByBroker = brokerReadsPath(block.privateKeyPath)
   if (readByBroker === undefined) {
@@ -280,3 +300,4 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
   )
   return 0
 }
+

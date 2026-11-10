@@ -78,6 +78,17 @@ describe('gcb authorize', () => {
         }),
         /is not writable/u,
       )
+      const dangling = path.join(root, 'dangling.refresh')
+      fs.symlinkSync(path.join(root, 'missing.refresh'), dangling)
+      assert.throws(
+        () => resolveAuthorizationPlacement({
+          configPath,
+          to: dangling,
+          brokerContainer: true,
+          isInsideContainer: () => false,
+        }),
+        /is not writable/u,
+      )
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
