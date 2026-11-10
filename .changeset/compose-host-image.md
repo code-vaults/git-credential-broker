@@ -1,5 +1,5 @@
 ---
-"gcb-host": minor
+"gcb-host": patch
 ---
 
 `compose` now emits the released `ghcr.io/code-vaults/gcb-host:<version>` image and runs its installed
