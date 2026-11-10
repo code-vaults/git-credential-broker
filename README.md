@@ -555,7 +555,8 @@ empty `user.refresh` (mode `0600`) as the host user who will run `authorize`, be
 `gcb compose`. Run `authorize` before starting the sidecar; an empty file is now treated as absent,
 but the supported flow does not rely on that fallback. If the sidecar uid differs, `chown` the token
 to the sidecar uid after `authorize` and before starting the sidecar, so the broker can read and
-rotate it.
+rotate it. If Compose was rendered while the file was absent, rerender and recreate the sidecar after
+authorization so the mount is added.
 
 The user token is used where the person identity is required or preferred: authoring a pull request,
 submitting a review, resolving a review thread (GraphQL refuses that for an app), replying to or

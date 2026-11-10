@@ -72,6 +72,18 @@ describe('gcb authorize', () => {
     )
   })
 
+  it('secures an existing token file before the device flow', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-authorize-mode-'))
+    try {
+      const target = path.join(root, 'user.refresh')
+      fs.writeFileSync(target, '', { mode: 0o664 })
+      resolveAuthorizationPlacement({ configPath, to: target, brokerContainer: true })
+      assert.equal(fs.statSync(target).mode & 0o777, 0o600)
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('accepts a new subdirectory beneath a writable mount', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-authorize-'))
     try {

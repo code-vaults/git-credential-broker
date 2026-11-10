@@ -13,7 +13,7 @@
  * Exit codes: 0 stored, 1 refused.
  */
 
-import { accessSync, constants, existsSync } from 'node:fs'
+import { accessSync, chmodSync, constants, existsSync, statSync } from 'node:fs'
 import { dirname, join, resolve as resolvePath } from 'node:path'
 
 import {
@@ -97,7 +97,13 @@ export interface AuthorizationPlacement {
 function writableTarget(target: string): boolean {
   try {
     if (existsSync(target)) {
+      if (!statSync(target).isFile()) {
+        return false
+      }
       accessSync(target, constants.W_OK)
+      // Secure an existing placeholder now, before the device flow; if this fails, the write later
+      // would leave a token readable to a group or another user.
+      chmodSync(target, 0o600)
       return true
     }
     let ancestor = dirname(target)
