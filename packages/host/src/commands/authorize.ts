@@ -13,18 +13,10 @@
  * Exit codes: 0 stored, 1 refused.
  */
 
-import { accessSync, chmodSync, constants, existsSync, statSync } from 'node:fs'
+import { accessSync, chmodSync, closeSync, constants, existsSync, fchmodSync, lstatSync, openSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve as resolvePath } from 'node:path'
 
-import {
-  fail,
-  insideMountedPath,
-  isInsideContainer,
-  parseArgs,
-  say,
-  warn,
-  writeSecretFile,
-} from 'gcb-core'
+import { fail, insideMountedPath, isInsideContainer, parseArgs, say, warn } from 'gcb-core'
 
 import { USER_TOKEN_FILE, userTokenPath, loadConfig, resolveConfigPath } from '../config.ts'
 import { collectUserToken, startDeviceFlow, type Fetcher } from '../device-flow.ts'
@@ -94,10 +86,22 @@ export interface AuthorizationPlacement {
 }
 
 /** Whether the target or its parent is writable, so a read-only sidecar mount fails before the flow. */
+/** Write the token through a no-follow descriptor so a replaceable symlink cannot redirect it. */
+function writeToken(target: string, token: string): void {
+  const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0)
+  const fd = openSync(target, flags, 0o600)
+  try {
+    writeFileSync(fd, `${token}\n`)
+    fchmodSync(fd, 0o600)
+  } finally {
+    closeSync(fd)
+  }
+}
+
 function writableTarget(target: string): boolean {
   try {
     if (existsSync(target)) {
-      if (!statSync(target).isFile()) {
+      if (lstatSync(target).isSymbolicLink() || !lstatSync(target).isFile()) {
         return false
       }
       accessSync(target, constants.W_OK)
@@ -133,6 +137,11 @@ export function resolveAuthorizationPlacement(
   input: AuthorizationPlacementInput,
 ): AuthorizationPlacement {
   const target = input.to ?? refreshTokenPath(input.configPath)
+  if ((input.isInsideContainer ?? isInsideContainer)()) {
+    throw new Error(
+      'run this on the host, not inside the container: the token must not land anywhere the container can read',
+    )
+  }
   if (input.brokerContainer) {
     const writable = input.writable ?? writableTarget
     if (!writable(target)) {
@@ -145,11 +154,6 @@ export function resolveAuthorizationPlacement(
       warning:
         "writing inside the broker container's mounts; this is only safe when the target is not shared with the agent container",
     }
-  }
-  if ((input.isInsideContainer ?? isInsideContainer)()) {
-    throw new Error(
-      'run this on the host, not inside the container: the token must not land anywhere the container can read',
-    )
   }
   const mounted = (input.mountedPath ?? insideMountedPath)(target)
   if (mounted !== null) {
@@ -238,7 +242,7 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
     )
   }
 
-  writeSecretFile(placement.target, `${token.refreshToken}\n`)
+  writeToken(placement.target, token.refreshToken)
   say(`stored the refresh token in ${placement.target} (mode 600)`)
   const readByBroker = brokerReadsPath(block.privateKeyPath)
   if (readByBroker === undefined) {
