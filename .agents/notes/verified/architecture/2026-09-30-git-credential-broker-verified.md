@@ -90,7 +90,7 @@ deploy-sidecar.sh 写容器内路径）就不会有这个问题；把两者合�
 五个 shell 脚本已全部改成 CLI 子命令，并随包发布到 npm（`git-credential-broker`）：`setup`
 （原 container-setup.sh）、`init`（原 host-setup.sh）、`compose`（原 deploy-sidecar.sh 的
 compose 生成）、`probe`、`diagnose`。宿主不再需要 checkout 或构建 —— `compose` 产出的 sidecar
-直接 `npx` 拉取已发布的包。同一个 bin 既是 git 的 credential helper（`get|store|erase`），
+使用已发布 host 镜像里的 `gcb`。同一个 bin 既是 git 的 credential helper（`get|store|erase`），
 也是管理 CLI。
 
 **新增 `stage`：把"代码在哪"变成一条命令。** 原 `deploy-sidecar.sh` 会拒绝脏工作树，合并成 CLI 时我把

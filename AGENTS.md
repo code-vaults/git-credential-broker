@@ -77,7 +77,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 - **Only cover the deployment shapes this project actually supports.** The supported shapes are
   the installed `gcb-client` in the container, the installed `gcb-host` (or a staged commit with
   its production dependencies) on the host, the rendered sidecar, and a source checkout with a
-  `gcb` shim for development. Do not add guards, probes, commands or tests for one-off `npx`
+  `gcb` shim for development. Do not add guards, probes, commands or tests for one-off execution
   setup, direct imports of command modules, arbitrary later PATH changes, or native Windows beyond
   the existing refusal and its real-platform CI job.
   `setup` cannot know the PATH of a later git process; do not pretend a setup-time check is a

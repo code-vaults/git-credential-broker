@@ -119,12 +119,6 @@ gcb compose --dir "$DEPLOY" --socket-dir "$SOCKET_DIR" \
   > "$DEPLOY/docker-compose.yml"
 ```
 
-Change only the `exec npx --yes --package … gcb` prefix to `exec gcb`, keeping `daemon --config …`:
-
-```sh
-exec gcb daemon --config /etc/git-cred-broker/config/broker.config.yml
-```
-
 The dev image already installs the package; do **not** keep a staged `/opt/gcb` mount, or the
 image's code is ignored.
 Then recreate from the deployment directory, choosing the proxy at runtime:

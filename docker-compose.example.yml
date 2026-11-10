@@ -13,10 +13,10 @@
 
 services:
   git-cred-broker:
-    # The usual NAS case. The image installs the package at start, so there is no checkout to copy
+    # The usual NAS case. The released image contains gcb-host, so there is no checkout to copy
     # and nothing to build. Only this container mounts the private key; the socket directory is
     # the only thing shared with the DSH container.
-    image: node:24-slim
+    image: ghcr.io/code-vaults/gcb-host:0.8.0
     container_name: git-cred-broker
     restart: unless-stopped
     # Must match the uid/gid of the container that will use the socket, or it is unusable.
@@ -24,15 +24,12 @@ services:
     user: '1000:1000'
     read_only: true
     tmpfs:
-      # npx needs somewhere writable for its cache; /tmp is a tmpfs above.
       - /tmp
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
     environment:
-      # npx needs somewhere writable for its cache; /tmp is a tmpfs above.
-      - npm_config_cache=/tmp/npm-cache
       # Egress: the socket needs no proxy, the broker's own calls to github.com do.
       - http_proxy=${http_proxy:-${HTTP_PROXY:-}}
       - https_proxy=${https_proxy:-${HTTPS_PROXY:-}}
@@ -41,7 +38,7 @@ services:
     command:
       - sh
       - -c
-      - exec npx --yes --package 'gcb-host' gcb daemon --config /etc/git-cred-broker/config/broker.config.yml
+      - exec gcb daemon --config /etc/git-cred-broker/config/broker.config.yml
     volumes:
       # The configuration directory, not one file: an atomic replacement on the host must stay
       # visible to the container's watcher. Put broker.config.yml in ./config; the key and refresh
@@ -72,9 +69,7 @@ services:
       # The same host directory the broker binds, or the two are not sharing a socket at all.
       - /srv/git-broker-socket:/run/git-broker
 
-# Pin a released version (`npx --yes --package 'gcb-host@<version>'`) if you would rather not
-# resolve latest on every start; `compose` pins the version it was generated from. The first
-# functional release is 0.0.1; 0.0.0 is an empty placeholder.
+# Pin the released image tag or digest; `compose` pins the version it was generated from.
 #
 # The host-process alternative, for a host that has Node and a service manager:
 #

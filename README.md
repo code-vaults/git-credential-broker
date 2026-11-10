@@ -84,7 +84,7 @@ npm install -g gcb-host
 
 `gcb-client` has no runtime dependencies. `gcb-host` depends on `yaml`; npm installs it there. Do not
 install both globally on the same machine: they race for the same `gcb` bin. Run `setup` from the
-installed client; one-off `npx` execution is not a supported installation shape.
+installed client; one-off execution is not a supported installation shape.
 
 Or run from a checkout. Node 24 strips TypeScript types, but the workspaces still need their
 dependencies:
@@ -108,10 +108,8 @@ the compose command in [Quick start](#quick-start-sidecar):
 docker build --target host -t code-vaults/gcb-host:dev .
 ```
 
-The image's `CMD` starts `gcb daemon`, but `compose` still renders the registry-fetching `npx`
-command by default. Keep the rendered `sh -c` wrapper (it applies `GCB_PROXY`) and change only its
-final `exec npx ...` to `exec gcb daemon --config ...`; see
-[DEVELOPMENT.md](DEVELOPMENT.md#use-your-build).
+The image's `CMD` starts `gcb daemon`; the rendered command runs that installed binary and keeps the
+`sh -c` wrapper that applies `GCB_PROXY`. See [DEVELOPMENT.md](DEVELOPMENT.md#use-your-build).
 
 Debian packages use the Aliyun mirror by default in this image; pass
 `--build-arg APT_MIRROR=<host>` to build against another mirror.
@@ -177,9 +175,8 @@ The exact command, flags and required values come from
 
 ## Quick start: sidecar
 
-Docker only. Run `init` and `compose` from an installed `gcb-host`. The image is stock `node:24-slim`;
-the default sidecar fetches `gcb-host` with `npx` at start, while `--code` runs a staged commit with no
-registry access at boot.
+Docker only. Run `init` and `compose` from an installed `gcb-host`. The default sidecar uses the
+released `gcb-host` image and runs its installed `gcb daemon`; `--code` runs a staged commit instead.
 
 ```sh
 DEPLOY=/srv/git-cred-broker        # the deployment directory
@@ -229,8 +226,7 @@ guess. The runtime route is deliberately a superset: a directory bind-mounted in
 counts as shared, because any container that can rewrite the broker's code is as good a reason not to
 stage there as the agent is.
 
-The sidecar fetches the published `gcb-host` package with `npx` at start. To pin a reviewed commit
-instead, run `gcb stage --to "$DEPLOY/app"`, install its dependencies in that directory with
+The sidecar runs the installed `gcb` from the released host image. To pin a reviewed commit instead, run `gcb stage --to "$DEPLOY/app"`, install its dependencies in that directory with
 `corepack yarn install`, and pass `--code "$DEPLOY/app"` to `compose`. Run `stage` from the repository
 root you intend to export, or pass `--repo <path>`: it defaults to the current directory and exports
 that repository's `HEAD`, never the working tree. `stage` is export-only: it does not install
@@ -268,7 +264,7 @@ gcb setup
 install and a dev shim) and `credential.useHttpPath` (without the latter, git sends no repository
 path and the broker can only authorize host-wide). The helper is resolved by the git process later,
 not by `setup`: that process must have `gcb` on its PATH. Run setup from the installed client, not
-a one-off `npx` process.
+a one-off execution.
 
 It also rewrites `git@github.com:` remotes to
 https **inside the container only** so the host's SSH workflow is untouched, and writes a CA bundle
@@ -348,8 +344,7 @@ a sidecar it is inside the container:
 
 ```sh
 DEPLOY=/srv/git-cred-broker
-cd "$DEPLOY" && docker compose exec gcb \
-  npx --yes --package gcb-host gcb \
+cd "$DEPLOY" && docker compose exec gcb gcb \
   diagnose --config /etc/git-cred-broker/config/broker.config.yml
 ```
 
@@ -809,6 +804,36 @@ Copy the two package directories, not all of `/usr/local/lib/node_modules`: the 
 its own `corepack` and `npm`, and a whole-directory copy would replace them. That default is for a
 local build; CI and production pass a published version instead, e.g.
 `--build-arg GCB_CLIENT_IMAGE=ghcr.io/code-vaults/gcb-client:<version>`.
+
+### Updating the sidecar
+
+Pin a released `gcb-host` image by version or digest; do not use `:dev` or `pull_policy: never` for
+updates. The generated service is named `gcb` by default (`gcb compose --name <name>` changes it).
+
+The released image contains the `gcb` binary and starts `gcb daemon`. Keep the generated `sh -c`
+wrapper: it applies `GCB_PROXY`, and its final `exec` already runs the installed binary. Do not replace
+the whole `command` with a bare `gcb daemon` list.
+
+```sh
+docker compose pull gcb
+docker compose up -d --no-deps --force-recreate gcb
+```
+
+Verify the running sidecar, not just the host CLI:
+
+```sh
+docker compose exec gcb gcb --version
+docker compose exec gcb gcb doctor --config /etc/git-cred-broker/config/broker.config.yml
+gcb --version   # in the pushing environment; must be the same release line
+```
+
+`gcb doctor` checks configuration and the audit path; it is not a daemon-liveness probe. Check
+liveness from the pushing environment with `gcb probe --repo <owner/name>`: exit `0` means allowed,
+`1` denied, and `3` means the broker is unreachable. Alert on a non-zero doctor result; restart only
+when `probe` returns `3` or the socket is gone; a configuration error needs an operator.
+
+Use the same release line on both sides. Typed host replies and the active-audit ping need at least
+`0.3.0`; `gcb authorize --broker-container` needs host `0.8.0`.
 
 ## App permissions by action
 
