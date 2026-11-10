@@ -198,6 +198,15 @@ describe('the host request channel', () => {
     assert.deepEqual(listRequests(dir), [], 'and a refused request is not waiting')
   })
 
+  it('validates a host push request', () => {
+    const push = { kind: 'push' as const, repo: 'acme/widget', branch: 'feat/thing' }
+    assert.deepEqual(requestProblems(push), [])
+    assert.match(requestProblems({ ...push, branch: '../escape' }).join(' '), /branch/)
+    assert.match(requestProblems({ ...push, branch: 'a:b' }).join(' '), /branch/)
+    assert.match(requestProblems({ ...push, repo: 'not a repo' }).join(' '), /repository/)
+    assert.match(requestProblems({ ...push, account: 'not a login' }).join(' '), /account/)
+  })
+
   it('carries a typed review reply', async () => {
     const reply = {
       kind: 'reply' as const,

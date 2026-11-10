@@ -58,6 +58,7 @@ const KINDS: Readonly<Record<RequestKind, { noun: string; needed?: string }>> = 
   edit: { noun: 'edit', needed: 'edit' },
   review: { noun: 'review', needed: 'review' },
   action: { noun: 'action', needed: 'action' },
+  push: { noun: 'push', needed: 'push' },
 }
 
 /** Write, wait for and return one host-broker answer. */

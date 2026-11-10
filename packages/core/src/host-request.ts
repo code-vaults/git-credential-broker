@@ -146,6 +146,18 @@ export interface HostActionRequest {
   readonly pid?: number
 }
 
+/** One request to push a branch from the checkout to its repository. */
+export interface HostPushRequest {
+  readonly kind: 'push'
+  readonly repo: string
+  readonly host?: string
+  readonly branch: string
+  readonly proxy?: string | null
+  readonly account?: string
+  readonly session?: string
+  readonly pid?: number
+}
+
 /** One request to fork a repository. */
 export interface HostForkRequest {
   readonly kind: 'fork'
@@ -164,6 +176,7 @@ export type HostRequest =
   | HostReviewRequest
   | HostEditRequest
   | HostActionRequest
+  | HostPushRequest
   | HostForkRequest
 
 /** What the host broker answered. */
@@ -563,6 +576,21 @@ export function requestProblems(request: HostRequest): string[] {
     }
     return problems
   }
+  if (request.kind === 'push') {
+    if (!REPOSITORY.test(request.repo)) {
+      problems.push('the repository is not owner/name')
+    }
+    if (request.host !== undefined && !HOST.test(request.host)) {
+      problems.push('the host is not a usable host')
+    }
+    if (!BRANCH.test(request.branch) || request.branch.includes('..') || request.branch.includes(':')) {
+      problems.push('the branch name is not usable')
+    }
+    if (request.account !== undefined && !LOGIN.test(request.account)) {
+      problems.push('the account is not a usable GitHub login')
+    }
+    return problems
+  }
   if (request.kind === 'fork') {
     if (!REPOSITORY.test(request.repo)) {
       problems.push('the repository is not owner/name')
@@ -945,10 +973,16 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
                 REPOSITORY.test(request.repo) &&
                 (request.host === undefined ||
                   (typeof request.host === 'string' && HOST.test(request.host)))
-              : typeof request.title === 'string' &&
-                typeof request.body === 'string' &&
-                typeof request.head === 'string' &&
-                typeof request.base === 'string')
+              : request.kind === 'push'
+                ? typeof request.repo === 'string' &&
+                  REPOSITORY.test(request.repo) &&
+                  typeof request.branch === 'string' &&
+                  (request.host === undefined ||
+                    (typeof request.host === 'string' && HOST.test(request.host)))
+                : typeof request.title === 'string' &&
+                  typeof request.body === 'string' &&
+                  typeof request.head === 'string' &&
+                  typeof request.base === 'string')
   if (!shaped) {
     rmSync(claimed, { force: true, recursive: true })
     rmSync(claimFile(dir, id), { force: true, recursive: true })

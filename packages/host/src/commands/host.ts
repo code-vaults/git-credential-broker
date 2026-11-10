@@ -415,7 +415,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         pid: process.pid,
         command,
         startedAt: new Date().toISOString(),
-        kinds: ['pull-request', 'review', 'reply', 'edit', 'action', 'fork'],
+        kinds: ['pull-request', 'review', 'reply', 'edit', 'action', 'fork', 'push'],
       })
     }
   }
@@ -545,6 +545,8 @@ async function sweep(
                 ? `edited #${result.number} as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
                 : request.kind === 'action'
                   ? `ran ${request.action} as ${request.account ?? 'this user'}`
+                  : request.kind === 'push'
+                    ? `pushed ${request.branch} as ${request.account ?? 'this user'}`
                   : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
       )
     } else {
@@ -560,7 +562,9 @@ async function sweep(
                   ? `edit on #${request.number}`
                   : request.kind === 'action'
                     ? request.action
-                    : request.head
+                    : request.kind === 'push'
+                      ? request.branch
+                      : request.head
         }: ${result.error}`,
       )
     }
@@ -754,6 +758,48 @@ async function openOne(
       const failure = error as { stderr?: string; message?: string }
       const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim()
       return { error: reason.slice(0, 300) || 'the command failed' }
+    }
+  }
+
+  if (request.kind === 'push') {
+    const host = request.host ?? 'github.com'
+    try {
+      if (!allowed(host, request.repo)) {
+        return { error: `repository ${request.repo} is not in the allowlist for ${host}` }
+      }
+    } catch (error) {
+      return { error: (error as Error).message }
+    }
+    const url = `https://${host}/${request.repo}.git`
+    const helper = `!${JSON.stringify(command)} auth git-credential`
+    try {
+      const { stdout, stderr } = await run(
+        'git',
+        [
+          '-c',
+          'credential.helper=',
+          '-c',
+          `credential.helper=${helper}`,
+          '-c',
+          'credential.useHttpPath=true',
+          'push',
+          url,
+          `${request.branch}:${request.branch}`,
+        ],
+        {
+          cwd: repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env: {
+            ...forkEnv(request.proxy, request.account, host),
+            GIT_TERMINAL_PROMPT: '0',
+          },
+        },
+      )
+      return { url: `https://${host}/${request.repo}/tree/${request.branch}`, stdout, stderr }
+    } catch (error) {
+      const failure = error as { stderr?: string; message?: string }
+      return { error: (failure.stderr ?? failure.message ?? 'git push failed').trim().slice(0, 300) }
     }
   }
 

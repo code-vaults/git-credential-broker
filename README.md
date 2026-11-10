@@ -142,6 +142,13 @@ thread defaults to the user identity because the pull-request token this broker 
 `contents: write` — a grant the broker gives only to the credential git pushes with, never to a
 pull-request token.
 
+`gcb push` pushes the current branch from the host, not from this container. The host broker runs
+`git push` with its own gh account and rebuilds the target URL from the allowlisted repository; no
+token or remote URL from the container is used. It requires a host broker and a checkout on the
+host, defaults to `origin` and the current branch, and refuses force pushes. `--as-user <login>`
+selects `~/.config/gh-<login>` on the host. Because git's credential helper has no push delegation,
+this is an explicit `gcb push` instead of a transparent `git push`.
+
 `gcb repo fork [owner/name]` creates a fork under a person's account. An app cannot own a fork, so
 `--as-user` is required: bare uses the broker's authorized user, a login uses the host broker. Without
 a repository it forks the checkout's `origin`. `--host` selects the host; otherwise the origin remote's host is

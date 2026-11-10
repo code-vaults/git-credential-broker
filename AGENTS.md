@@ -199,6 +199,11 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 - **A push to `main` cancels the previous run** (`concurrency` with `cancel-in-progress`). A run
   can therefore end as `cancelled` rather than red or green, and a verdict that looks missing is
   usually one a later push replaced: read the newest run for the commit, not the first.
+- **A fork push is a host operation, not a container credential.** `gcb push` asks the host broker
+  to run `git push` with its own gh account; the container sends only `owner/repo` and a branch, and
+  the host rebuilds the HTTPS URL, rechecks the allowlist and disables force. There is no
+  person-token credential for git in the container, and no transparent interception of `git push`.
+
 - **Open a pull request; the agent opens it, and can close or update it.**
   `gcb pr` covers most of the lifecycle: `--head`/`--base`/`--title` to open,
   `--number` with none of the acting flags (which updates the title, body or base). Closing is the

@@ -27,6 +27,7 @@ export const CLIENT_COMMANDS = [
   'pr',
   'run',
   'issue',
+  'push',
   'repo',
   'gh',
 ] as const
