@@ -14,14 +14,11 @@
  */
 
 import {
-  accessSync,
   closeSync,
   constants,
-  existsSync,
   fchmodSync,
   fstatSync,
   ftruncateSync,
-  lstatSync,
   mkdirSync,
   openSync,
   writeFileSync,
@@ -88,7 +85,6 @@ export interface AuthorizationPlacementInput {
   readonly brokerContainer: boolean
   readonly isInsideContainer?: () => boolean
   readonly mountedPath?: (target: string) => string | null
-  readonly writable?: (target: string) => boolean
 }
 
 /** The writable target and the warning to print before starting the device flow. */
@@ -106,11 +102,15 @@ export interface AuthorizationPlacement {
  */
 export function openTokenTarget(target: string): number {
   mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
-  const flags = constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0)
+  const flags = constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
   const fd = openSync(target, flags, 0o600)
   try {
+    const info = fstatSync(fd)
+    if (!info.isFile()) {
+      throw new Error(`${target} is not a regular file`)
+    }
     const uid = process.geteuid?.()
-    if (uid !== undefined && fstatSync(fd).uid !== uid) {
+    if (uid !== undefined && info.uid !== uid) {
       throw new Error(`${target} is not owned by the current user`)
     }
     fchmodSync(fd, 0o600)
@@ -129,46 +129,13 @@ function writeToken(fd: number, token: string): void {
   fchmodSync(fd, 0o600)
 }
 
-/** Whether the target or its parent is writable, so a read-only sidecar mount fails before the flow. */
-function writableTarget(target: string): boolean {
-  try {
-    let info
-    try {
-      info = lstatSync(target)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        return false
-      }
-    }
-    if (info !== undefined) {
-      if (info.isSymbolicLink() || !info.isFile()) {
-        return false
-      }
-      accessSync(target, constants.W_OK)
-      return true
-    }
-    let ancestor = dirname(target)
-    while (!existsSync(ancestor)) {
-      const parent = dirname(ancestor)
-      if (parent === ancestor) {
-        return false
-      }
-      ancestor = parent
-    }
-    accessSync(ancestor, constants.W_OK)
-    return true
-  } catch {
-    return false
-  }
-}
-
 /**
  * Decide where the refresh token goes, and whether that placement is allowed.
  *
  * @param input - The configuration path, target override and injectable guards.
  * @returns The target and an optional warning.
  * @throws {Error} When the placement would put the token inside a container mount without the
- * explicit broker-container acknowledgement, or when the acknowledged target is not writable.
+ * explicit broker-container acknowledgement.
  */
 export function resolveAuthorizationPlacement(
   input: AuthorizationPlacementInput,
@@ -180,12 +147,6 @@ export function resolveAuthorizationPlacement(
     )
   }
   if (input.brokerContainer) {
-    const writable = input.writable ?? writableTarget
-    if (!writable(target)) {
-      throw new Error(
-        `${target} is not writable; mount a writable token path or pass --to <writable path>`,
-      )
-    }
     return {
       target,
       warning:

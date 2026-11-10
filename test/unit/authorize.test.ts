@@ -57,7 +57,6 @@ describe('gcb authorize', () => {
           configPath,
           brokerContainer: true,
           isInsideContainer: () => true,
-          writable: () => true,
         }),
       /run this on the host/u,
     )
@@ -70,26 +69,10 @@ describe('gcb authorize', () => {
       const link = path.join(root, 'user.refresh')
       fs.writeFileSync(real, '')
       fs.symlinkSync(real, link)
-      assert.throws(
-        () => resolveAuthorizationPlacement({
-          configPath,
-          to: link,
-          brokerContainer: true,
-          isInsideContainer: () => false,
-        }),
-        /is not writable/u,
-      )
+      assert.throws(() => openTokenTarget(link))
       const dangling = path.join(root, 'dangling.refresh')
       fs.symlinkSync(path.join(root, 'missing.refresh'), dangling)
-      assert.throws(
-        () => resolveAuthorizationPlacement({
-          configPath,
-          to: dangling,
-          brokerContainer: true,
-          isInsideContainer: () => false,
-        }),
-        /is not writable/u,
-      )
+      assert.throws(() => openTokenTarget(dangling))
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
@@ -100,7 +83,6 @@ describe('gcb authorize', () => {
       configPath,
       brokerContainer: true,
       isInsideContainer: () => false,
-      writable: () => true,
     })
     assert.equal(placement.target, refreshTokenPath(configPath))
     assert.match(placement.warning ?? '', /not shared with the agent container/u)
@@ -114,8 +96,7 @@ describe('gcb authorize', () => {
         configPath,
         brokerContainer: true,
         isInsideContainer: () => false,
-        writable: () => true,
-      }).target,
+        }).target,
       refreshTokenPath(configPath),
     )
   })
@@ -137,30 +118,23 @@ describe('gcb authorize', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-authorize-'))
     try {
       const target = path.join(root, 'new', 'user.refresh')
-      assert.equal(
-        resolveAuthorizationPlacement({
-          configPath,
-          to: target,
-          brokerContainer: true,
-          isInsideContainer: () => false,
-        }).target,
-        target,
-      )
+      const fd = openTokenTarget(target)
+      fs.closeSync(fd)
+      assert.equal(fs.statSync(target).mode & 0o777, 0o600)
+      assert.equal(fs.statSync(path.dirname(target)).mode & 0o777, 0o700)
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
   })
 
-  it('refuses a read-only broker-container target', () => {
-    assert.throws(
-      () =>
-        resolveAuthorizationPlacement({
-          configPath,
-          brokerContainer: true,
-          isInsideContainer: () => false,
-          writable: () => false,
-        }),
-      /is not writable/u,
-    )
+  it('refuses a read-only target at open time', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-authorize-readonly-'))
+    try {
+      const target = path.join(root, 'user.refresh')
+      fs.writeFileSync(target, '', { mode: 0o400 })
+      assert.throws(() => openTokenTarget(target))
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
   })
 })
