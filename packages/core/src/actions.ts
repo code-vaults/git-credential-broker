@@ -240,6 +240,22 @@ const PR_READY: GhAction = {
   timeoutSeconds: 60,
 }
 
+// GitHub GraphQL: https://docs.github.com/en/graphql/reference/mutations#revertpullrequest
+// Requires gh >= 2.83.0, where `gh pr revert` was introduced.
+const PR_REVERT: GhAction = {
+  name: 'pr:revert',
+  command: ['pr', 'revert'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [
+    { name: 'title', type: 'string' },
+    { name: 'body', type: 'string' },
+    { name: 'draft', type: 'boolean' },
+  ],
+  permissions: { pull_requests: 'write', contents: 'write' },
+  timeoutSeconds: 180,
+  appUser: true,
+}
+
 // GitHub GraphQL:
 // https://docs.github.com/en/graphql/reference/pulls#mutation-updatepullrequestbranch
 const PR_UPDATE_BRANCH: GhAction = {
@@ -829,6 +845,7 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:lock': PR_LOCK,
   'pr:unlock': PR_UNLOCK,
   'pr:update-branch': PR_UPDATE_BRANCH,
+  'pr:revert': PR_REVERT,
   'pr:checks': PR_CHECKS,
   'pr:status': PR_STATUS,
   'pr:comment': PR_COMMENT,

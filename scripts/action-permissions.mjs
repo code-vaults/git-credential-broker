@@ -44,9 +44,13 @@ function formatReadme(content) {
   const file = join(directory, 'README.md')
   try {
     writeFileSync(file, content)
-    execFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules/.bin/oxfmt'), [file], {
-      stdio: 'ignore',
-    })
+    execFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules/.bin/oxfmt'),
+      [file],
+      {
+        stdio: 'ignore',
+      },
+    )
     return readFileSync(file, 'utf8')
   } finally {
     rmSync(directory, { recursive: true, force: true })

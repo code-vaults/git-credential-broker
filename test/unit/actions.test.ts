@@ -24,6 +24,7 @@ describe('gh action catalog', () => {
       'pr:lock',
       'pr:unlock',
       'pr:update-branch',
+      'pr:revert',
       'pr:checks',
       'pr:status',
       'pr:comment',
@@ -181,10 +182,15 @@ describe('gh action catalog', () => {
     assert.equal(getGhAction('pr:lock').appUser, undefined)
     assert.equal(getGhAction('pr:unlock').appUser, undefined)
     assert.equal(getGhAction('pr:update-branch').appUser, true)
+    assert.equal(getGhAction('pr:revert').appUser, true)
     assert.deepEqual(getGhAction('pr:ready').permissions, { pull_requests: 'write' })
     assert.deepEqual(getGhAction('pr:lock').permissions, { pull_requests: 'write' })
     assert.deepEqual(getGhAction('pr:unlock').permissions, { pull_requests: 'write' })
     assert.deepEqual(getGhAction('pr:update-branch').permissions, {
+      pull_requests: 'write',
+      contents: 'write',
+    })
+    assert.deepEqual(getGhAction('pr:revert').permissions, {
       pull_requests: 'write',
       contents: 'write',
     })
@@ -195,6 +201,7 @@ describe('gh action catalog', () => {
       ['pr:lock', 60],
       ['pr:unlock', 60],
       ['pr:update-branch', 120],
+      ['pr:revert', 180],
       ['run:cancel', 60],
       ['run:rerun', 120],
     ] as const) {
@@ -534,6 +541,11 @@ describe('buildGhArgv', () => {
       'acme/widget',
     ])
     assert.throws(() => buildGhArgv('pr:update-branch', {}, 'acme/widget'), /needs number/u)
+    assert.deepEqual(
+      buildGhArgv('pr:revert', { number: 7, title: 'Revert it', draft: true }, 'acme/widget'),
+      ['pr', 'revert', '7', '--title', 'Revert it', '--draft', '--repo', 'acme/widget'],
+    )
+    assert.throws(() => buildGhArgv('pr:revert', {}, 'acme/widget'), /needs number/u)
     assert.deepEqual(
       buildGhArgv('run:watch', { runId: 42, compact: true, 'exit-status': true }, 'acme/widget'),
       ['run', 'watch', '42', '--compact', '--exit-status', '--repo', 'acme/widget'],

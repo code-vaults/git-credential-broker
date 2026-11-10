@@ -797,6 +797,7 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr lock`                            | `pull_requests: write`                                                    |
 | `pr unlock`                          | `pull_requests: write`                                                    |
 | `pr update-branch`                   | `pull_requests: write`, `contents: write`                                 |
+| `pr revert`                          | `pull_requests: write`, `contents: write`                                 |
 | `pr checks`                          | `pull_requests: read`, `checks: read`, `statuses: read`                   |
 | `pr status`                          | `pull_requests: read`, `checks: read`, `statuses: read`                   |
 | `pr comment`                         | `pull_requests: write`                                                    |
@@ -834,6 +835,8 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `search prs`                         | `pull_requests: read`                                                     |
 
 <!-- action-permissions:end -->
+
+`pr revert` needs `gh` 2.83.0 or newer; older stock `gh` binaries do not have that subcommand.
 
 `pr status` with `--repo` reports the app identity's relevant pull requests and review requests
 with their checks; gh's current-branch section is absent because the broker has no branch.
