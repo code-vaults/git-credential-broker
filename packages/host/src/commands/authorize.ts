@@ -37,13 +37,14 @@ Get a user token for this app, by authorizing it once from a browser somewhere e
 beside the configuration. It stores a refresh token and prints where; nothing else needs running after
 that, because the broker renews the token itself.
 
-  --config <path>   The configuration (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
-  --host <host>     The host block to authorize for (default: github.com)
-  --to <path>       Where to write the refresh token (default: beside the configuration)
-  --broker-container  Allow writing inside the broker container's mounts (never the agent container)
-  --proxy <url>     Use this proxy for this command
-  --no-proxy        Reach GitHub directly for this command
-  -h, --help        Show this help
+  --config <path>      The configuration (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
+  --host <host>        The host block to authorize for (default: github.com)
+  --to <path>          Where to write the refresh token (default: beside the configuration)
+  --broker-container   Allow a target inside the broker container's mounts; only when it is not
+                       shared with the agent container
+  --proxy <url>        Use this proxy for this command
+  --no-proxy           Reach GitHub directly for this command
+  -h, --help           Show this help
 
 The app needs its client id configured (the App ID will not do), and "Enable Device Flow" selected in
 its settings. GitHub returns a refresh token only while "Expire user authorization tokens" is selected,
@@ -74,6 +75,72 @@ export function refreshTokenPath(configPath: string): string {
  */
 export function brokerReadsPath(privateKeyPath: string | undefined): string | undefined {
   return privateKeyPath === undefined ? undefined : userTokenPath(privateKeyPath)
+}
+
+/** Inputs for the credential-placement decision. */
+export interface AuthorizationPlacementInput {
+  readonly configPath: string
+  readonly to?: string
+  readonly brokerContainer: boolean
+  readonly isInsideContainer?: () => boolean
+  readonly mountedPath?: (target: string) => string | null
+  readonly writable?: (target: string) => boolean
+}
+
+/** The writable target and the warning to print before starting the device flow. */
+export interface AuthorizationPlacement {
+  readonly target: string
+  readonly warning?: string
+}
+
+/** Whether the target or its parent is writable, so a read-only sidecar mount fails before the flow. */
+function writableTarget(target: string): boolean {
+  try {
+    accessSync(existsSync(target) ? target : dirname(target), constants.W_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Decide where the refresh token goes, and whether that placement is allowed.
+ *
+ * @param input - The configuration path, target override and injectable guards.
+ * @returns The target and an optional warning.
+ * @throws {Error} When the placement would put the token inside a container mount without the
+ * explicit broker-container acknowledgement, or when the acknowledged target is not writable.
+ */
+export function resolveAuthorizationPlacement(
+  input: AuthorizationPlacementInput,
+): AuthorizationPlacement {
+  const target = input.to ?? refreshTokenPath(input.configPath)
+  if (input.brokerContainer) {
+    const writable = input.writable ?? writableTarget
+    if (!writable(target)) {
+      throw new Error(
+        `${target} is not writable; mount a writable token path or pass --to <writable path>`,
+      )
+    }
+    return {
+      target,
+      warning:
+        "writing inside the broker container's mounts; this is only safe when the target is not shared with the agent container",
+    }
+  }
+  if ((input.isInsideContainer ?? isInsideContainer)()) {
+    throw new Error(
+      'run this on the host, not inside the container: the token must not land anywhere the container can read',
+    )
+  }
+  const mounted = (input.mountedPath ?? insideMountedPath)(target)
+  if (mounted !== null) {
+    throw new Error(
+      `${target} is inside ${mounted}, which is mounted into the container; the refresh token must live\n` +
+        '  outside every mount — the deployment directory beside the configuration is the usual place',
+    )
+  }
+  return { target }
 }
 
 /**
@@ -120,17 +187,20 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
     )
   }
 
-  const target = args.value('to') ?? refreshTokenPath(configPath)
-  const brokerContainer = args.has('broker-container')
-  if (brokerContainer) {
-    try {
-      accessSync(existsSync(target) ? target : dirname(target), constants.W_OK)
-    } catch {
-      fail(
-        `${target} is not writable inside the broker container; mount a writable token path or pass --to <writable path>`,
-      )
-    }
+  let placement: AuthorizationPlacement
+  try {
+    placement = resolveAuthorizationPlacement({
+      configPath,
+      to: args.value('to'),
+      brokerContainer: args.has('broker-container'),
+    })
+  } catch (error) {
+    fail((error as Error).message)
   }
+  if (placement.warning !== undefined) {
+    warn(placement.warning)
+  }
+  say(`the refresh token will be written to ${placement.target}`)
 
   const fetcher: Fetcher = fetcherFor(proxy)
   const code = await startDeviceFlow(block.clientId, fetcher)
@@ -150,29 +220,8 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
     )
   }
 
-  // The same two checks init and stage apply, for the same reason: this is a credential of a person, and
-  // the container that pushes must not be able to read it. It is written outside every mount or not at all,
-  // unless the operator explicitly says this is the broker-container side of the deployment.
-  if (brokerContainer) {
-    warn(
-      'writing inside the broker container\'s mounts; this is only safe when the target is not shared with the agent container',
-    )
-  } else {
-    if (isInsideContainer()) {
-      fail(
-        'run this on the host, not inside the container: the token must not land anywhere the container can read',
-      )
-    }
-    const mounted = insideMountedPath(target)
-    if (mounted !== null) {
-      fail(
-        `${target} is inside ${mounted}, which is mounted into the container; the refresh token must live\n` +
-          '  outside every mount — the deployment directory beside the configuration is the usual place',
-      )
-    }
-  }
-  writeSecretFile(target, `${token.refreshToken}\n`)
-  say(`stored the refresh token in ${target} (mode 600)`)
+  writeSecretFile(placement.target, `${token.refreshToken}\n`)
+  say(`stored the refresh token in ${placement.target} (mode 600)`)
   const readByBroker = brokerReadsPath(block.privateKeyPath)
   if (readByBroker === undefined) {
     // An inline privateKeyPem deployment: the broker has no directory to derive a path from, so it never
@@ -181,7 +230,7 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
       'note: this host block keeps its key inline, so the broker has nowhere to look for this file:',
     )
     say('      pull requests will stay app-authored until the key is a file (privateKeyPath)')
-  } else if (resolvePath(readByBroker) === resolvePath(target)) {
+  } else if (resolvePath(readByBroker) === resolvePath(placement.target)) {
     say(
       'which is where the broker looks for it — keep it writable, since the token is rotated on every use',
     )

@@ -538,18 +538,17 @@ It prints a code and asks you to open <https://github.com/login/device>, then wa
 whatever device has a browser. The refresh token is stored beside the private key, which is where the
 broker looks for it, and the broker renews it from then on — nothing else needs running.
 
-When the configuration and token live inside the broker container, run it there with:
+When the configuration and key are mounted into the broker container, run `authorize` on the **host**,
+in the deployment directory:
 
 ```sh
-gcb authorize --broker-container --config /etc/git-cred-broker/config/broker.config.yml
+gcb authorize --broker-container --config /srv/git-cred-broker/broker.config.yml
 ```
 
-That mode skips the host-mount refusal and prints a warning; it is only safe when the target is
-mounted into the broker container and **not** into the agent container. The configuration directory
-is read-only, so the token target must already be writable: create an empty `user.refresh` in the
-deployment directory before the first start (so compose mounts a writable file), or pass `--to` a
-writable path. The command checks this before starting the device flow and refuses a read-only
-target.
+This writes `/srv/git-cred-broker/user.refresh`, which the sidecar mount maps to the broker's
+`/etc/git-cred-broker/user.refresh`. The flag acknowledges that the host directory is a
+broker-container bind mount; it must not also be mounted into the agent container. The command checks
+that the target is writable before starting the device flow.
 
 The user token is used where the person identity is required or preferred: authoring a pull request,
 submitting a review, resolving a review thread (GraphQL refuses that for an app), replying to or
