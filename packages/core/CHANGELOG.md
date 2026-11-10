@@ -1,5 +1,18 @@
 # gcb-core
 
+## 0.8.0
+
+### Minor Changes
+
+- [#124](https://github.com/code-vaults/git-credential-broker/pull/124) [`9ae646c`](https://github.com/code-vaults/git-credential-broker/commit/9ae646c2df2d6c9fc0f8b4e73e1e597e8cba9063) Thanks [@JounQin](https://github.com/JounQin)! - Add repo-scoped search actions: `search:issues` (`issues: read`) and `search:prs`
+  (`pull_requests: read`). The broker still injects `--repo`, and rejects `repo:` / `org:` / `user:` qualifiers in the query, so a search cannot escape the allowlist.
+
+- [#129](https://github.com/code-vaults/git-credential-broker/pull/129) [`5d93ad4`](https://github.com/code-vaults/git-credential-broker/commit/5d93ad4f05d54150afd66bcb2b531e70a38c86a8) Thanks [@JounQin](https://github.com/JounQin)! - Add the `pr:revert` catalog action (`gh pr revert <number>`) with optional title, body and draft flags. It requires `pull_requests: write` and `contents: write`.
+
+- [#127](https://github.com/code-vaults/git-credential-broker/pull/127) [`d311cb0`](https://github.com/code-vaults/git-credential-broker/commit/d311cb09b88766f3fce6f7877d6da81d205526a0) Thanks [@JounQin](https://github.com/JounQin)! - Search actions accept multiple positional terms (or one quoted phrase): the final positional is
+  repeatable, and each term is passed to `gh` as its own argument after `--`. Repository-scope
+  qualifier rejection applies to every term.
+
 ## 0.7.1
 
 No changes in this release.
