@@ -788,7 +788,7 @@ async function openOne(
     try {
       const { stdout, stderr } = await run(
         'git',
-        [...credentials, 'push', url, `refs/heads/${request.branch}:refs/heads/${request.branch}`],
+        [...credentials, '--no-verify', 'push', url, `refs/heads/${request.branch}:refs/heads/${request.branch}`],
         {
           cwd: repo,
           timeout: CREATE_TIMEOUT_MS,
