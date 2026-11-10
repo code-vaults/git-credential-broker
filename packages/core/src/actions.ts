@@ -241,6 +241,7 @@ const PR_READY: GhAction = {
 }
 
 // GitHub GraphQL: https://docs.github.com/en/graphql/reference/mutations#revertpullrequest
+// Requires gh >= 2.83.0, where `gh pr revert` was introduced.
 const PR_REVERT: GhAction = {
   name: 'pr:revert',
   command: ['pr', 'revert'],

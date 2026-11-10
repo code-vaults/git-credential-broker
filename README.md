@@ -836,6 +836,8 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 
 <!-- action-permissions:end -->
 
+`pr revert` needs `gh` 2.83.0 or newer; older stock `gh` binaries do not have that subcommand.
+
 `pr status` with `--repo` reports the app identity's relevant pull requests and review requests
 with their checks; gh's current-branch section is absent because the broker has no branch.
 
