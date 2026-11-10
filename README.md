@@ -797,9 +797,8 @@ or CI builds the same Dockerfile and tags, rather than pulling `:dev`.
 Pin a released `gcb-host` image by version or digest; do not use `:dev` or `pull_policy: never` for
 updates. The generated service is named `gcb` by default (`gcb compose --name <name>` changes it).
 
-The released image contains the `gcb` binary and starts `gcb daemon`. If a generated compose still
-uses `npx --package gcb-host@...`, replace its command with that binary; npx is not an update
-mechanism:
+The released image contains the `gcb` binary and starts `gcb daemon`. Ensure the compose command
+runs that binary:
 
 ```yaml
 command:
