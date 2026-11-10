@@ -538,6 +538,10 @@ It prints a code and asks you to open <https://github.com/login/device>, then wa
 whatever device has a browser. The refresh token is stored beside the private key, which is where the
 broker looks for it, and the broker renews it from then on — nothing else needs running.
 
+When the configuration and token live inside the broker container, run it there with
+`gcb authorize --broker-container`. That mode skips the host-mount refusal and prints a warning; it is
+only safe when the target is mounted into the broker container and **not** into the agent container.
+
 The user token is used where the person identity is required or preferred: authoring a pull request,
 submitting a review, resolving a review thread (GraphQL refuses that for an app), replying to or
 editing a review comment, and creating an issue through the broker action path.

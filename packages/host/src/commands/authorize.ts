@@ -21,6 +21,7 @@ import {
   isInsideContainer,
   parseArgs,
   say,
+  warn,
   writeSecretFile,
 } from 'gcb-core'
 
@@ -38,6 +39,7 @@ that, because the broker renews the token itself.
   --config <path>   The configuration (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   --host <host>     The host block to authorize for (default: github.com)
   --to <path>       Where to write the refresh token (default: beside the configuration)
+  --broker-container  Allow writing inside the broker container's mounts (never the agent container)
   --proxy <url>     Use this proxy for this command
   --no-proxy        Reach GitHub directly for this command
   -h, --help        Show this help
@@ -82,7 +84,7 @@ export function brokerReadsPath(privateKeyPath: string | undefined): string | un
 import { assertProxyEnabled } from '../proxy.ts'
 
 export async function runAuthorize(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help', 'no-proxy'] })
+  const args = parseArgs(argv, { booleans: ['broker-container', 'help', 'no-proxy'] })
   if (args.has('no-proxy') && args.value('proxy') !== undefined) {
     fail('--proxy and --no-proxy are mutually exclusive')
   }
@@ -137,18 +139,26 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
 
   const target = args.value('to') ?? refreshTokenPath(configPath)
   // The same two checks init and stage apply, for the same reason: this is a credential of a person, and
-  // the container that pushes must not be able to read it. It is written outside every mount or not at all.
-  if (isInsideContainer()) {
-    fail(
-      'run this on the host, not inside the container: the token must not land anywhere the container can read',
+  // the container that pushes must not be able to read it. It is written outside every mount or not at all,
+  // unless the operator explicitly says this is the broker-container side of the deployment.
+  const brokerContainer = args.has('broker-container')
+  if (brokerContainer) {
+    warn(
+      'writing inside the broker container\'s mounts; this is only safe when the target is not shared with the agent container',
     )
-  }
-  const mounted = insideMountedPath(target)
-  if (mounted !== null) {
-    fail(
-      `${target} is inside ${mounted}, which is mounted into the container; the refresh token must live\n` +
-        '  outside every mount — the deployment directory beside the configuration is the usual place',
-    )
+  } else {
+    if (isInsideContainer()) {
+      fail(
+        'run this on the host, not inside the container: the token must not land anywhere the container can read',
+      )
+    }
+    const mounted = insideMountedPath(target)
+    if (mounted !== null) {
+      fail(
+        `${target} is inside ${mounted}, which is mounted into the container; the refresh token must live\n` +
+          '  outside every mount — the deployment directory beside the configuration is the usual place',
+      )
+    }
   }
   writeSecretFile(target, `${token.refreshToken}\n`)
   say(`stored the refresh token in ${target} (mode 600)`)
