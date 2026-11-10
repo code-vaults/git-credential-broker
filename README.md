@@ -550,6 +550,11 @@ This writes `/srv/git-cred-broker/user.refresh`, which the sidecar mount maps to
 broker-container bind mount; it must not also be mounted into the agent container. The command checks
 that the target is writable before starting the device flow.
 
+The target's parent directories are a deployment trust boundary: they must be controlled by the
+operator and not writable by an untrusted local process. gcb opens the token before the device flow
+and validates the descriptor (regular file, owner, mode); a parent replacement can deny or misplace
+the write, but cannot make the 0600 token readable to another uid.
+
 Compose only adds the writable `user.refresh` mount when that file exists at render time. Create an
 empty `user.refresh` (mode `0600`) as the host user who will run `authorize`, before running
 `gcb compose`. Run `authorize` before starting the sidecar; an empty file is now treated as absent,

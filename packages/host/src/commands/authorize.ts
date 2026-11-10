@@ -134,6 +134,13 @@ export function openTokenTarget(target: string): OpenedTokenTarget {
     return { fd, created }
   } catch (error) {
     closeSync(fd)
+    if (created) {
+      try {
+        rmSync(target, { force: true })
+      } catch {
+        // Best effort: the open/validation error is the message that matters.
+      }
+    }
     throw error
   }
 }
