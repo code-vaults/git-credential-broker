@@ -705,6 +705,15 @@ async function withBodyFile(
   }
 }
 
+/** Drop inherited Git location variables so a caller's GIT_DIR cannot retarget these commands. */
+function withoutGitLocation(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const copy = { ...env }
+  delete copy['GIT_DIR']
+  delete copy['GIT_WORK_TREE']
+  delete copy['GIT_COMMON_DIR']
+  return copy
+}
+
 /** Quote one value for the shell git uses to run a credential helper. */
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`
@@ -804,6 +813,7 @@ async function openOne(
         cwd: repo,
         timeout: CREATE_TIMEOUT_MS,
         maxBuffer: 1 << 20,
+        env: withoutGitLocation(process.env),
       })
       if (/^(?:ssh:\/\/|git@)/.test(stdout.trim())) {
         transport = 'ssh'
@@ -820,12 +830,12 @@ async function openOne(
       transport === 'ssh'
         ? []
         : ['-c', 'credential.helper=', '-c', `credential.helper=${helper}`, '-c', 'credential.useHttpPath=true']
-    const cleanEnv: NodeJS.ProcessEnv = {
+    const cleanEnv: NodeJS.ProcessEnv = withoutGitLocation({
       ...forkEnv(request.proxy, request.account, host),
       GIT_CONFIG_NOSYSTEM: '1',
       GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
       GIT_TERMINAL_PROMPT: '0',
-    }
+    })
     const scratch = mkdtempSync(join(tmpdir(), 'gcb-push-'))
     try {
       await run('git', ['init', '--bare', '--quiet', scratch], {
@@ -836,7 +846,12 @@ async function openOne(
       const { stdout: objects } = await run(
         'git',
         ['rev-parse', '--path-format=absolute', '--git-path', 'objects'],
-        { cwd: repo, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20 },
+        {
+          cwd: repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env: withoutGitLocation(process.env),
+        },
       )
       mkdirSync(join(scratch, 'objects', 'info'), { recursive: true })
       writeFileSync(join(scratch, 'objects', 'info', 'alternates'), `${objects.trim()}\n`)
@@ -860,10 +875,10 @@ async function openOne(
           '--git-dir',
           scratch,
           ...credentials,
+          'push',
           ...lease,
           ...(request.force === true ? ['--force'] : []),
           '--no-verify',
-          'push',
           url,
           `${request.commit}:refs/heads/${request.branch}`,
         ],

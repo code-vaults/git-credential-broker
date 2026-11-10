@@ -148,7 +148,10 @@ export async function runPush(argv: readonly string[]): Promise<number> {
   }
   let commit: string
   try {
-    commit = execFileSync('git', ['rev-parse', '--verify', `${branch}^{commit}`], {
+    commit = execFileSync(
+      'git',
+      ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`],
+      {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim()

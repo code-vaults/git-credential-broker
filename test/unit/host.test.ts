@@ -720,7 +720,9 @@ describe('the host broker push route', () => {
       ])
       assert.equal(code, 0)
       assert.equal(readResult(dir, id)?.error, undefined)
-      assert.match(readFileSync(argvFile, 'utf8'), /alice\/repo\.git/)
+      const argv = readFileSync(argvFile, 'utf8')
+      assert.match(argv, /alice\/repo\.git/)
+      assert.ok(argv.indexOf('push') < argv.indexOf('--no-verify'))
     } finally {
       if (previousPath === undefined) {
         delete process.env['PATH']
@@ -772,9 +774,10 @@ describe('the host broker push route', () => {
       const result = readResult(dir, id)
       assert.equal(result?.url, 'https://github.com/acme/widget/tree/feat/x')
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
-      assert.deepEqual(argv.slice(-3), ['push', 'https://github.com/acme/widget.git', '0123456789abcdef0123456789abcdef01234567:refs/heads/feat/x'])
+      assert.deepEqual(argv.slice(-3), ['--no-verify', 'https://github.com/acme/widget.git', '0123456789abcdef0123456789abcdef01234567:refs/heads/feat/x'])
       assert.equal(argv.some(argument => argument === '--git-dir'), true)
       assert.equal(argv.includes('--force'), true)
+      assert.ok(argv.indexOf('push') < argv.indexOf('--no-verify'))
       assert.equal(
         argv.some(argument => argument.startsWith('credential.helper=') && argument.includes('auth git-credential')),
         true,
