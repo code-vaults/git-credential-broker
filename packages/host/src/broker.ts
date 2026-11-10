@@ -240,16 +240,11 @@ export function createRequestHandler(
     context.host = block.host
 
     const protocol = message['protocol']
-    const insecureHttpAllowed = block.allowInsecureHttp === true
-    if (
-      message['op'] === 'credential' &&
-      protocol !== 'https' &&
-      !(protocol === 'http' && insecureHttpAllowed)
-    ) {
+    if (message['op'] === 'credential' && protocol !== 'https') {
       return deny(
         context,
         CODES.PROTOCOL_NOT_HTTPS,
-        `protocol=${JSON.stringify(protocol)} (allowInsecureHttp=${String(insecureHttpAllowed)})`,
+        `protocol=${JSON.stringify(protocol)}`,
         'only https is served for this host (a plaintext request would expose the credential on the wire)',
       )
     }

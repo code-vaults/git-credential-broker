@@ -40,20 +40,19 @@ interface Harness {
  *
  * @param allow - The allowlist for the configured host.
  * @param providerOverride - A provider to use instead of the static one.
- * @param allowInsecureHttp - Whether the host opts into plaintext remotes.
+ * @param _allowInsecureHttp - Retained for call-site compatibility; HTTP is never allowed.
  * @returns The harness.
  */
 function makeHarness(
   allow: readonly string[] = ['acme/widget'],
   providerOverride?: Provider,
-  allowInsecureHttp?: boolean,
+  _allowInsecureHttp?: boolean,
   auditPath: string | null = null,
   options: { allowPublicRead?: boolean; allowForkPush?: boolean; allowFork?: boolean } = {},
 ): Harness {
   const block: StaticHostConfig = {
     provider: 'static',
     allow,
-    allowInsecureHttp,
     ...options,
     username: 'x-access-token',
     password: SECRET,
@@ -160,17 +159,17 @@ describe('broker request handling', () => {
     }
   })
 
-  it('allows a plaintext http remote only when the host explicitly opts in', async () => {
+  it('refuses every plaintext http remote', async () => {
     const strict = makeHarness()
     assert.equal(
       (await strict.handle({ ...REQUEST, protocol: 'http' })).code,
       CODES.PROTOCOL_NOT_HTTPS,
     )
-
-    const relaxed = makeHarness(['acme/widget'], undefined, true)
-    const allowed = await relaxed.handle({ ...REQUEST, protocol: 'http' })
-    assert.equal(allowed.ok, true)
-    assert.equal(allowed.password, SECRET)
+    const formerlyRelaxed = makeHarness(['acme/widget'], undefined, true)
+    assert.equal(
+      (await formerlyRelaxed.handle({ ...REQUEST, protocol: 'http' })).code,
+      CODES.PROTOCOL_NOT_HTTPS,
+    )
   })
 
   it('refuses a host that is not configured', async () => {

@@ -170,13 +170,6 @@ describe('validateConfig', () => {
     assert.throws(
       () =>
         validateConfig(
-          withHost({ provider: 'static', allow: ['a/b'], password: 'p', allowInsecureHttp: 'yes' }),
-        ),
-      /allowInsecureHttp must be a boolean/,
-    )
-    assert.throws(
-      () =>
-        validateConfig(
           withHost({ provider: 'static', allow: ['a/b'], password: 'p', expiresInSeconds: 'soon' }),
         ),
       /expiresInSeconds must be a finite number/,

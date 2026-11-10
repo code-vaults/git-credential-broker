@@ -429,11 +429,9 @@ authored; with bare `--as-user` it changes the authorized person's.
 
 ### Person actions: pull requests, issues and reviews
 
-There are three ways to have a pull request or issue authored by a person, and they stay alternatives: the **host
-host broker** below needs no long-lived secret anywhere and costs a process you keep running; **`userTokens`**
-needs no second process and costs a token per owner; and **authorizing the app** needs neither, at the cost
-of a token as wide as your own access to GitHub. A deployment picks the trade it prefers, and none of them
-replaces another.
+There are two ways to have a pull request or issue authored by a person, and they stay alternatives:
+the **host broker** below needs no long-lived secret anywhere and costs a process you keep running;
+**`authorize`** needs no second process, at the cost of a token as wide as your own access to GitHub.
 
 A pull request opened through the broker by default is authored by the app, and automated reviewers
 are entitled to skip those. To have one authored by you, either use the
@@ -524,36 +522,8 @@ gcb issue create --as-user octocat --repo owner/repo --title "An issue title" --
 ```
 
 A pull request opened with the app's installation token is authored by the app, and automated
-reviewers are entitled to skip those. The simplest way to have one authored by you is a
-**fine-grained personal access token** in the configuration:
-
-```jsonc
-{
-  "hosts": {
-    "github.com": {
-      "provider": "github-app",
-      "privateKeyPath": "/etc/git-cred-broker/app.pem",
-      "userTokens": { "an-org": "/etc/git-cred-broker/an-org.token" },
-    },
-  },
-}
-```
-
-`userTokens` is keyed by owner because that is GitHub's own granularity: a fine-grained token
-belongs to one user or organization and cannot span two, so two owners need two tokens. Create each
-with **Pull requests: Read and write**, **Contents: Read**, **Discussions: Read and write** where
-needed, and **Metadata: Read**, and give it access to **only the repositories the allowlist already
-names**. With Contents: Read, GitHub itself refuses
-to let that token push or merge, so "it may only open pull requests" is enforced by GitHub rather
-than promised here. `userTokens` is consulted for opening, replying, editing, commenting or
-catalogued reads when `--as-user` is passed, and for an issue creation or resolve when no
-`user.refresh` exists. Resolving a review thread needs **Contents: Read and write**
-(`resolveReviewThread` is refused without it), which would also let that token push and merge; if
-that trade is not acceptable, resolve through `authorize`, whose token is the person's own.
-`pr:update-branch --as-user` also needs **Contents: Read and write** for the same reason; without it,
-use the default app route or `--as-user <login>`. `user.refresh` wins over `userTokens` when it
-exists. A plain `gcb pr` stays on the app's installation token. Dropping the field does not change the default; it only makes bare `--as-user`
-fail with `no authorized user token`.
+reviewers are entitled to skip those. Use `gcb authorize` below: it stores the person OAuth token, and
+the broker uses that token for person-authored pull requests.
 
 #### Authorizing as a person instead
 
@@ -562,8 +532,8 @@ Two things the app needs: its **client id** in the configuration (the App ID wil
 broker renews with the refresh token, and GitHub only issues one while that is selected. No client secret: the device flow does not use one,
 so no second long-lived secret joins the key.
 
-A token per owner is one way to be the author; authorizing the app once is another, and it needs no
-token per owner, because GitHub issues it for the app _and_ the person together. Run this on the host:
+Authorizing the app once is how the broker acts as a person, because GitHub issues the token for the
+app _and_ the person together. Run this on the host:
 
 ```sh
 gcb authorize --config /srv/git-cred-broker/broker.config.yml
@@ -716,15 +686,14 @@ Top level:
 
 Per host, keyed exactly as git reports it (`github.com`, or `host:port` for other ports):
 
-| Key                 | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `provider`          | `github-app` or `static`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `allow`             | Default-deny list: `owner/repo`, or a whole-segment wildcard `owner/*`. Malformed entries (no slash, three segments, a partial wildcard like `wid*`) are rejected at load time rather than silently matching nothing.                                                                                                                                                                                                                                                                               |
-| `allowInsecureHttp` | Default `false`. Permit a plaintext `http` remote for this host.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `allowPublicRead`   | Default `false`. Let explicit `readOnly` actions run on a repository verified public without an allowlist entry, on both the app and host routes. The app identity uses a metadata-only token and requires the App to be installed with metadata read. Bare `--as-user` uses the authorized person token; `--as-user <login>` uses the host account token. Both may have private access; an exhausted 403/429 is reported as a rate limit, a plain 403 as a refusal, never as a private repository. |
-| `allowForkPush`     | Default `false`. Allow a **public** fork whose parent/source is an allowlisted repository. For `gcb push`, the host verifies the relation and uses the host account/SSH key; the App need not be installed on the fork. For the app credential path, the App must be installed with `contents: write`.                                                                                                                                                                                              |
-| `sshAccounts`       | Optional map from gh login to an SSH host alias for `gcb push`, e.g. `{ "example-user": "github-example-user" }`. SSH aliases keep their own key/port/proxy settings; a login without an entry is refused rather than falling back to the default key.                                                                                                                                                                                                                                              |
-| `allowFork`         | Default `false`. Allow a **catalogued action** (`gcb gh …`, `gcb issue …`) on the public parent/source of an allowlisted **public** fork, after GitHub confirms the relationship. Wildcard entries are not used for inference. It does not cover the lifecycle `gcb pr create` path; that still needs the target repository in `allow`.                                                                                                                                                             |
+| Key               | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider`        | `github-app` or `static`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `allow`           | Default-deny list: `owner/repo`, or a whole-segment wildcard `owner/*`. Malformed entries (no slash, three segments, a partial wildcard like `wid*`) are rejected at load time rather than silently matching nothing.                                                                                                                                                                                                                                                                               |
+| `allowPublicRead` | Default `false`. Let explicit `readOnly` actions run on a repository verified public without an allowlist entry, on both the app and host routes. The app identity uses a metadata-only token and requires the App to be installed with metadata read. Bare `--as-user` uses the authorized person token; `--as-user <login>` uses the host account token. Both may have private access; an exhausted 403/429 is reported as a rate limit, a plain 403 as a refusal, never as a private repository. |
+| `allowForkPush`   | Default `false`. Allow a **public** fork whose parent/source is an allowlisted repository. For `gcb push`, the host verifies the relation and uses the host account/SSH key; the App need not be installed on the fork. For the app credential path, the App must be installed with `contents: write`.                                                                                                                                                                                              |
+| `sshAccounts`     | Optional map from gh login to an SSH host alias for `gcb push`, e.g. `{ "example-user": "github-example-user" }`. SSH aliases keep their own key/port/proxy settings; a login without an entry is refused rather than falling back to the default key.                                                                                                                                                                                                                                              |
+| `allowFork`       | Default `false`. Allow a **catalogued action** (`gcb gh …`, `gcb issue …`) on the public parent/source of an allowlisted **public** fork, after GitHub confirms the relationship. Wildcard entries are not used for inference. It does not cover the lifecycle `gcb pr create` path; that still needs the target repository in `allow`.                                                                                                                                                             |
 
 `github-app`: `clientId` (preferred `iss`), `appId` (fallback), `privateKeyPath` or `privateKeyPem`,
 `permissions`, `apiBaseUrl` (GitHub Enterprise, must be HTTPS), `apiVersion`, `installationCacheSeconds`,

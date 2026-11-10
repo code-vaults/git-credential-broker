@@ -609,20 +609,6 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     }
   }
 
-  /** The authorized person's token, falling back to the per-owner token for this owner. */
-  async function personTokenFor(owner: string): Promise<string | undefined> {
-    const personal = await personalToken()
-    if (personal !== undefined) {
-      return personal
-    }
-    const file = cfg.userTokens?.[owner]
-    if (file === undefined) {
-      return undefined
-    }
-    const token = readFileSync(file, 'utf8').trim()
-    return token === '' ? undefined : token
-  }
-
   async function renewPersonToken(): Promise<string | undefined> {
     if (cfg.clientId === undefined || cfg.privateKeyPath === undefined) {
       return undefined
@@ -785,10 +771,10 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       let token = ''
       let minted = false
       if (request.publicRead === true && identity === 'user') {
-        const person = await personTokenFor(request.owner)
+        const person = await personalToken()
         if (person === undefined) {
           throw new ProviderConfigError(
-            'no authorized user token for this action; run gcb authorize or configure userTokens',
+            'no authorized user token for this action; run gcb authorize',
           )
         }
         token = person
@@ -818,10 +804,10 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
           )
         }
       } else if (identity === 'user') {
-        const person = await personTokenFor(request.owner)
+        const person = await personalToken()
         if (person === undefined) {
           throw new ProviderConfigError(
-            'no authorized user token for this action; run gcb authorize or configure userTokens',
+            'no authorized user token for this action; run gcb authorize',
           )
         }
         token = person
@@ -1031,10 +1017,10 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
      */
     async pullRequest(request: PullRequestRequest): Promise<PullRequest> {
       if (request.action === 'fork') {
-        const token = await personTokenFor(request.owner)
+        const token = await personalToken()
         if (token === undefined) {
           throw new ProviderConfigError(
-            'no user token for fork; run gcb authorize or configure userTokens',
+            'no user token for fork; run gcb authorize',
           )
         }
         const { text } = await callWithToken(
@@ -1063,13 +1049,13 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       const personalForThis =
         request.identity === 'user' ||
         (!wantsApp && (request.action === 'open' || request.action === 'resolve'))
-      const actingToken = personalForThis ? await personTokenFor(request.owner) : undefined
+      const actingToken = personalForThis ? await personalToken() : undefined
       // Resolving has no app route: the thread mutation is refused for an installation token, so a
       // missing person token is a configuration error, not a reason to mint the wrong credential.
       const personRequired = request.identity === 'user' || request.action === 'resolve'
       if (personRequired && actingToken === undefined) {
         throw new ProviderConfigError(
-          `no authorized user token for ${request.action === 'resolve' ? 'resolving this thread' : 'this request'}; run gcb authorize or configure userTokens`,
+          `no authorized user token for ${request.action === 'resolve' ? 'resolving this thread' : 'this request'}; run gcb authorize`,
         )
       }
 

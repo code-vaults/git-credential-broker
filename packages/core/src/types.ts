@@ -176,15 +176,6 @@ export interface JobLog {
 export interface BaseHostConfig {
   /** Default-deny allowlist of `owner/repo` entries; a whole segment may be a wildcard. */
   readonly allow: readonly string[]
-  /**
-   * Whether a plaintext `http` remote is acceptable for this host.
-   *
-   * Off by default, and deliberately a _broker-side_ decision: it is read from host-side
-   * configuration the agent cannot edit, so nothing running in the container can widen it. It
-   * exists for a self-hosted forge reached over a trusted network, and for the test suite's local
-   * plaintext git server.
-   */
-  readonly allowInsecureHttp?: boolean
   /** Allow explicit read-only actions on a verified public repository without an allowlist entry. */
   readonly allowPublicRead?: boolean
   /** Allow git credentials for a fork whose source is an allowlisted repository. */
@@ -213,17 +204,6 @@ export interface GithubAppHostConfig extends BaseHostConfig {
   /** Fallback `iss` claim when no client ID is configured. */
   readonly appId?: string | number
   readonly privateKeyPath?: string
-  /**
-   * A person's fine-grained tokens, keyed by the owner whose repositories they cover.
-   *
-   * Keyed by owner because that is GitHub's own granularity: a fine-grained token belongs to one
-   * user or organization and cannot span two. Scoped as the README says — pull requests read and
-   * write, contents read, metadata read, and only the repositories the allowlist names — GitHub
-   * itself refuses to let such a token push or merge, because neither is possible without contents
-   * write. Used for creating and resolving a pull request, and nothing else; every other action
-   * stays on the app.
-   */
-  readonly userTokens?: Readonly<Record<string, string>>
   readonly privateKeyPem?: string
   /** REST permission names, e.g. `{ contents: 'write', pull_requests: 'write' }`. */
   readonly permissions?: Readonly<Record<string, string>>
