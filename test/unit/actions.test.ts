@@ -52,6 +52,9 @@ describe('gh action catalog', () => {
       'run:rerun',
       'release:list',
       'release:view',
+      'workflow:run',
+      'workflow:enable',
+      'workflow:disable',
       'workflow:list',
       'workflow:view',
       'label:list',
@@ -114,6 +117,12 @@ describe('gh action catalog', () => {
     assert.equal(getGhAction('issue:comment-edit').appUser, true)
     assert.deepEqual(getGhAction('release:list').permissions, { contents: 'read' })
     assert.deepEqual(getGhAction('release:view').permissions, { contents: 'read' })
+    assert.deepEqual(getGhAction('workflow:run').permissions, {
+      actions: 'write',
+      contents: 'read',
+    })
+    assert.deepEqual(getGhAction('workflow:enable').permissions, { actions: 'write' })
+    assert.deepEqual(getGhAction('workflow:disable').permissions, { actions: 'write' })
     assert.deepEqual(getGhAction('workflow:list').permissions, { actions: 'read' })
     assert.deepEqual(getGhAction('workflow:view').permissions, {
       actions: 'read',
@@ -385,6 +394,44 @@ describe('buildGhArgv', () => {
     const injected = buildGhArgv('release:view', { tag: '--web' }, 'acme/widget')
     assert.deepEqual(injected.slice(-2), ['--', '--web'])
     assert.throws(() => buildGhArgv('workflow:view', {}, 'acme/widget'), /needs workflow/u)
+    assert.deepEqual(
+      buildGhArgv(
+        'workflow:run',
+        { workflow: 'ci.yml', ref: 'main', field: ['a=1', 'b=2'] },
+        'acme/widget',
+      ),
+      [
+        'workflow',
+        'run',
+        '--ref',
+        'main',
+        '--field',
+        'a=1',
+        '--field',
+        'b=2',
+        '--repo',
+        'acme/widget',
+        '--',
+        'ci.yml',
+      ],
+    )
+    assert.deepEqual(buildGhArgv('workflow:enable', { workflow: 'ci.yml' }, 'acme/widget'), [
+      'workflow',
+      'enable',
+      '--repo',
+      'acme/widget',
+      '--',
+      'ci.yml',
+    ])
+    assert.deepEqual(buildGhArgv('workflow:disable', { workflow: 'ci.yml' }, 'acme/widget'), [
+      'workflow',
+      'disable',
+      '--repo',
+      'acme/widget',
+      '--',
+      'ci.yml',
+    ])
+    assert.throws(() => buildGhArgv('workflow:run', {}, 'acme/widget'), /needs workflow/u)
     assert.throws(
       () => buildGhArgv('workflow:view', { workflow: 'ci.yml', ref: 'main' }, 'acme/widget'),
       /needs --yaml with --ref/u,

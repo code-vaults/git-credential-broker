@@ -825,6 +825,9 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `run rerun`                          | `actions: write`                                                          |
 | `release list`                       | `contents: read`                                                          |
 | `release view`                       | `contents: read`                                                          |
+| `workflow run`                       | `actions: write`, `contents: read`                                        |
+| `workflow enable`                    | `actions: write`                                                          |
+| `workflow disable`                   | `actions: write`                                                          |
 | `workflow list`                      | `actions: read`                                                           |
 | `workflow view`                      | `actions: read`, `contents: read`                                         |
 | `label list`                         | `issues: read`                                                            |
