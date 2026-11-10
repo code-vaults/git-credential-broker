@@ -9,7 +9,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { accessSync, constants as fsConstants, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { BRANCH, HOST, LOGIN, REPOSITORY, fail, parseArgs, say } from 'gcb-core'
+import { BRANCH, LOGIN, fail, parseArgs, say } from 'gcb-core'
 
 import { submitToHostBroker } from './host-submit.ts'
 import { remoteRepo } from './remotes.ts'
@@ -18,27 +18,19 @@ const KNOWN_FLAGS = new Set([
   'help',
   'h',
   'as-user',
-  'repo',
-  'branch',
-  'remote',
   'force',
   'force-with-lease',
-  'host',
   'proxy',
   'no-proxy',
 ])
 
-export const PUSH_USAGE = `Usage: gcb push [options]
+export const PUSH_USAGE = `Usage: gcb push [<remote> [<branch>]] [options]
 
-Push the current branch to its repository from the host, using the host's gh account. The token
-never crosses into this container.
+Push a branch from the host, using the host's account. The token never crosses into this
+container. The default remote is origin, and the default branch is the current one.
 
-  --repo <owner/name>  Repository to push to (default: the origin remote)
-  --branch <name>      Branch to push (default: the current branch)
-  --remote <name>      Remote whose protocol to use (default: origin)
   --force              Overwrite the remote branch
   --force-with-lease   Overwrite only if the remote branch has not moved
-  --host <host>        Host as configured (default: the origin remote's host, else github.com)
   --as-user            Use the host broker's own gh account
   --as-user <login>    Use ~/.config/gh-<login> on the host
   --proxy <url>        Use this proxy for the host git call
@@ -92,7 +84,7 @@ function currentBranch(): string {
   } catch {
     // Fall through to the refusal.
   }
-  fail('no current branch: pass --branch, or check out a branch')
+  fail('no current branch: pass a branch positional, or check out a branch')
 }
 
 /**
@@ -135,26 +127,24 @@ export async function runPush(argv: readonly string[]): Promise<number> {
   }
   const proxy = args.has('no-proxy') ? null : args.value('proxy')
 
-  const remote = args.value('remote') ?? 'origin'
+  if (args.positionals.length > 2) {
+    fail('usage: gcb push [<remote> [<branch>]]')
+  }
+  const remote = args.positionals[0] ?? 'origin'
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(remote)) {
-    fail(`--remote is not a usable remote name: ${JSON.stringify(remote)}`)
+    fail(`not a usable remote name: ${JSON.stringify(remote)}`)
   }
-  const origin = remoteRepo(remote, process.cwd())
-  const explicitRepo = args.value('repo')
-  const repo = explicitRepo ?? (origin === undefined ? undefined : `${origin.owner}/${origin.repo}`)
-  if (repo === undefined) {
-    fail('--repo is required when the checkout has no usable origin remote')
+  const found = remoteRepo(remote, process.cwd())
+  if (found === undefined) {
+    fail(
+      `remote ${JSON.stringify(remote)} does not name an owner/repository; configure a canonical remote`,
+    )
   }
-  if (!REPOSITORY.test(repo)) {
-    fail(`--repo must be owner/name, got ${JSON.stringify(repo)}`)
-  }
-  const host = args.value('host') ?? origin?.host ?? 'github.com'
-  if (!HOST.test(host)) {
-    fail(`--host is not a usable host: ${JSON.stringify(host)}`)
-  }
-  const branch = args.value('branch') ?? currentBranch()
+  const repo = `${found.owner}/${found.repo}`
+  const host = found.host
+  const branch = args.positionals[1] ?? currentBranch()
   if (!BRANCH.test(branch) || branch.includes('..') || branch.includes(':')) {
-    fail(`--branch is not a usable branch name: ${JSON.stringify(branch)}`)
+    fail(`branch is not usable: ${JSON.stringify(branch)}`)
   }
   let commit: string
   try {
