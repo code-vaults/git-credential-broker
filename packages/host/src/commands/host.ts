@@ -775,7 +775,19 @@ async function openOne(
     } catch (error) {
       return { error: (error as Error).message }
     }
-    const transport = (blockFor(host)?.pushTransport ?? 'https') as 'https' | 'ssh'
+    let transport: 'https' | 'ssh' = 'https'
+    try {
+      const { stdout } = await run('git', ['config', '--get', 'remote.origin.url'], {
+        cwd: repo,
+        timeout: CREATE_TIMEOUT_MS,
+        maxBuffer: 1 << 20,
+      })
+      if (/^(?:ssh:\/\/|git@)/.test(stdout.trim())) {
+        transport = 'ssh'
+      }
+    } catch {
+      // No origin: use the default HTTPS transport.
+    }
     const url =
       transport === 'ssh'
         ? `ssh://git@${host}/${request.repo}.git`

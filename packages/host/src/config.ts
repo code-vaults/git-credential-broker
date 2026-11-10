@@ -259,23 +259,6 @@ function numberField(
   return value
 }
 
-/** Read the host push transport, refusing anything but https or ssh. */
-function pushTransportField(
-  raw: Record<string, unknown>,
-  errors: string[],
-  at: string,
-): 'https' | 'ssh' | undefined {
-  const value = raw['pushTransport']
-  if (value === undefined) {
-    return undefined
-  }
-  if (value === 'https' || value === 'ssh') {
-    return value
-  }
-  errors.push(`${at}.pushTransport must be "https" or "ssh"`)
-  return undefined
-}
-
 /**
  * Read an optional boolean field.
  *
@@ -480,7 +463,6 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           allowPublicRead: booleanField(blockRaw, 'allowPublicRead', errors, at),
           allowForkPush: booleanField(blockRaw, 'allowForkPush', errors, at),
           allowFork: booleanField(blockRaw, 'allowFork', errors, at),
-          pushTransport: pushTransportField(blockRaw, errors, at),
           username: stringField(blockRaw, 'username', errors, at),
           password: stringField(blockRaw, 'password', errors, at),
           passwordPath: stringField(blockRaw, 'passwordPath', errors, at),
@@ -496,7 +478,6 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           allowPublicRead: booleanField(blockRaw, 'allowPublicRead', errors, at),
           allowForkPush: booleanField(blockRaw, 'allowForkPush', errors, at),
           allowFork: booleanField(blockRaw, 'allowFork', errors, at),
-          pushTransport: pushTransportField(blockRaw, errors, at),
           clientId: stringField(blockRaw, 'clientId', errors, at),
           appId: stringOrNumberField(blockRaw, 'appId', errors, at),
           privateKeyPath: stringField(blockRaw, 'privateKeyPath', errors, at),

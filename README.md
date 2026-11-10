@@ -146,8 +146,9 @@ pull-request token.
 `git push` with its own gh account and rebuilds the target URL from the allowlisted repository; no
 token or remote URL from the container is used. It requires a host broker and a checkout on the
 host, defaults to `origin` and the current branch, and refuses force pushes. `--as-user <login>`
-selects `~/.config/gh-<login>` on the host; the host's `pushTransport: ssh` setting uses its SSH
-agent/key instead of gh credentials. `gcb push` runs the container's own `pre-push` hook before
+selects `~/.config/gh-<login>` on the host; the host reads the origin remote's protocol only to choose `https` or `ssh`; the
+repository URL is still rebuilt from the allowlist. SSH uses the host's agent/key instead of gh
+credentials. `gcb push` runs the container's own `pre-push` hook before
 writing the request; the host never runs container-owned hooks. The URL is rebuilt from the allowlisted repository rather than read from the
 container-writable remote, so a changed `.git/config` cannot redirect the host push. Because git's credential helper has no push delegation,
 this is an explicit `gcb push` instead of a transparent `git push`.
