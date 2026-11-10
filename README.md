@@ -792,6 +792,23 @@ docker build --target host   -t code-vaults/gcb-host:dev .
 While the image exists locally, Docker uses it instead of pulling from the registry. Another machine
 or CI builds the same Dockerfile and tags, rather than pulling `:dev`.
 
+### Updating the sidecar
+
+Pin a released `gcb-host` image by version or digest; do not use `:dev` or `pull_policy: never` for updates.
+
+```sh
+docker compose pull gcb-host
+docker compose up -d --no-deps --force-recreate gcb-host
+```
+
+Verify `gcb --version`, the socket, and `gcb doctor` after the recreate. To roll back, put the previous
+version or digest back in compose and run the same pull/recreate steps.
+
+Use the same release line on both sides. Typed host replies and the active-audit ping need at least
+`0.7.0` on the host and client; `gcb authorize --broker-container` needs `0.8.0` on the host. `gcb doctor`
+is the update health check: a non-zero result should alert, not trigger an automatic restart; a failed
+socket or daemon check is the restart case, while a configuration error needs an operator to fix the file.
+
 For idsh's dev image, name the client image as a stage and copy only the gcb packages into the base:
 
 ```dockerfile
