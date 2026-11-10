@@ -1455,6 +1455,73 @@ describe('createGithubAppProvider', () => {
 
       rmSync(dir, { recursive: true, force: true })
     })
+
+    it('treats an empty pre-created token file as absent', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'personal-token-empty-'))
+      writeFileSync(join(dir, 'user.refresh'), '', 'utf8')
+      const stub = createStubFetch({
+        installations: [{ id: 42, account: { login: 'acme' } }],
+        nowMs,
+        appPermissions: { pull_requests: 'write', contents: 'read' },
+        installationPermissions: { pull_requests: 'write', contents: 'read' },
+      })
+
+      const pr = await providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }).pullRequest!({
+        action: 'open',
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widget',
+        head: 'feat/thing',
+        base: 'main',
+        title: 'a title',
+        body: 'a body',
+      })
+
+      assert.equal(pr.number, 42)
+      assert.equal(
+        stub.calls.some(call => call.url.includes('/login/oauth/access_token')),
+        false,
+        'an empty placeholder must not be exchanged as a refresh token',
+      )
+      rmSync(dir, { recursive: true, force: true })
+    })
+    it('does not reuse a cached personal token after the file is emptied', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'personal-token-empty-cache-'))
+      const refreshPath = join(dir, 'user.refresh')
+      writeFileSync(refreshPath, 'refresh-from-authorize\n', 'utf8')
+      const stub = createStubFetch({
+        installations: [{ id: 42, account: { login: 'acme' } }],
+        nowMs,
+        appPermissions: { pull_requests: 'write', contents: 'read' },
+        installationPermissions: { pull_requests: 'write', contents: 'read' },
+      })
+      const provider = providerFor(stub, { privateKeyPath: join(dir, 'app.pem') })
+      const open = () =>
+        provider.pullRequest!({
+          action: 'open',
+          host: 'github.com',
+          owner: 'acme',
+          repo: 'widget',
+          head: 'feat/thing',
+          base: 'main',
+          title: 'a title',
+          body: 'a body',
+        })
+
+      await open()
+      writeFileSync(refreshPath, '', 'utf8')
+      await open()
+
+      const created = stub.calls.filter(call => call.url.endsWith('/pulls'))
+      assert.equal(created[0]?.authorization, 'Bearer person-token')
+      assert.equal(
+        created[1]?.authorization,
+        'Bearer ghs_stub_token_value',
+        'an empty file must not reuse the cached personal token',
+      )
+      rmSync(dir, { recursive: true, force: true })
+    })
+
   })
 
   it('replies with the authorized user token', async () => {

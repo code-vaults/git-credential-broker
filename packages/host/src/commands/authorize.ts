@@ -13,16 +13,19 @@
  * Exit codes: 0 stored, 1 refused.
  */
 
+import {
+  closeSync,
+  constants,
+  fchmodSync,
+  fstatSync,
+  ftruncateSync,
+  mkdirSync,
+  openSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join, resolve as resolvePath } from 'node:path'
 
-import {
-  fail,
-  insideMountedPath,
-  isInsideContainer,
-  parseArgs,
-  say,
-  writeSecretFile,
-} from 'gcb-core'
+import { fail, insideMountedPath, isInsideContainer, parseArgs, say, warn } from 'gcb-core'
 
 import { USER_TOKEN_FILE, userTokenPath, loadConfig, resolveConfigPath } from '../config.ts'
 import { collectUserToken, startDeviceFlow, type Fetcher } from '../device-flow.ts'
@@ -35,12 +38,14 @@ Get a user token for this app, by authorizing it once from a browser somewhere e
 beside the configuration. It stores a refresh token and prints where; nothing else needs running after
 that, because the broker renews the token itself.
 
-  --config <path>   The configuration (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
-  --host <host>     The host block to authorize for (default: github.com)
-  --to <path>       Where to write the refresh token (default: beside the configuration)
-  --proxy <url>     Use this proxy for this command
-  --no-proxy        Reach GitHub directly for this command
-  -h, --help        Show this help
+  --config <path>      The configuration (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
+  --host <host>        The host block to authorize for (default: github.com)
+  --to <path>          Where to write the refresh token (default: beside the configuration)
+  --broker-container   Allow a target inside the broker container's mounts; only when it is not
+                       shared with the agent container
+  --proxy <url>        Use this proxy for this command
+  --no-proxy           Reach GitHub directly for this command
+  -h, --help           Show this help
 
 The app needs its client id configured (the App ID will not do), and "Enable Device Flow" selected in
 its settings. GitHub returns a refresh token only while "Expire user authorization tokens" is selected,
@@ -73,6 +78,91 @@ export function brokerReadsPath(privateKeyPath: string | undefined): string | un
   return privateKeyPath === undefined ? undefined : userTokenPath(privateKeyPath)
 }
 
+/** Inputs for the credential-placement decision. */
+export interface AuthorizationPlacementInput {
+  readonly configPath: string
+  readonly to?: string
+  readonly brokerContainer: boolean
+  readonly isInsideContainer?: () => boolean
+  readonly mountedPath?: (target: string) => string | null
+}
+
+/** The writable target and the warning to print before starting the device flow. */
+export interface AuthorizationPlacement {
+  readonly target: string
+  readonly warning?: string
+}
+
+/**
+ * Open and secure the token target before authorization, so a later path swap cannot redirect the
+ * write and a permission failure surfaces before the device flow.
+ *
+ * @param target - The token path.
+ * @returns The open descriptor, already mode 0600.
+ */
+export function openTokenTarget(target: string): number {
+  mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
+  const flags = constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+  const fd = openSync(target, flags, 0o600)
+  try {
+    const info = fstatSync(fd)
+    if (!info.isFile()) {
+      throw new Error(`${target} is not a regular file`)
+    }
+    const uid = process.geteuid?.()
+    if (uid !== undefined && info.uid !== uid) {
+      throw new Error(`${target} is not owned by the current user`)
+    }
+    fchmodSync(fd, 0o600)
+    return fd
+  } catch (error) {
+    closeSync(fd)
+    throw error
+  }
+}
+
+/** Write the refresh token through the descriptor opened before the device flow. */
+function writeToken(fd: number, token: string): void {
+  ftruncateSync(fd, 0)
+  writeFileSync(fd, `${token}\n`)
+  // ACL-based shares can ignore the create/open mode; set it again after the write.
+  fchmodSync(fd, 0o600)
+}
+
+/**
+ * Decide where the refresh token goes, and whether that placement is allowed.
+ *
+ * @param input - The configuration path, target override and injectable guards.
+ * @returns The target and an optional warning.
+ * @throws {Error} When the placement would put the token inside a container mount without the
+ * explicit broker-container acknowledgement.
+ */
+export function resolveAuthorizationPlacement(
+  input: AuthorizationPlacementInput,
+): AuthorizationPlacement {
+  const target = input.to ?? refreshTokenPath(input.configPath)
+  if ((input.isInsideContainer ?? isInsideContainer)()) {
+    throw new Error(
+      'run this on the host, not inside the container: the token must not land anywhere the container can read',
+    )
+  }
+  if (input.brokerContainer) {
+    return {
+      target,
+      warning:
+        "writing inside the broker container's mounts; this is only safe when the target is not shared with the agent container",
+    }
+  }
+  const mounted = (input.mountedPath ?? insideMountedPath)(target)
+  if (mounted !== null) {
+    throw new Error(
+      `${target} is inside ${mounted}, which is mounted into the container; the refresh token must live\n` +
+        '  outside every mount — the deployment directory beside the configuration is the usual place',
+    )
+  }
+  return { target }
+}
+
 /**
  * Run the `authorize` command.
  *
@@ -82,7 +172,7 @@ export function brokerReadsPath(privateKeyPath: string | undefined): string | un
 import { assertProxyEnabled } from '../proxy.ts'
 
 export async function runAuthorize(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help', 'no-proxy'] })
+  const args = parseArgs(argv, { booleans: ['broker-container', 'help', 'no-proxy'] })
   if (args.has('no-proxy') && args.value('proxy') !== undefined) {
     fail('--proxy and --no-proxy are mutually exclusive')
   }
@@ -117,41 +207,56 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
     )
   }
 
-  const fetcher: Fetcher = fetcherFor(proxy)
-  const code = await startDeviceFlow(block.clientId, fetcher)
-  say(`Open ${code.verificationUri} and enter: ${code.userCode}`)
-  say(`Waiting up to ${Math.round(code.expiresIn / 60)} minutes for that to be authorized…`)
+  let placement: AuthorizationPlacement
+  try {
+    placement = resolveAuthorizationPlacement({
+      configPath,
+      to: args.value('to'),
+      brokerContainer: args.has('broker-container'),
+    })
+  } catch (error) {
+    fail((error as Error).message)
+  }
+  if (placement.warning !== undefined) {
+    warn(placement.warning)
+  }
+  say(`the refresh token will be written to ${placement.target}`)
 
-  const token = await collectUserToken(
-    block.clientId,
-    code,
-    fetcher,
-    ms => new Promise(done => setTimeout(done, ms)),
-  )
-  if (token.refreshToken === undefined) {
-    fail(
-      'GitHub returned no refresh token, so the token would expire in eight hours with no way to renew.\n' +
-        '  Select "Expire user authorization tokens" in the app settings and authorize again.',
-    )
+  let tokenFd: number
+  try {
+    tokenFd = openTokenTarget(placement.target)
+  } catch (error) {
+    fail(`could not open ${placement.target}: ${(error as Error).message}`)
   }
+  let failure: Error | undefined
+  try {
+    const fetcher: Fetcher = fetcherFor(proxy)
+    const code = await startDeviceFlow(block.clientId, fetcher)
+    say(`Open ${code.verificationUri} and enter: ${code.userCode}`)
+    say(`Waiting up to ${Math.round(code.expiresIn / 60)} minutes for that to be authorized…`)
 
-  const target = args.value('to') ?? refreshTokenPath(configPath)
-  // The same two checks init and stage apply, for the same reason: this is a credential of a person, and
-  // the container that pushes must not be able to read it. It is written outside every mount or not at all.
-  if (isInsideContainer()) {
-    fail(
-      'run this on the host, not inside the container: the token must not land anywhere the container can read',
+    const token = await collectUserToken(
+      block.clientId,
+      code,
+      fetcher,
+      ms => new Promise(done => setTimeout(done, ms)),
     )
+    if (token.refreshToken === undefined) {
+      throw new Error(
+        'GitHub returned no refresh token, so the token would expire in eight hours with no way to renew.\n' +
+          '  Select "Expire user authorization tokens" in the app settings and authorize again.',
+      )
+    }
+    writeToken(tokenFd, token.refreshToken)
+  } catch (error) {
+    failure = error as Error
+  } finally {
+    closeSync(tokenFd)
   }
-  const mounted = insideMountedPath(target)
-  if (mounted !== null) {
-    fail(
-      `${target} is inside ${mounted}, which is mounted into the container; the refresh token must live\n` +
-        '  outside every mount — the deployment directory beside the configuration is the usual place',
-    )
+  if (failure !== undefined) {
+    fail(failure.message)
   }
-  writeSecretFile(target, `${token.refreshToken}\n`)
-  say(`stored the refresh token in ${target} (mode 600)`)
+  say(`stored the refresh token in ${placement.target} (mode 600)`)
   const readByBroker = brokerReadsPath(block.privateKeyPath)
   if (readByBroker === undefined) {
     // An inline privateKeyPem deployment: the broker has no directory to derive a path from, so it never
@@ -160,7 +265,7 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
       'note: this host block keeps its key inline, so the broker has nowhere to look for this file:',
     )
     say('      pull requests will stay app-authored until the key is a file (privateKeyPath)')
-  } else if (resolvePath(readByBroker) === resolvePath(target)) {
+  } else if (resolvePath(readByBroker) === resolvePath(placement.target)) {
     say(
       'which is where the broker looks for it — keep it writable, since the token is rotated on every use',
     )
@@ -175,3 +280,5 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
   )
   return 0
 }
+
+

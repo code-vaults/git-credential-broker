@@ -635,6 +635,11 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     // trusted: running `authorize` again — the documented way to change that person, and the only one —
     // has to take effect now rather than when the cached token happens to expire.
     const held = readFileSync(path, 'utf8').trim()
+    if (held === '') {
+      // A pre-created mount file is a placeholder until `authorize` writes it; treat it as absent
+      // rather than trying to renew an empty refresh token.
+      return undefined
+    }
     if (
       cachedPersonToken !== undefined &&
       cachedPersonToken.until > now + 60_000 &&

@@ -538,6 +538,39 @@ It prints a code and asks you to open <https://github.com/login/device>, then wa
 whatever device has a browser. The refresh token is stored beside the private key, which is where the
 broker looks for it, and the broker renews it from then on — nothing else needs running.
 
+When the configuration and key are mounted into the broker container, run `authorize` on the **host**,
+in the deployment directory:
+
+```sh
+gcb authorize --broker-container --config /srv/git-cred-broker/broker.config.yml
+```
+
+This writes `/srv/git-cred-broker/user.refresh`, which the sidecar mount maps to the broker's
+`/etc/git-cred-broker/user.refresh`. The flag acknowledges that the host directory is a
+broker-container bind mount; it must not also be mounted into the agent container. The command checks
+that the target is writable before starting the device flow.
+
+The target's parent directories are a deployment trust boundary: they must be controlled by the
+operator and not writable by an untrusted local process. gcb opens the token before the device flow
+and validates the descriptor (regular file, owner, mode); a parent replacement can deny or misplace
+the write, but cannot make the 0600 token readable to another uid.
+
+Compose only adds the writable `user.refresh` mount when that file exists at render time. Create an
+empty `user.refresh` (mode `0600`) as the host user who will run `authorize`, before running
+`gcb compose`. Run `authorize` before starting the sidecar; an empty file is now treated as absent,
+but the supported flow does not rely on that fallback. If the sidecar uid differs, `chown` the token
+to the sidecar uid after `authorize` and before starting the sidecar, so the broker can read and
+rotate it. If Compose was rendered while the file was absent, rerender and recreate the sidecar after
+authorization so the mount is added. To re-authorize later, stop the sidecar first. The identity running
+`authorize` must be able to read `broker.config.yml` and own `user.refresh`, so chown those back (or
+run `authorize` as the sidecar uid); changing only `user.refresh` is not enough. The key is not read
+by `authorize` and can stay with the sidecar uid. After re-authorization, chown the config and token
+back to the sidecar uid, then restart the sidecar.
+
+These ownership and restart steps belong to the host/deployment operator. An agent inside the container
+cannot stop its sidecar or chown host files; container-initiated re-authorization needs a typed
+idsh/deployment operation that performs the stop, ownership handover and restart around the device flow.
+
 The user token is used where the person identity is required or preferred: authoring a pull request,
 submitting a review, resolving a review thread (GraphQL refuses that for an app), replying to or
 editing a review comment, and creating an issue through the broker action path.
