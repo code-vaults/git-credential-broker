@@ -3,8 +3,8 @@
  *
  * The broker runs in its own container with the private key mounted read-only, no published ports,
  * no capabilities and a read-only root filesystem; the only surface it shares with anything else is
- * the socket directory. The container fetches the published package, so there is no checkout to
- * copy and nothing to build on the host.
+ * the socket directory. The released image contains the package, so there is no checkout to copy and
+ * nothing to build on the host.
  *
  * The mount targets are constants from `deployment.ts`, shared with `init --mode sidecar`, so the
  * paths recorded in `broker.config.yml` and the paths this file mounts cannot drift apart.
@@ -33,10 +33,8 @@ export interface ComposeInput {
   readonly socketDir: string
   /** `uid:gid` the sidecar runs as; must match the container that needs the socket. */
   readonly user: string
-  /** Base image. */
+  /** Base image; the released host image contains the `gcb` binary. */
   readonly image: string
-  /** Npm spec to run, e.g. `gcb@0.0.0`. */
-  readonly packageSpec: string
   /** Compose service and container name. */
   readonly name: string
   /**
@@ -96,14 +94,8 @@ export function renderCompose(input: ComposeInput): string {
     ? `# It runs the code mounted read-only from ${input.code}, which is whatever \`stage\` put there —
 # see the STAGED.json beside it for the commit. stage does not install dependencies or build:
 # run \`corepack yarn install\` in that directory first, then the source entry point runs here.`
-    : `# The image fetches the published package at start:
-#
-#   npx --yes --package '${input.packageSpec}' gcb daemon
-#
-# To avoid depending on the registry at boot, either render this file with --code <directory> to
-# run staged code from a mount, or point --image at an image of your own that already has the
-# package installed, and change \`command\` to the binary in it:
-#   ["gcb", "daemon", "--config", "${mountedConfigPath}"]`
+    : `# The image contains gcb-host and the command below runs its installed \`gcb\` binary.
+# To pin a reviewed commit instead, render this file with --code <directory>.`
 
   // The egress lines belong to both renders: a --code deployment is a sidecar too, and without them it
   // would carry no proxy variables at all, so the daemon would go direct and hang rather than refuse.
@@ -117,13 +109,8 @@ export function renderCompose(input: ComposeInput): string {
       # Runtime override: a URL pins a proxy, an empty value goes direct, unset keeps the above.
       - GCB_PROXY=\${GCB_PROXY-default}`
 
-  const environment = fromCode
-    ? `
+  const environment = `
     environment:${egress}`
-    : `
-    environment:
-      # npx needs somewhere writable for its cache; /tmp is a tmpfs above.
-      - npm_config_cache=/tmp/npm-cache${egress}`
 
   // A bind mount for a path that does not exist becomes a directory, and the broker would then read a
   // directory instead of a token — for every action, not only the personal ones. Emit it once `authorize`
@@ -134,7 +121,7 @@ export function renderCompose(input: ComposeInput): string {
       '\n      # for a path that does not exist would become a directory, and the broker would read that.'
   const start = fromCode
     ? `exec node --conditions=development ${CODE_DIR}/packages/host/bin/gcb.js daemon --config ${mountedConfigArg}`
-    : `exec npx --yes --package '${input.packageSpec}' gcb daemon --config ${mountedConfigArg}`
+    : `exec gcb daemon --config ${mountedConfigArg}`
   const command = `      - sh
       - -c
       - |
@@ -217,8 +204,7 @@ Print a Docker sidecar definition for the broker (to stdout). Pair it with a con
   --code <path>       Run code mounted from this host directory instead of fetching the package
                       at start (as \`stage\` exports it); nothing is fetched or built at boot
   --user <uid:gid>    UID the sidecar runs as (default: this user)
-  --image <name>      Base image (default: node:24-slim)
-  --package <spec>    npm spec to run (default: gcb-host@<version>)
+  --image <name>      Base image (default: ghcr.io/code-vaults/gcb-host:<version>)
   --name <name>       Service and container name (default: gcb)
   -h, --help          Show this help
 `
@@ -281,8 +267,7 @@ export function runCompose(argv: readonly string[]): number {
       configPath: configFile,
       socketDir,
       user,
-      image: args.value('image') ?? 'node:24-slim',
-      packageSpec: args.value('package') ?? `gcb-host@${PACKAGE_VERSION}`,
+      image: args.value('image') ?? `ghcr.io/code-vaults/gcb-host:${PACKAGE_VERSION}`,
       name: args.value('name') ?? 'gcb',
       code: args.value('code'),
     }),

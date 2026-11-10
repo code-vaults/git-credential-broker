@@ -1723,8 +1723,7 @@ describe('compose', () => {
     dir: '/volume1/docker/git-cred-broker',
     socketDir: '/srv/shared/git-broker',
     user: '1026:100',
-    image: 'node:24-slim',
-    packageSpec: 'gcb-host@0.0.0',
+    image: 'ghcr.io/code-vaults/gcb-host:0.0.0',
     name: 'git-cred-broker',
   })
 
@@ -1818,8 +1817,7 @@ describe('compose', () => {
       configPath: '/srv/custom/broker.yml',
       socketDir: '/srv/shared/git-broker',
       user: '1026:100',
-      image: 'node:24-slim',
-      packageSpec: 'gcb-host@0.0.0',
+      image: 'ghcr.io/code-vaults/gcb-host:0.0.0',
       name: 'git-cred-broker',
     })
     assert.match(custom, /\/srv\/custom:\/etc\/git-cred-broker\/config:ro/)
@@ -1832,8 +1830,7 @@ describe('compose', () => {
       configPath: '/srv/custom/broker live.yml',
       socketDir: '/srv/shared/git-broker',
       user: '1026:100',
-      image: 'node:24-slim',
-      packageSpec: 'gcb-host@0.0.0',
+      image: 'ghcr.io/code-vaults/gcb-host:0.0.0',
       name: 'git-cred-broker',
     })
     assert.match(custom, /--config '\/etc\/git-cred-broker\/config\/broker live\.yml'/)
@@ -1842,8 +1839,7 @@ describe('compose', () => {
       configPath: '/srv/custom/br$ker "x".yml',
       socketDir: '/srv/shared/git-broker',
       user: '1026:100',
-      image: 'node:24-slim',
-      packageSpec: 'gcb-host@0.0.0',
+      image: 'ghcr.io/code-vaults/gcb-host:0.0.0',
       name: 'git-cred-broker',
     })
     assert.match(dollar, /--config '\/etc\/git-cred-broker\/config\/br\$\$ker "x"\.yml'/)
@@ -1863,8 +1859,7 @@ describe('compose', () => {
         configPath: link,
         socketDir: '/srv/shared/git-broker',
         user: '1026:100',
-        image: 'node:24-slim',
-        packageSpec: 'gcb-host@0.0.0',
+        image: 'ghcr.io/code-vaults/gcb-host:0.0.0',
         name: 'git-cred-broker',
       })
       assert.equal(
@@ -1924,8 +1919,7 @@ describe('compose', () => {
       dir: '/srv/broker #1',
       socketDir: '/srv/socket #2',
       user: '1026:100',
-      image: 'node:24-slim',
-      packageSpec: 'gcb-host@0.0.0',
+      image: 'ghcr.io/code-vaults/gcb-host:0.0.0',
       name: 'git-cred-broker',
     })
     assert.equal(custom.includes('- "/srv/broker #1:/etc/git-cred-broker/config:ro"'), true)
@@ -1943,8 +1937,9 @@ describe('compose', () => {
     assert.match(rendered, /user: "1026:100"/)
   })
 
-  it('runs the daemon from the published package, not from a copied checkout', () => {
-    assert.match(rendered, /npx --yes --package 'gcb-host@0\.0\.0' gcb daemon/)
+  it('runs the installed gcb binary from the host image', () => {
+    assert.match(rendered, /exec gcb daemon/)
+    assert.equal(/npx/.test(rendered), false)
     assert.match(rendered, new RegExp(`--config '${SIDECAR.configPath}'`))
   })
 
@@ -1953,8 +1948,7 @@ describe('compose', () => {
       dir: '/volume1/docker/git-cred-broker',
       socketDir: '/srv/shared/git-broker',
       user: '1026:100',
-      image: 'node:24-slim',
-      packageSpec: 'gcb-host@0.0.0',
+      image: 'ghcr.io/code-vaults/gcb-host:0.0.0',
       name: 'git-cred-broker',
       code: '/volume1/docker/git-cred-broker/app',
     })
