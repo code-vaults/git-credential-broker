@@ -1,5 +1,15 @@
 # gcb-host
 
+## 0.8.1
+
+### Patch Changes
+
+- [#133](https://github.com/code-vaults/git-credential-broker/pull/133) [`53eafd7`](https://github.com/code-vaults/git-credential-broker/commit/53eafd732e4cbc7e282ce801c588288912f2603e) Thanks [@JounQin](https://github.com/JounQin)! - `compose` now emits the released `ghcr.io/code-vaults/gcb-host:<version>` image and runs its installed
+  `gcb daemon` binary. It no longer generates an `npx --package gcb-host` command or accepts `--package`.
+  The `--code` staged-code mode is unchanged.
+- Updated dependencies []:
+  - gcb-core@0.8.1
+
 ## 0.8.0
 
 ### Patch Changes
