@@ -25,27 +25,30 @@ function annotation(name) {
 
 /** Render the table rows from the catalog. */
 function render() {
-  const rows = Object.entries(GH_ACTIONS).map(([name, action]) => {
+  const lines = ['| Action | App permissions |', '|---|---|']
+  for (const [name, action] of Object.entries(GH_ACTIONS)) {
     const permissions = Object.entries(action.permissions)
       .map(([permission, level]) => `\`${permission}: ${level}\``)
       .join(', ')
-    return [`\`${label(name, action)}\`${annotation(name)}`, permissions]
-  })
-  const actionWidth = Math.max('Action'.length, ...rows.map(([action]) => action.length))
-  const permissionWidth = Math.max(
-    'App permissions'.length,
-    ...rows.map(([, permissions]) => permissions.length),
-  )
-  const pad = (value, width) => value + ' '.repeat(width - value.length)
-  const lines = [
-    `| ${pad('Action', actionWidth)} | ${pad('App permissions', permissionWidth)} |`,
-    `| ${'-'.repeat(actionWidth)} | ${'-'.repeat(permissionWidth)} |`,
-    ...rows.map(
-      ([action, permissions]) =>
-        `| ${pad(action, actionWidth)} | ${pad(permissions, permissionWidth)} |`,
-    ),
-  ]
+    lines.push(`| \`${label(name, action)}\`${annotation(name)} | ${permissions} |`)
+  }
   return lines.join('\n')
+}
+
+/** Compare the table semantics, not the whitespace oxfmt/prettier own. */
+function normalize(block) {
+  return block
+    .replaceAll('\r\n', '\n')
+    .split('\n')
+    .map(line =>
+      line
+        .replace(/\s+/gu, ' ')
+        .replace(/\s*\|\s*/gu, '|')
+        .replace(/-+/gu, '-')
+        .trim(),
+    )
+    .filter(line => line !== '')
+    .join('\n')
 }
 
 const readme = readFileSync(README, 'utf8')
@@ -58,7 +61,7 @@ const eol = readme.includes('\r\n') ? '\r\n' : '\n'
 const expected = `${START}${eol}${render().replaceAll('\n', eol)}${eol}${END}`
 const actual = readme.slice(start, end + END.length)
 if (process.argv.includes('--check')) {
-  if (actual.replaceAll('\r\n', '\n') !== expected.replaceAll('\r\n', '\n')) {
+  if (normalize(actual) !== normalize(expected)) {
     throw new Error('README action permission table is stale; run `yarn docs:actions`')
   }
 } else {
