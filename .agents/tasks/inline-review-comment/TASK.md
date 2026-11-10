@@ -120,7 +120,7 @@ shape; inline comments ride on the same `pull_requests: write` grant.
   with the wrong action.
 - `test/unit/github-app.test.ts` — the provider test around line 500 already drives
   `pullRequest`; assert the reviews `POST` body contains `comments: [{ path, line, side,
-body }]`. Nothing asserts the current comment payload today, so that is a gap worth
+  body }]`. Nothing asserts the current comment payload today, so that is a gap worth
   closing at the same time.
 - `test/unit/commands.test.ts` — CLI-level: `--file` without `--line` and the reverse.
 - `yarn test:unit` (typecheck is separate: `yarn typecheck`).
