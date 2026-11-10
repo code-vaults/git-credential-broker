@@ -556,7 +556,8 @@ empty `user.refresh` (mode `0600`) as the host user who will run `authorize`, be
 but the supported flow does not rely on that fallback. If the sidecar uid differs, `chown` the token
 to the sidecar uid after `authorize` and before starting the sidecar, so the broker can read and
 rotate it. If Compose was rendered while the file was absent, rerender and recreate the sidecar after
-authorization so the mount is added.
+authorization so the mount is added. To re-authorize later, the token must be owned by the identity
+running `authorize`; chown it back first, or run `authorize` as the sidecar uid.
 
 The user token is used where the person identity is required or preferred: authoring a pull request,
 submitting a review, resolving a review thread (GraphQL refuses that for an app), replying to or
