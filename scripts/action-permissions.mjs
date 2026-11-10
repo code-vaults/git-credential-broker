@@ -38,18 +38,18 @@ function render() {
   return lines.join('\n')
 }
 
-/** Format the table with oxfmt; the script does not own alignment. */
-function formatTable(block) {
-  const directory = mkdtempSync(join(tmpdir(), 'gcb-actions-'));
-  const file = join(directory, 'table.md');
+/** Format the whole next README with oxfmt; the script owns no layout. */
+function formatReadme(content) {
+  const directory = mkdtempSync(join(tmpdir(), 'gcb-actions-'))
+  const file = join(directory, 'README.md')
   try {
-    writeFileSync(file, `${block}\n`);
+    writeFileSync(file, content)
     execFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules/.bin/oxfmt'), [file], {
       stdio: 'ignore',
-    });
-    return readFileSync(file, 'utf8').trimEnd();
+    })
+    return readFileSync(file, 'utf8')
   } finally {
-    rmSync(directory, { recursive: true, force: true });
+    rmSync(directory, { recursive: true, force: true })
   }
 }
 
@@ -60,16 +60,16 @@ if (start < 0 || end < start) {
   throw new Error(`README is missing ${START} ... ${END}`)
 }
 const eol = readme.includes('\r\n') ? '\r\n' : '\n'
-const expected = `${START}${eol}${formatTable(render()).replaceAll('\n', eol)}${eol}${END}`
-const actual = readme.slice(start, end + END.length)
+const block = `${START}${eol}${render().replaceAll('\n', eol)}${eol}${END}`
+const next = formatReadme(readme.slice(0, start) + block + readme.slice(end + END.length))
 if (process.argv.includes('--check')) {
-  if (actual !== expected) {
+  if (next !== readme) {
     throw new Error('README action permission table is stale; run `yarn docs:actions`')
   }
 } else {
   const temporary = `${README}.${process.pid}.tmp`
   try {
-    writeFileSync(temporary, readme.slice(0, start) + expected + readme.slice(end + END.length))
+    writeFileSync(temporary, next)
     renameSync(temporary, README)
   } catch (error) {
     try {

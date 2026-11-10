@@ -783,6 +783,7 @@ The action catalog is the source for these requirements; `gcb gh --help` prints 
 actions. Grant them on the App, then approve any changed permissions on each installation.
 
 <!-- action-permissions:start -->
+
 | Action                               | App permissions                                                           |
 | ------------------------------------ | ------------------------------------------------------------------------- |
 | `pr view`                            | `pull_requests: read`, `contents: read`, `checks: read`, `statuses: read` |
@@ -831,6 +832,7 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `label delete`                       | `issues: write`                                                           |
 | `search issues`                      | `issues: read`                                                            |
 | `search prs`                         | `pull_requests: read`                                                     |
+
 <!-- action-permissions:end -->
 
 `pr status` with `--repo` reports the app identity's relevant pull requests and review requests
