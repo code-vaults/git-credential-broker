@@ -32,6 +32,11 @@ describe('gh action catalog', () => {
       'pr:comment-delete',
       'pr:review',
       'pr:review-by-id',
+      'discussion:create',
+      'discussion:edit',
+      'discussion:list',
+      'discussion:view',
+      'discussion:comment',
       'issue:create',
       'issue:edit',
       'issue:comment',
@@ -99,6 +104,10 @@ describe('gh action catalog', () => {
       checks: 'read',
       statuses: 'read',
     })
+    assert.deepEqual(getGhAction('discussion:list').permissions, { discussions: 'read' })
+    assert.deepEqual(getGhAction('discussion:view').permissions, { discussions: 'read' })
+    assert.deepEqual(getGhAction('discussion:comment').permissions, { discussions: 'write' })
+    assert.deepEqual(getGhAction('discussion:edit').permissions, { discussions: 'write' })
     assert.deepEqual(getGhAction('issue:view').permissions, { issues: 'read' })
     assert.deepEqual(getGhAction('issue:list').permissions, { issues: 'read' })
     assert.deepEqual(getGhAction('issue:comment-edit').permissions, { issues: 'write' })
@@ -208,6 +217,79 @@ describe('gh action catalog', () => {
       assert.equal(getGhAction(name).timeoutSeconds, seconds, name)
     }
     assert.equal(getGhAction('run:rerun').positionals[0]?.required, undefined)
+  })
+
+  it('declares the discussion-create policy', () => {
+    const action = getGhAction('discussion:create')
+    assert.equal(action.appUser, true)
+    assert.deepEqual(action.permissions, { discussions: 'write' })
+    assert.equal(action.timeoutSeconds, 120)
+    assert.deepEqual(
+      buildGhArgv(
+        'discussion:create',
+        { category: 'Q&A', title: 'Hello', body: 'Body', label: ['question'] },
+        'acme/widget',
+      ),
+      [
+        'discussion',
+        'create',
+        '--category',
+        'Q&A',
+        '--title',
+        'Hello',
+        '--body',
+        'Body',
+        '--label',
+        'question',
+        '--repo',
+        'acme/widget',
+      ],
+    )
+  })
+
+  it('declares the discussion actions', () => {
+    assert.deepEqual(buildGhArgv('discussion:list', { state: 'all', limit: 5 }, 'acme/widget'), [
+      'discussion',
+      'list',
+      '--limit',
+      '5',
+      '--state',
+      'all',
+      '--repo',
+      'acme/widget',
+    ])
+    assert.deepEqual(buildGhArgv('discussion:view', { target: '12', comments: true }, 'acme/widget'), [
+      'discussion',
+      'view',
+      '--comments',
+      '--repo',
+      'acme/widget',
+      '--',
+      '12',
+    ])
+    assert.deepEqual(
+      buildGhArgv('discussion:comment', { target: '12', body: 'Thanks' }, 'acme/widget'),
+      ['discussion', 'comment', '--body', 'Thanks', '--repo', 'acme/widget', '--', '12'],
+    )
+    assert.deepEqual(
+      buildGhArgv(
+        'discussion:edit',
+        { target: '12', title: 'New', 'add-label': ['question'] },
+        'acme/widget',
+      ),
+      [
+        'discussion',
+        'edit',
+        '--add-label',
+        'question',
+        '--title',
+        'New',
+        '--repo',
+        'acme/widget',
+        '--',
+        '12',
+      ],
+    )
   })
 
   it('declares the issue-admin policy', () => {

@@ -17,6 +17,7 @@ export type GhPermission =
   | 'actions'
   | 'checks'
   | 'contents'
+  | 'discussions'
   | 'issues'
   | 'pull_requests'
   | 'statuses'
@@ -360,6 +361,101 @@ const PR_REVIEW: GhAction = {
   exactlyOneOf: ['approve', 'request-changes', 'comment'],
   bodyRequiredWith: ['comment', 'request-changes'],
   permissions: { pull_requests: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+}
+
+// GitHub: POST /repos/{owner}/{repo}/discussions (gh discussion create)
+const DISCUSSION_CREATE: GhAction = {
+  name: 'discussion:create',
+  command: ['discussion', 'create'],
+  positionals: [],
+  flags: [
+    { name: 'category', type: 'string', required: true },
+    { name: 'title', type: 'string', required: true },
+    { name: 'body', type: 'string', required: true },
+    { name: 'label', type: 'string', repeatable: true },
+  ],
+  permissions: { discussions: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+}
+
+// GitHub GraphQL: discussions query (gh discussion list)
+const DISCUSSION_LIST: GhAction = {
+  name: 'discussion:list',
+  command: ['discussion', 'list'],
+  positionals: [],
+  flags: [
+    { name: 'after', type: 'string' },
+    { name: 'answered', type: 'boolean' },
+    { name: 'author', type: 'string' },
+    { name: 'category', type: 'string' },
+    { name: 'jq', type: 'string' },
+    { name: 'json', type: 'string' },
+    { name: 'label', type: 'string', repeatable: true },
+    { name: 'limit', type: 'number' },
+    { name: 'order', type: 'string' },
+    { name: 'search', type: 'string' },
+    { name: 'sort', type: 'string' },
+    { name: 'state', type: 'string' },
+    { name: 'template', type: 'string' },
+    { name: 'web', type: 'boolean' },
+  ],
+  permissions: { discussions: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+}
+
+// GitHub GraphQL: discussion and comments queries (gh discussion view)
+const DISCUSSION_VIEW: GhAction = {
+  name: 'discussion:view',
+  command: ['discussion', 'view'],
+  positionals: [{ name: 'target', type: 'string', required: true }],
+  flags: [
+    { name: 'comments', type: 'boolean' },
+    { name: 'jq', type: 'string' },
+    { name: 'json', type: 'string' },
+    { name: 'limit', type: 'number' },
+    { name: 'order', type: 'string' },
+    { name: 'template', type: 'string' },
+    { name: 'web', type: 'boolean' },
+  ],
+  permissions: { discussions: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+}
+
+// GitHub GraphQL: addDiscussionComment / updateDiscussionComment / deleteDiscussionComment
+const DISCUSSION_COMMENT: GhAction = {
+  name: 'discussion:comment',
+  command: ['discussion', 'comment'],
+  positionals: [{ name: 'target', type: 'string', required: true }],
+  flags: [
+    { name: 'body', type: 'string', required: true },
+    { name: 'edit', type: 'boolean' },
+  ],
+  permissions: { discussions: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+}
+
+// GitHub GraphQL: updateDiscussion
+const DISCUSSION_EDIT: GhAction = {
+  name: 'discussion:edit',
+  command: ['discussion', 'edit'],
+  positionals: [{ name: 'target', type: 'string', required: true }],
+  flags: [
+    { name: 'add-label', type: 'string', repeatable: true },
+    { name: 'body', type: 'string' },
+    { name: 'category', type: 'string' },
+    { name: 'remove-label', type: 'string', repeatable: true },
+    { name: 'title', type: 'string' },
+  ],
+  atLeastOneOf: ['body', 'category', 'title', 'add-label', 'remove-label'],
+  permissions: { discussions: 'write' },
   timeoutSeconds: 120,
   appUser: true,
 }
@@ -853,6 +949,11 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:comment-delete': PR_COMMENT_DELETE,
   'pr:review': PR_REVIEW,
   'pr:review-by-id': PR_REVIEW_BY_ID,
+  'discussion:create': DISCUSSION_CREATE,
+  'discussion:edit': DISCUSSION_EDIT,
+  'discussion:list': DISCUSSION_LIST,
+  'discussion:view': DISCUSSION_VIEW,
+  'discussion:comment': DISCUSSION_COMMENT,
   'issue:create': ISSUE_CREATE,
   'issue:edit': ISSUE_EDIT,
   'issue:comment': ISSUE_COMMENT,

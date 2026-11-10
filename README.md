@@ -122,13 +122,17 @@ Debian package is not used are recorded in
 gcb gh pr view 12 --repo owner/name
 gcb gh pr create -R owner/name --head feat/x --title "A title" --body "A body"
 gcb gh run view 123456 --log --repo owner/name
+gcb gh discussion create -R owner/name --category "Q&A" --title "A question" --body "Details"
+gcb gh discussion list -R owner/name --state all --limit 10
+gcb gh discussion view 12 -R owner/name --comments
 ```
 
 `-R` is the short form of `--repo`, as in `gh` itself.
 
-`gcb pr <subcommand>`, `gcb run <subcommand>` and `gcb issue <subcommand>` are shorthands for the
-same actions when the catalog has one — `gcb pr view 12`, `gcb pr close 12`, `gcb run list`,
-`gcb issue create --repo owner/name --title "A title" --body "A body"`. Catalogued actions dispatch
+`gcb pr <subcommand>`, `gcb run <subcommand>`, `gcb issue <subcommand>` and
+`gcb discussion <subcommand>` are shorthands for the same actions when the catalog has one —
+`gcb pr view 12`, `gcb pr close 12`, `gcb run list`, `gcb issue create --repo owner/name --title "A title" --body "A body"`,
+`gcb discussion create --category "Q&A" --title "A question" --body "Details"`. Catalogued actions dispatch
 through `GCB_PRIMARY` (default `gh`; an unsupported name fails closed). The flag-only `gcb pr` form
 described below is still what runs the lifecycle `gh` cannot express (opening as a person, review
 threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr close`.
@@ -898,6 +902,11 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr comment-delete`                  | `pull_requests: write`                                                    |
 | `pr review`                          | `pull_requests: write`                                                    |
 | `pr review --id` (`pr:review-by-id`) | `pull_requests: read`                                                     |
+| `discussion create`                  | `discussions: write`                                                      |
+| `discussion edit`                    | `discussions: write`                                                      |
+| `discussion list`                    | `discussions: read`                                                       |
+| `discussion view`                    | `discussions: read`                                                       |
+| `discussion comment`                 | `discussions: write`                                                      |
 | `issue create`                       | `issues: write`                                                           |
 | `issue edit`                         | `issues: write`                                                           |
 | `issue comment`                      | `issues: write`                                                           |
