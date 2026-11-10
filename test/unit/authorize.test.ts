@@ -106,9 +106,12 @@ describe('gcb authorize', () => {
     try {
       const target = path.join(root, 'user.refresh')
       fs.writeFileSync(target, '', { mode: 0o664 })
-      const fd = openTokenTarget(target)
-      fs.closeSync(fd)
-      assert.equal(fs.statSync(target).mode & 0o777, 0o600)
+      const opened = openTokenTarget(target)
+      fs.closeSync(opened.fd)
+      assert.equal(opened.created, false)
+      if (process.platform !== 'win32') {
+        assert.equal(fs.statSync(target).mode & 0o777, 0o600)
+      }
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
@@ -118,20 +121,23 @@ describe('gcb authorize', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-authorize-'))
     try {
       const target = path.join(root, 'new', 'user.refresh')
-      const fd = openTokenTarget(target)
-      fs.closeSync(fd)
-      assert.equal(fs.statSync(target).mode & 0o777, 0o600)
-      assert.equal(fs.statSync(path.dirname(target)).mode & 0o777, 0o700)
+      const opened = openTokenTarget(target)
+      fs.closeSync(opened.fd)
+      assert.equal(opened.created, true)
+      if (process.platform !== 'win32') {
+        assert.equal(fs.statSync(target).mode & 0o777, 0o600)
+        assert.equal(fs.statSync(path.dirname(target)).mode & 0o077, 0)
+      }
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
   })
 
-  it('refuses a read-only target at open time', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-authorize-readonly-'))
+  it('refuses a directory target', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-authorize-directory-'))
     try {
       const target = path.join(root, 'user.refresh')
-      fs.writeFileSync(target, '', { mode: 0o400 })
+      fs.mkdirSync(target)
       assert.throws(() => openTokenTarget(target))
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
