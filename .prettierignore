@@ -5,7 +5,7 @@ lib
 .dsh
 @eaDir
 
-# Oxfmt owns these formats; Prettier only handles the fallback languages.
+# Oxfmt owns code formats; Markdown uses Prettier.
 **/*.cjs
 **/*.cts
 **/*.js
@@ -21,8 +21,6 @@ lib
 **/*.json
 **/*.jsonc
 **/*.json5
-**/*.md
-**/*.mdx
 **/*.toml
 **/*.yaml
 **/*.yml

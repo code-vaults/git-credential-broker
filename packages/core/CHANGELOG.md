@@ -51,19 +51,19 @@ No changes in this release.
 - [#102](https://github.com/code-vaults/git-credential-broker/pull/102) [`9ad2d26`](https://github.com/code-vaults/git-credential-broker/commit/9ad2d26139b8fd4e6875ce2279494f2b29ad8e0b) Thanks [@JounQin](https://github.com/JounQin)! - Add the `allowPublicRead` and `allowForkPush` host opt-ins. Catalog entries can now declare
   `readOnly: true`; with `allowPublicRead`, such an action can run on a repository verified public
   without an allowlist entry.
-  
+
   The app identity uses a metadata-only installation token; the App must be installed on the
   repository, and the request is refused rather than falling back to anonymous when it is not, because
   `gh` needs authentication. Bare `--as-user` uses the authorized person token, and
   `--as-user <login>` uses the host account token. The host route performs the same fresh public check
   before running the action.
-  
+
   Visibility is checked freshly for each request, not cached, bounded at 10 seconds and refused on a
   redirect. The check shares GitHub's 60/hour IP quota; an exhausted 403/429 is reported as a rate
   limit, a plain 403 as a refusal, and neither as a private repository. Person tokens may themselves
   have private access; those forms rely on the visibility check rather than a token scope. A
   configured `apiBaseUrl` must now be an HTTPS URL.
-  
+
   `allowForkPush` lets a git credential request through for a **public** fork whose GitHub
   parent/source is allowlisted, still limited to the credential path; catalog actions keep the normal
   allowlist. Its unauthenticated fork check uses the same deadline and redirect refusal. It needs the
@@ -165,7 +165,7 @@ No changes in this release.
 ### Patch Changes
 
 - [#40](https://github.com/code-vaults/git-credential-broker/pull/40) [`25b46e3`](https://github.com/code-vaults/git-credential-broker/commit/25b46e33aabf29540df1aeddb72e43947f9a4da8) Thanks [@JounQin](https://github.com/JounQin)! - Read one pull request review with `gcb pr review --number <n> --id <id>`.
-  
+
   When `--jq` is used, the action token is kept in the isolated gh config instead of the
   environment, so the expression cannot print it.
 

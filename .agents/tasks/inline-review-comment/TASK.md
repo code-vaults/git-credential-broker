@@ -10,7 +10,7 @@ Open: two things this task asked for, at the end of this file
 ## Why now
 
 `pr --comment` can only post a review **body**. When an agent wants to say something
-about one line of a diff, GitHub calls that a *review comment*, and today the broker has
+about one line of a diff, GitHub calls that a _review comment_, and today the broker has
 no way to name the file or the line.
 
 The case that produced this task: `devockr/deepseek-harness#4` pins
@@ -31,14 +31,14 @@ which reads as a general remark on the pull request.
 
 The pieces and the exact gap:
 
-| Layer | Where | Today |
-|---|---|---|
-| CLI | `src/commands/pr.ts` — usage line 48, `actionOf()` 71-81, booleans 91, request built ~207-227 | `--comment` takes only `--body` / `--body-file` |
-| Protocol | `src/commands/pr.ts` ~207-227; validated in `src/broker.ts` 264-344 | message carries `path` — but that is the **repository** path (`owner/name`) — plus `number`, `commentId`, `threadId`, `head`, `base`, `title`, `body`, `method`, `draft`. No file path, no line, no side |
-| Provider | `src/providers/github-app.ts` 826-834 | `POST {collection}/{number}/reviews` with `{ body, event: 'COMMENT' }` |
-| Types | `src/types.ts` ~85-100 (`PullRequestRequest`), ~200 (protocol message) | no line fields |
+| Layer    | Where                                                                                         | Today                                                                                                                                                                                                    |
+| -------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI      | `src/commands/pr.ts` — usage line 48, `actionOf()` 71-81, booleans 91, request built ~207-227 | `--comment` takes only `--body` / `--body-file`                                                                                                                                                          |
+| Protocol | `src/commands/pr.ts` ~207-227; validated in `src/broker.ts` 264-344                           | message carries `path` — but that is the **repository** path (`owner/name`) — plus `number`, `commentId`, `threadId`, `head`, `base`, `title`, `body`, `method`, `draft`. No file path, no line, no side |
+| Provider | `src/providers/github-app.ts` 826-834                                                         | `POST {collection}/{number}/reviews` with `{ body, event: 'COMMENT' }`                                                                                                                                   |
+| Types    | `src/types.ts` ~85-100 (`PullRequestRequest`), ~200 (protocol message)                        | no line fields                                                                                                                                                                                           |
 
-The line-aware actions that *do* exist are `--threads`, `--reply-to <commentId>` and
+The line-aware actions that _do_ exist are `--threads`, `--reply-to <commentId>` and
 `--resolve <threadId>` (`github-app.ts` 754, 766). All three act on a thread that already
 exists — nothing can create the first inline comment. On a pull request with no review
 threads yet, `pr --threads` answers "no review threads on this pull request", so
@@ -60,7 +60,7 @@ already has. GitHub confirms the requirement in a header rather than the body �
 `403` and `x-accepted-github-permissions: pull_requests=write`.
 
 A note for whoever implements this: the reason `pr --comment` uses the reviews endpoint
-at all is written at `github-app.ts` 827-829 — a *conversation* comment is the issues API,
+at all is written at `github-app.ts` 827-829 — a _conversation_ comment is the issues API,
 which needs `issues: write`, which `PULL_REQUEST_PERMISSIONS` does not ask for. Keep that
 shape; inline comments ride on the same `pull_requests: write` grant.
 
@@ -101,7 +101,7 @@ shape; inline comments ride on the same `pull_requests: write` grant.
 ## Acceptance criteria
 
 - `pr --number N --comment --file Dockerfile --line 4 --body '…'` shows up as a comment on
-  that line in the pull request's *Files changed* view. For the live case above the payload
+  that line in the pull request's _Files changed_ view. For the live case above the payload
   is `path: 'Dockerfile'`, `line: 4`, `side: 'RIGHT'`,
   `commit_id: 00c01235e7c85f60e538ad67296a870dacfa80c2` (line 5 is the `FROM` line, if the
   anchor is wanted there instead).
@@ -120,7 +120,7 @@ shape; inline comments ride on the same `pull_requests: write` grant.
   with the wrong action.
 - `test/unit/github-app.test.ts` — the provider test around line 500 already drives
   `pullRequest`; assert the reviews `POST` body contains `comments: [{ path, line, side,
-  body }]`. Nothing asserts the current comment payload today, so that is a gap worth
+body }]`. Nothing asserts the current comment payload today, so that is a gap worth
   closing at the same time.
 - `test/unit/commands.test.ts` — CLI-level: `--file` without `--line` and the reverse.
 - `yarn test:unit` (typecheck is separate: `yarn typecheck`).

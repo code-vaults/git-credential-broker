@@ -52,16 +52,16 @@ deploy-sidecar.sh 写容器内路径）就不会有这个问题；把两者合�
 现在两种模式的路径由 `src/commands/deployment.ts` 单点定义，`init --mode` 与 `compose` 都从那里取，
 并有交叉测试钉住；sidecar 模式下传了冲突的 `--socket-path` 会直接报错而不是静默记下。
 
-| 提案 | 实际实现 | 理由 |
-|---|---|---|
-| broker 走 **LAN HTTP + 共享密钥** | **unix domain socket** | 容器 `all_proxy` 指向另一台机器，明文 HTTP 会把共享密钥与 token 送进第三方进程。socket 不受代理影响、不暴露端口、无需 TLS/防重放。共享密钥随之取消 |
-| helper 自己判定 `protocol == https` | **broker 侧按 host 判定**（`allowInsecureHttp`，默认 false） | 策略必须落在 agent 改不到的地方。helper 只拒绝它无法理解的协议 |
-| 隐含假设 helper 能拿到目标仓库 | 缺 `path` **直接拒绝**，并提示开 `credential.useHttpPath` | 实测 git 默认**不传** path；不拒绝就退化成按 host 粒度签发 = 把 App 能碰到的所有仓库都授权出去 |
-| 未提 token 复用 | 按 `(installation, repo)` 缓存，临近过期（默认 300s）重铸 | 一次 push 会多次调用 helper。审计实测：**1 次铸造 + 3 次缓存命中** |
-| 未提权限校验 | 首次铸造前 `GET /app` 预检 | 请求 app 未授权的权限会被回 **422**，在 push 中途炸且难以定位 |
-| 未提 socket 路径发现 | `--socket` > `GIT_BROKER_SOCKET` > `$HOME/.config/git-credential-broker/socket` | git 常由**非登录 shell** 启动，只靠环境变量会表现为"莫名其妙不能用" |
-| §7「openssl 待验证」 | 实测**没有 openssl**；用 `node:crypto` 签 RS256 | 也顺带做到零运行时依赖 |
-| 未提 TLS | 镜像缺 `ca-certificates`（已修） | 见环境笔记 §3 |
+| 提案                                | 实际实现                                                                        | 理由                                                                                                                                               |
+| ----------------------------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| broker 走 **LAN HTTP + 共享密钥**   | **unix domain socket**                                                          | 容器 `all_proxy` 指向另一台机器，明文 HTTP 会把共享密钥与 token 送进第三方进程。socket 不受代理影响、不暴露端口、无需 TLS/防重放。共享密钥随之取消 |
+| helper 自己判定 `protocol == https` | **broker 侧按 host 判定**（`allowInsecureHttp`，默认 false）                    | 策略必须落在 agent 改不到的地方。helper 只拒绝它无法理解的协议                                                                                     |
+| 隐含假设 helper 能拿到目标仓库      | 缺 `path` **直接拒绝**，并提示开 `credential.useHttpPath`                       | 实测 git 默认**不传** path；不拒绝就退化成按 host 粒度签发 = 把 App 能碰到的所有仓库都授权出去                                                     |
+| 未提 token 复用                     | 按 `(installation, repo)` 缓存，临近过期（默认 300s）重铸                       | 一次 push 会多次调用 helper。审计实测：**1 次铸造 + 3 次缓存命中**                                                                                 |
+| 未提权限校验                        | 首次铸造前 `GET /app` 预检                                                      | 请求 app 未授权的权限会被回 **422**，在 push 中途炸且难以定位                                                                                      |
+| 未提 socket 路径发现                | `--socket` > `GIT_BROKER_SOCKET` > `$HOME/.config/git-credential-broker/socket` | git 常由**非登录 shell** 启动，只靠环境变量会表现为"莫名其妙不能用"                                                                                |
+| §7「openssl 待验证」                | 实测**没有 openssl**；用 `node:crypto` 签 RS256                                 | 也顺带做到零运行时依赖                                                                                                                             |
+| 未提 TLS                            | 镜像缺 `ca-certificates`（已修）                                                | 见环境笔记 §3                                                                                                                                      |
 
 ## 3. 实测过的 GitHub App 事实
 

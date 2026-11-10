@@ -72,10 +72,11 @@ Lint and format use the @1stg configs:
 ```sh
 corepack yarn lint    # eslint + oxlint + tsc
 corepack yarn fix     # apply the linters' fixes
-corepack yarn format  # oxfmt + prettier
+corepack yarn format  # oxfmt + prettier (code/config only)
 ```
 
-Markdown prose is deliberately not oxfmt-formatted; it flattens nested lists.
+Markdown prose is not formatted: oxfmt and Prettier both flatten the nested task lists used by
+AGENTS/ROADMAP/README. It is still linted by ESLint's Markdown processor.
 
 ## Use your build
 
@@ -230,11 +231,8 @@ docker-compose.example.yml  tracked sidecar example
 ## Git hooks
 
 `yarn install` runs `prepare` through the prepare-lifecycle plugin and installs the hooks from
-`.simple-git-hooks.js`: pre-commit runs `nano-staged`, commit-msg runs commitlint. Type checking is
-`yarn lint:tsc` (part of `yarn lint` / `yarn check`); there is no pre-push hook.
+`.simple-git-hooks.js`: pre-commit runs `corepack yarn nano-staged`, commit-msg runs
+`corepack yarn commitlint -e`. Type checking is `yarn lint:tsc` (part of `yarn lint` / `yarn check`);
+there is no pre-push hook.
 
-Skip the hooks for one command with:
-
-```sh
-SKIP_SIMPLE_GIT_HOOKS=1 git commit
-```
+Skip the hooks for one command with `SKIP_SIMPLE_GIT_HOOKS=1`.
