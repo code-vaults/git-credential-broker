@@ -557,10 +557,10 @@ but the supported flow does not rely on that fallback. If the sidecar uid differ
 to the sidecar uid after `authorize` and before starting the sidecar, so the broker can read and
 rotate it. If Compose was rendered while the file was absent, rerender and recreate the sidecar after
 authorization so the mount is added. To re-authorize later, stop the sidecar first. The identity running
-`authorize` must be able to read `broker.config.yml` and `app.pem` and own `user.refresh`, so chown
-those files back (or run `authorize` as the sidecar uid); changing only `user.refresh` is not enough.
-After re-authorization, chown the config, key and token back to the sidecar uid, then restart the
-sidecar.
+`authorize` must be able to read `broker.config.yml` and own `user.refresh`, so chown those back (or
+run `authorize` as the sidecar uid); changing only `user.refresh` is not enough. The key is not read
+by `authorize` and can stay with the sidecar uid. After re-authorization, chown the config and token
+back to the sidecar uid, then restart the sidecar.
 
 These ownership and restart steps belong to the host/deployment operator. An agent inside the container
 cannot stop its sidecar or chown host files; container-initiated re-authorization needs a typed
