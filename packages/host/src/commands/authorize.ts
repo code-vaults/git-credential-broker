@@ -110,7 +110,7 @@ export function openTokenTarget(target: string): number {
   const fd = openSync(target, flags, 0o600)
   try {
     const uid = process.geteuid?.()
-    if (uid !== undefined && uid !== 0 && fstatSync(fd).uid !== uid) {
+    if (uid !== undefined && fstatSync(fd).uid !== uid) {
       throw new Error(`${target} is not owned by the current user`)
     }
     fchmodSync(fd, 0o600)
