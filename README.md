@@ -783,54 +783,54 @@ The action catalog is the source for these requirements; `gcb gh --help` prints 
 actions. Grant them on the App, then approve any changed permissions on each installation.
 
 <!-- action-permissions:start -->
-| Action | App permissions |
-|---|---|
-| `pr view` | `pull_requests: read`, `contents: read`, `checks: read`, `statuses: read` |
-| `pr list` | `pull_requests: read` |
-| `pr diff` | `pull_requests: read`, `contents: read` |
-| `pr create` | `pull_requests: write`, `contents: read` |
-| `pr edit` | `pull_requests: write` |
-| `pr close` | `pull_requests: write` |
-| `pr reopen` | `pull_requests: write` |
-| `pr ready` | `pull_requests: write` |
-| `pr lock` | `pull_requests: write` |
-| `pr unlock` | `pull_requests: write` |
-| `pr update-branch` | `pull_requests: write`, `contents: write` |
-| `pr checks` | `pull_requests: read`, `checks: read`, `statuses: read` |
-| `pr status` | `pull_requests: read`, `checks: read`, `statuses: read` |
-| `pr comment` | `pull_requests: write` |
-| `pr comment-edit` | `pull_requests: write` |
-| `pr comment-delete` | `pull_requests: write` |
-| `pr review` | `pull_requests: write` |
-| `pr review --id` (`pr:review-by-id`) | `pull_requests: read` |
-| `issue create` | `issues: write` |
-| `issue edit` | `issues: write` |
-| `issue comment` | `issues: write` |
-| `issue comment-edit` | `issues: write` |
-| `issue comment-delete` | `issues: write` |
-| `issue close` | `issues: write` |
-| `issue reopen` | `issues: write` |
-| `issue lock` | `issues: write` |
-| `issue unlock` | `issues: write` |
-| `issue pin` | `issues: write` |
-| `issue unpin` | `issues: write` |
-| `issue view` | `issues: read` |
-| `issue list` | `issues: read` |
-| `run view` | `actions: read` |
-| `run list` | `actions: read` |
-| `run watch` | `actions: read`, `checks: read` |
-| `run cancel` | `actions: write` |
-| `run rerun` | `actions: write` |
-| `release list` | `contents: read` |
-| `release view` | `contents: read` |
-| `workflow list` | `actions: read` |
-| `workflow view` | `actions: read`, `contents: read` |
-| `label list` | `issues: read` |
-| `label create` | `issues: write` |
-| `label edit` | `issues: write` |
-| `label delete` | `issues: write` |
-| `search issues` | `issues: read` |
-| `search prs` | `pull_requests: read` |
+| Action                               | App permissions                                                           |
+| ------------------------------------ | ------------------------------------------------------------------------- |
+| `pr view`                            | `pull_requests: read`, `contents: read`, `checks: read`, `statuses: read` |
+| `pr list`                            | `pull_requests: read`                                                     |
+| `pr diff`                            | `pull_requests: read`, `contents: read`                                   |
+| `pr create`                          | `pull_requests: write`, `contents: read`                                  |
+| `pr edit`                            | `pull_requests: write`                                                    |
+| `pr close`                           | `pull_requests: write`                                                    |
+| `pr reopen`                          | `pull_requests: write`                                                    |
+| `pr ready`                           | `pull_requests: write`                                                    |
+| `pr lock`                            | `pull_requests: write`                                                    |
+| `pr unlock`                          | `pull_requests: write`                                                    |
+| `pr update-branch`                   | `pull_requests: write`, `contents: write`                                 |
+| `pr checks`                          | `pull_requests: read`, `checks: read`, `statuses: read`                   |
+| `pr status`                          | `pull_requests: read`, `checks: read`, `statuses: read`                   |
+| `pr comment`                         | `pull_requests: write`                                                    |
+| `pr comment-edit`                    | `pull_requests: write`                                                    |
+| `pr comment-delete`                  | `pull_requests: write`                                                    |
+| `pr review`                          | `pull_requests: write`                                                    |
+| `pr review --id` (`pr:review-by-id`) | `pull_requests: read`                                                     |
+| `issue create`                       | `issues: write`                                                           |
+| `issue edit`                         | `issues: write`                                                           |
+| `issue comment`                      | `issues: write`                                                           |
+| `issue comment-edit`                 | `issues: write`                                                           |
+| `issue comment-delete`               | `issues: write`                                                           |
+| `issue close`                        | `issues: write`                                                           |
+| `issue reopen`                       | `issues: write`                                                           |
+| `issue lock`                         | `issues: write`                                                           |
+| `issue unlock`                       | `issues: write`                                                           |
+| `issue pin`                          | `issues: write`                                                           |
+| `issue unpin`                        | `issues: write`                                                           |
+| `issue view`                         | `issues: read`                                                            |
+| `issue list`                         | `issues: read`                                                            |
+| `run view`                           | `actions: read`                                                           |
+| `run list`                           | `actions: read`                                                           |
+| `run watch`                          | `actions: read`, `checks: read`                                           |
+| `run cancel`                         | `actions: write`                                                          |
+| `run rerun`                          | `actions: write`                                                          |
+| `release list`                       | `contents: read`                                                          |
+| `release view`                       | `contents: read`                                                          |
+| `workflow list`                      | `actions: read`                                                           |
+| `workflow view`                      | `actions: read`, `contents: read`                                         |
+| `label list`                         | `issues: read`                                                            |
+| `label create`                       | `issues: write`                                                           |
+| `label edit`                         | `issues: write`                                                           |
+| `label delete`                       | `issues: write`                                                           |
+| `search issues`                      | `issues: read`                                                            |
+| `search prs`                         | `pull_requests: read`                                                     |
 <!-- action-permissions:end -->
 
 `pr status` with `--repo` reports the app identity's relevant pull requests and review requests

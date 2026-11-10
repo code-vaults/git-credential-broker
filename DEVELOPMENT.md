@@ -220,14 +220,14 @@ docker-compose.example.yml  tracked sidecar example
 .agents/notes/         the design, its review, the verified record, environment facts
 ```
 
-## Optional pre-push typecheck
+## Git hooks
 
-CI runs `tsc` over the tests; `node --test` alone strips types and would miss a type error.
+`yarn install` runs `prepare` through the prepare-lifecycle plugin and installs the hooks from
+`.simple-git-hooks.js`: pre-commit runs `nano-staged`, commit-msg runs commitlint. Type checking is
+`yarn lint:tsc` (part of `yarn lint` / `yarn check`); there is no pre-push hook.
 
-`yarn install` runs `prepare` through the prepare-lifecycle plugin and installs the hooks configured
-by `.simple-git-hooks.js` (the `@1stg/simple-git-hooks` base, plus `pre-push: yarn typecheck`).
-Skip one push with:
+Skip the hooks for one command with:
 
 ```sh
-SKIP_SIMPLE_GIT_HOOKS=1 git push
+SKIP_SIMPLE_GIT_HOOKS=1 git commit
 ```

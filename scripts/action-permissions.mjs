@@ -25,13 +25,26 @@ function annotation(name) {
 
 /** Render the table rows from the catalog. */
 function render() {
-  const lines = ['| Action | App permissions |', '|---|---|']
-  for (const [name, action] of Object.entries(GH_ACTIONS)) {
+  const rows = Object.entries(GH_ACTIONS).map(([name, action]) => {
     const permissions = Object.entries(action.permissions)
       .map(([permission, level]) => `\`${permission}: ${level}\``)
       .join(', ')
-    lines.push(`| \`${label(name, action)}\`${annotation(name)} | ${permissions} |`)
-  }
+    return [`\`${label(name, action)}\`${annotation(name)}`, permissions]
+  })
+  const actionWidth = Math.max('Action'.length, ...rows.map(([action]) => action.length))
+  const permissionWidth = Math.max(
+    'App permissions'.length,
+    ...rows.map(([, permissions]) => permissions.length),
+  )
+  const pad = (value, width) => value + ' '.repeat(width - value.length)
+  const lines = [
+    `| ${pad('Action', actionWidth)} | ${pad('App permissions', permissionWidth)} |`,
+    `| ${'-'.repeat(actionWidth)} | ${'-'.repeat(permissionWidth)} |`,
+    ...rows.map(
+      ([action, permissions]) =>
+        `| ${pad(action, actionWidth)} | ${pad(permissions, permissionWidth)} |`,
+    ),
+  ]
   return lines.join('\n')
 }
 
