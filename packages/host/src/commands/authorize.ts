@@ -120,6 +120,8 @@ export function openTokenTarget(target: string): number {
 function writeToken(fd: number, token: string): void {
   ftruncateSync(fd, 0)
   writeFileSync(fd, `${token}\n`)
+  // ACL-based shares can ignore the create/open mode; set it again after the write.
+  fchmodSync(fd, 0o600)
 }
 
 /** Whether the target or its parent is writable, so a read-only sidecar mount fails before the flow. */
