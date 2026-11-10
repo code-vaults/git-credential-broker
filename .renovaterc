@@ -1,0 +1,7 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>1stG/configs"],
+  "docker-compose": {
+    "managerFilePatterns": ["/(^|/)docker-compose[^/]*\\.ya?ml$/"]
+  }
+}

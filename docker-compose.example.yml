@@ -13,7 +13,7 @@
 
 services:
   git-cred-broker:
-    # The usual NAS case. The image installs the package at start, so there is no checkout to copy
+    # The usual NAS case. The released image contains gcb-host, so there is no checkout to copy
     # and nothing to build. Only this container mounts the private key; the socket directory is
     # the only thing shared with the DSH container.
     image: ghcr.io/code-vaults/gcb-host:0.8.0
