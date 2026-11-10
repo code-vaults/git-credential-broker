@@ -106,9 +106,8 @@ describe('gcb authorize', () => {
     try {
       const target = path.join(root, 'user.refresh')
       fs.writeFileSync(target, '', { mode: 0o664 })
-      const opened = openTokenTarget(target)
-      fs.closeSync(opened.fd)
-      assert.equal(opened.created, false)
+      const fd = openTokenTarget(target)
+      fs.closeSync(fd)
       if (process.platform !== 'win32') {
         assert.equal(fs.statSync(target).mode & 0o777, 0o600)
       }
@@ -121,9 +120,8 @@ describe('gcb authorize', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-authorize-'))
     try {
       const target = path.join(root, 'new', 'user.refresh')
-      const opened = openTokenTarget(target)
-      fs.closeSync(opened.fd)
-      assert.equal(opened.created, true)
+      const fd = openTokenTarget(target)
+      fs.closeSync(fd)
       if (process.platform !== 'win32') {
         assert.equal(fs.statSync(target).mode & 0o777, 0o600)
         assert.equal(fs.statSync(path.dirname(target)).mode & 0o077, 0)

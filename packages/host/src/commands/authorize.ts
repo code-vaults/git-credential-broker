@@ -20,7 +20,6 @@ import {
   fstatSync,
   ftruncateSync,
   mkdirSync,
-  rmSync,
   openSync,
   writeFileSync,
 } from 'node:fs'
@@ -94,33 +93,17 @@ export interface AuthorizationPlacement {
   readonly warning?: string
 }
 
-/** A token descriptor and whether this attempt created the file. */
-export interface OpenedTokenTarget {
-  readonly fd: number
-  readonly created: boolean
-}
-
 /**
  * Open and secure the token target before authorization, so a later path swap cannot redirect the
  * write and a permission failure surfaces before the device flow.
  *
  * @param target - The token path.
- * @returns The open descriptor, its creation state, and mode 0600.
+ * @returns The open descriptor, already mode 0600.
  */
-export function openTokenTarget(target: string): OpenedTokenTarget {
+export function openTokenTarget(target: string): number {
   mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
   const flags = constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
-  let fd: number
-  let created = false
-  try {
-    fd = openSync(target, flags | constants.O_EXCL, 0o600)
-    created = true
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-      throw error
-    }
-    fd = openSync(target, flags, 0o600)
-  }
+  const fd = openSync(target, flags, 0o600)
   try {
     const info = fstatSync(fd)
     if (!info.isFile()) {
@@ -131,16 +114,9 @@ export function openTokenTarget(target: string): OpenedTokenTarget {
       throw new Error(`${target} is not owned by the current user`)
     }
     fchmodSync(fd, 0o600)
-    return { fd, created }
+    return fd
   } catch (error) {
     closeSync(fd)
-    if (created) {
-      try {
-        rmSync(target, { force: true })
-      } catch {
-        // Best effort: the open/validation error is the message that matters.
-      }
-    }
     throw error
   }
 }
@@ -246,14 +222,12 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
   }
   say(`the refresh token will be written to ${placement.target}`)
 
-  let opened: OpenedTokenTarget
+  let tokenFd: number
   try {
-    opened = openTokenTarget(placement.target)
+    tokenFd = openTokenTarget(placement.target)
   } catch (error) {
     fail(`could not open ${placement.target}: ${(error as Error).message}`)
   }
-  const tokenFd = opened.fd
-  let failure: Error | undefined
   try {
     const fetcher: Fetcher = fetcherFor(proxy)
     const code = await startDeviceFlow(block.clientId, fetcher)
@@ -267,26 +241,14 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
       ms => new Promise(done => setTimeout(done, ms)),
     )
     if (token.refreshToken === undefined) {
-      throw new Error(
+      fail(
         'GitHub returned no refresh token, so the token would expire in eight hours with no way to renew.\n' +
           '  Select "Expire user authorization tokens" in the app settings and authorize again.',
       )
     }
     writeToken(tokenFd, token.refreshToken)
-  } catch (error) {
-    failure = error as Error
   } finally {
     closeSync(tokenFd)
-  }
-  if (failure !== undefined) {
-    if (opened.created) {
-      try {
-        rmSync(placement.target, { force: true })
-      } catch {
-        // Best effort: the authorization failure is the message that matters.
-      }
-    }
-    fail(failure.message)
   }
   say(`stored the refresh token in ${placement.target} (mode 600)`)
   const readByBroker = brokerReadsPath(block.privateKeyPath)
