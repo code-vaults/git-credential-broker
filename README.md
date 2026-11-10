@@ -787,6 +787,24 @@ docker build --target host   -t code-vaults/gcb-host:dev .
 While the image exists locally, Docker uses it instead of pulling from the registry. Another machine
 or CI builds the same Dockerfile and tags, rather than pulling `:dev`.
 
+For idsh's dev image, name the client image as a stage and copy only the gcb packages into the base:
+
+```dockerfile
+ARG BASE=devockr/idsh:base
+ARG GCB_CLIENT_IMAGE=code-vaults/gcb-client:dev
+FROM ${GCB_CLIENT_IMAGE} AS gcb-client
+FROM ${BASE}
+
+COPY --from=gcb-client /usr/local/lib/node_modules/gcb-core /usr/local/lib/node_modules/gcb-core
+COPY --from=gcb-client /usr/local/lib/node_modules/gcb-client /usr/local/lib/node_modules/gcb-client
+RUN ln -s /usr/local/lib/node_modules/gcb-client/bin/gcb.js /usr/local/bin/gcb
+```
+
+Copy the two package directories, not all of `/usr/local/lib/node_modules`: the idsh base already has
+its own `corepack` and `npm`, and a whole-directory copy would replace them. That default is for a
+local build; CI and production pass a published version instead, e.g.
+`--build-arg GCB_CLIENT_IMAGE=ghcr.io/code-vaults/gcb-client:<version>`.
+
 ### Updating the sidecar
 
 Pin a released `gcb-host` image by version or digest; do not use `:dev` or `pull_policy: never` for
@@ -815,24 +833,7 @@ liveness from the pushing environment with `gcb probe --repo <owner/name>`: exit
 when `probe` returns `3` or the socket is gone; a configuration error needs an operator.
 
 Use the same release line on both sides. Typed host replies and the active-audit ping need at least
-`0.7.0`; `gcb authorize --broker-container` needs host `0.8.0`.
-For idsh's dev image, name the client image as a stage and copy only the gcb packages into the base:
-
-```dockerfile
-ARG BASE=devockr/idsh:base
-ARG GCB_CLIENT_IMAGE=code-vaults/gcb-client:dev
-FROM ${GCB_CLIENT_IMAGE} AS gcb-client
-FROM ${BASE}
-
-COPY --from=gcb-client /usr/local/lib/node_modules/gcb-core /usr/local/lib/node_modules/gcb-core
-COPY --from=gcb-client /usr/local/lib/node_modules/gcb-client /usr/local/lib/node_modules/gcb-client
-RUN ln -s /usr/local/lib/node_modules/gcb-client/bin/gcb.js /usr/local/bin/gcb
-```
-
-Copy the two package directories, not all of `/usr/local/lib/node_modules`: the idsh base already has
-its own `corepack` and `npm`, and a whole-directory copy would replace them. That default is for a
-local build; CI and production pass a published version instead, e.g.
-`--build-arg GCB_CLIENT_IMAGE=ghcr.io/code-vaults/gcb-client:<version>`.
+`0.3.0`; `gcb authorize --broker-container` needs host `0.8.0`.
 
 ## App permissions by action
 

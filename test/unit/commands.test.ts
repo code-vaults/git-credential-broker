@@ -27,6 +27,7 @@ import {
   helpRequested,
 } from '../../packages/core/src/support.ts'
 import type { BrokerConfig, GithubAppHostConfig } from '../../packages/core/src/types.ts'
+import { PACKAGE_VERSION } from '../../packages/core/src/version.ts'
 import { renderCompose, runCompose } from '../../packages/host/src/commands/compose.ts'
 import { runDiagnose } from '../../packages/host/src/commands/diagnose.ts'
 import {
@@ -1810,6 +1811,12 @@ describe('compose', () => {
     }) as typeof process.stdout.write
     try {
       assert.equal(runCompose(['--socket-dir', '/srv/sock']), 0)
+      assert.match(
+        output,
+        new RegExp(
+          `image: ghcr[.]io/code-vaults/gcb-host:${PACKAGE_VERSION.replaceAll('.', '[.]')}`,
+        ),
+      )
     } finally {
       process.stdout.write = original
       if (previous === undefined) {

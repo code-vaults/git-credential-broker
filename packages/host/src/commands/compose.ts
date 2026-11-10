@@ -39,8 +39,8 @@ export interface ComposeInput {
   readonly name: string
   /**
    * Host directory holding the broker's code, as `stage` exports it. When given, the sidecar runs
-   * that code with the image's Node instead of fetching the package at start: no registry access at
-   * boot, and the commit that runs is the one you reviewed.
+   * that code with the image's Node instead of running the image's installed binary: no registry
+   * access at boot, and the commit that runs is the one you reviewed.
    */
   readonly code?: string
 }
@@ -201,8 +201,8 @@ Print a Docker sidecar definition for the broker (to stdout). Pair it with a con
   --config <path>     The sidecar's config, checked before anything is printed
                       (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   --socket-dir <path> Host directory the pushing container already mounts
-  --code <path>       Run code mounted from this host directory instead of fetching the package
-                      at start (as \`stage\` exports it); nothing is fetched or built at boot
+  --code <path>       Run code mounted from this host directory instead of the installed binary
+                      (as \`stage\` exports it); nothing is fetched or built at boot
   --user <uid:gid>    UID the sidecar runs as (default: this user)
   --image <name>      Base image (default: ghcr.io/code-vaults/gcb-host:<version>)
   --name <name>       Service and container name (default: gcb)
