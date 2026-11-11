@@ -1,6 +1,7 @@
 # A user service for the host broker, which creates and replies as the person running it.
 #
 #   install:  npm i -g gcb-host      # the CLI is assumed to be on PATH
+#             install -d -m 700 ~/.gcb-host/channel   # shared no-checkout channel
 #             cp examples/gcb-host.service ~/.config/systemd/user/
 #             systemctl --user daemon-reload
 #             systemctl --user enable --now gcb-host

@@ -470,7 +470,18 @@ merge action. For `repo fork`, review replies, reviews, pull request edit, issue
 request that names `--repo` explicitly — every review always carries its repository, even when
 derived from origin — it checks the repository against the broker config's allowlist (pass
 `--config`), except a `readOnly` action with `allowPublicRead`, or a catalogued action on the parent of an allowlisted fork with `allowFork` (see the configuration table). An
-explicit `--repo` needs no checkout of that repository; without it, the checkout decides.
+explicit `--repo` needs no checkout of that repository; without one, a checkout must exist. When
+there is no checkout at all, the client and host broker use the shared
+`~/.gcb-host/channel` instead of `.git/gcb/host-broker`; the request must carry `--repo`, and the
+host broker must run in its normal root-serving mode (not `--repo <checkout>`). Create it once with:
+
+```sh
+install -d -m 700 ~/.gcb-host/channel
+```
+
+Both sides must see the same path and be able to write it (in practice the same uid, as with
+socketMode 0660); the container can write that channel, so anything able to write it can
+submit requests as the selected account within the allowlist.
 `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
 directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. The directory must

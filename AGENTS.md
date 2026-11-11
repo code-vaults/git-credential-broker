@@ -225,6 +225,9 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   Opening a pull request is a person action: use `gcb pr create --as-user` (broker's authorized
   person) by default, or `pr create --as-user <login>` for a specific host account; the latter writes
   a request under `<git dir>/gcb/host-broker` (shared with the host, untracked) for `gcb host`.
+  Without a checkout, the same request goes under the shared, pre-created
+  `~/.gcb-host/channel` (mode 0700); both sides must see the same path. A process that can write that channel can act as the selected account
+  within the allowlist, so its permissions are part of the boundary.
   A plain `gcb pr create` (app identity) is the exception, only when the operator explicitly asks for
   an App-authored PR; automated reviewers may skip those. The flag-only `gcb pr --as-user` form also
   opens with `--head/--title`, and covers review, reply, PR edit, review-comment edit/comment and
@@ -237,8 +240,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   its `--root`s (default `$HOME`) within `--depth` levels of each (4 by default), so anything added
   later is picked up by the next sweep. The bound is deliberate — the walk repeats every `--interval`
   seconds — and `--depth` raises it for a deeper layout. The paths on the two sides never have to
-  match — each side reads and writes its own view
-  of the same `.git` directory — so only the roots it scans are host-side paths. A request without an
+  match for checkout channels — each side reads and writes its own view of the same `.git`
+  directory — but the global channel requires both sides to see the same `~/.gcb-host` path. A request without an
   explicit `repo` is served in the checkout it was written in; one that names `repo` uses that repository
   and is checked against the allowlist, so no checkout of the target is required. The checkout is a
   mechanism, not a boundary: the container can edit any checkout it can write, its remote included, so

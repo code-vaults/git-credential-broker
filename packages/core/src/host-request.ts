@@ -31,12 +31,18 @@ import {
   writeFileSync,
   type Dirent,
 } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 
 import { canonicalPath } from './paths.ts'
 
 /** The directory under the git directory that carries requests and answers. */
 export const CHANNEL_PATH = 'gcb/host-broker'
+
+/** The shared channel used when the caller has no checkout. */
+export function globalChannelDir(): string {
+  return join(homedir(), '.gcb-host', 'channel')
+}
 
 /** The file naming the running host broker. */
 export const HOST_BROKER_FILE = 'host-broker.json'

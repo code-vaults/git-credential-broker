@@ -12,7 +12,15 @@
  * shell; the program it calls is configuration, and it is called with an argument list built here.
  */
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
@@ -23,6 +31,7 @@ import {
   clearHostBroker,
   discoverCheckouts,
   findGitDir,
+  globalChannelDir,
   listRequests,
   reclaimAbandoned,
   readHostBroker,
@@ -365,7 +374,9 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   /** The checkouts to serve: one named checkout, or everything under the roots. */
   const targets = (): { repo: string; dir: string }[] => {
     if (single === undefined) {
-      return scanned.flatMap(root => discoverCheckouts(root, depth))
+      const checkouts = scanned.flatMap(root => discoverCheckouts(root, depth))
+      const channel = existingGlobalChannel()
+      return channel === undefined ? checkouts : [...checkouts, { repo: channel, dir: channel }]
     }
     const gitDir = findGitDir(single)
     if (gitDir === undefined) {
@@ -448,6 +459,11 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   say(
     `creating pull requests, issues, reviews, replies, forks and pushes with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
   )
+  if (single === undefined && !existsSync(globalChannelDir())) {
+    warn(
+      `not serving the global channel: ${globalChannelDir()} does not exist; create it once with mode 0700`,
+    )
+  }
 
   for (;;) {
     for (const { repo, dir } of targets()) {
@@ -516,6 +532,9 @@ async function sweep(
     }
 
     const problems = requestProblems(request)
+    if (dir === globalChannelDir() && request.repo === undefined) {
+      problems.push('the global channel needs an explicit repo')
+    }
     if (problems.length > 0) {
       writeResult(dir, id, { error: problems.join('; ') })
       removeRequest(dir, id)
@@ -843,6 +862,51 @@ async function resolvePushTarget(
     return { target: { url, credentials, cleanEnv } }
   } catch (error) {
     return { error: (error as Error).message }
+  }
+}
+
+/** Remove this broker's marker from a channel it can no longer serve. */
+function dropOwnMarker(channel: string): void {
+  if (readHostBroker(channel)?.pid === process.pid) {
+    clearHostBroker(channel)
+  }
+}
+
+/** The last channel problem, so an idle broker does not repeat it every sweep. */
+let lastGlobalChannelWarning: string | undefined
+
+function warnGlobalChannel(message: string): void {
+  if (message === lastGlobalChannelWarning) {
+    return
+  }
+  lastGlobalChannelWarning = message
+  warn(message)
+}
+
+/** The pre-created shared channel, when it is a real directory. */
+function existingGlobalChannel(): string | undefined {
+  const channel = globalChannelDir()
+  try {
+    const stat = lstatSync(channel)
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      warnGlobalChannel(`not serving the global channel: ${channel} is not a real directory`)
+      dropOwnMarker(channel)
+      return undefined
+    }
+    if ((stat.mode & 0o077) !== 0) {
+      warnGlobalChannel(
+        `not serving the global channel: ${channel} is accessible to other users (chmod 700 it)`,
+      )
+      dropOwnMarker(channel)
+      return undefined
+    }
+    lastGlobalChannelWarning = undefined
+    return channel
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      warnGlobalChannel(`not serving the global channel: ${(error as Error).message}`)
+    }
+    return undefined
   }
 }
 
