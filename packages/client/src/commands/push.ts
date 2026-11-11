@@ -140,7 +140,7 @@ Push a branch from the host, using the host's account. The token never crosses i
 container. The default remote is origin, and the default branch is the current one.
 
   --force              Overwrite the remote branch
-  --force-with-lease   Overwrite only if the tracking ref still matches
+  --force-with-lease   Overwrite only if the remote branch still matches the tracking ref
   --as-user            Use the host broker's own gh account
   --as-user=<login>    Use ~/.config/gh-<login> on the host
   --proxy <url>        Use this proxy for the host git call

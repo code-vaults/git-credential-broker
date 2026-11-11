@@ -148,13 +148,15 @@ token or remote URL from the container is used. It requires a host broker and a 
 host. The destination must be allowlisted, or be a verified fork whose parent/source is
 allowlisted when `allowForkPush` is on; host push checks the source relationship, not the fork's own
 allowlist entry. It defaults to `origin` and the current branch and takes `gcb push [<remote> [<branch>]]`; `--force`
-is an explicit overwrite and `--force-with-lease` only overwrites if the local remote-tracking ref still
-matches its expected sha (there is no arbitrary push-argument pass-through). `--as-user=<login>`
+is an explicit overwrite and `--force-with-lease` only overwrites if the remote branch still matches the local
+remote-tracking ref (there is no arbitrary push-argument pass-through). `--as-user=<login>`
 selects `~/.config/gh-<login>` on the host; the host reads the selected remote's protocol only to
 choose `https` or `ssh`, and the repository URL is still rebuilt from the allowlist. SSH uses the
 host's SSH config (key, port and proxy); `sshAccounts` maps a login to its host alias instead of
 falling back to the default key. `gcb push` runs the container's own `pre-push` hook before
-writing the request; the host never runs container-owned hooks. The URL is rebuilt from the allowlisted repository rather than read from the
+writing the request; the host never runs container-owned hooks. The hook's remote OID is the local
+remote-tracking ref (zeros when the branch was never fetched), not the value the remote advertises
+during a real push. The URL is rebuilt from the allowlisted repository rather than read from the
 container-writable remote, so a changed `.git/config` cannot redirect the host push. Because git's credential helper has no push delegation,
 this is an explicit `gcb push` instead of a transparent `git push`.
 
