@@ -809,7 +809,7 @@ async function openOne(
     let transport: 'https' | 'ssh' = 'https'
     const remote = request.remote ?? 'origin'
     try {
-      const { stdout } = await run('git', ['config', '--get', `remote.${remote}.url`], {
+      const { stdout } = await run('git', ['remote', 'get-url', '--push', remote], {
         cwd: repo,
         timeout: CREATE_TIMEOUT_MS,
         maxBuffer: 1 << 20,
@@ -830,6 +830,9 @@ async function openOne(
       transport === 'ssh'
         ? []
         : ['-c', 'credential.helper=', '-c', `credential.helper=${helper}`, '-c', 'credential.useHttpPath=true']
+    if (transport === 'ssh' && request.proxy !== undefined) {
+      return { error: '--proxy/--no-proxy is not supported for SSH pushes' }
+    }
     const cleanEnv: NodeJS.ProcessEnv = withoutGitLocation({
       ...forkEnv(request.proxy, request.account, host),
       GIT_CONFIG_NOSYSTEM: '1',

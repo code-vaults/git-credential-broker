@@ -39,7 +39,13 @@ container. The default remote is origin, and the default branch is the current o
 `
 
 /** Run the container's pre-push hook; the host deliberately never runs container-owned hooks. */
-function runPrePush(repo: string, branch: string, commit: string, host: string): void {
+function runPrePush(
+  remote: string,
+  repo: string,
+  branch: string,
+  commit: string,
+  host: string,
+): void {
   let hook: string
   try {
     hook = execFileSync('git', ['rev-parse', '--git-path', 'hooks/pre-push'], {
@@ -59,11 +65,23 @@ function runPrePush(repo: string, branch: string, commit: string, host: string):
     return
   }
   const url = `https://${host}/${repo}.git`
-  const zero = '0'.repeat(commit.length)
-  const result = spawnSync(path, ['origin', url], {
+  let remoteCommit = '0'.repeat(commit.length)
+  try {
+    const line = execFileSync('git', ['ls-remote', remote, `refs/heads/${branch}`], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+    const sha = line.split(/\s+/)[0]
+    if (sha !== undefined && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(sha)) {
+      remoteCommit = sha
+    }
+  } catch {
+    // The remote may need host credentials; the hook still gets the new-branch sentinel.
+  }
+  const result = spawnSync(path, [remote, url], {
     cwd: process.cwd(),
     encoding: 'utf8',
-    input: `refs/heads/${branch} ${commit} refs/heads/${branch} ${zero}\n`,
+    input: `refs/heads/${branch} ${commit} refs/heads/${branch} ${remoteCommit}\n`,
   })
   if (result.status !== 0) {
     const reason = (result.stderr || result.stdout || 'pre-push hook refused').trim()
@@ -134,7 +152,7 @@ export async function runPush(argv: readonly string[]): Promise<number> {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(remote)) {
     fail(`not a usable remote name: ${JSON.stringify(remote)}`)
   }
-  const found = remoteRepo(remote, process.cwd())
+  const found = remoteRepo(remote, process.cwd(), true)
   if (found === undefined) {
     fail(
       `remote ${JSON.stringify(remote)} does not name an owner/repository; configure a canonical remote`,
@@ -159,7 +177,7 @@ export async function runPush(argv: readonly string[]): Promise<number> {
     fail(`cannot resolve ${branch} to a commit`)
   }
 
-  runPrePush(repo, branch, commit, host)
+  runPrePush(remote, repo, branch, commit, host)
 
   return submitToHostBroker(
     {
