@@ -12,7 +12,16 @@
  * shell; the program it calls is configuration, and it is called with an argument list built here.
  */
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
@@ -366,12 +375,9 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   /** The checkouts to serve: one named checkout, or everything under the roots. */
   const targets = (): { repo: string; dir: string }[] => {
     if (single === undefined) {
-      const channel = globalChannelDir()
-      mkdirSync(channel, { recursive: true, mode: 0o700 })
-      return [
-        ...scanned.flatMap(root => discoverCheckouts(root, depth)),
-        { repo: channel, dir: channel },
-      ]
+      const checkouts = scanned.flatMap(root => discoverCheckouts(root, depth))
+      const channel = ensureGlobalChannel()
+      return channel === undefined ? checkouts : [...checkouts, { repo: channel, dir: channel }]
     }
     const gitDir = findGitDir(single)
     if (gitDir === undefined) {
@@ -849,6 +855,33 @@ async function resolvePushTarget(
     return { target: { url, credentials, cleanEnv } }
   } catch (error) {
     return { error: (error as Error).message }
+  }
+}
+
+/** Create the shared channel, or report why it cannot be served. */
+function ensureGlobalChannel(): string | undefined {
+  const channel = globalChannelDir()
+  try {
+    let stat: ReturnType<typeof lstatSync> | undefined
+    try {
+      stat = lstatSync(channel)
+    } catch {
+      stat = undefined
+    }
+    if (stat === undefined) {
+      mkdirSync(channel, { recursive: true, mode: 0o700 })
+      stat = lstatSync(channel)
+    }
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      warn(`not serving the global channel: ${channel} is not a real directory`)
+      return undefined
+    }
+    // On an ACL-based share the create mode is advisory; the chmod is the actual boundary.
+    chmodSync(channel, 0o700)
+    return channel
+  } catch (error) {
+    warn(`not serving the global channel: ${(error as Error).message}`)
+    return undefined
   }
 }
 

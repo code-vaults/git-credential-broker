@@ -82,7 +82,9 @@ async function exchange(
   if (hostBroker === undefined) {
     fail(
       `no host broker is watching ${dir}\n` +
-        '  start one on the host: gcb host --repo <that checkout>\n' +
+        (gitDir === undefined
+          ? '  start one on the host in root-serving mode: gcb host\n'
+          : '  start one on the host: gcb host --repo <that checkout>\n') +
         '  if one is already running, restart it from this gcb-host version\n' +
         '  or drop --as-user to do it as the app instead',
     )
