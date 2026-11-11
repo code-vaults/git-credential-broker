@@ -174,10 +174,16 @@ jobs:
           if (-not $distros) {
             Write-Host 'no distribution installed; adding one'
             wsl --install -d Ubuntu --no-launch *>> $log
-            Start-Sleep -Seconds 30
+            # The install is asynchronous on some images and has taken over a minute; a fixed
+            # 30-second sleep raced it. Poll until it appears, and print the install log on failure.
+            $deadline = (Get-Date).AddMinutes(5)
+            do {
+              Start-Sleep -Seconds 10
               $distros = @((wsl -l -q 2>$null) -replace "`0", '' | Where-Object { $_.Trim() -ne '' })
+            } while (-not $distros -and (Get-Date) -lt $deadline)
           }
           if (-not $distros) {
+            Get-Content $log
             throw 'no WSL distribution available on this runner'
           }
           $distro = $distros[0].Trim()
