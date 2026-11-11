@@ -418,6 +418,11 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     return 0
   }
   writeStatus()
+  if (single === undefined && !existsSync(globalChannelDir())) {
+    warn(
+      `not serving the global channel: ${globalChannelDir()} does not exist; create it once with mode 0700`,
+    )
+  }
 
   const advertised = new Set<string>()
   /** Advertise a channel, without rewriting the marker on every sweep. */
@@ -867,6 +872,10 @@ function existingGlobalChannel(): string | undefined {
     const stat = lstatSync(channel)
     if (!stat.isDirectory() || stat.isSymbolicLink()) {
       warn(`not serving the global channel: ${channel} is not a real directory`)
+      return undefined
+    }
+    if ((stat.mode & 0o077) !== 0) {
+      warn(`not serving the global channel: ${channel} is accessible to other users (chmod 700 it)`)
       return undefined
     }
     return channel

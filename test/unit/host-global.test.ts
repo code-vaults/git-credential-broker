@@ -1,6 +1,6 @@
 /** The host-submit fallback for a caller without a checkout. */
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -22,6 +22,7 @@ describe('host submit outside a checkout', () => {
     process.chdir(root)
     const dir = globalChannelDir(root)
     mkdirSync(dir, { recursive: true })
+    chmodSync(dir, 0o700)
     writeHostBroker(dir, { pid: 1, kinds: ['fork'] })
     const answering = (async () => {
       const deadline = Date.now() + 2_000

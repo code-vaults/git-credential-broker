@@ -17,6 +17,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs'
@@ -713,6 +714,7 @@ describe('the host broker global channel', () => {
     const config = forkConfig(root, 'acme/widget')
     const dir = globalChannelDir()
     mkdirSync(dir, { recursive: true })
+    chmodSync(dir, 0o700)
     const command = join(root, 'not-gh')
     writeFileSync(command, '#!/bin/sh\necho "https://github.com/me/widget"\n', 'utf8')
     chmodSync(command, 0o755)
@@ -727,7 +729,7 @@ describe('the host broker global channel', () => {
   })
 })
 
-describe('the host broker global channel creation', () => {
+describe('the host broker global channel validation', () => {
   it('does not create a missing channel', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-global-create-'))
     const config = forkConfig(root, 'acme/widget')
@@ -737,6 +739,22 @@ describe('the host broker global channel creation', () => {
       const code = await runHostBroker(['--config', config, '--once'])
       assert.equal(code, 0)
       assert.equal(existsSync(dir), false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('does not serve a channel writable by other users', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-global-mode-'))
+    const config = forkConfig(root, 'acme/widget')
+    const dir = globalChannelDir()
+    try {
+      mkdirSync(dir, { recursive: true })
+      chmodSync(dir, 0o777)
+      const code = await runHostBroker(['--config', config, '--once'])
+      assert.equal(code, 0)
+      assert.equal(statSync(dir).mode & 0o777, 0o777)
     } finally {
       rmSync(root, { recursive: true, force: true })
       rmSync(dir, { recursive: true, force: true })
