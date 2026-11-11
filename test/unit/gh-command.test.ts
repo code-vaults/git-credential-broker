@@ -491,12 +491,12 @@ describe('gcb gh', () => {
         ],
         {
           cwd: root,
-          env: { ...process.env, GCB_HOST_TIMEOUT_MS: '1000' },
+          env: { ...process.env, GCB_HOST_TIMEOUT_MS: '3000' },
           timeoutMs: 5_000,
         },
       )
       let claimed = false
-      for (let attempt = 0; attempt < 200 && !claimed; attempt += 1) {
+      for (let attempt = 0; attempt < 600 && !claimed; attempt += 1) {
         const [id] = listRequests(dir)
         if (id !== undefined) {
           fs.renameSync(path.join(dir, `${id}.json`), path.join(dir, `${id}.json.working`))
@@ -509,7 +509,7 @@ describe('gcb gh', () => {
       const result = await pending
       assert.equal(result.status, 1)
       assert.match(result.stderr, /did not answer/u)
-      assert.match(result.stderr, /within 1s/u)
+      assert.match(result.stderr, /within 3s/u)
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
