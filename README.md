@@ -142,7 +142,8 @@ thread defaults to the user identity because the pull-request token this broker 
 `contents: write` — a grant the broker gives only to the credential git pushes with, never to a
 pull-request token.
 
-`gcb push` pushes the current branch from the host, not from this container. The host broker runs
+`gcb push` pushes the current branch from the host, not from this container. Plain `git push` is not
+intercepted; use `gcb push` when the host must perform the push. The host broker runs
 `git push` with its own gh account and rebuilds the target URL from the allowlisted repository; no
 token or remote URL from the container is used. It requires a host broker and a checkout on the
 host. The destination must be allowlisted, or be a verified fork whose parent/source is
