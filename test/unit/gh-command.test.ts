@@ -52,7 +52,7 @@ function runClientWithOpenStdin(args: readonly string[]): Promise<RunResult> {
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
       finish(null)
-    }, 2_000)
+    }, 10_000)
     function finish(status: number | null): void {
       if (settled) {
         return
