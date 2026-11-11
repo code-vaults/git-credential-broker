@@ -17,8 +17,10 @@ describe('host submit outside a checkout', () => {
   it('uses the global channel and requires an explicit repo', async () => {
     const root = mkdtempSync(join(tmpdir(), 'gcb-host-global-'))
     const previousHome = process.env['HOME']
+    const previousUserProfile = process.env['USERPROFILE']
     const previousCwd = process.cwd()
     process.env['HOME'] = root
+    process.env['USERPROFILE'] = root
     process.chdir(root)
     const dir = globalChannelDir()
     mkdirSync(dir, { recursive: true })
@@ -49,6 +51,11 @@ describe('host submit outside a checkout', () => {
         delete process.env['HOME']
       } else {
         process.env['HOME'] = previousHome
+      }
+      if (previousUserProfile === undefined) {
+        delete process.env['USERPROFILE']
+      } else {
+        process.env['USERPROFILE'] = previousUserProfile
       }
       rmSync(root, { recursive: true, force: true })
     }
