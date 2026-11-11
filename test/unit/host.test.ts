@@ -31,7 +31,9 @@ import {
   globalChannelDir,
   claimRequest,
   listRequests,
+  readHostBroker,
   readResult,
+  writeHostBroker,
   writeRequest,
 } from '../../packages/core/src/host-request.ts'
 import { hostStatusPath, runBounded, runHostBroker } from '../../packages/host/src/commands/host.ts'
@@ -759,6 +761,8 @@ describe('the host broker global channel validation', () => {
     chmodSync(command, 0o755)
     try {
       mkdirSync(dir, { recursive: true })
+      chmodSync(dir, 0o700)
+      writeHostBroker(dir, { pid: process.pid, kinds: ['fork'] })
       chmodSync(dir, 0o777)
       const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' })
       const code = await runHostBroker(['--command', command, '--config', config, '--once'])
@@ -766,6 +770,7 @@ describe('the host broker global channel validation', () => {
       assert.equal(statSync(dir).mode & 0o777, 0o777)
       assert.equal(readResult(dir, id), undefined)
       assert.equal(existsSync(marker), false)
+      assert.equal(readHostBroker(dir), undefined)
     } finally {
       rmSync(root, { recursive: true, force: true })
       rmSync(dir, { recursive: true, force: true })
