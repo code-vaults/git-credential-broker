@@ -753,7 +753,7 @@ async function resolvePushTarget(
         cwd: context.repo,
         timeout: CREATE_TIMEOUT_MS,
         maxBuffer: 1 << 20,
-        env: forkEnv(request.proxy, request.account, host),
+        env: forkEnv(request.proxy, undefined, host),
       })
       const body = JSON.parse(stdout) as {
         fork?: unknown
@@ -774,7 +774,6 @@ async function resolvePushTarget(
   if (!allowedPush) {
     return { error: `repository ${request.repo} is not in the allowlist for ${host}` }
   }
-
   const remote = request.remote ?? 'origin'
   let transport: 'https' | 'ssh' = 'https'
   try {
@@ -821,7 +820,7 @@ async function resolvePushTarget(
       : ['-c', 'credential.helper=', '-c', `credential.helper=${helper}`, '-c', 'credential.useHttpPath=true']
   try {
     const cleanEnv = withoutGitLocation({
-      ...forkEnv(request.proxy, request.account, host),
+      ...forkEnv(request.proxy, transport === 'ssh' ? undefined : request.account, host),
       GIT_CONFIG_NOSYSTEM: '1',
       GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
       GIT_TERMINAL_PROMPT: '0',
@@ -927,7 +926,7 @@ async function openOne(
     const { url, credentials, cleanEnv } = resolved.target
     const scratch = mkdtempSync(join(tmpdir(), 'gcb-push-'))
     try {
-      let objectFormat: string
+      let objectFormat = 'sha1'
       try {
         const { stdout } = await run('git', ['rev-parse', '--show-object-format'], {
           cwd: repo,
@@ -935,12 +934,12 @@ async function openOne(
           maxBuffer: 1 << 20,
           env: withoutGitLocation(process.env),
         })
-        objectFormat = stdout.trim()
-        if (objectFormat === '') {
-          throw new Error('git returned no object format')
+        const detected = stdout.trim()
+        if (detected !== '') {
+          objectFormat = detected
         }
-      } catch (error) {
-        return { error: `could not read the object format: ${(error as Error).message}` }
+      } catch {
+        // Git before 2.29 cannot report or create a SHA-256 repository, so SHA-1 is the only format.
       }
       await run(
         'git',

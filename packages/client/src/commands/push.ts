@@ -80,6 +80,7 @@ export function updateTrackingRef(
     })
       .trim()
       .split('\n')
+      .map(line => line.trim())
       .filter(line => line !== '')
   } catch {
     return
