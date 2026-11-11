@@ -13,15 +13,19 @@
  */
 import { execFile, spawn } from 'node:child_process'
 import {
-  chmodSync,
+  closeSync,
   existsSync,
+  fchmodSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
+  openSync,
   mkdtempSync,
   realpathSync,
   rmSync,
   statSync,
   writeFileSync,
+  constants as fsConstants,
 } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -865,6 +869,23 @@ async function resolvePushTarget(
   }
 }
 
+/** Open a real directory without following a symlink, or return undefined. */
+function openDirectory(path: string): number | undefined {
+  try {
+    const fd = openSync(
+      path,
+      fsConstants.O_RDONLY | (fsConstants.O_DIRECTORY ?? 0) | (fsConstants.O_NOFOLLOW ?? 0),
+    )
+    if (!fstatSync(fd).isDirectory()) {
+      closeSync(fd)
+      return undefined
+    }
+    return fd
+  } catch {
+    return undefined
+  }
+}
+
 /** Validate the host state directory, creating it when it is safe to do so. */
 function ensureStateDirectory(): string | undefined {
   const home = homedir()
@@ -884,13 +905,22 @@ function ensureStateDirectory(): string | undefined {
       warn(`not serving the host state directory: ${parent} is not a real directory`)
       return undefined
     }
-    chmodSync(parent, 0o700)
-    const homeReal = realpathSync(home)
-    if (realpathSync(parent) !== join(homeReal, '.gcb-host')) {
-      warn(`not serving the host state directory: ${parent} escapes ${homeReal}`)
+    const fd = openDirectory(parent)
+    if (fd === undefined) {
+      warn(`not serving the host state directory: ${parent} is not a real directory`)
       return undefined
     }
-    return parent
+    try {
+      const homeReal = realpathSync(home)
+      if (realpathSync(parent) !== join(homeReal, '.gcb-host')) {
+        warn(`not serving the host state directory: ${parent} escapes ${homeReal}`)
+        return undefined
+      }
+      fchmodSync(fd, 0o700)
+      return parent
+    } finally {
+      closeSync(fd)
+    }
   } catch (error) {
     warn(`not serving the host state directory: ${(error as Error).message}`)
     return undefined
@@ -919,12 +949,21 @@ function ensureGlobalChannel(): string | undefined {
       warn(`not serving the global channel: ${channel} is not a real directory`)
       return undefined
     }
-    if (realpathSync(channel) !== join(realpathSync(parent), 'channel')) {
-      warn(`not serving the global channel: ${channel} is not the channel`)
+    const fd = openDirectory(channel)
+    if (fd === undefined) {
+      warn(`not serving the global channel: ${channel} is not a real directory`)
       return undefined
     }
-    chmodSync(channel, 0o700)
-    return channel
+    try {
+      if (realpathSync(channel) !== join(realpathSync(parent), 'channel')) {
+        warn(`not serving the global channel: ${channel} is not the channel`)
+        return undefined
+      }
+      fchmodSync(fd, 0o700)
+      return channel
+    } finally {
+      closeSync(fd)
+    }
   } catch (error) {
     warn(`not serving the global channel: ${(error as Error).message}`)
     return undefined
