@@ -679,8 +679,11 @@ describe('the host broker push-tip route', () => {
         '0123456789abcdef0123456789abcdef01234567',
       )
     } finally {
-      if (previousPath === undefined) delete process.env['PATH']
-      else process.env['PATH'] = previousPath
+      if (previousPath === undefined) {
+        delete process.env['PATH']
+      } else {
+        process.env['PATH'] = previousPath
+      }
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -840,8 +843,11 @@ describe('the host broker push route', () => {
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
       assert.equal(argv.includes('ssh://git@github-i1stg/acme/widget.git'), true)
     } finally {
-      if (previousPath === undefined) delete process.env['PATH']
-      else process.env['PATH'] = previousPath
+      if (previousPath === undefined) {
+        delete process.env['PATH']
+      } else {
+        process.env['PATH'] = previousPath
+      }
       rmSync(root, { recursive: true, force: true })
     }
   })
