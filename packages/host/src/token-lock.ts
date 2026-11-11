@@ -14,7 +14,6 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  statSync,
   unlinkSync,
   writeFileSync,
   constants as fsConstants,
@@ -22,8 +21,6 @@ import {
 import { join } from 'node:path'
 
 const LOCK_TIMEOUT_MS = 120_000
-const STALE_LOCK_MS = 90_000
-
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -33,6 +30,7 @@ export function tokenLockPath(path: string): string {
   return `${path}.lock`
 }
 
+/** Create the persistent lock directory, or reject a path that is not a real directory. */
 function ensureLockDirectory(path: string): string {
   const lock = tokenLockPath(path)
   try {
@@ -64,22 +62,25 @@ export async function withTokenLock<T>(path: string, fn: () => Promise<T>): Prom
   for (;;) {
     try {
       fd = openSync(held, 'wx', 0o600)
-      writeFileSync(fd, `${process.pid}\n`)
+      try {
+        writeFileSync(fd, `${process.pid}\n`)
+      } catch (error) {
+        closeSync(fd)
+        unlinkSync(held)
+        throw new Error(`could not initialize the lock on ${path}: ${(error as Error).message}`, {
+          cause: error,
+        })
+      }
       break
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
         throw new Error(`could not lock ${path}: ${(error as Error).message}`, { cause: error })
       }
-      try {
-        if (Date.now() - statSync(held).mtimeMs > STALE_LOCK_MS) {
-          unlinkSync(held)
-          continue
-        }
-      } catch {
-        // The holder released it between the failed open and the stat; retry.
-      }
       if (Date.now() >= deadline) {
-        throw new Error(`timed out waiting for the lock on ${path}`, { cause: error })
+        throw new Error(
+          `timed out waiting for the lock on ${path}; if no authorize or broker is running, remove ${held} and retry`,
+          { cause: error },
+        )
       }
       await sleep(25)
     }

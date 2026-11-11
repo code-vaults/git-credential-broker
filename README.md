@@ -586,14 +586,14 @@ user who will run `authorize`, before running `gcb compose`; an empty file is tr
 If the sidecar uid differs, `chown` the token and lock directory to the sidecar uid after
 `authorize`, so the broker can read and rotate them. If Compose was rendered while the file was
 absent, rerender and recreate the sidecar after authorization so the mounts are added. A sidecar
-created before the lock directory existed also needs a rerender and recreate. Re-authorize while the sidecar keeps running: `gcb authorize`
-takes the shared `user.refresh.lock` directory for its replacement, and the broker takes the same
-lock around read → exchange → write. The identity running `authorize` must be able to read
+created before the lock directory existed also needs a rerender and recreate. When the sidecar runs as the same uid, re-authorize while it keeps running: `gcb authorize` takes
+the shared `user.refresh.lock` directory for its replacement, and the broker takes the same lock
+around read → exchange → write. If the sidecar uid differs, either run `authorize` as that uid (the
+live path) or stop the sidecar, chown the token/lock directory, and restart it. The identity running `authorize` must be able to read
 `broker.config.yml` and own `user.refresh` and `user.refresh.lock`, so chown those back (or run
 `authorize` as the sidecar uid); changing only `user.refresh` is not enough. The key is not read by
-`authorize` and can stay with the sidecar uid. After re-authorization, chown the token and its lock
-directory back to the sidecar uid; no restart is needed, because the broker re-reads the token on its
-next renewal.
+`authorize` and can stay with the sidecar uid. After re-authorization as the sidecar uid, no restart is needed; the broker re-reads the token on
+its next renewal.
 
 These ownership steps belong to the host/deployment operator. An agent inside the container
 cannot chown host files; container-initiated re-authorization needs a typed idsh/deployment operation

@@ -635,6 +635,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     return withTokenLock(path, () => renewPersonTokenLocked(path, clientId))
   }
 
+  /** Renew the token while its cross-process lock is held. */
   async function renewPersonTokenLocked(
     path: string,
     clientId: string,
