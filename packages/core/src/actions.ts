@@ -429,7 +429,7 @@ const DISCUSSION_VIEW: GhAction = {
   appUser: true,
 }
 
-// GitHub GraphQL: addDiscussionComment / updateDiscussionComment / deleteDiscussionComment
+// GitHub GraphQL: addDiscussionComment
 const DISCUSSION_COMMENT: GhAction = {
   name: 'discussion:comment',
   command: ['discussion', 'comment'],
@@ -1226,15 +1226,20 @@ export function buildGhArgv(
     }
   }
 
-  if (action.command[0] === 'search') {
-    const terms = Array.isArray(values['query']) ? values['query'] : [values['query']]
-    if (
-      terms.some(term => typeof term === 'string' && /(?:^|[\s(])-?(?:repo|org|user):/iu.test(term))
-    ) {
-      throw new ActionError(
-        'search query cannot contain repo:, org: or user:; the broker scopes it to --repo',
-      )
-    }
+  const searchTerms =
+    action.command[0] === 'search'
+      ? Array.isArray(values['query'])
+        ? values['query']
+        : [values['query']]
+      : [values['search']]
+  if (
+    searchTerms.some(
+      term => typeof term === 'string' && /(?:^|[\s(])-?(?:repo|org|user):/iu.test(term),
+    )
+  ) {
+    throw new ActionError(
+      'search cannot contain repo:, org: or user:; the broker scopes it to --repo',
+    )
   }
   if (typeof values['title'] === 'string') {
     if (values['title'].trim() === '') {

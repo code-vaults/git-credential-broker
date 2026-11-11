@@ -92,16 +92,6 @@ describe('gcb gh', () => {
     assert.equal(unknown.status, 1)
     assert.match(unknown.stderr, /unknown gh action "discussion:--bogus"/u)
 
-    const answered = await runClient([
-      'discussion',
-      'list',
-      '--answered=false',
-      '--repo',
-      'acme/widget',
-    ])
-    assert.equal(answered.status, 1)
-    assert.doesNotMatch(answered.stderr, /boolean|unknown option/u)
-
     const missing = await runClient(['discussion', 'view', '--repo', 'acme/widget'])
     assert.equal(missing.status, 1)
     assert.match(missing.stderr, /needs number/u)
@@ -321,6 +311,50 @@ describe('gcb gh', () => {
     ])
     assert.equal(result.status, 1)
     assert.match(result.stderr, /--body and --body-file are mutually exclusive/u)
+  })
+
+  it('forwards the unanswered filter', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-answered-'))
+    const socketPath = path.join(root, 'broker.sock')
+    const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] }
+    const config: BrokerConfig = {
+      socketPath,
+      socketMode: 0o600,
+      auditPath: null,
+      tokenCacheSkewSeconds: 300,
+      hosts: { 'github.com': block },
+    }
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() }
+    const seen: { values: Record<string, unknown> }[] = []
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async request => {
+        seen.push({ values: request.values })
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
+      },
+    }
+    const broker = await startBroker({
+      config,
+      audit,
+      providers: new Map([['github.com', provider]]),
+    })
+    try {
+      const result = await runGhCli([
+        'discussion',
+        'list',
+        '--answered=false',
+        '--repo',
+        'acme/widget',
+        '--socket',
+        socketPath,
+      ])
+      assert.equal(result.status, 0, result.stderr)
+      assert.equal(seen[0]?.values['answered'], false)
+    } finally {
+      await broker.close()
+      fs.rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('pins app-user eligibility for issue close/reopen and pr reopen', async () => {

@@ -33,7 +33,13 @@ const ACTION_LINES = Object.values(GH_ACTIONS)
       .join(' ')
     const flags = action.flags
       .map(flag => {
-        const spelling = `--${flag.name}${flag.type === 'boolean' ? '' : ` <${flag.type}>`}`
+        const spelling = `--${flag.name}${
+          flag.type === 'boolean'
+            ? ''
+            : flag.type === 'tristate'
+              ? '[=true|false]'
+              : ` <${flag.type}>`
+        }`
         return flag.required === true ? spelling : `[${spelling}]`
       })
       .join(' ')

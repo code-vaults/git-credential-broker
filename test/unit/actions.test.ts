@@ -288,6 +288,16 @@ describe('gh action catalog', () => {
     )
   })
 
+  it('refuses a search that would escape the repository scope', () => {
+    for (const name of ['discussion:list', 'issue:list', 'label:list']) {
+      assert.throws(
+        () => buildGhArgv(name, { search: 'repo:cli/cli' }, 'acme/widget'),
+        /search cannot contain repo:/u,
+        name,
+      )
+    }
+  })
+
   it('serializes the unanswered filter explicitly', () => {
     assert.deepEqual(buildGhArgv('discussion:list', { answered: false }, 'acme/widget'), [
       'discussion',
