@@ -689,7 +689,10 @@ describe('the host broker fork-check fallback', () => {
       assert.equal(code, 0)
       assert.equal(readResult(dir, id)?.error, undefined)
       assert.equal(
-        readFileSync(argvFile, 'utf8').trim().split('\n').includes('ssh://git@github-ghost/alice/repo.git'),
+        readFileSync(argvFile, 'utf8')
+          .trim()
+          .split('\n')
+          .includes('ssh://git@github-ghost/alice/repo.git'),
         true,
       )
     } finally {
