@@ -288,6 +288,25 @@ describe('gh action catalog', () => {
     )
   })
 
+  it('does not expose web mode or the broken comments/json combination', () => {
+    for (const name of ['discussion:list', 'discussion:view']) {
+      assert.equal(
+        getGhAction(name).flags.some(flag => flag.name === 'web'),
+        false,
+        name,
+      )
+    }
+    assert.throws(
+      () =>
+        buildGhArgv(
+          'discussion:view',
+          { number: 12, comments: true, json: 'number,title' },
+          'acme/widget',
+        ),
+      /does not allow --comments with --json/u,
+    )
+  })
+
   it('refuses a repository qualifier only in repository-scoped searches', () => {
     for (const name of ['discussion:list', 'issue:list']) {
       assert.throws(

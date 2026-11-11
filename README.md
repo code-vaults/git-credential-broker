@@ -128,14 +128,16 @@ gcb gh discussion view 12 -R owner/name --comments
 ```
 
 `-R` is the short form of `--repo`, as in `gh` itself. The `gh discussion` commands require
-GitHub CLI 2.94.0 or newer and remain a preview command in gh.
+GitHub CLI 2.94.0 or newer and remain a preview command in gh. `discussion view --comments` cannot
+be combined with `--json`; the catalog does not expose `--web`.
 
 `gcb pr <subcommand>`, `gcb run <subcommand>`, `gcb issue <subcommand>` and
 `gcb discussion <subcommand>` are shorthands for the same actions when the catalog has one —
 `gcb pr view 12`, `gcb pr close 12`, `gcb run list`,
 `gcb issue create --repo owner/name --title "A title" --body "A body"`,
-`gcb discussion create --category "Q&A" --title "A question" --body "Details"`. Catalogued
-actions dispatch through `GCB_PRIMARY` (default `gh`; an unsupported name fails closed). The flag-only `gcb pr` form
+`gcb discussion create --category "Q&A" --title "A question" --body "Details"`.
+Catalogued actions dispatch through `GCB_PRIMARY` (default `gh`; an unsupported name fails closed).
+The flag-only `gcb pr` form
 described below is still what runs the lifecycle `gh` cannot express (opening as a person, review
 threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr close`.
 
