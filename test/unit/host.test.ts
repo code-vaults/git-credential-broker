@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url'
 
 import {
   channelDir,
+  globalChannelDir,
   claimRequest,
   listRequests,
   readResult,
@@ -701,6 +702,26 @@ describe('the host broker fork-check fallback', () => {
       } else {
         process.env['PATH'] = previousPath
       }
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('the host broker global channel', () => {
+  it('serves a request without a checkout', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-global-'))
+    const config = forkConfig(root, 'acme/widget')
+    const dir = globalChannelDir()
+    mkdirSync(dir, { recursive: true })
+    const command = join(root, 'not-gh')
+    writeFileSync(command, '#!/bin/sh\necho "https://github.com/me/widget"\n', 'utf8')
+    chmodSync(command, 0o755)
+    try {
+      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' })
+      const code = await runHostBroker(['--command', command, '--config', config, '--once'])
+      assert.equal(code, 0)
+      assert.equal(readResult(dir, id)?.url, 'https://github.com/me/widget')
+    } finally {
       rmSync(root, { recursive: true, force: true })
     }
   })

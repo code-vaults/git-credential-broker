@@ -11,6 +11,7 @@ import {
   ANSWER_TIMEOUT_MS,
   channelDir,
   findGitDir,
+  globalChannelDir,
   readHostBroker,
   readResult,
   removeResult,
@@ -73,10 +74,10 @@ async function exchange(
   }
   const { noun, needed } = KINDS[request.kind ?? 'pull-request']
   const gitDir = findGitDir(process.cwd())
-  if (gitDir === undefined) {
-    fail('--as-user needs a git repository: run it from the checkout')
+  if (gitDir === undefined && request.repo === undefined) {
+    fail('--as-user needs --repo outside a git checkout')
   }
-  const dir = channelDir(gitDir)
+  const dir = gitDir === undefined ? globalChannelDir() : channelDir(gitDir)
   const hostBroker = readHostBroker(dir)
   if (hostBroker === undefined) {
     fail(

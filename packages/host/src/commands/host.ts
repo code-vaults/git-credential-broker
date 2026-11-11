@@ -23,6 +23,7 @@ import {
   clearHostBroker,
   discoverCheckouts,
   findGitDir,
+  globalChannelDir,
   listRequests,
   reclaimAbandoned,
   readHostBroker,
@@ -365,7 +366,12 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   /** The checkouts to serve: one named checkout, or everything under the roots. */
   const targets = (): { repo: string; dir: string }[] => {
     if (single === undefined) {
-      return scanned.flatMap(root => discoverCheckouts(root, depth))
+      const channel = globalChannelDir()
+      mkdirSync(channel, { recursive: true, mode: 0o700 })
+      return [
+        ...scanned.flatMap(root => discoverCheckouts(root, depth)),
+        { repo: channel, dir: channel },
+      ]
     }
     const gitDir = findGitDir(single)
     if (gitDir === undefined) {
