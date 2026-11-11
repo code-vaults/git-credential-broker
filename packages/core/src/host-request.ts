@@ -157,6 +157,8 @@ export interface HostPushRequest {
   readonly branch: string
   /** Git remote whose protocol selects HTTPS or SSH; the URL itself is rebuilt. */
   readonly remote?: string
+  /** Explicit SSH port, when the remote names one. */
+  readonly sshPort?: number
   /** The exact commit to push; the branch may move after the request is written. */
   readonly commit: string
   /** Allow overwriting the remote branch. */
@@ -165,6 +167,20 @@ export interface HostPushRequest {
   readonly forceWithLease?: boolean
   /** The client's expected remote tip, required with force-with-lease. */
   readonly expected?: string
+  readonly proxy?: string | null
+  readonly account?: string
+  readonly session?: string
+  readonly pid?: number
+}
+
+/** One request to read a branch tip with the host's credentials. */
+export interface HostPushTipRequest {
+  readonly kind: 'push-tip'
+  readonly repo: string
+  readonly host?: string
+  readonly remote?: string
+  readonly sshPort?: number
+  readonly branch: string
   readonly proxy?: string | null
   readonly account?: string
   readonly session?: string
@@ -190,6 +206,7 @@ export type HostRequest =
   | HostEditRequest
   | HostActionRequest
   | HostPushRequest
+  | HostPushTipRequest
   | HostForkRequest
 
 /** What the host broker answered. */
@@ -198,6 +215,8 @@ export interface HostResult {
   readonly url?: string
   readonly stdout?: string
   readonly stderr?: string
+  readonly remoteTip?: string
+  readonly absent?: boolean
   readonly code?: number | null
   readonly error?: string
 }
@@ -599,6 +618,12 @@ export function requestProblems(request: HostRequest): string[] {
     if (request.remote !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) {
       problems.push('the remote name is not usable')
     }
+    if (
+      request.sshPort !== undefined &&
+      (!Number.isInteger(request.sshPort) || request.sshPort < 1 || request.sshPort > 65_535)
+    ) {
+      problems.push('the SSH port is not usable')
+    }
     if (request.force !== undefined && typeof request.force !== 'boolean') {
       problems.push('the force flag is not a boolean')
     }
@@ -616,6 +641,24 @@ export function requestProblems(request: HostRequest): string[] {
     }
     if (!COMMIT.test(request.commit)) {
       problems.push('the commit is not a full Git object id')
+    }
+    if (!BRANCH.test(request.branch) || request.branch.includes('..') || request.branch.includes(':')) {
+      problems.push('the branch name is not usable')
+    }
+    if (request.account !== undefined && !LOGIN.test(request.account)) {
+      problems.push('the account is not a usable GitHub login')
+    }
+    return problems
+  }
+  if (request.kind === 'push-tip') {
+    if (!REPOSITORY.test(request.repo)) {
+      problems.push('the repository is not owner/name')
+    }
+    if (request.host !== undefined && !HOST.test(request.host)) {
+      problems.push('the host is not a usable host')
+    }
+    if (request.remote !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) {
+      problems.push('the remote name is not usable')
     }
     if (!BRANCH.test(request.branch) || request.branch.includes('..') || request.branch.includes(':')) {
       problems.push('the branch name is not usable')
@@ -1007,13 +1050,32 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
                 REPOSITORY.test(request.repo) &&
                 (request.host === undefined ||
                   (typeof request.host === 'string' && HOST.test(request.host)))
-              : request.kind === 'push'
+              : request.kind === 'push-tip'
                 ? typeof request.repo === 'string' &&
+                  REPOSITORY.test(request.repo) &&
+                  typeof request.branch === 'string' &&
+                  (request.remote === undefined ||
+                    /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) &&
+                  (request.sshPort === undefined ||
+                    (Number.isInteger(request.sshPort) &&
+                      request.sshPort > 0 &&
+                      request.sshPort <= 65_535)) &&
+                  BRANCH.test(request.branch) &&
+                  !request.branch.includes('..') &&
+                  !request.branch.includes(':') &&
+                  (request.host === undefined ||
+                    (typeof request.host === 'string' && HOST.test(request.host)))
+                : request.kind === 'push'
+                  ? typeof request.repo === 'string' &&
                   REPOSITORY.test(request.repo) &&
                   typeof request.branch === 'string' &&
                   typeof request.commit === 'string' &&
                   (request.remote === undefined ||
                     /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) &&
+                  (request.sshPort === undefined ||
+                    (Number.isInteger(request.sshPort) &&
+                      request.sshPort > 0 &&
+                      request.sshPort <= 65_535)) &&
                   (request.force === undefined || typeof request.force === 'boolean') &&
                   (request.forceWithLease === undefined ||
                     typeof request.forceWithLease === 'boolean') &&

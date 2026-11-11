@@ -11,7 +11,7 @@ import { resolve } from 'node:path'
 
 import { BRANCH, LOGIN, fail, parseArgs, say } from 'gcb-core'
 
-import { submitToHostBroker } from './host-submit.ts'
+import { readHostTip, submitToHostBroker } from './host-submit.ts'
 import { remoteRepo } from './remotes.ts'
 
 const KNOWN_FLAGS = new Set([
@@ -59,23 +59,6 @@ function prePushPath(): string | undefined {
     return undefined
   }
   return path
-}
-
-/** The remote tip, or the zero sentinel when the branch does not exist yet. */
-function remoteTip(remote: string, branch: string, length: number): string | undefined {
-  try {
-    const out = execFileSync('git', ['ls-remote', remote, `refs/heads/${branch}`], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim()
-    if (out === '') {
-      return '0'.repeat(length)
-    }
-    const sha = out.split(/\s+/)[0]
-    return sha !== undefined && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(sha) ? sha : undefined
-  } catch {
-    return undefined
-  }
 }
 
 /** Run the container's pre-push hook; the host deliberately never runs container-owned hooks. */
@@ -190,12 +173,23 @@ export async function runPush(argv: readonly string[]): Promise<number> {
 
   const hook = prePushPath()
   const needsTip = hook !== undefined || args.has('force-with-lease')
-  const tip = needsTip ? remoteTip(remote, branch, commit.length) : undefined
-  if (needsTip && tip === undefined) {
-    fail('cannot determine the remote tip; fetch the remote or retry with network access')
-  }
+  const remoteCommit = needsTip
+    ? await readHostTip({
+        kind: 'push-tip',
+        repo,
+        host,
+        branch,
+        remote,
+        ...(found.port === undefined ? {} : { sshPort: found.port }),
+        session: 'push-tip',
+        pid: process.pid,
+        ...(account === undefined ? {} : { account }),
+        ...(proxy === undefined ? {} : { proxy }),
+      })
+    : undefined
+  const tip = remoteCommit ?? '0'.repeat(commit.length)
   if (hook !== undefined) {
-    runPrePush(hook, remote, repo, branch, commit, host, tip ?? '0'.repeat(commit.length))
+    runPrePush(hook, remote, repo, branch, commit, host, tip)
   }
 
   return submitToHostBroker(
@@ -205,10 +199,11 @@ export async function runPush(argv: readonly string[]): Promise<number> {
       host,
       branch,
       remote,
+      ...(found.port === undefined ? {} : { sshPort: found.port }),
       commit,
       ...(args.has('force') ? { force: true } : {}),
       ...(args.has('force-with-lease')
-        ? { forceWithLease: true, expected: tip as string }
+        ? { forceWithLease: true, expected: tip }
         : {}),
       session: 'push',
       pid: process.pid,

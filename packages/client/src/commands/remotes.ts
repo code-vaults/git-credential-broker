@@ -18,6 +18,8 @@ export interface RemoteRepo {
   readonly repo: string
   /** The host key: `host:port` for HTTP(S), or the host alone for SSH and git URLs. */
   readonly host: string
+  /** An explicit SSH port, when the push URL names one. */
+  readonly port?: number
 }
 
 /**
@@ -82,6 +84,7 @@ export function remoteRepo(name: string, cwd: string, push = false): RemoteRepo 
   // port number or a directory name.
   let path: string | undefined
   let host: string | undefined
+  let port: number | undefined
   const scheme = /^([a-z+]+):\/\//i.exec(url)?.[1]?.toLowerCase()
   if (scheme === undefined) {
     const scp = /^(?:[^@/]+@)?([^/:]+\.[^/:]+):(.+)$/.exec(url)
@@ -97,6 +100,12 @@ export function remoteRepo(name: string, cwd: string, push = false): RemoteRepo 
     if (slash >= 0 && hostname.includes('.')) {
       // An HTTP(S) port is part of the host key the broker matches; an SSH or git port is not.
       host = scheme === 'http' || scheme === 'https' ? authority : hostname
+      if (scheme === 'ssh') {
+        const match = /:(\d+)$/.exec(authority)
+        if (match?.[1] !== undefined) {
+          port = Number(match[1])
+        }
+      }
       path = rest.slice(slash + 1)
     }
   }
@@ -112,7 +121,12 @@ export function remoteRepo(name: string, cwd: string, push = false): RemoteRepo 
   if (owner === undefined || repo === undefined || rest.length > 0) {
     return undefined
   }
-  return { owner, repo, host: host.toLowerCase() }
+  return {
+    owner,
+    repo,
+    host: host.toLowerCase(),
+    ...(port === undefined ? {} : { port }),
+  }
 }
 
 /**

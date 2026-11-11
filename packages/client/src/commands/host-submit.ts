@@ -21,7 +21,12 @@ import {
   getGhAction,
   say,
 } from 'gcb-core'
-import type { HostActionRequest, HostResult, HostRequest } from 'gcb-core'
+import type {
+  HostActionRequest,
+  HostPushTipRequest,
+  HostResult,
+  HostRequest,
+} from 'gcb-core'
 
 /**
  * Explain why a host-broker request produced no answer.
@@ -59,6 +64,7 @@ const KINDS: Readonly<Record<RequestKind, { noun: string; needed?: string }>> = 
   review: { noun: 'review', needed: 'review' },
   action: { noun: 'action', needed: 'action' },
   push: { noun: 'push', needed: 'push' },
+  'push-tip': { noun: 'remote tip', needed: 'push-tip' },
 }
 
 /** Write, wait for and return one host-broker answer. */
@@ -172,6 +178,26 @@ export async function submitToHostBroker(
   }
   say(success(answer))
   return 0
+}
+
+/**
+ * Read a branch tip with the host's credentials.
+ *
+ * @param request - The validated tip request.
+ * @returns The tip, or undefined when the branch does not exist.
+ */
+export async function readHostTip(request: HostPushTipRequest): Promise<string | undefined> {
+  const answer = await exchange(request)
+  if (answer.error !== undefined) {
+    fail(`the host broker could not read the remote tip: ${answer.error}`)
+  }
+  if (answer.absent === true) {
+    return undefined
+  }
+  if (answer.remoteTip === undefined) {
+    fail('the host broker returned no remote tip')
+  }
+  return answer.remoteTip
 }
 
 /**

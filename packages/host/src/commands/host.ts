@@ -415,7 +415,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         pid: process.pid,
         command,
         startedAt: new Date().toISOString(),
-        kinds: ['pull-request', 'review', 'reply', 'edit', 'action', 'fork', 'push'],
+        kinds: ['pull-request', 'review', 'reply', 'edit', 'action', 'fork', 'push', 'push-tip'],
       })
     }
   }
@@ -562,9 +562,11 @@ async function sweep(
                   ? `edit on #${request.number}`
                   : request.kind === 'action'
                     ? request.action
-                    : request.kind === 'push'
-                      ? request.branch
-                      : request.head
+                    : request.kind === 'push-tip'
+                      ? `tip ${request.branch}`
+                      : request.kind === 'push'
+                        ? request.branch
+                        : request.head
         }: ${result.error}`,
       )
     }
@@ -775,6 +777,94 @@ async function openOne(
     }
   }
 
+  if (request.kind === 'push-tip') {
+    const host = request.host ?? 'github.com'
+    let allowedPush = false
+    try {
+      allowedPush = allowed(host, request.repo)
+      if (!allowedPush && blockFor(host)?.allowForkPush === true) {
+        const { stdout } = await run(command, [...extra, 'api', `repos/${request.repo}`], {
+          cwd: repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env: forkEnv(request.proxy, request.account, host),
+        })
+        const body = JSON.parse(stdout) as {
+          fork?: unknown
+          parent?: { full_name?: unknown } | null
+          source?: { full_name?: unknown } | null
+        }
+        const source =
+          typeof body?.source?.full_name === 'string'
+            ? body.source.full_name
+            : typeof body?.parent?.full_name === 'string'
+              ? body.parent.full_name
+              : undefined
+        allowedPush = body?.fork === true && source !== undefined && allowed(host, source)
+      }
+    } catch (error) {
+      return { error: (error as Error).message }
+    }
+    if (!allowedPush) {
+      return { error: `repository ${request.repo} is not in the allowlist for ${host}` }
+    }
+    const remote = request.remote ?? 'origin'
+    let transport: 'https' | 'ssh' = 'https'
+    try {
+      const { stdout } = await run('git', ['remote', 'get-url', '--push', remote], {
+        cwd: repo,
+        timeout: CREATE_TIMEOUT_MS,
+        maxBuffer: 1 << 20,
+        env: withoutGitLocation(process.env),
+      })
+      if (/^(?:ssh:\/\/|[^@/]+@[^/:]+:|[^/:]+\.[^/:]+:)/.test(stdout.trim())) {
+        transport = 'ssh'
+      }
+    } catch {
+      return { error: `remote ${JSON.stringify(remote)} has no readable push URL` }
+    }
+    if (transport === 'ssh' && request.proxy !== undefined) {
+      return { error: '--proxy/--no-proxy is not supported for SSH pushes' }
+    }
+    const url =
+      transport === 'ssh'
+        ? `ssh://git@${host}${request.sshPort === undefined ? '' : `:${request.sshPort}`}/${request.repo}.git`
+        : `https://${host}/${request.repo}.git`
+    const helper = `!${[command, ...extra].map(shellQuote).join(' ')} auth git-credential`
+    const credentials =
+      transport === 'ssh'
+        ? []
+        : ['-c', 'credential.helper=', '-c', `credential.helper=${helper}`, '-c', 'credential.useHttpPath=true']
+    const cleanEnv: NodeJS.ProcessEnv = withoutGitLocation({
+      ...forkEnv(request.proxy, request.account, host),
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+      GIT_TERMINAL_PROMPT: '0',
+    })
+    const scratch = mkdtempSync(join(tmpdir(), 'gcb-tip-'))
+    try {
+      const { stdout } = await run(
+        'git',
+        [...credentials, 'ls-remote', url, `refs/heads/${request.branch}`],
+        { cwd: scratch, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: cleanEnv },
+      )
+      const line = stdout.trim()
+      if (line === '') {
+        return { absent: true }
+      }
+      const sha = line.split(/\s+/)[0]
+      if (sha === undefined || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(sha)) {
+        return { error: `unexpected ls-remote output: ${line.slice(0, 300)}` }
+      }
+      return { remoteTip: sha }
+    } catch (error) {
+      const failure = error as { stderr?: string; message?: string }
+      return { error: (failure.stderr ?? failure.message ?? 'ls-remote failed').trim().slice(0, 300) }
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
+    }
+  }
+
   if (request.kind === 'push') {
     const host = request.host ?? 'github.com'
     let allowedPush = false
@@ -815,15 +905,20 @@ async function openOne(
         maxBuffer: 1 << 20,
         env: withoutGitLocation(process.env),
       })
-      if (/^(?:ssh:\/\/|git@)/.test(stdout.trim())) {
+      if (/^(?:ssh:\/\/|[^@/]+@[^/:]+:|[^/:]+\.[^/:]+:)/.test(stdout.trim())) {
         transport = 'ssh'
       }
-    } catch {
-      // No origin: use the default HTTPS transport.
+    } catch (error) {
+      const failure = error as { stderr?: string; message?: string }
+      const reason = (failure.stderr ?? failure.message ?? '').trim()
+      if (!/No such remote|does not have a push url|not a git repository/i.test(reason)) {
+        return { error: reason.slice(0, 300) || 'could not read the remote push URL' }
+      }
+      // No usable remote: keep the HTTPS default.
     }
     const url =
       transport === 'ssh'
-        ? `ssh://git@${host}/${request.repo}.git`
+        ? `ssh://git@${host}${request.sshPort === undefined ? '' : `:${request.sshPort}`}/${request.repo}.git`
         : `https://${host}/${request.repo}.git`
     const helper = `!${[command, ...extra].map(shellQuote).join(' ')} auth git-credential`
     const credentials =
