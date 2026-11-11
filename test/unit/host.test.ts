@@ -635,6 +635,74 @@ function forkConfig(
   return path
 }
 
+describe('the host broker fork-check fallback', () => {
+  it('uses the broker account when the selected account has no gh config', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-fork-fallback-'))
+    const repo = join(root, 'checkout')
+    mkdirSync(join(repo, '.git'), { recursive: true })
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8')
+    const config = join(root, 'broker.config.yml')
+    writeFileSync(
+      config,
+      `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  github.com:\n    provider: static\n    username: x\n    password: y\n    allowForkPush: true\n    sshAccounts:\n      ghost: github-ghost\n    allow:\n      - org/repo\n`,
+      'utf8',
+    )
+    const dir = channelDir(join(repo, '.git'))
+    const argvFile = join(root, 'argv')
+    const bin = join(root, 'bin')
+    mkdirSync(bin)
+    const git = join(bin, 'git')
+    writeFileSync(
+      git,
+      `#!/bin/sh\ncase "$*" in *get-url*) echo "ssh://git@github.com/alice/repo.git"; exit 0;; *show-object-format*) echo sha1; exit 0;; *push*) printf '%s\\n' "$@" > ${argvFile};; esac\nexit 0\n`,
+      'utf8',
+    )
+    chmodSync(git, 0o755)
+    const command = join(root, 'not-gh')
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf \'%s\' \'{"fork":true,"parent":{"full_name":"org/repo"}}\'\n',
+      'utf8',
+    )
+    chmodSync(command, 0o755)
+    const previousPath = process.env['PATH']
+    try {
+      process.env['PATH'] = `${bin}:${previousPath ?? ''}`
+      const id = writeRequest(dir, {
+        kind: 'push',
+        repo: 'alice/repo',
+        host: 'github.com',
+        branch: 'feat/x',
+        remote: 'origin',
+        commit: '0123456789abcdef0123456789abcdef01234567',
+        account: 'ghost',
+      })
+      const code = await runHostBroker([
+        '--repo',
+        repo,
+        '--command',
+        command,
+        '--config',
+        config,
+        '--once',
+      ])
+      assert.equal(code, 0)
+      assert.equal(readResult(dir, id)?.error, undefined)
+      assert.equal(
+        readFileSync(argvFile, 'utf8').trim().split('\n').includes('ssh://git@github-ghost/alice/repo.git'),
+        true,
+      )
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env['PATH']
+      } else {
+        process.env['PATH'] = previousPath
+      }
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('the host broker push route', () => {
   it('refuses a non-allowlisted repository before invoking git', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-push-denied-'))
@@ -726,7 +794,10 @@ describe('the host broker push route', () => {
       assert.equal(readResult(dir, id)?.error, undefined)
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
       assert.equal(argv.includes('alice/repo.git'), false)
-      assert.equal(argv.some(argument => argument.endsWith('alice/repo.git')), true)
+      assert.equal(
+        argv.some(argument => argument.endsWith('alice/repo.git')),
+        true,
+      )
       assert.ok(argv.indexOf('push') < argv.indexOf('--no-verify'))
     } finally {
       if (previousPath === undefined) {
@@ -843,12 +914,22 @@ describe('the host broker push route', () => {
       const result = readResult(dir, id)
       assert.equal(result?.url, 'https://github.com/acme/widget/tree/feat/x')
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
-      assert.deepEqual(argv.slice(-3), ['--no-verify', 'https://github.com/acme/widget.git', '0123456789abcdef0123456789abcdef01234567:refs/heads/feat/x'])
-      assert.equal(argv.some(argument => argument === '--git-dir'), true)
+      assert.deepEqual(argv.slice(-3), [
+        '--no-verify',
+        'https://github.com/acme/widget.git',
+        '0123456789abcdef0123456789abcdef01234567:refs/heads/feat/x',
+      ])
+      assert.equal(
+        argv.some(argument => argument === '--git-dir'),
+        true,
+      )
       assert.equal(argv.includes('--force'), true)
       assert.ok(argv.indexOf('push') < argv.indexOf('--no-verify'))
       assert.equal(
-        argv.some(argument => argument.startsWith('credential.helper=') && argument.includes('auth git-credential')),
+        argv.some(
+          argument =>
+            argument.startsWith('credential.helper=') && argument.includes('auth git-credential'),
+        ),
         true,
       )
     } finally {

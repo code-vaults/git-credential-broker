@@ -549,7 +549,7 @@ async function sweep(
                   ? `ran ${request.action} as ${request.account ?? 'this user'}`
                   : request.kind === 'push'
                     ? `pushed ${request.branch} as ${request.account ?? 'this user'}`
-                  : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
+                    : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
       )
     } else {
       warn(
@@ -564,9 +564,9 @@ async function sweep(
                   ? `edit on #${request.number}`
                   : request.kind === 'action'
                     ? request.action
-                      : request.kind === 'push'
-                        ? request.branch
-                        : request.head
+                    : request.kind === 'push'
+                      ? request.branch
+                      : request.head
         }: ${result.error}`,
       )
     }
@@ -753,12 +753,16 @@ async function resolvePushTarget(
         }
         apiEnv = forkEnv(request.proxy, undefined, host)
       }
-      const { stdout } = await run(context.command, [...context.extra, 'api', `repos/${request.repo}`], {
-        cwd: context.repo,
-        timeout: CREATE_TIMEOUT_MS,
-        maxBuffer: 1 << 20,
-        env: apiEnv,
-      })
+      const { stdout } = await run(
+        context.command,
+        [...context.extra, 'api', `repos/${request.repo}`],
+        {
+          cwd: context.repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env: apiEnv,
+        },
+      )
       const body = JSON.parse(stdout) as {
         fork?: unknown
         parent?: { full_name?: unknown } | null
@@ -821,7 +825,14 @@ async function resolvePushTarget(
   const credentials =
     transport === 'ssh'
       ? []
-      : ['-c', 'credential.helper=', '-c', `credential.helper=${helper}`, '-c', 'credential.useHttpPath=true']
+      : [
+          '-c',
+          'credential.helper=',
+          '-c',
+          `credential.helper=${helper}`,
+          '-c',
+          'credential.useHttpPath=true',
+        ]
   try {
     const cleanEnv = withoutGitLocation({
       ...forkEnv(request.proxy, transport === 'ssh' ? undefined : request.account, host),
@@ -927,7 +938,10 @@ async function openOne(
         env: withoutGitLocation(process.env),
       })
       mkdirSync(join(scratch, 'objects', 'info'), { recursive: true })
-      writeFileSync(join(scratch, 'objects', 'info', 'alternates'), `${resolve(repo, objects.trim())}\n`)
+      writeFileSync(
+        join(scratch, 'objects', 'info', 'alternates'),
+        `${resolve(repo, objects.trim())}\n`,
+      )
       const { stdout, stderr } = await run(
         'git',
         [

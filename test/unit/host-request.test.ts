@@ -220,7 +220,10 @@ describe('the host request channel', () => {
       /mutually exclusive/,
     )
     assert.match(requestProblems({ ...push, remote: 'bad name' }).join(' '), /remote/)
-    assert.match(requestProblems({ ...push, force: 'yes' as unknown as boolean }).join(' '), /force/)
+    assert.match(
+      requestProblems({ ...push, force: 'yes' as unknown as boolean }).join(' '),
+      /force/,
+    )
     assert.match(requestProblems({ ...push, branch: '../escape' }).join(' '), /branch/)
     assert.match(requestProblems({ ...push, branch: 'a:b' }).join(' '), /branch/)
     assert.match(requestProblems({ ...push, repo: 'not a repo' }).join(' '), /repository/)

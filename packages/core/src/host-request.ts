@@ -607,22 +607,26 @@ export function requestProblems(request: HostRequest): string[] {
     if (request.force !== undefined && typeof request.force !== 'boolean') {
       problems.push('the force flag is not a boolean')
     }
-    if (
-      request.forceWithLease !== undefined &&
-      typeof request.forceWithLease !== 'boolean'
-    ) {
+    if (request.forceWithLease !== undefined && typeof request.forceWithLease !== 'boolean') {
       problems.push('the force-with-lease flag is not a boolean')
     }
     if (request.force === true && request.forceWithLease === true) {
       problems.push('force and force-with-lease are mutually exclusive')
     }
-    if (request.forceWithLease === true && (request.expected === undefined || !COMMIT.test(request.expected))) {
+    if (
+      request.forceWithLease === true &&
+      (request.expected === undefined || !COMMIT.test(request.expected))
+    ) {
       problems.push('force-with-lease needs a full expected commit')
     }
     if (!COMMIT.test(request.commit)) {
       problems.push('the commit is not a full Git object id')
     }
-    if (!BRANCH.test(request.branch) || request.branch.includes('..') || request.branch.includes(':')) {
+    if (
+      !BRANCH.test(request.branch) ||
+      request.branch.includes('..') ||
+      request.branch.includes(':')
+    ) {
       problems.push('the branch name is not usable')
     }
     if (request.account !== undefined && !LOGIN.test(request.account)) {
@@ -1012,8 +1016,8 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
                 REPOSITORY.test(request.repo) &&
                 (request.host === undefined ||
                   (typeof request.host === 'string' && HOST.test(request.host)))
-                : request.kind === 'push'
-                  ? typeof request.repo === 'string' &&
+              : request.kind === 'push'
+                ? typeof request.repo === 'string' &&
                   REPOSITORY.test(request.repo) &&
                   typeof request.branch === 'string' &&
                   typeof request.commit === 'string' &&

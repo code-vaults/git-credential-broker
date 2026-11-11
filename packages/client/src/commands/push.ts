@@ -1,9 +1,9 @@
 /**
  * `push` — push a branch from the host, without a token entering the container.
  *
- * The container owns the checkout and its commits; the host broker owns the credentials. The request
- * therefore names only a repository and a branch, and the host rebuilds the HTTPS URL and runs git
- * with its own gh account. No remote URL or refspec from the container is trusted.
+ * The container owns the checkout and its commits; the host broker owns the credentials. The
+ * request therefore names only a repository and a branch, and the host rebuilds the HTTPS URL and
+ * runs git with its own gh account. No remote URL or refspec from the container is trusted.
  */
 import { execFileSync, spawnSync } from 'node:child_process'
 import { accessSync, constants as fsConstants, existsSync } from 'node:fs'
@@ -125,14 +125,7 @@ function runPrePush(
   }
 }
 
-const KNOWN_FLAGS = new Set([
-  'help',
-  'as-user',
-  'force',
-  'force-with-lease',
-  'proxy',
-  'no-proxy',
-])
+const KNOWN_FLAGS = new Set(['help', 'as-user', 'force', 'force-with-lease', 'proxy', 'no-proxy'])
 
 export const PUSH_USAGE = `Usage: gcb push [<remote> [<branch>]] [options]
 
@@ -245,9 +238,7 @@ export async function runPush(argv: readonly string[]): Promise<number> {
   if (found === undefined) {
     fail(
       `remote ${JSON.stringify(remote)} does not name an owner/repository; configure a canonical remote` +
-        (bareAsUser && LOGIN.test(remote)
-          ? ` (for an account use --as-user=${remote})`
-          : ''),
+        (bareAsUser && LOGIN.test(remote) ? ` (for an account use --as-user=${remote})` : ''),
     )
   }
   const repo = `${found.owner}/${found.repo}`
@@ -258,10 +249,7 @@ export async function runPush(argv: readonly string[]): Promise<number> {
   }
   let commit: string
   try {
-    commit = execFileSync(
-      'git',
-      ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`],
-      {
+    commit = execFileSync('git', ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim()

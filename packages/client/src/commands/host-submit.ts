@@ -21,11 +21,7 @@ import {
   getGhAction,
   say,
 } from 'gcb-core'
-import type {
-  HostActionRequest,
-  HostResult,
-  HostRequest,
-} from 'gcb-core'
+import type { HostActionRequest, HostResult, HostRequest } from 'gcb-core'
 
 /**
  * Explain why a host-broker request produced no answer.
