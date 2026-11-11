@@ -720,8 +720,9 @@ describe('the host broker push route', () => {
       ])
       assert.equal(code, 0)
       assert.equal(readResult(dir, id)?.error, undefined)
-      const argv = readFileSync(argvFile, 'utf8')
-      assert.match(argv, /alice\/repo\.git/)
+      const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
+      assert.equal(argv.includes('alice/repo.git'), false)
+      assert.equal(argv.some(argument => argument.endsWith('alice/repo.git')), true)
       assert.ok(argv.indexOf('push') < argv.indexOf('--no-verify'))
     } finally {
       if (previousPath === undefined) {
