@@ -760,7 +760,8 @@ describe('the host broker push route', () => {
         branch: 'feat/x',
         remote: 'upstream',
         commit: '0123456789abcdef0123456789abcdef01234567',
-        force: true,
+        forceWithLease: true,
+        expected: '0123456789abcdef0123456789abcdef01234567',
       })
       const code = await runHostBroker([
         '--repo',
@@ -777,7 +778,12 @@ describe('the host broker push route', () => {
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
       assert.deepEqual(argv.slice(-3), ['--no-verify', 'https://github.com/acme/widget.git', '0123456789abcdef0123456789abcdef01234567:refs/heads/feat/x'])
       assert.equal(argv.some(argument => argument === '--git-dir'), true)
-      assert.equal(argv.includes('--force'), true)
+      assert.equal(
+        argv.includes(
+          '--force-with-lease=refs/heads/feat/x:0123456789abcdef0123456789abcdef01234567',
+        ),
+        true,
+      )
       assert.ok(argv.indexOf('push') < argv.indexOf('--no-verify'))
       assert.equal(
         argv.some(argument => argument.startsWith('credential.helper=') && argument.includes('auth git-credential')),
