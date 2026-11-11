@@ -734,6 +734,7 @@ describe('the host broker global channel creation', () => {
     const config = forkConfig(root, 'acme/widget')
     const dir = globalChannelDir()
     try {
+      rmSync(dir, { recursive: true, force: true })
       const code = await runHostBroker(['--config', config, '--once'])
       assert.equal(code, 0)
       assert.equal(statSync(dir).mode & 0o777, 0o700)
@@ -747,7 +748,7 @@ describe('the host broker global channel creation', () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-global-file-'))
     const config = forkConfig(root, 'acme/widget')
     const dir = globalChannelDir()
-    mkdirSync(join(root, '.gcb-host'), { recursive: true })
+    mkdirSync(dirname(dir), { recursive: true })
     writeFileSync(dir, 'not a directory', 'utf8')
     try {
       const code = await runHostBroker(['--config', config, '--once'])

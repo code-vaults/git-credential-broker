@@ -474,7 +474,8 @@ explicit `--repo` needs no checkout of that repository; without one, a checkout 
 there is no checkout at all, the client and host broker use the shared
 `~/.gcb-host/channel` instead of `.git/gcb/host-broker`; the request must carry `--repo`, and the
 host broker must run in its normal root-serving mode (not `--repo <checkout>`). Both sides must see
-the same `~/.gcb-host` path; the container can write that channel, so anything able to write it can
+the same `~/.gcb-host` path and be able to write it (in practice the same uid, as with socketMode
+0660); the container can write that channel, so anything able to write it can
 submit requests as the selected account within the allowlist.
 `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
