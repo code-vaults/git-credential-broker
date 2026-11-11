@@ -927,7 +927,7 @@ async function openOne(
     const { url, credentials, cleanEnv } = resolved.target
     const scratch = mkdtempSync(join(tmpdir(), 'gcb-push-'))
     try {
-      let objectFormat = 'sha1'
+      let objectFormat: string | undefined
       try {
         const { stdout } = await run('git', ['rev-parse', '--show-object-format'], {
           cwd: repo,
@@ -935,11 +935,9 @@ async function openOne(
           maxBuffer: 1 << 20,
           env: withoutGitLocation(process.env),
         })
-        if (stdout.trim() === 'sha256') {
-          objectFormat = 'sha256'
-        }
+        objectFormat = stdout.trim()
       } catch {
-        // Older Git: the default SHA-1 format is the only one it supports.
+        // Older Git: leave the scratch repository at its default.
       }
       await run(
         'git',
@@ -947,7 +945,7 @@ async function openOne(
           'init',
           '--bare',
           '--quiet',
-          ...(objectFormat === 'sha256' ? ['--object-format=sha256'] : []),
+          ...(objectFormat === undefined ? [] : [`--object-format=${objectFormat}`]),
           scratch,
         ],
         {

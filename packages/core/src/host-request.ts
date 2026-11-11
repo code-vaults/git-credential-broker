@@ -44,9 +44,11 @@ export const HOST_BROKER_FILE = 'host-broker.json'
 /** Maximum host-side push duration. */
 export const PUSH_TIMEOUT_MS = 10 * 60_000
 
-/** How long a caller waits for an answer. */
-// Longer than the host broker's own program timeout (CREATE_TIMEOUT_MS, 120s) plus the interval at which it
-// notices a request, because the caller is waiting for an answer to work that has not started yet.
+/** How long a caller waits for an answer, and how long a request may sit before it is refused. */
+// A request can be queued behind a push, which can run for PUSH_TIMEOUT_MS and may also pay for a
+// fork check. The extra 180s covers that setup and the host's notice interval. This is deliberately
+// one window for every kind: the host cannot know which request a push is blocking, and a
+// kind-specific shorter window would expire the requests queued behind it.
 export const ANSWER_TIMEOUT_MS = PUSH_TIMEOUT_MS + 180_000
 
 /** The same bounds the broker applies, so a request is refused here rather than there. */

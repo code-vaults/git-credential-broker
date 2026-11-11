@@ -60,6 +60,43 @@ function prePushPath(): string | undefined {
   return path
 }
 
+/** Update the local remote-tracking ref only when the fetch remote maps this branch and repo. */
+function updateTrackingRef(remote: string, branch: string, commit: string, pushedRepo: string): void {
+  const fetched = remoteRepo(remote, process.cwd())
+  if (fetched === undefined || `${fetched.owner}/${fetched.repo}` !== pushedRepo) {
+    return
+  }
+  let specs: string[]
+  try {
+    specs = execFileSync('git', ['config', '--get-all', `remote.${remote}.fetch`], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .trim()
+      .split('\n')
+      .filter(line => line !== '')
+  } catch {
+    return
+  }
+  for (const spec of specs) {
+    const [source, destination] = spec.replace(/^\+/, '').split(':')
+    if (source === undefined || destination === undefined) {
+      continue
+    }
+    if (source !== 'refs/heads/*' || !destination.startsWith(`refs/remotes/${remote}/`)) {
+      continue
+    }
+    const tracking = destination.replace('*', branch)
+    if (!tracking.includes('*')) {
+      try {
+        execFileSync('git', ['update-ref', tracking, commit], { stdio: 'ignore' })
+      } catch {
+        // A read-only or missing tracking ref is not a reason to fail a completed push.
+      }
+    }
+  }
+}
+
 /** Run the container's pre-push hook; the host deliberately never runs container-owned hooks. */
 function runPrePush(
   path: string,
@@ -163,7 +200,10 @@ export async function runPush(argv: readonly string[]): Promise<number> {
   const found = remoteRepo(remote, process.cwd(), true)
   if (found === undefined) {
     fail(
-      `remote ${JSON.stringify(remote)} does not name an owner/repository; configure a canonical remote`,
+      `remote ${JSON.stringify(remote)} does not name an owner/repository; configure a canonical remote` +
+        (bareAsUser && LOGIN.test(remote)
+          ? ` (for an account use --as-user=${remote})`
+          : ''),
     )
   }
   const repo = `${found.owner}/${found.repo}`
@@ -205,7 +245,7 @@ export async function runPush(argv: readonly string[]): Promise<number> {
     runPrePush(hook, remote, repo, branch, commit, host, tip)
   }
 
-  return submitToHostBroker(
+  const code = await submitToHostBroker(
     {
       kind: 'push',
       repo,
@@ -226,4 +266,8 @@ export async function runPush(argv: readonly string[]): Promise<number> {
       `pushed ${branch} to ${repo}${answer.url === undefined ? '' : `: ${answer.url}`}${account === undefined ? '' : ` as ${account}`}`,
     PUSH_TIMEOUT_MS + 180_000,
   )
+  if (code === 0) {
+    updateTrackingRef(remote, branch, commit, repo)
+  }
+  return code
 }
