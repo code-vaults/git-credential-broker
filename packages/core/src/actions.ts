@@ -365,7 +365,7 @@ const PR_REVIEW: GhAction = {
   appUser: true,
 }
 
-// GitHub: POST /repos/{owner}/{repo}/discussions (gh discussion create)
+// GitHub GraphQL: createDiscussion
 const DISCUSSION_CREATE: GhAction = {
   name: 'discussion:create',
   command: ['discussion', 'create'],
@@ -412,8 +412,9 @@ const DISCUSSION_LIST: GhAction = {
 const DISCUSSION_VIEW: GhAction = {
   name: 'discussion:view',
   command: ['discussion', 'view'],
-  positionals: [{ name: 'target', type: 'string', required: true }],
+  positionals: [{ name: 'number', type: 'number', required: true }],
   flags: [
+    { name: 'after', type: 'string' },
     { name: 'comments', type: 'boolean' },
     { name: 'jq', type: 'string' },
     { name: 'json', type: 'string' },
@@ -432,11 +433,8 @@ const DISCUSSION_VIEW: GhAction = {
 const DISCUSSION_COMMENT: GhAction = {
   name: 'discussion:comment',
   command: ['discussion', 'comment'],
-  positionals: [{ name: 'target', type: 'string', required: true }],
-  flags: [
-    { name: 'body', type: 'string', required: true },
-    { name: 'edit', type: 'boolean' },
-  ],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [{ name: 'body', type: 'string', required: true }],
   permissions: { discussions: 'write' },
   timeoutSeconds: 120,
   appUser: true,
@@ -446,7 +444,7 @@ const DISCUSSION_COMMENT: GhAction = {
 const DISCUSSION_EDIT: GhAction = {
   name: 'discussion:edit',
   command: ['discussion', 'edit'],
-  positionals: [{ name: 'target', type: 'string', required: true }],
+  positionals: [{ name: 'number', type: 'number', required: true }],
   flags: [
     { name: 'add-label', type: 'string', repeatable: true },
     { name: 'body', type: 'string' },

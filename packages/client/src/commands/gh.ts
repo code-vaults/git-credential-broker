@@ -238,8 +238,8 @@ export function actionHelpRequested(actionName: string, rawRest: readonly string
 export const GH_USAGE = `Usage: gcb gh <domain> <command> [options]
 
 Run a catalogued GitHub action through the broker.
-gcb pr <subcommand>, gcb run <subcommand> and gcb issue <subcommand> are shorthands for the same
-actions.
+gcb pr <subcommand>, gcb run <subcommand>, gcb issue <subcommand> and gcb discussion <subcommand>
+are shorthands for the same actions.
 
 Common
   -R, --repo <owner/name>  Repository the action belongs to (default: origin remote)

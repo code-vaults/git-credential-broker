@@ -127,7 +127,8 @@ gcb gh discussion list -R owner/name --state all --limit 10
 gcb gh discussion view 12 -R owner/name --comments
 ```
 
-`-R` is the short form of `--repo`, as in `gh` itself.
+`-R` is the short form of `--repo`, as in `gh` itself. The `gh discussion` commands require
+GitHub CLI 2.94.0 or newer and remain a preview command in gh.
 
 `gcb pr <subcommand>`, `gcb run <subcommand>`, `gcb issue <subcommand>` and
 `gcb discussion <subcommand>` are shorthands for the same actions when the catalog has one —
@@ -536,7 +537,8 @@ reviewers are entitled to skip those. The simplest way to have one authored by y
 
 `userTokens` is keyed by owner because that is GitHub's own granularity: a fine-grained token
 belongs to one user or organization and cannot span two, so two owners need two tokens. Create each
-with **Pull requests: Read and write**, **Contents: Read** and **Metadata: Read**, and give it access
+with **Pull requests: Read and write**, **Contents: Read**, **Discussions: Read and write** where
+needed, and **Metadata: Read**, and give it access
 to **only the repositories the allowlist already names**. With Contents: Read, GitHub itself refuses
 to let that token push or merge, so "it may only open pull requests" is enforced by GitHub rather
 than promised here. `userTokens` is consulted for opening, replying, editing, commenting or

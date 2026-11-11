@@ -121,16 +121,13 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
         return (await import('./commands/gh.ts')).runGh(['issue', ...rest])
       }
       return (await choose()).run(['issue', ...rest])
-<<<<<<< HEAD
     case 'push':
       return (await import('./commands/push.ts')).runPush(rest)
-=======
     case 'discussion':
       if (await actionAsksHelp('discussion', rest[0], rest)) {
         return (await import('./commands/gh.ts')).runGh(['discussion', ...rest])
       }
       return (await choose()).run(['discussion', ...rest])
->>>>>>> ac09902 (feat: add discussion actions to the gh catalog)
     case 'repo':
       return (await import('./commands/repo.ts')).runRepo(rest)
     case 'gh':

@@ -87,6 +87,16 @@ describe('gcb gh', () => {
     assert.match(result.stderr, /cannot read \/definitely\/not\/here/u)
   })
 
+  it('routes discussion through the same catalog checks', async () => {
+    const unknown = await runClient(['discussion', '--bogus'])
+    assert.equal(unknown.status, 1)
+    assert.match(unknown.stderr, /unknown gh action "discussion:--bogus"/u)
+
+    const missing = await runClient(['discussion', 'view', '--repo', 'acme/widget'])
+    assert.equal(missing.status, 1)
+    assert.match(missing.stderr, /needs number/u)
+  })
+
   it('routes issue through the same catalog checks', async () => {
     const unknown = await runClient(['issue', '--bogus'])
     assert.equal(unknown.status, 1)

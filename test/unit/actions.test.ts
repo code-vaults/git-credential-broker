@@ -154,6 +154,8 @@ describe('gh action catalog', () => {
       'pr:checks',
       'pr:status',
       'pr:review-by-id',
+      'discussion:list',
+      'discussion:view',
       'issue:view',
       'issue:list',
       'run:view',
@@ -258,37 +260,46 @@ describe('gh action catalog', () => {
       '--repo',
       'acme/widget',
     ])
-    assert.deepEqual(buildGhArgv('discussion:view', { target: '12', comments: true }, 'acme/widget'), [
-      'discussion',
-      'view',
-      '--comments',
-      '--repo',
-      'acme/widget',
-      '--',
-      '12',
-    ])
     assert.deepEqual(
-      buildGhArgv('discussion:comment', { target: '12', body: 'Thanks' }, 'acme/widget'),
-      ['discussion', 'comment', '--body', 'Thanks', '--repo', 'acme/widget', '--', '12'],
+      buildGhArgv('discussion:view', { number: 12, comments: true }, 'acme/widget'),
+      ['discussion', 'view', '12', '--comments', '--repo', 'acme/widget'],
+    )
+    assert.deepEqual(
+      buildGhArgv('discussion:comment', { number: 12, body: 'Thanks' }, 'acme/widget'),
+      ['discussion', 'comment', '12', '--body', 'Thanks', '--repo', 'acme/widget'],
     )
     assert.deepEqual(
       buildGhArgv(
         'discussion:edit',
-        { target: '12', title: 'New', 'add-label': ['question'] },
+        { number: 12, title: 'New', 'add-label': ['question'] },
         'acme/widget',
       ),
       [
         'discussion',
         'edit',
+        '12',
         '--add-label',
         'question',
         '--title',
         'New',
         '--repo',
         'acme/widget',
-        '--',
-        '12',
       ],
+    )
+  })
+
+  it('does not let a discussion argument choose the repository', () => {
+    for (const name of ['discussion:view', 'discussion:comment', 'discussion:edit']) {
+      assert.equal(getGhAction(name).positionals[0]?.type, 'number', name)
+    }
+    assert.throws(
+      () =>
+        buildGhArgv(
+          'discussion:view',
+          { number: 'https://github.com/other/repo/discussions/1' },
+          'acme/widget',
+        ),
+      /number/u,
     )
   })
 
