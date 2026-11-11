@@ -418,11 +418,6 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     return 0
   }
   writeStatus()
-  if (single === undefined && !existsSync(globalChannelDir())) {
-    warn(
-      `not serving the global channel: ${globalChannelDir()} does not exist; create it once with mode 0700`,
-    )
-  }
 
   const advertised = new Set<string>()
   /** Advertise a channel, without rewriting the marker on every sweep. */
@@ -464,6 +459,11 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   say(
     `creating pull requests, issues, reviews, replies, forks and pushes with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
   )
+  if (single === undefined && !existsSync(globalChannelDir())) {
+    warn(
+      `not serving the global channel: ${globalChannelDir()} does not exist; create it once with mode 0700`,
+    )
+  }
 
   for (;;) {
     for (const { repo, dir } of targets()) {
