@@ -100,11 +100,12 @@ describe('what a remote URL is allowed to look like', () => {
     })
   })
 
-  it('drops an SSH port, because the API host has none', () => {
+  it('keeps the SSH port separately from the API host', () => {
     assert.deepEqual(remoteRepo('ssh-ported', dir), {
       owner: 'me',
       repo: 'thing',
       host: 'git.example.com',
+      port: 2222,
     })
   })
 

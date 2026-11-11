@@ -547,6 +547,8 @@ async function sweep(
                   ? `ran ${request.action} as ${request.account ?? 'this user'}`
                   : request.kind === 'push'
                     ? `pushed ${request.branch} as ${request.account ?? 'this user'}`
+                    : request.kind === 'push-tip'
+                      ? `read the tip of ${request.branch} as ${request.account ?? 'this user'}`
                   : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
       )
     } else {
@@ -826,6 +828,9 @@ async function openOne(
     if (transport === 'ssh' && request.proxy !== undefined) {
       return { error: '--proxy/--no-proxy is not supported for SSH pushes' }
     }
+    if (transport === 'ssh' && request.account !== undefined) {
+      return { error: 'SSH uses the host identity; --as-user is not supported' }
+    }
     const url =
       transport === 'ssh'
         ? `ssh://git@${host}${request.sshPort === undefined ? '' : `:${request.sshPort}`}/${request.repo}.git`
@@ -835,12 +840,17 @@ async function openOne(
       transport === 'ssh'
         ? []
         : ['-c', 'credential.helper=', '-c', `credential.helper=${helper}`, '-c', 'credential.useHttpPath=true']
-    const cleanEnv: NodeJS.ProcessEnv = withoutGitLocation({
-      ...forkEnv(request.proxy, request.account, host),
-      GIT_CONFIG_NOSYSTEM: '1',
-      GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
-      GIT_TERMINAL_PROMPT: '0',
-    })
+    let cleanEnv: NodeJS.ProcessEnv
+    try {
+      cleanEnv = withoutGitLocation({
+        ...forkEnv(request.proxy, request.account, host),
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+        GIT_TERMINAL_PROMPT: '0',
+      })
+    } catch (error) {
+      return { error: (error as Error).message }
+    }
     const scratch = mkdtempSync(join(tmpdir(), 'gcb-tip-'))
     try {
       const { stdout } = await run(
@@ -928,12 +938,20 @@ async function openOne(
     if (transport === 'ssh' && request.proxy !== undefined) {
       return { error: '--proxy/--no-proxy is not supported for SSH pushes' }
     }
-    const cleanEnv: NodeJS.ProcessEnv = withoutGitLocation({
-      ...forkEnv(request.proxy, request.account, host),
-      GIT_CONFIG_NOSYSTEM: '1',
-      GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
-      GIT_TERMINAL_PROMPT: '0',
-    })
+    if (transport === 'ssh' && request.account !== undefined) {
+      return { error: 'SSH uses the host identity; --as-user is not supported' }
+    }
+    let cleanEnv: NodeJS.ProcessEnv
+    try {
+      cleanEnv = withoutGitLocation({
+        ...forkEnv(request.proxy, request.account, host),
+        GIT_CONFIG_NOSYSTEM: '1',
+        GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+        GIT_TERMINAL_PROMPT: '0',
+      })
+    } catch (error) {
+      return { error: (error as Error).message }
+    }
     const scratch = mkdtempSync(join(tmpdir(), 'gcb-push-'))
     try {
       await run('git', ['init', '--bare', '--quiet', scratch], {
