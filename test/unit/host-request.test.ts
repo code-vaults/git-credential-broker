@@ -207,7 +207,14 @@ describe('the host request channel', () => {
     }
     assert.deepEqual(requestProblems(push), [])
     assert.deepEqual(requestProblems({ ...push, remote: 'upstream', force: true }), [])
-    assert.deepEqual(requestProblems({ ...push, forceWithLease: true }), [])
+    assert.deepEqual(
+      requestProblems({
+        ...push,
+        forceWithLease: true,
+        expected: '0123456789abcdef0123456789abcdef01234567',
+      }),
+      [],
+    )
     assert.match(
       requestProblems({ ...push, force: true, forceWithLease: true }).join(' '),
       /mutually exclusive/,

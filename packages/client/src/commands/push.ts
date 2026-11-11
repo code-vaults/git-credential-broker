@@ -38,14 +38,8 @@ container. The default remote is origin, and the default branch is the current o
   -h, --help           Show this help
 `
 
-/** Run the container's pre-push hook; the host deliberately never runs container-owned hooks. */
-function runPrePush(
-  remote: string,
-  repo: string,
-  branch: string,
-  commit: string,
-  host: string,
-): void {
+/** The container's pre-push hook, when it exists and is executable. */
+function prePushPath(): string | undefined {
   let hook: string
   try {
     hook = execFileSync('git', ['rev-parse', '--git-path', 'hooks/pre-push'], {
@@ -53,35 +47,52 @@ function runPrePush(
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim()
   } catch {
-    return
+    return undefined
   }
   const path = resolve(hook)
   if (!existsSync(path)) {
-    return
+    return undefined
   }
   try {
     accessSync(path, fsConstants.X_OK)
   } catch {
-    return
+    return undefined
   }
-  const url = `https://${host}/${repo}.git`
-  let remoteCommit = '0'.repeat(commit.length)
+  return path
+}
+
+/** The remote tip, or the zero sentinel when the branch does not exist yet. */
+function remoteTip(remote: string, branch: string, length: number): string | undefined {
   try {
-    const line = execFileSync('git', ['ls-remote', remote, `refs/heads/${branch}`], {
+    const out = execFileSync('git', ['ls-remote', remote, `refs/heads/${branch}`], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim()
-    const sha = line.split(/\s+/)[0]
-    if (sha !== undefined && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(sha)) {
-      remoteCommit = sha
+    if (out === '') {
+      return '0'.repeat(length)
     }
+    const sha = out.split(/\s+/)[0]
+    return sha !== undefined && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(sha) ? sha : undefined
   } catch {
-    // The remote may need host credentials; the hook still gets the new-branch sentinel.
+    return undefined
   }
+}
+
+/** Run the container's pre-push hook; the host deliberately never runs container-owned hooks. */
+function runPrePush(
+  path: string,
+  remote: string,
+  repo: string,
+  branch: string,
+  commit: string,
+  host: string,
+  tip: string,
+): void {
+  const url = `https://${host}/${repo}.git`
   const result = spawnSync(path, [remote, url], {
     cwd: process.cwd(),
     encoding: 'utf8',
-    input: `refs/heads/${branch} ${commit} refs/heads/${branch} ${remoteCommit}\n`,
+    input: `refs/heads/${branch} ${commit} refs/heads/${branch} ${tip}\n`,
   })
   if (result.status !== 0) {
     const reason = (result.stderr || result.stdout || 'pre-push hook refused').trim()
@@ -177,7 +188,15 @@ export async function runPush(argv: readonly string[]): Promise<number> {
     fail(`cannot resolve ${branch} to a commit`)
   }
 
-  runPrePush(remote, repo, branch, commit, host)
+  const hook = prePushPath()
+  const needsTip = hook !== undefined || args.has('force-with-lease')
+  const tip = needsTip ? remoteTip(remote, branch, commit.length) : undefined
+  if (needsTip && tip === undefined) {
+    fail('cannot determine the remote tip; fetch the remote or retry with network access')
+  }
+  if (hook !== undefined) {
+    runPrePush(hook, remote, repo, branch, commit, host, tip ?? '0'.repeat(commit.length))
+  }
 
   return submitToHostBroker(
     {
@@ -188,7 +207,9 @@ export async function runPush(argv: readonly string[]): Promise<number> {
       remote,
       commit,
       ...(args.has('force') ? { force: true } : {}),
-      ...(args.has('force-with-lease') ? { forceWithLease: true } : {}),
+      ...(args.has('force-with-lease')
+        ? { forceWithLease: true, expected: tip as string }
+        : {}),
       session: 'push',
       pid: process.pid,
       ...(account === undefined ? {} : { account }),

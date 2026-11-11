@@ -858,20 +858,10 @@ async function openOne(
       )
       mkdirSync(join(scratch, 'objects', 'info'), { recursive: true })
       writeFileSync(join(scratch, 'objects', 'info', 'alternates'), `${objects.trim()}\n`)
-      const lease = request.forceWithLease === true
-        ? await (async () => {
-            const { stdout: remote } = await run(
-              'git',
-              ['--git-dir', scratch, ...credentials, 'ls-remote', url, `refs/heads/${request.branch}`],
-              { cwd: scratch, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: cleanEnv },
-            )
-            const sha = remote.trim().split(/\s+/)[0]
-            if (sha === undefined || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(sha)) {
-              throw new Error(`remote branch ${request.branch} does not exist`)
-            }
-            return [`--force-with-lease=refs/heads/${request.branch}:${sha}`]
-          })()
-        : []
+      const lease =
+        request.forceWithLease === true
+          ? [`--force-with-lease=refs/heads/${request.branch}:${request.expected}`]
+          : []
       const { stdout, stderr } = await run(
         'git',
         [
