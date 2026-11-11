@@ -203,8 +203,6 @@ export interface HostResult {
   readonly url?: string
   readonly stdout?: string
   readonly stderr?: string
-  readonly remoteTip?: string
-  readonly absent?: boolean
   readonly code?: number | null
   readonly error?: string
 }

@@ -5,12 +5,125 @@
  * therefore names only a repository and a branch, and the host rebuilds the HTTPS URL and runs git
  * with its own gh account. No remote URL or refspec from the container is trusted.
  */
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { accessSync, constants as fsConstants, existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import { ANSWER_TIMEOUT_MS, BRANCH, LOGIN, fail, parseArgs, say } from 'gcb-core'
 
 import { submitToHostBroker } from './host-submit.ts'
 import { remoteRepo } from './remotes.ts'
+
+/** The local remote-tracking ref, or undefined when the branch was never fetched. */
+function trackingRef(remote: string, branch: string): string | undefined {
+  try {
+    return execFileSync('git', ['rev-parse', '--verify', `refs/remotes/${remote}/${branch}`], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+  } catch {
+    return undefined
+  }
+}
+
+/** Update the local remote-tracking ref only when the fetch remote maps this branch and repo. */
+export function updateTrackingRef(
+  remote: string,
+  branch: string,
+  commit: string,
+  pushedRepo: string,
+  cwd: string = process.cwd(),
+): void {
+  const fetched = remoteRepo(remote, cwd)
+  if (fetched === undefined || `${fetched.owner}/${fetched.repo}` !== pushedRepo) {
+    return
+  }
+  let specs: string[]
+  try {
+    specs = execFileSync('git', ['config', '--get-all', `remote.${remote}.fetch`], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .trim()
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line !== '')
+  } catch {
+    return
+  }
+  for (const spec of specs) {
+    const [source, destination] = spec.replace(/^\+/, '').split(':')
+    if (source === undefined || destination === undefined) {
+      continue
+    }
+    if (source !== 'refs/heads/*' || !destination.startsWith(`refs/remotes/${remote}/`)) {
+      continue
+    }
+    const tracking = destination.replace('*', branch)
+    if (!tracking.includes('*')) {
+      try {
+        execFileSync('git', ['update-ref', tracking, commit], { cwd, stdio: 'ignore' })
+      } catch {
+        // A read-only or missing tracking ref is not a reason to fail a completed push.
+      }
+    }
+  }
+}
+
+/** The executable container pre-push hook, when there is one. */
+function prePushPath(): string | undefined {
+  let hook: string
+  try {
+    hook = execFileSync('git', ['rev-parse', '--git-path', 'hooks/pre-push'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+  } catch {
+    return undefined
+  }
+  const path = resolve(hook)
+  if (!existsSync(path)) {
+    return undefined
+  }
+  try {
+    accessSync(path, fsConstants.X_OK)
+  } catch {
+    return undefined
+  }
+  return path
+}
+
+/** Run the container hook; the host never runs container-owned hooks. */
+function runPrePush(
+  path: string,
+  remote: string,
+  repo: string,
+  branch: string,
+  commit: string,
+  host: string,
+  tip: string,
+): void {
+  let url = `https://${host}/${repo}.git`
+  try {
+    url =
+      execFileSync('git', ['remote', 'get-url', '--push', remote], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim() || url
+  } catch {
+    // Use the rebuilt URL when the remote has no readable push URL.
+  }
+  const result = spawnSync(path, [remote, url], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    input: `refs/heads/${branch} ${commit} refs/heads/${branch} ${tip}\n`,
+  })
+  if (result.status !== 0) {
+    const reason = (result.stderr || result.stdout || 'pre-push hook refused').trim()
+    fail(reason.slice(0, 300))
+  }
+}
 
 const KNOWN_FLAGS = new Set([
   'help',
@@ -156,17 +269,12 @@ export async function runPush(argv: readonly string[]): Promise<number> {
     fail(`cannot resolve ${branch} to a commit`)
   }
 
-  let expected: string | undefined
-  if (args.has('force-with-lease')) {
-    try {
-      expected = execFileSync(
-        'git',
-        ['rev-parse', '--verify', `refs/remotes/${remote}/${branch}`],
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-      ).trim()
-    } catch {
-      expected = '0'.repeat(commit.length)
-    }
+  const tracked = trackingRef(remote, branch)
+  const tip = tracked ?? '0'.repeat(commit.length)
+  const expected = args.has('force-with-lease') ? tip : undefined
+  const hook = prePushPath()
+  if (hook !== undefined) {
+    runPrePush(hook, remote, repo, branch, commit, host, tip)
   }
 
   const code = await submitToHostBroker(
@@ -188,5 +296,8 @@ export async function runPush(argv: readonly string[]): Promise<number> {
       `pushed ${branch} to ${repo}${answer.url === undefined ? '' : `: ${answer.url}`}${account === undefined ? '' : ` as ${account}`}`,
     ANSWER_TIMEOUT_MS,
   )
+  if (code === 0) {
+    updateTrackingRef(remote, branch, commit, repo)
+  }
   return code
 }
