@@ -8,8 +8,10 @@ host-user delegation is implemented for creation and review comments; live reloa
 
 ## Locked decisions
 
-- **Native Git stays native.** `commit` needs no broker; `push` uses the git credential helper.
-  The broker does not proxy Git.
+- **Native Git stays native.** `commit` needs no broker; ordinary `push` uses the git credential
+  helper. The broker does not proxy Git. **Exception:** `gcb push` is an explicit host-executed
+  push for fork/upstream cases where a credential cannot be minted; it is not an interception of
+  `git push`.
 - **The container's Git remotes are HTTPS.** SSH remotes are rewritten to HTTPS in the agent
   container, which is what puts the credential helper on the push path. A host-side Git over SSH is
   outside this broker entirely.

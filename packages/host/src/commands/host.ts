@@ -64,6 +64,9 @@ const run = promisify(execFile)
 /** How long one create, review, reply, edit or fork program may take. */
 const CREATE_TIMEOUT_MS = 120_000
 
+/** A push can legitimately take longer than a create; match it on both sides. */
+const PUSH_TIMEOUT_MS = 10 * 60_000
+
 /** Host-private daemon status, independent of any config path. */
 export function hostStatusPath(): string {
   return join(homedir(), '.gcb-host', 'status.json')
@@ -446,7 +449,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
       : `serving ${single}`,
   )
   say(
-    `creating pull requests, issues, reviews, replies and forks with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
+    `creating pull requests, issues, reviews, replies, forks and pushes with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
   )
 
   for (;;) {
@@ -781,7 +784,7 @@ async function resolvePushTarget(
       cwd: context.repo,
       timeout: CREATE_TIMEOUT_MS,
       maxBuffer: 1 << 20,
-      env: withoutGitLocation(process.env),
+      env: { ...withoutGitLocation(process.env), LC_ALL: 'C', LANG: 'C' },
     })
     if (/^(?:ssh:\/\/|[^@/]+@[^/:]+:|[^/:]+\.[^/:]+:)/.test(stdout.trim())) {
       transport = 'ssh'
@@ -798,7 +801,12 @@ async function resolvePushTarget(
   }
   let sshHost = host
   if (transport === 'ssh' && request.account !== undefined) {
-    const alias = context.blockFor(host)?.sshAccounts?.[request.account.toLowerCase()]
+    let alias: string | undefined
+    try {
+      alias = context.blockFor(host)?.sshAccounts?.[request.account.toLowerCase()]
+    } catch (error) {
+      return { error: (error as Error).message }
+    }
     if (alias === undefined) {
       return { error: `no SSH host is configured for account ${request.account} on ${host}` }
     }
@@ -926,14 +934,17 @@ async function openOne(
         maxBuffer: 1 << 20,
         env: cleanEnv,
       })
-      const { stdout: objects } = await run('git', ['rev-parse', '--path-format=absolute', '--git-path', 'objects'], {
+      const { stdout: objects } = await run('git', ['rev-parse', '--git-path', 'objects'], {
         cwd: repo,
         timeout: CREATE_TIMEOUT_MS,
         maxBuffer: 1 << 20,
         env: withoutGitLocation(process.env),
       })
       mkdirSync(join(scratch, 'objects', 'info'), { recursive: true })
-      writeFileSync(join(scratch, 'objects', 'info', 'alternates'), `${objects.trim()}\n`)
+      writeFileSync(
+        join(scratch, 'objects', 'info', 'alternates'),
+        `${resolve(repo, objects.trim())}\n`,
+      )
       const lease =
         request.forceWithLease === true
           ? [`--force-with-lease=refs/heads/${request.branch}:${request.expected}`]
@@ -951,7 +962,7 @@ async function openOne(
           url,
           `${request.commit}:refs/heads/${request.branch}`,
         ],
-        { cwd: scratch, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: cleanEnv },
+        { cwd: scratch, timeout: PUSH_TIMEOUT_MS, maxBuffer: 1 << 20, env: cleanEnv },
       )
       const host = request.host ?? 'github.com'
       return { url: `https://${host}/${request.repo}/tree/${request.branch}`, stdout, stderr }

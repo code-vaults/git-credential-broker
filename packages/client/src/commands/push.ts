@@ -16,13 +16,15 @@ import { remoteRepo } from './remotes.ts'
 
 const KNOWN_FLAGS = new Set([
   'help',
-  'h',
   'as-user',
   'force',
   'force-with-lease',
   'proxy',
   'no-proxy',
 ])
+
+/** A push can legitimately take longer than a create; match it on both sides. */
+const PUSH_TIMEOUT_MS = 10 * 60_000
 
 export const PUSH_USAGE = `Usage: gcb push [<remote> [<branch>]] [options]
 
@@ -32,7 +34,7 @@ container. The default remote is origin, and the default branch is the current o
   --force              Overwrite the remote branch
   --force-with-lease   Overwrite only if the remote branch has not moved
   --as-user            Use the host broker's own gh account
-  --as-user <login>    Use ~/.config/gh-<login> on the host
+  --as-user=<login>    Use ~/.config/gh-<login> on the host
   --proxy <url>        Use this proxy for the host git call
   --no-proxy           Reach GitHub directly for the host git call
   -h, --help           Show this help
@@ -106,8 +108,31 @@ function currentBranch(): string {
  * @returns The process exit code.
  */
 export async function runPush(argv: readonly string[]): Promise<number> {
-  const args = parseArgs(argv, { booleans: ['help', 'h', 'no-proxy', 'force', 'force-with-lease'] })
-  if (args.has('help') || args.has('h')) {
+  let account: string | undefined
+  let bareAsUser = false
+  const normalized: string[] = []
+  for (const argument of argv) {
+    if (argument === '--as-user') {
+      bareAsUser = true
+    } else if (argument.startsWith('--as-user=')) {
+      if (account !== undefined) {
+        fail('--as-user=<login> may only be given once')
+      }
+      account = argument.slice('--as-user='.length)
+    } else {
+      normalized.push(argument)
+    }
+  }
+  if (bareAsUser && account !== undefined) {
+    fail('--as-user cannot be both bare and given a login')
+  }
+  if (bareAsUser || account !== undefined) {
+    normalized.push('--as-user')
+  }
+  const args = parseArgs(normalized, {
+    booleans: ['help', 'as-user', 'no-proxy', 'force', 'force-with-lease'],
+  })
+  if (args.has('help')) {
     say(PUSH_USAGE)
     return 0
   }
@@ -116,14 +141,6 @@ export async function runPush(argv: readonly string[]): Promise<number> {
       fail('unknown option --' + name + ' for gcb push')
     }
   }
-  const accounts = args.values('as-user')
-  if (accounts.length > 1) {
-    fail('--as-user may only be given once')
-  }
-  if (args.has('as-user') && accounts.length > 0) {
-    fail('--as-user cannot be both bare and given a login')
-  }
-  const account = accounts[0]
   if (account !== undefined && !LOGIN.test(account)) {
     fail(`--as-user must be a GitHub login or no value, got ${JSON.stringify(account)}`)
   }
@@ -131,7 +148,7 @@ export async function runPush(argv: readonly string[]): Promise<number> {
     fail('--force and --force-with-lease are mutually exclusive')
   }
   const proxyValues = args.values('proxy')
-  if (args.has('proxy') && proxyValues.length === 0) {
+  if (args.has('proxy') && (proxyValues.length === 0 || args.value('proxy') === '')) {
     fail('--proxy needs a value')
   }
   if (args.has('no-proxy') && (args.has('proxy') || proxyValues.length > 0)) {
@@ -210,5 +227,6 @@ export async function runPush(argv: readonly string[]): Promise<number> {
     },
     answer =>
       `pushed ${branch} to ${repo}${answer.url === undefined ? '' : `: ${answer.url}`}${account === undefined ? '' : ` as ${account}`}`,
+    PUSH_TIMEOUT_MS + 30_000,
   )
 }

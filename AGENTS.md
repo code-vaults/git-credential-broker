@@ -201,7 +201,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   usually one a later push replaced: read the newest run for the commit, not the first.
 - **A fork push is a host operation, not a container credential.** `gcb push` asks the host broker
   to run `git push` with its own gh account; the container sends only `owner/repo` and a branch, and
-  the host rebuilds the HTTPS URL, rechecks the allowlist and disables force. There is no
+  the host rebuilds the HTTPS/SSH URL, rechecks the allowlist and requires force to be explicit. There is no
   person-token credential for git in the container, and no transparent interception of `git push`.
 
 - **Open a pull request; the agent opens it, and can close or update it.**
