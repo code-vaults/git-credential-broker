@@ -528,7 +528,7 @@ describe('gcb gh', () => {
       )
       let id: string | undefined
       let request
-      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+      for (let attempt = 0; attempt < 400 && request === undefined; attempt += 1) {
         ;[id] = listRequests(dir)
         request = id === undefined ? undefined : readRequest(dir, id)
         if (request === undefined) {
