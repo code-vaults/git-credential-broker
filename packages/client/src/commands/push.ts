@@ -114,14 +114,29 @@ function runPrePush(
   } catch {
     // Use the rebuilt URL when the remote has no readable push URL.
   }
+  let root = process.cwd()
+  try {
+    root = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+  } catch {
+    // Keep the caller's directory when there is no work tree.
+  }
   const result = spawnSync(path, [remote, url], {
-    cwd: process.cwd(),
+    cwd: root,
     encoding: 'utf8',
     input: `refs/heads/${branch} ${commit} refs/heads/${branch} ${tip}\n`,
   })
   if (result.status !== 0) {
     const reason = (result.stderr || result.stdout || 'pre-push hook refused').trim()
     fail(reason.slice(0, 300))
+  }
+  if (result.stdout) {
+    process.stdout.write(result.stdout)
+  }
+  if (result.stderr) {
+    process.stderr.write(result.stderr)
   }
 }
 

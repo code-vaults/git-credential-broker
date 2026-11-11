@@ -156,9 +156,7 @@ host's SSH config (key, port and proxy); `sshAccounts` maps a login to its host 
 falling back to the default key. `gcb push` runs the container's own `pre-push` hook before
 writing the request; the host never runs container-owned hooks. The hook's remote OID is the local
 remote-tracking ref (zeros when the branch was never fetched), not the value the remote advertises
-during a real push. The URL is rebuilt from the allowlisted repository rather than read from the
-container-writable remote, so a changed `.git/config` cannot redirect the host push. Because git's credential helper has no push delegation,
-this is an explicit `gcb push` instead of a transparent `git push`.
+during a real push.
 
 `gcb repo fork [owner/name]` creates a fork under a person's account. An app cannot own a fork, so
 `--as-user` is required: bare uses the broker's authorized user, a login uses the host broker. Without

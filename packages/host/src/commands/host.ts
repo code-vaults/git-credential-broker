@@ -909,8 +909,9 @@ async function openOne(
     }
     const { url, credentials, cleanEnv } = resolved.target
     const host = request.host ?? 'github.com'
-    const scratch = mkdtempSync(join(tmpdir(), 'gcb-push-'))
+    let scratch: string | undefined
     try {
+      scratch = mkdtempSync(join(tmpdir(), 'gcb-push-'))
       let objectFormat = 'sha1'
       try {
         const { stdout } = await run('git', ['rev-parse', '--show-object-format'], {
@@ -965,7 +966,9 @@ async function openOne(
       const reason = (failure.stderr ?? failure.message ?? '').trim().slice(0, 300)
       return { error: reason || 'git push failed' }
     } finally {
-      rmSync(scratch, { recursive: true, force: true })
+      if (scratch !== undefined) {
+        rmSync(scratch, { recursive: true, force: true })
+      }
     }
   }
 
