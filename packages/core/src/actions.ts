@@ -37,7 +37,7 @@ export interface PositionalSpec {
 /** A long flag an action accepts. */
 export interface FlagSpec {
   readonly name: string
-  readonly type: 'boolean' | 'number' | 'string'
+  readonly type: 'boolean' | 'number' | 'string' | 'tristate'
   /** The flag may be repeated, and the value is a list. */
   readonly repeatable?: boolean
   /** The flag must be present. */
@@ -388,7 +388,7 @@ const DISCUSSION_LIST: GhAction = {
   positionals: [],
   flags: [
     { name: 'after', type: 'string' },
-    { name: 'answered', type: 'boolean' },
+    { name: 'answered', type: 'tristate' },
     { name: 'author', type: 'string' },
     { name: 'category', type: 'string' },
     { name: 'jq', type: 'string' },
@@ -1140,6 +1140,17 @@ export function buildGhArgv(
         present.add(flag.name)
         provided.add(flag.name)
       }
+      continue
+    }
+
+    if (flag.type === 'tristate') {
+      if (typeof value !== 'boolean' && value !== 'true' && value !== 'false') {
+        throw new ActionError(`--${flag.name} is a boolean`)
+      }
+      const on = value === true || value === 'true'
+      argv.push(on ? `--${flag.name}` : `--${flag.name}=false`)
+      present.add(flag.name)
+      provided.add(flag.name)
       continue
     }
 

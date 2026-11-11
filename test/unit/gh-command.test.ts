@@ -92,6 +92,16 @@ describe('gcb gh', () => {
     assert.equal(unknown.status, 1)
     assert.match(unknown.stderr, /unknown gh action "discussion:--bogus"/u)
 
+    const answered = await runClient([
+      'discussion',
+      'list',
+      '--answered=false',
+      '--repo',
+      'acme/widget',
+    ])
+    assert.equal(answered.status, 1)
+    assert.doesNotMatch(answered.stderr, /boolean|unknown option/u)
+
     const missing = await runClient(['discussion', 'view', '--repo', 'acme/widget'])
     assert.equal(missing.status, 1)
     assert.match(missing.stderr, /needs number/u)

@@ -91,7 +91,9 @@ interface ActionScan {
 /** The flags that consume the following token, shared by the scan and identity extraction. */
 function actionValueFlags(action: GhAction): ReadonlySet<string> {
   return new Set([
-    ...action.flags.filter(flag => flag.type !== 'boolean').map(flag => flag.name),
+    ...action.flags
+      .filter(flag => flag.type === 'string' || flag.type === 'number')
+      .map(flag => flag.name),
     ...(action.flags.some(flag => flag.name === 'body') ? ['body-file'] : []),
     'repo',
     'R',
@@ -315,8 +317,14 @@ export async function runGh(
     fail(`--as-user must be a GitHub login, got ${JSON.stringify(account)}`)
   }
 
+  const tristates = new Set(
+    action.flags.filter(flag => flag.type === 'tristate').map(flag => flag.name),
+  )
+  const parsedRest = rest.map(argument =>
+    /^--[^=]+$/.test(argument) && tristates.has(argument.slice(2)) ? `${argument}=true` : argument,
+  )
   const booleans = action.flags.filter(flag => flag.type === 'boolean').map(flag => flag.name)
-  const args = parseArgs(rest, { booleans: [...booleans, 'no-proxy'] })
+  const args = parseArgs(parsedRest, { booleans: [...booleans, 'no-proxy'] })
   if (args.has('no-proxy') && args.value('proxy') !== undefined) {
     fail('--proxy and --no-proxy are mutually exclusive')
   }
@@ -395,6 +403,16 @@ export async function runGh(
     if (flag.type === 'boolean') {
       if (args.has(flag.name)) {
         values[flag.name] = true
+      }
+      continue
+    }
+    if (flag.type === 'tristate') {
+      const value = args.value(flag.name)
+      if (value !== undefined) {
+        if (value !== 'true' && value !== 'false') {
+          fail(`--${flag.name} is a boolean`)
+        }
+        values[flag.name] = value === 'true'
       }
       continue
     }

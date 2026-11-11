@@ -288,6 +288,23 @@ describe('gh action catalog', () => {
     )
   })
 
+  it('serializes the unanswered filter explicitly', () => {
+    assert.deepEqual(buildGhArgv('discussion:list', { answered: false }, 'acme/widget'), [
+      'discussion',
+      'list',
+      '--answered=false',
+      '--repo',
+      'acme/widget',
+    ])
+    assert.deepEqual(buildGhArgv('discussion:list', { answered: true }, 'acme/widget'), [
+      'discussion',
+      'list',
+      '--answered',
+      '--repo',
+      'acme/widget',
+    ])
+  })
+
   it('does not let a discussion argument choose the repository', () => {
     for (const name of ['discussion:view', 'discussion:comment', 'discussion:edit']) {
       assert.equal(getGhAction(name).positionals[0]?.type, 'number', name)
