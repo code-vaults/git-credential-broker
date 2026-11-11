@@ -40,6 +40,7 @@ import {
 } from '../../packages/host/src/commands/init.ts'
 import {
   SIDECAR,
+  USER_TOKEN_FILE,
   loadConfig,
   resolveConfigPath,
   deploymentDir,
@@ -1731,7 +1732,15 @@ describe('compose', () => {
   it('rejects the removed --package option', () => {
     const result = spawnSync(
       'node',
-      ['--conditions=development', 'packages/host/bin/gcb.js', 'compose', '--socket-dir', '/tmp', '--package', 'gcb-host@0.7.0'],
+      [
+        '--conditions=development',
+        'packages/host/bin/gcb.js',
+        'compose',
+        '--socket-dir',
+        '/tmp',
+        '--package',
+        'gcb-host@0.7.0',
+      ],
       { cwd: path.resolve('.'), encoding: 'utf8' },
     )
     assert.equal(result.status, 1)
@@ -1744,6 +1753,24 @@ describe('compose', () => {
     assert.match(rendered, /app\.pem:\/etc\/git-cred-broker\/app\.pem:ro/)
     assert.doesNotMatch(rendered, /user\.refresh:\/etc\/git-cred-broker\/config\/user\.refresh/)
     assert.equal(/^\s+ports:/m.test(rendered), false, 'the socket is the only interface')
+  })
+
+  it('mounts the token lock directory beside the token', () => {
+    const target = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-compose-lock-'))
+    try {
+      fs.writeFileSync(path.join(target, USER_TOKEN_FILE), 'refresh\n', 'utf8')
+      const output = renderCompose({
+        dir: target,
+        socketDir: '/srv/shared/git-broker',
+        user: '1026:100',
+        image: 'ghcr.io/code-vaults/gcb-host:0.0.0',
+        name: 'git-cred-broker',
+      })
+      assert.match(output, /user\.refresh\.lock:\/etc\/git-cred-broker\/user\.refresh\.lock:rw/)
+      assert.equal(fs.statSync(path.join(target, `${USER_TOKEN_FILE}.lock`)).isDirectory(), true)
+    } finally {
+      fs.rmSync(target, { recursive: true, force: true })
+    }
   })
 
   it('uses --dir for the default config lookup', () => {

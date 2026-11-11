@@ -3,8 +3,8 @@
  *
  * The broker runs in its own container with the private key mounted read-only, no published ports,
  * no capabilities and a read-only root filesystem; the only surface it shares with anything else is
- * the socket directory. The released image contains the package, so there is no checkout to copy and
- * nothing to build on the host.
+ * the socket directory. The released image contains the package, so there is no checkout to copy
+ * and nothing to build on the host.
  *
  * The mount targets are constants from `deployment.ts`, shared with `init --mode sidecar`, so the
  * paths recorded in `broker.config.yml` and the paths this file mounts cannot drift apart.
@@ -114,9 +114,16 @@ export function renderCompose(input: ComposeInput): string {
 
   // A bind mount for a path that does not exist becomes a directory, and the broker would then read a
   // directory instead of a token — for every action, not only the personal ones. Emit it once `authorize`
-  // has written the file, and say what to run until then.
-  const userRefreshMount = fs.existsSync(`${input.dir}/${USER_TOKEN_FILE}`)
-    ? `\n      # The authorized person's refresh token: the only secret mounted writable, because GitHub\n      # rotates it on every exchange.\n      - ${yamlVolume(`${input.dir}/${USER_TOKEN_FILE}`, SIDECAR.userTokenPath, 'rw')}`
+  // has written the file, and say what to run until then. The lock directory is mounted beside it so
+  // the container can serialize a renewal against a host-side `gcb authorize`.
+  const token = `${input.dir}/${USER_TOKEN_FILE}`
+  const lock = `${token}.lock`
+  const hasToken = fs.existsSync(token)
+  if (hasToken) {
+    fs.mkdirSync(lock, { recursive: true, mode: 0o700 })
+  }
+  const userRefreshMount = hasToken
+    ? `\n      # The authorized person's refresh token: the only secret mounted writable, because GitHub\n      # rotates it on every exchange.\n      - ${yamlVolume(token, SIDECAR.userTokenPath, 'rw')}\n      # The lock directory for that token; both sides must see the same one.\n      - ${yamlVolume(lock, `${SIDECAR.userTokenPath}.lock`, 'rw')}`
     : '\n      # No user.refresh yet: run `gcb authorize` and render this again. A mount' +
       '\n      # for a path that does not exist would become a directory, and the broker would read that.'
   const start = fromCode
