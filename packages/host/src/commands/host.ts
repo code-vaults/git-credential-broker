@@ -18,6 +18,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -314,6 +315,9 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   /** Rewrite the host-private status file; the channel marker is not trusted for this. */
   function writeStatus(): void {
     if (once) {
+      return
+    }
+    if (ensureStateDirectory() === undefined) {
       return
     }
     let collision: boolean
@@ -861,9 +865,45 @@ async function resolvePushTarget(
   }
 }
 
+/** Validate the host state directory, creating it when it is safe to do so. */
+function ensureStateDirectory(): string | undefined {
+  const home = homedir()
+  const parent = join(home, '.gcb-host')
+  try {
+    let stat: ReturnType<typeof lstatSync> | undefined
+    try {
+      stat = lstatSync(parent)
+    } catch {
+      stat = undefined
+    }
+    if (stat === undefined) {
+      mkdirSync(parent, { recursive: true, mode: 0o700 })
+      stat = lstatSync(parent)
+    }
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      warn(`not serving the host state directory: ${parent} is not a real directory`)
+      return undefined
+    }
+    chmodSync(parent, 0o700)
+    const homeReal = realpathSync(home)
+    if (realpathSync(parent) !== join(homeReal, '.gcb-host')) {
+      warn(`not serving the host state directory: ${parent} escapes ${homeReal}`)
+      return undefined
+    }
+    return parent
+  } catch (error) {
+    warn(`not serving the host state directory: ${(error as Error).message}`)
+    return undefined
+  }
+}
+
 /** Create the shared channel, or report why it cannot be served. */
 function ensureGlobalChannel(): string | undefined {
-  const channel = globalChannelDir()
+  const parent = ensureStateDirectory()
+  if (parent === undefined) {
+    return undefined
+  }
+  const channel = join(parent, 'channel')
   try {
     let stat: ReturnType<typeof lstatSync> | undefined
     try {
@@ -872,14 +912,17 @@ function ensureGlobalChannel(): string | undefined {
       stat = undefined
     }
     if (stat === undefined) {
-      mkdirSync(channel, { recursive: true, mode: 0o700 })
+      mkdirSync(channel, { mode: 0o700 })
       stat = lstatSync(channel)
     }
     if (!stat.isDirectory() || stat.isSymbolicLink()) {
       warn(`not serving the global channel: ${channel} is not a real directory`)
       return undefined
     }
-    // On an ACL-based share the create mode is advisory; the chmod is the actual boundary.
+    if (realpathSync(channel) !== join(realpathSync(parent), 'channel')) {
+      warn(`not serving the global channel: ${channel} is not the channel`)
+      return undefined
+    }
     chmodSync(channel, 0o700)
     return channel
   } catch (error) {

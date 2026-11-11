@@ -18,6 +18,7 @@ import {
   realpathSync,
   statSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs'
@@ -743,6 +744,32 @@ describe('the host broker global channel creation', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it(
+    'does not serve a symlinked state directory',
+    { skip: process.platform === 'win32' },
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), 'host-broker-global-link-'))
+      const config = forkConfig(root, 'acme/widget')
+      const target = join(root, 'target')
+      mkdirSync(target)
+      symlinkSync(target, join(root, '.gcb-host'))
+      const previousHome = process.env['HOME']
+      process.env['HOME'] = root
+      try {
+        const code = await runHostBroker(['--config', config, '--once'])
+        assert.equal(code, 0)
+        assert.equal(existsSync(join(target, 'channel')), false)
+      } finally {
+        if (previousHome === undefined) {
+          delete process.env['HOME']
+        } else {
+          process.env['HOME'] = previousHome
+        }
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+  )
 
   it('does not crash when the channel is not a directory', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-global-file-'))
