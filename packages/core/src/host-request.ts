@@ -177,7 +177,6 @@ export interface HostPushTipRequest {
   readonly repo: string
   readonly host?: string
   readonly remote?: string
-  readonly sshPort?: number
   readonly branch: string
   readonly proxy?: string | null
   readonly account?: string
@@ -651,12 +650,6 @@ export function requestProblems(request: HostRequest): string[] {
     }
     if (request.remote !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) {
       problems.push('the remote name is not usable')
-    }
-    if (
-      request.sshPort !== undefined &&
-      (!Number.isInteger(request.sshPort) || request.sshPort < 1 || request.sshPort > 65_535)
-    ) {
-      problems.push('the SSH port is not usable')
     }
     if (!BRANCH.test(request.branch) || request.branch.includes('..') || request.branch.includes(':')) {
       problems.push('the branch name is not usable')
