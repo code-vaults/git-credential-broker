@@ -79,6 +79,8 @@ export interface GhAction {
   readonly permissions: Readonly<Partial<Record<GhPermission, PermissionLevel>>>
   /** The default per-action timeout, in seconds. */
   readonly timeoutSeconds: number
+  /** The search flag is a GitHub search query, so repo/org/user qualifiers could escape --repo. */
+  readonly searchScoped?: boolean
   /** The object kind this action may target, when the CLI command also accepts the other kind. */
   readonly target?: 'issue' | 'pr'
   /** Whether the app broker may run this with `identity: 'user'`. */
@@ -406,6 +408,7 @@ const DISCUSSION_LIST: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
+  searchScoped: true,
 }
 
 // GitHub GraphQL: discussion and comments queries (gh discussion view)
@@ -612,6 +615,7 @@ const ISSUE_LIST: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
+  searchScoped: true,
 }
 
 // GitHub GraphQL:
@@ -1231,7 +1235,9 @@ export function buildGhArgv(
       ? Array.isArray(values['query'])
         ? values['query']
         : [values['query']]
-      : [values['search']]
+      : action.searchScoped === true
+        ? [values['search']]
+        : []
   if (
     searchTerms.some(
       term => typeof term === 'string' && /(?:^|[\s(])-?(?:repo|org|user):/iu.test(term),
