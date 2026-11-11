@@ -13,6 +13,8 @@ fi
 # decides what your credentials do at boot. /usr/local/bin is a fine place; the file below it is the
 # one that matters.
 # The CLI is assumed to be installed globally: npm i -g gcb-host
+# Create the shared no-checkout channel once (portable on DSM):
+#   mkdir -p "$HOME/.gcb-host/channel" && chmod 700 "$HOME/.gcb-host/channel"
 #
 # DSM: Control Panel → Task Scheduler → Create → Triggered Task → Boot-up
 #   User:     the user whose GitHub credentials should author the pull requests — *not* root, which
@@ -57,23 +59,23 @@ fi
 # One at a time. Two openers would race each other over the same requests and could each try to
 # create the same pull request.
 if [ -f "$PIDFILE" ]; then
-  old=$(cat "$PIDFILE" 2>/dev/null)
+  old=$(cat "$PIDFILE" 2> /dev/null)
   # /proc/<pid>/cmdline, not kill -0: a recycled pid owned by anyone makes kill -0 succeed, so the
   # opener silently never starts, and it fails with EPERM for another user's process, so the guard
   # does not fire and a second opener starts — the race the comment above is about.
-  if [ -n "$old" ] && [ -r "/proc/$old/cmdline" ] &&
-    tr '\0' '\n' <"/proc/$old/cmdline" | grep -qx host; then
-    echo "$(date) already running as pid $old" >>"$LOG"
+  if [ -n "$old" ] && [ -r "/proc/$old/cmdline" ] \
+    && tr '\0' '\n' < "/proc/$old/cmdline" | grep -qx host; then
+    echo "$(date) already running as pid $old" >> "$LOG"
     exit 0
   fi
-  echo "$(date) removing the stale pidfile (pid ${old:-unknown})" >>"$LOG"
+  echo "$(date) removing the stale pidfile (pid ${old:-unknown})" >> "$LOG"
   rm -f "$PIDFILE"
 fi
-echo $$ >"$PIDFILE"
+echo $$ > "$PIDFILE"
 
 # exec, so the pid in the file is the opener's own, and stopping it stops the opener.
 set -- host --root "$ROOT" --command "$GH"
 if [ -n "$CONFIG" ]; then
   set -- "$@" --config "$CONFIG"
 fi
-exec "$BIN" "$@" >>"$LOG" 2>&1
+exec "$BIN" "$@" >> "$LOG" 2>&1

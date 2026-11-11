@@ -59,6 +59,7 @@
     "oxfmt": "^0.75.0",
     "oxlint": "^1.90.0",
     "prettier": "^3.9.10",
+    "prettier-plugin-sh": "^0.20.2",
     "simple-git-hooks": "^2.12.1",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.72.1",
