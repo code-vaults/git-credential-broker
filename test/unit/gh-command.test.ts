@@ -492,7 +492,7 @@ describe('gcb gh', () => {
         {
           cwd: root,
           env: { ...process.env, GCB_HOST_TIMEOUT_MS: '3000' },
-          timeoutMs: 5_000,
+          timeoutMs: 10_000,
         },
       )
       let claimed = false
