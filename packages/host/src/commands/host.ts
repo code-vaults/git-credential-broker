@@ -528,6 +528,9 @@ async function sweep(
     }
 
     const problems = requestProblems(request)
+    if (dir === globalChannelDir() && request.repo === undefined) {
+      problems.push('the global channel needs an explicit repo')
+    }
     if (problems.length > 0) {
       writeResult(dir, id, { error: problems.join('; ') })
       removeRequest(dir, id)
