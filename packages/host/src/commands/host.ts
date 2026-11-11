@@ -749,11 +749,20 @@ async function resolvePushTarget(
   try {
     allowedPush = context.allowed(host, request.repo)
     if (!allowedPush && context.blockFor(host)?.allowForkPush === true) {
+      let apiEnv: NodeJS.ProcessEnv
+      try {
+        apiEnv = forkEnv(request.proxy, request.account, host)
+      } catch (error) {
+        if (request.account === undefined) {
+          return { error: (error as Error).message }
+        }
+        apiEnv = forkEnv(request.proxy, undefined, host)
+      }
       const { stdout } = await run(context.command, [...context.extra, 'api', `repos/${request.repo}`], {
         cwd: context.repo,
         timeout: CREATE_TIMEOUT_MS,
         maxBuffer: 1 << 20,
-        env: forkEnv(request.proxy, undefined, host),
+        env: apiEnv,
       })
       const body = JSON.parse(stdout) as {
         fork?: unknown
