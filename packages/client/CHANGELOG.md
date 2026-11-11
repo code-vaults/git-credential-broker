@@ -1,5 +1,25 @@
 # gcb-client
 
+## 0.9.0
+
+### Minor Changes
+
+- [#142](https://github.com/code-vaults/git-credential-broker/pull/142) [`d26ea16`](https://github.com/code-vaults/git-credential-broker/commit/d26ea16a5c0df22e4865ee3947009a3be1266297) Thanks [@i1stG](https://github.com/i1stG)! - Allow host-broker requests made outside a checkout to use the shared
+  `~/.gcb-host/channel`; they still require an explicit `--repo` and the same allowlist and account
+  checks. The channel is a pre-created, host-owned 0700 directory; the broker validates it and does
+  not create or chmod it.
+
+- [#136](https://github.com/code-vaults/git-credential-broker/pull/136) [`bcc1373`](https://github.com/code-vaults/git-credential-broker/commit/bcc1373cedabeca2d267bd07ab85db15e98895a2) Thanks [@JounQin](https://github.com/JounQin)! - Add `gcb push` (explicit host-executed push; a deliberate exception to native Git): the host broker pushes an exact commit with its own gh account, or its SSH
+  agent/key when the selected remote uses SSH. A destination fork is allowed when `allowForkPush` verifies its parent/source against the allowlist;
+  the command takes a git-style remote and branch, and the request carries the repository, remote,
+  branch, exact commit, optional force/lease expectation, account and proxy; `--force` and `--force-with-lease` are explicit. Other push arguments are not passed through; no token or container-controlled remote URL enters the host push.
+  The container runs its own `pre-push` hook; the host never runs container-owned hooks.
+
+### Patch Changes
+
+- Updated dependencies [[`d26ea16`](https://github.com/code-vaults/git-credential-broker/commit/d26ea16a5c0df22e4865ee3947009a3be1266297), [`bcc1373`](https://github.com/code-vaults/git-credential-broker/commit/bcc1373cedabeca2d267bd07ab85db15e98895a2)]:
+  - gcb-core@0.9.0
+
 ## 0.8.1
 
 ### Patch Changes
