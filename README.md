@@ -132,9 +132,10 @@ GitHub CLI 2.94.0 or newer and remain a preview command in gh.
 
 `gcb pr <subcommand>`, `gcb run <subcommand>`, `gcb issue <subcommand>` and
 `gcb discussion <subcommand>` are shorthands for the same actions when the catalog has one —
-`gcb pr view 12`, `gcb pr close 12`, `gcb run list`, `gcb issue create --repo owner/name --title "A title" --body "A body"`,
-`gcb discussion create --category "Q&A" --title "A question" --body "Details"`. Catalogued actions dispatch
-through `GCB_PRIMARY` (default `gh`; an unsupported name fails closed). The flag-only `gcb pr` form
+`gcb pr view 12`, `gcb pr close 12`, `gcb run list`,
+`gcb issue create --repo owner/name --title "A title" --body "A body"`,
+`gcb discussion create --category "Q&A" --title "A question" --body "Details"`. Catalogued
+actions dispatch through `GCB_PRIMARY` (default `gh`; an unsupported name fails closed). The flag-only `gcb pr` form
 described below is still what runs the lifecycle `gh` cannot express (opening as a person, review
 threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr close`.
 
@@ -538,8 +539,8 @@ reviewers are entitled to skip those. The simplest way to have one authored by y
 `userTokens` is keyed by owner because that is GitHub's own granularity: a fine-grained token
 belongs to one user or organization and cannot span two, so two owners need two tokens. Create each
 with **Pull requests: Read and write**, **Contents: Read**, **Discussions: Read and write** where
-needed, and **Metadata: Read**, and give it access
-to **only the repositories the allowlist already names**. With Contents: Read, GitHub itself refuses
+needed, and **Metadata: Read**, and give it access to **only the repositories the allowlist already
+names**. With Contents: Read, GitHub itself refuses
 to let that token push or merge, so "it may only open pull requests" is enforced by GitHub rather
 than promised here. `userTokens` is consulted for opening, replying, editing, commenting or
 catalogued reads when `--as-user` is passed, and for an issue creation or resolve when no
