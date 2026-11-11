@@ -15,24 +15,24 @@ COPY package.json yarn.lock .yarnrc.yml tsconfig.json tsconfig.build.base.json t
 COPY packages ./packages
 COPY scripts ./scripts
 RUN corepack yarn install --immutable \
- && corepack yarn build \
- && mkdir -p /packs \
- && npm pack ./packages/core ./packages/client ./packages/host --pack-destination /packs
+  && corepack yarn build \
+  && mkdir -p /packs \
+  && npm pack ./packages/core ./packages/client ./packages/host --pack-destination /packs
 
 FROM node:24-slim AS client
 COPY --from=build /packs /packs
 RUN npm install -g --omit=dev /packs/gcb-core-*.tgz /packs/gcb-client-*.tgz \
- && rm -rf /packs /root/.npm /tmp/* \
- && find /usr/local/lib/node_modules/gcb-*/lib -type f -name '*.map' -delete \
- && npm cache clean --force
+  && rm -rf /packs /root/.npm /tmp/* \
+  && find /usr/local/lib/node_modules/gcb-*/lib -type f -name '*.map' -delete \
+  && npm cache clean --force
 ENTRYPOINT ["gcb"]
 
 # The broker runs gh itself, against the App's token; this must not rely on a host gh install.
 FROM node:24-slim AS host-base
 ARG APT_MIRROR=mirrors.aliyun.com
 RUN --mount=type=cache,id=apt_cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,id=apt_lists,target=/var/lib/apt/lists,sharing=locked \
-    rm -f /etc/apt/apt.conf.d/docker-clean \
+  --mount=type=cache,id=apt_lists,target=/var/lib/apt/lists,sharing=locked \
+  rm -f /etc/apt/apt.conf.d/docker-clean \
  && echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache \
  && for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; do \
       if [ -f "$f" ]; then sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" "$f"; fi; \
@@ -51,7 +51,7 @@ RUN --mount=type=cache,id=apt_cache,target=/var/cache/apt,sharing=locked \
 FROM host-base AS host
 COPY --from=build /packs /packs
 RUN npm install -g --omit=dev /packs/gcb-core-*.tgz /packs/gcb-host-*.tgz \
- && rm -rf /packs /root/.npm /tmp/* \
- && find /usr/local/lib/node_modules/gcb-*/lib -type f -name '*.map' -delete \
- && npm cache clean --force
+  && rm -rf /packs /root/.npm /tmp/* \
+  && find /usr/local/lib/node_modules/gcb-*/lib -type f -name '*.map' -delete \
+  && npm cache clean --force
 CMD ["gcb", "daemon"]
