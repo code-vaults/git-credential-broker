@@ -50,7 +50,7 @@ hosts:
       - code-vaults/*
     # Optional SSH aliases for gcb push --as-user <login>.
     sshAccounts:
-      i1stg: github-i1stg
+      example-user: github-example-user
     # Opt in only after reviewing the app-route metadata-token path.
     allowPublicRead: false
     # Public forks of an allowlisted repo; the App must be installed on the fork.
