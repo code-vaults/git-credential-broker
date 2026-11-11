@@ -198,6 +198,13 @@ describe('the host request channel', () => {
     assert.deepEqual(listRequests(dir), [], 'and a refused request is not waiting')
   })
 
+  it('validates a host push-tip request', () => {
+    const tip = { kind: 'push-tip' as const, repo: 'acme/widget', branch: 'feat/thing' }
+    assert.deepEqual(requestProblems(tip), [])
+    assert.match(requestProblems({ ...tip, branch: '../escape' }).join(' '), /branch/)
+    assert.match(requestProblems({ ...tip, account: 'not a login' }).join(' '), /account/)
+  })
+
   it('validates a host push request', () => {
     const push = {
       kind: 'push' as const,

@@ -346,7 +346,7 @@ function sshAccountsField(
     return undefined
   }
   for (const [login, alias] of Object.entries(map)) {
-    if (!HOST.test(alias)) {
+    if (alias.includes(':') || !HOST.test(alias)) {
       errors.push(`${at}.sshAccounts[${JSON.stringify(login)}] is not a usable SSH host`)
     }
   }

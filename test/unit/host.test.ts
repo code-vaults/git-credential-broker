@@ -1507,7 +1507,7 @@ describe('the host action route', () => {
         repo: 'acme/widget',
         values: { number: 7 },
       })
-      const old = new Date(Date.now() - 10 * 60_000)
+      const old = new Date(Date.now() - 20 * 60_000)
       utimesSync(join(dir, `${id}.json`), old, old)
       assert.equal(
         await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']),

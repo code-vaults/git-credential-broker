@@ -9,7 +9,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { accessSync, constants as fsConstants, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { BRANCH, LOGIN, fail, parseArgs, say } from 'gcb-core'
+import { BRANCH, LOGIN, PUSH_TIMEOUT_MS, fail, parseArgs, say } from 'gcb-core'
 
 import { readHostTip, submitToHostBroker } from './host-submit.ts'
 import { remoteRepo } from './remotes.ts'
@@ -22,9 +22,6 @@ const KNOWN_FLAGS = new Set([
   'proxy',
   'no-proxy',
 ])
-
-/** A push can legitimately take longer than a create; match it on both sides. */
-const PUSH_TIMEOUT_MS = 10 * 60_000
 
 export const PUSH_USAGE = `Usage: gcb push [<remote> [<branch>]] [options]
 
@@ -227,6 +224,6 @@ export async function runPush(argv: readonly string[]): Promise<number> {
     },
     answer =>
       `pushed ${branch} to ${repo}${answer.url === undefined ? '' : `: ${answer.url}`}${account === undefined ? '' : ` as ${account}`}`,
-    PUSH_TIMEOUT_MS + 30_000,
+    PUSH_TIMEOUT_MS + 180_000,
   )
 }

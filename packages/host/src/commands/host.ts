@@ -39,6 +39,7 @@ import {
   HOST,
   REPOSITORY,
   ANSWER_TIMEOUT_MS,
+  PUSH_TIMEOUT_MS,
   type HostRequest,
   type HostResult,
   type HostPushRequest,
@@ -63,9 +64,6 @@ const run = promisify(execFile)
 
 /** How long one create, review, reply, edit or fork program may take. */
 const CREATE_TIMEOUT_MS = 120_000
-
-/** A push can legitimately take longer than a create; match it on both sides. */
-const PUSH_TIMEOUT_MS = 10 * 60_000
 
 /** Host-private daemon status, independent of any config path. */
 export function hostStatusPath(): string {
@@ -929,11 +927,35 @@ async function openOne(
     const { url, credentials, cleanEnv } = resolved.target
     const scratch = mkdtempSync(join(tmpdir(), 'gcb-push-'))
     try {
-      await run('git', ['init', '--bare', '--quiet', scratch], {
+      let objectFormat = 'sha1'
+      try {
+        const { stdout } = await run('git', ['rev-parse', '--show-object-format'], {
+          cwd: repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env: withoutGitLocation(process.env),
+        })
+        if (stdout.trim() === 'sha256') {
+          objectFormat = 'sha256'
+        }
+      } catch {
+        // Older Git: the default SHA-1 format is the only one it supports.
+      }
+      await run(
+        'git',
+        [
+          'init',
+          '--bare',
+          '--quiet',
+          ...(objectFormat === 'sha256' ? ['--object-format=sha256'] : []),
+          scratch,
+        ],
+        {
         timeout: CREATE_TIMEOUT_MS,
         maxBuffer: 1 << 20,
         env: cleanEnv,
-      })
+      },
+      )
       const { stdout: objects } = await run('git', ['rev-parse', '--git-path', 'objects'], {
         cwd: repo,
         timeout: CREATE_TIMEOUT_MS,

@@ -41,10 +41,13 @@ export const CHANNEL_PATH = 'gcb/host-broker'
 /** The file naming the running host broker. */
 export const HOST_BROKER_FILE = 'host-broker.json'
 
+/** Maximum host-side push duration. */
+export const PUSH_TIMEOUT_MS = 10 * 60_000
+
 /** How long a caller waits for an answer. */
 // Longer than the host broker's own program timeout (CREATE_TIMEOUT_MS, 120s) plus the interval at which it
 // notices a request, because the caller is waiting for an answer to work that has not started yet.
-export const ANSWER_TIMEOUT_MS = 180_000
+export const ANSWER_TIMEOUT_MS = PUSH_TIMEOUT_MS + 180_000
 
 /** The same bounds the broker applies, so a request is refused here rather than there. */
 export const MAX_TITLE_CHARS = 256
