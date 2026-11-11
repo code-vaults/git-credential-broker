@@ -872,25 +872,39 @@ function dropOwnMarker(channel: string): void {
   }
 }
 
+/** The last channel problem, so an idle broker does not repeat it every sweep. */
+let lastGlobalChannelWarning: string | undefined
+
+function warnGlobalChannel(message: string): void {
+  if (message === lastGlobalChannelWarning) {
+    return
+  }
+  lastGlobalChannelWarning = message
+  warn(message)
+}
+
 /** The pre-created shared channel, when it is a real directory. */
 function existingGlobalChannel(): string | undefined {
   const channel = globalChannelDir()
   try {
     const stat = lstatSync(channel)
     if (!stat.isDirectory() || stat.isSymbolicLink()) {
-      warn(`not serving the global channel: ${channel} is not a real directory`)
+      warnGlobalChannel(`not serving the global channel: ${channel} is not a real directory`)
       dropOwnMarker(channel)
       return undefined
     }
     if ((stat.mode & 0o077) !== 0) {
-      warn(`not serving the global channel: ${channel} is accessible to other users (chmod 700 it)`)
+      warnGlobalChannel(
+        `not serving the global channel: ${channel} is accessible to other users (chmod 700 it)`,
+      )
       dropOwnMarker(channel)
       return undefined
     }
+    lastGlobalChannelWarning = undefined
     return channel
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      warn(`not serving the global channel: ${(error as Error).message}`)
+      warnGlobalChannel(`not serving the global channel: ${(error as Error).message}`)
     }
     return undefined
   }
