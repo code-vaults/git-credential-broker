@@ -927,7 +927,7 @@ async function openOne(
     const { url, credentials, cleanEnv } = resolved.target
     const scratch = mkdtempSync(join(tmpdir(), 'gcb-push-'))
     try {
-      let objectFormat: string | undefined
+      let objectFormat: string
       try {
         const { stdout } = await run('git', ['rev-parse', '--show-object-format'], {
           cwd: repo,
@@ -936,8 +936,11 @@ async function openOne(
           env: withoutGitLocation(process.env),
         })
         objectFormat = stdout.trim()
-      } catch {
-        // Older Git: leave the scratch repository at its default.
+        if (objectFormat === '') {
+          throw new Error('git returned no object format')
+        }
+      } catch (error) {
+        return { error: `could not read the object format: ${(error as Error).message}` }
       }
       await run(
         'git',
@@ -945,13 +948,12 @@ async function openOne(
           'init',
           '--bare',
           '--quiet',
-          ...(objectFormat === undefined ? [] : [`--object-format=${objectFormat}`]),
           scratch,
         ],
         {
         timeout: CREATE_TIMEOUT_MS,
         maxBuffer: 1 << 20,
-        env: cleanEnv,
+        env: { ...cleanEnv, GIT_DEFAULT_HASH: objectFormat },
       },
       )
       const { stdout: objects } = await run('git', ['rev-parse', '--git-path', 'objects'], {

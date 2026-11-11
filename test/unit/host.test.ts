@@ -691,7 +691,11 @@ describe('the host broker push route', () => {
     const bin = join(root, 'bin')
     mkdirSync(bin)
     const git = join(bin, 'git')
-    writeFileSync(git, `#!/bin/sh\nprintf '%s\\n' "$@" > ${argvFile}\n`, 'utf8')
+    writeFileSync(
+      git,
+      `#!/bin/sh\nif [ "$1" = "rev-parse" ] && [ "$2" = "--show-object-format" ]; then echo sha1; exit 0; fi\nprintf '%s\\n' "$@" > ${argvFile}\n`,
+      'utf8',
+    )
     chmodSync(git, 0o755)
     const command = join(root, 'not-gh')
     writeFileSync(
@@ -745,7 +749,11 @@ describe('the host broker push route', () => {
     const bin = join(root, 'bin')
     mkdirSync(bin)
     const git = join(bin, 'git')
-    writeFileSync(git, `#!/bin/sh\nprintf '%s\\n' "$@" > ${argvFile}\n`, 'utf8')
+    writeFileSync(
+      git,
+      `#!/bin/sh\nif [ "$1" = "rev-parse" ] && [ "$2" = "--show-object-format" ]; then echo sha1; exit 0; fi\nprintf '%s\\n' "$@" > ${argvFile}\n`,
+      'utf8',
+    )
     chmodSync(git, 0o755)
     const command = join(root, 'not-gh')
     writeFileSync(command, '#!/bin/sh\nexit 0\n', 'utf8')

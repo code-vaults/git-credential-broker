@@ -9,7 +9,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { accessSync, constants as fsConstants, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { BRANCH, LOGIN, PUSH_TIMEOUT_MS, fail, parseArgs, say } from 'gcb-core'
+import { ANSWER_TIMEOUT_MS, BRANCH, LOGIN, fail, parseArgs, say } from 'gcb-core'
 
 import { readHostTip, submitToHostBroker } from './host-submit.ts'
 import { remoteRepo } from './remotes.ts'
@@ -61,8 +61,14 @@ function prePushPath(): string | undefined {
 }
 
 /** Update the local remote-tracking ref only when the fetch remote maps this branch and repo. */
-function updateTrackingRef(remote: string, branch: string, commit: string, pushedRepo: string): void {
-  const fetched = remoteRepo(remote, process.cwd())
+export function updateTrackingRef(
+  remote: string,
+  branch: string,
+  commit: string,
+  pushedRepo: string,
+  cwd: string = process.cwd(),
+): void {
+  const fetched = remoteRepo(remote, cwd)
   if (fetched === undefined || `${fetched.owner}/${fetched.repo}` !== pushedRepo) {
     return
   }
@@ -89,7 +95,7 @@ function updateTrackingRef(remote: string, branch: string, commit: string, pushe
     const tracking = destination.replace('*', branch)
     if (!tracking.includes('*')) {
       try {
-        execFileSync('git', ['update-ref', tracking, commit], { stdio: 'ignore' })
+        execFileSync('git', ['update-ref', tracking, commit], { cwd, stdio: 'ignore' })
       } catch {
         // A read-only or missing tracking ref is not a reason to fail a completed push.
       }
@@ -141,13 +147,21 @@ function currentBranch(): string {
  * @param argv - Arguments after `push`.
  * @returns The process exit code.
  */
-export async function runPush(argv: readonly string[]): Promise<number> {
+/** The normalized argv plus the --as-user spelling it contained. */
+export interface AsUserScan {
+  readonly argv: readonly string[]
+  readonly account?: string
+  readonly bare: boolean
+}
+
+/** Scan --as-user before parseArgs can consume the following positional as its value. */
+export function scanAsUser(argv: readonly string[]): AsUserScan {
   let account: string | undefined
-  let bareAsUser = false
+  let bare = false
   const normalized: string[] = []
   for (const argument of argv) {
     if (argument === '--as-user') {
-      bareAsUser = true
+      bare = true
     } else if (argument.startsWith('--as-user=')) {
       if (account !== undefined) {
         fail('--as-user=<login> may only be given once')
@@ -157,12 +171,19 @@ export async function runPush(argv: readonly string[]): Promise<number> {
       normalized.push(argument)
     }
   }
-  if (bareAsUser && account !== undefined) {
+  if (bare && account !== undefined) {
     fail('--as-user cannot be both bare and given a login')
   }
-  if (bareAsUser || account !== undefined) {
+  if (bare || account !== undefined) {
     normalized.push('--as-user')
   }
+  return { argv: normalized, account, bare }
+}
+
+export async function runPush(argv: readonly string[]): Promise<number> {
+  const scan = scanAsUser(argv)
+  const { account, bare: bareAsUser } = scan
+  const normalized = scan.argv
   const args = parseArgs(normalized, {
     booleans: ['help', 'as-user', 'no-proxy', 'force', 'force-with-lease'],
   })
@@ -264,7 +285,7 @@ export async function runPush(argv: readonly string[]): Promise<number> {
     },
     answer =>
       `pushed ${branch} to ${repo}${answer.url === undefined ? '' : `: ${answer.url}`}${account === undefined ? '' : ` as ${account}`}`,
-    PUSH_TIMEOUT_MS + 180_000,
+    ANSWER_TIMEOUT_MS,
   )
   if (code === 0) {
     updateTrackingRef(remote, branch, commit, repo)
