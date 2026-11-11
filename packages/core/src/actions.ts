@@ -1240,11 +1240,13 @@ export function buildGhArgv(
         : []
   if (
     searchTerms.some(
-      term => typeof term === 'string' && /(?:^|[\s(])-?(?:repo|org|user):/iu.test(term),
+      term =>
+        typeof term === 'string' &&
+        (/(?:^|[\s(])-?(?:repo|org|user):/iu.test(term) || /[()|]|\b(?:OR|AND)\b/iu.test(term)),
     )
   ) {
     throw new ActionError(
-      'search cannot contain repo:, org: or user:; the broker scopes it to --repo',
+      'search cannot contain repo:, org:, user:, boolean operators or parentheses; the broker scopes it to --repo',
     )
   }
   if (typeof values['title'] === 'string') {

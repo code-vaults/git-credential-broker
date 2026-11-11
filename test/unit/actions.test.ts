@@ -296,6 +296,10 @@ describe('gh action catalog', () => {
         name,
       )
     }
+    assert.throws(
+      () => buildGhArgv('discussion:list', { search: '(is:issue) OR (is:issue)' }, 'acme/widget'),
+      /boolean operators or parentheses/u,
+    )
     assert.deepEqual(buildGhArgv('label:list', { search: 'repo:frontend' }, 'acme/widget'), [
       'label',
       'list',
@@ -432,7 +436,7 @@ describe('buildGhArgv', () => {
     ]) {
       assert.throws(
         () => buildGhArgv('search:issues', { query }, 'acme/widget'),
-        /cannot contain repo:, org: or user:/u,
+        /cannot contain repo:/u,
       )
     }
     for (const query of [
@@ -447,7 +451,7 @@ describe('buildGhArgv', () => {
     ]) {
       assert.throws(
         () => buildGhArgv('search:issues', { query }, 'acme/widget'),
-        /cannot contain repo:, org: or user:/u,
+        /cannot contain repo:/u,
         query,
       )
     }
