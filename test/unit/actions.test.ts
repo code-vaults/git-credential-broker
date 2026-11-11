@@ -296,10 +296,9 @@ describe('gh action catalog', () => {
         name,
       )
     }
-    assert.throws(
-      () => buildGhArgv('discussion:list', { search: '(is:issue) OR (is:issue)' }, 'acme/widget'),
-      /boolean operators or parentheses/u,
-    )
+    for (const search of ['crash and hang', 'error (500)', 'this or that', 'bug|crash']) {
+      assert.doesNotThrow(() => buildGhArgv('discussion:list', { search }, 'acme/widget'), search)
+    }
     assert.deepEqual(buildGhArgv('label:list', { search: 'repo:frontend' }, 'acme/widget'), [
       'label',
       'list',
@@ -457,6 +456,9 @@ describe('buildGhArgv', () => {
     }
     assert.doesNotThrow(() =>
       buildGhArgv('search:issues', { query: 'is:issue label:bug' }, 'acme/widget'),
+    )
+    assert.doesNotThrow(() =>
+      buildGhArgv('search:issues', { query: '(bug OR crash) label:triage' }, 'acme/widget'),
     )
 
     assert.deepEqual(
