@@ -41,10 +41,15 @@ export const CHANNEL_PATH = 'gcb/host-broker'
 /** The file naming the running host broker. */
 export const HOST_BROKER_FILE = 'host-broker.json'
 
-/** How long a caller waits for an answer. */
-// Longer than the host broker's own program timeout (CREATE_TIMEOUT_MS, 120s) plus the interval at which it
-// notices a request, because the caller is waiting for an answer to work that has not started yet.
-export const ANSWER_TIMEOUT_MS = 180_000
+/** Maximum host-side push duration. */
+export const PUSH_TIMEOUT_MS = 10 * 60_000
+
+/** How long a caller waits for an answer, and how long a request may sit before it is refused. */
+// A request can be queued behind a push, which can run for PUSH_TIMEOUT_MS and may also pay for a
+// fork check. The extra 180s covers that setup and the host's notice interval. This is deliberately
+// one window for every kind: the host cannot know which request a push is blocking, and a
+// kind-specific shorter window would expire the requests queued behind it.
+export const ANSWER_TIMEOUT_MS = PUSH_TIMEOUT_MS + 180_000
 
 /** The same bounds the broker applies, so a request is refused here rather than there. */
 export const MAX_TITLE_CHARS = 256
@@ -61,6 +66,9 @@ export const BRANCH = /^([A-Za-z0-9][A-Za-z0-9._-]{0,38}:)?[A-Za-z0-9][A-Za-z0-9
 
 /** `owner/name`, as a fork request names its source. */
 export const REPOSITORY = /^(?!\.+(?:\/|$))[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/
+
+/** A full Git object id: SHA-1 or SHA-256. */
+export const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
 
 /** A host key, optionally with a port; never a URL, slash or newline. */
 export const HOST = /^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::\d{1,5})?$/
@@ -146,6 +154,28 @@ export interface HostActionRequest {
   readonly pid?: number
 }
 
+/** One request to push a branch from the checkout to its repository. */
+export interface HostPushRequest {
+  readonly kind: 'push'
+  readonly repo: string
+  readonly host?: string
+  readonly branch: string
+  /** Git remote whose protocol selects HTTPS or SSH; the URL itself is rebuilt. */
+  readonly remote?: string
+  /** The exact commit to push; the branch may move after the request is written. */
+  readonly commit: string
+  /** Allow overwriting the remote branch. */
+  readonly force?: boolean
+  /** Overwrite only if the remote branch still has this sha. */
+  readonly forceWithLease?: boolean
+  /** Expected remote tip for force-with-lease; zeros mean the branch must not exist. */
+  readonly expected?: string
+  readonly proxy?: string | null
+  readonly account?: string
+  readonly session?: string
+  readonly pid?: number
+}
+
 /** One request to fork a repository. */
 export interface HostForkRequest {
   readonly kind: 'fork'
@@ -164,6 +194,7 @@ export type HostRequest =
   | HostReviewRequest
   | HostEditRequest
   | HostActionRequest
+  | HostPushRequest
   | HostForkRequest
 
 /** What the host broker answered. */
@@ -563,6 +594,46 @@ export function requestProblems(request: HostRequest): string[] {
     }
     return problems
   }
+  if (request.kind === 'push') {
+    if (!REPOSITORY.test(request.repo)) {
+      problems.push('the repository is not owner/name')
+    }
+    if (request.host !== undefined && !HOST.test(request.host)) {
+      problems.push('the host is not a usable host')
+    }
+    if (request.remote !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) {
+      problems.push('the remote name is not usable')
+    }
+    if (request.force !== undefined && typeof request.force !== 'boolean') {
+      problems.push('the force flag is not a boolean')
+    }
+    if (request.forceWithLease !== undefined && typeof request.forceWithLease !== 'boolean') {
+      problems.push('the force-with-lease flag is not a boolean')
+    }
+    if (request.force === true && request.forceWithLease === true) {
+      problems.push('force and force-with-lease are mutually exclusive')
+    }
+    if (
+      request.forceWithLease === true &&
+      (request.expected === undefined || !COMMIT.test(request.expected))
+    ) {
+      problems.push('force-with-lease needs a full expected commit')
+    }
+    if (!COMMIT.test(request.commit)) {
+      problems.push('the commit is not a full Git object id')
+    }
+    if (
+      !BRANCH.test(request.branch) ||
+      request.branch.includes('..') ||
+      request.branch.includes(':')
+    ) {
+      problems.push('the branch name is not usable')
+    }
+    if (request.account !== undefined && !LOGIN.test(request.account)) {
+      problems.push('the account is not a usable GitHub login')
+    }
+    return problems
+  }
   if (request.kind === 'fork') {
     if (!REPOSITORY.test(request.repo)) {
       problems.push('the repository is not owner/name')
@@ -945,10 +1016,28 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
                 REPOSITORY.test(request.repo) &&
                 (request.host === undefined ||
                   (typeof request.host === 'string' && HOST.test(request.host)))
-              : typeof request.title === 'string' &&
-                typeof request.body === 'string' &&
-                typeof request.head === 'string' &&
-                typeof request.base === 'string')
+              : request.kind === 'push'
+                ? typeof request.repo === 'string' &&
+                  REPOSITORY.test(request.repo) &&
+                  typeof request.branch === 'string' &&
+                  typeof request.commit === 'string' &&
+                  (request.remote === undefined ||
+                    /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) &&
+                  (request.force === undefined || typeof request.force === 'boolean') &&
+                  (request.forceWithLease === undefined ||
+                    typeof request.forceWithLease === 'boolean') &&
+                  (request.expected === undefined ||
+                    (typeof request.expected === 'string' && COMMIT.test(request.expected))) &&
+                  COMMIT.test(request.commit) &&
+                  BRANCH.test(request.branch) &&
+                  !request.branch.includes('..') &&
+                  !request.branch.includes(':') &&
+                  (request.host === undefined ||
+                    (typeof request.host === 'string' && HOST.test(request.host)))
+                : typeof request.title === 'string' &&
+                  typeof request.body === 'string' &&
+                  typeof request.head === 'string' &&
+                  typeof request.base === 'string')
   if (!shaped) {
     rmSync(claimed, { force: true, recursive: true })
     rmSync(claimFile(dir, id), { force: true, recursive: true })

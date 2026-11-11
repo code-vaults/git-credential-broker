@@ -142,6 +142,23 @@ thread defaults to the user identity because the pull-request token this broker 
 `contents: write` — a grant the broker gives only to the credential git pushes with, never to a
 pull-request token.
 
+`gcb push` pushes the current branch from the host, not from this container. Plain `git push` is not
+intercepted; use `gcb push` when the host must perform the push. The host broker runs
+`git push` with its own gh account and rebuilds the target URL from the allowlisted repository; no
+token or remote URL from the container is used. It requires a host broker and a checkout on the
+host. The destination must be allowlisted, or be a verified fork whose parent/source is
+allowlisted when `allowForkPush` is on; host push checks the source relationship, not the fork's own
+allowlist entry. It defaults to `origin` and the current branch and takes `gcb push [<remote> [<branch>]]`; `--force`
+is an explicit overwrite and `--force-with-lease` only overwrites if the remote branch still matches the local
+remote-tracking ref (there is no arbitrary push-argument pass-through). `--as-user=<login>`
+selects `~/.config/gh-<login>` on the host; the host reads the selected remote's protocol only to
+choose `https` or `ssh`, and the repository URL is still rebuilt from the allowlist. SSH uses the
+host's SSH config (key, port and proxy); `sshAccounts` maps a login to its host alias instead of
+falling back to the default key. `gcb push` runs the container's own `pre-push` hook before
+writing the request; the host never runs container-owned hooks. The hook's remote OID is the local
+remote-tracking ref (zeros when the branch was never fetched), not the value the remote advertises
+during a real push.
+
 `gcb repo fork [owner/name]` creates a fork under a person's account. An app cannot own a fork, so
 `--as-user` is required: bare uses the broker's authorized user, a login uses the host broker. Without
 a repository it forks the checkout's `origin`. `--host` selects the host; otherwise the origin remote's host is
@@ -678,7 +695,8 @@ Per host, keyed exactly as git reports it (`github.com`, or `host:port` for othe
 | `allow`             | Default-deny list: `owner/repo`, or a whole-segment wildcard `owner/*`. Malformed entries (no slash, three segments, a partial wildcard like `wid*`) are rejected at load time rather than silently matching nothing.                                                                                                                                                                                                                                                                               |
 | `allowInsecureHttp` | Default `false`. Permit a plaintext `http` remote for this host.                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `allowPublicRead`   | Default `false`. Let explicit `readOnly` actions run on a repository verified public without an allowlist entry, on both the app and host routes. The app identity uses a metadata-only token and requires the App to be installed with metadata read. Bare `--as-user` uses the authorized person token; `--as-user <login>` uses the host account token. Both may have private access; an exhausted 403/429 is reported as a rate limit, a plain 403 as a refusal, never as a private repository. |
-| `allowForkPush`     | Default `false`. Mint a credential for a **public** fork whose parent/source is an allowlisted repository. The App must be installed on the fork owner.                                                                                                                                                                                                                                                                                                                                             |
+| `allowForkPush`     | Default `false`. Allow a **public** fork whose parent/source is an allowlisted repository. For `gcb push`, the host verifies the relation and uses the host account/SSH key; the App need not be installed on the fork. For the app credential path, the App must be installed with `contents: write`.                                                                                                                                                                                              |
+| `sshAccounts`       | Optional map from gh login to an SSH host alias for `gcb push`, e.g. `{ "example-user": "github-example-user" }`. SSH aliases keep their own key/port/proxy settings; a login without an entry is refused rather than falling back to the default key.                                                                                                                                                                                                                                              |
 | `allowFork`         | Default `false`. Allow a **catalogued action** (`gcb gh …`, `gcb issue …`) on the public parent/source of an allowlisted **public** fork, after GitHub confirms the relationship. Wildcard entries are not used for inference. It does not cover the lifecycle `gcb pr create` path; that still needs the target repository in `allow`.                                                                                                                                                             |
 
 `github-app`: `clientId` (preferred `iss`), `appId` (fallback), `privateKeyPath` or `privateKeyPem`,

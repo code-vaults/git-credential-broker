@@ -45,7 +45,7 @@ export function noAnswerMessage(dir: string, id: string, noun: string, timeoutMs
   return (
     `the host broker did not answer ${id} within ${elapsed}\n` +
     '  it may still be working: the request is not cancelled, and the host broker removes it only once\n' +
-    `  it has created the ${noun} or failed. Check the ${noun} list before asking again.`
+    `  it has completed the ${noun} or failed. Check the result before asking again.`
   )
 }
 
@@ -58,6 +58,7 @@ const KINDS: Readonly<Record<RequestKind, { noun: string; needed?: string }>> = 
   edit: { noun: 'edit', needed: 'edit' },
   review: { noun: 'review', needed: 'review' },
   action: { noun: 'action', needed: 'action' },
+  push: { noun: 'push', needed: 'push' },
 }
 
 /** Write, wait for and return one host-broker answer. */
@@ -164,8 +165,9 @@ async function waitForAnswer(
 export async function submitToHostBroker(
   request: HostRequest,
   success: (answer: HostResult) => string,
+  claimedTimeoutMs?: number,
 ): Promise<number> {
-  const answer = await exchange(request)
+  const answer = await exchange(request, ANSWER_TIMEOUT_MS, claimedTimeoutMs)
   if (answer.error !== undefined) {
     fail(`the host broker could not do it: ${answer.error}`)
   }

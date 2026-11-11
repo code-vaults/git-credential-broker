@@ -8,11 +8,14 @@ host-user delegation is implemented for creation and review comments; live reloa
 
 ## Locked decisions
 
-- **Native Git stays native.** `commit` needs no broker; `push` uses the git credential helper.
-  The broker does not proxy Git.
+- **Native Git stays native.** `commit` needs no broker; ordinary `push` uses the git credential
+  helper. The broker does not proxy Git. **Exception:** `gcb push` is an explicit host-executed
+  push for fork/upstream cases where a credential cannot be minted; it is not an interception of
+  `git push`.
 - **The container's Git remotes are HTTPS.** SSH remotes are rewritten to HTTPS in the agent
-  container, which is what puts the credential helper on the push path. A host-side Git over SSH is
-  outside this broker entirely.
+  container, which is what puts the credential helper on the push path. **Exception:** `gcb push`
+  may use host-side SSH through a host-controlled `sshAccounts` alias; this is not the container's
+  remote configuration.
 - **Only `gh` for now.** `gcb gh …` is explicit; `gcb <token> …` is a `gh` subcommand shorthand when
   `<token>` is not a built-in command. `glab` is a later provider, not a current option.
 - **Actions execute on the host.** The broker parses one allowed `gh` command, mints a token for that
@@ -334,8 +337,8 @@ Account selection:
   tracks its head branch; a later push updates it, so any snapshot taken before the call would be
   stale. GitHub decides whether the head exists. A failure returns a sanitized
   `pr-create-failed`; the agent or skill may decide to push and retry. `review` and `issue create`
-  do not push, so the SSH `Host` aliases are not used. If a future operation needs Git over SSH, it
-  must use the checkout's own SSH configuration.
+  do not push. `gcb push` is the operation that uses Git over SSH; it uses a host-controlled
+  `sshAccounts` alias, not the checkout's own SSH configuration.
 
   **Why there is no freshness preflight, even though the first view can omit local commits.**
   `gh pr create` creates from the remote head branch. If the remote branch is stale, the initial PR

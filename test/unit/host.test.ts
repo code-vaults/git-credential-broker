@@ -619,15 +619,332 @@ describe('the host broker explicit-repository route', () => {
   })
 })
 
-function forkConfig(root: string, allow: string, host = 'github.com', publicRead = false): string {
+function forkConfig(
+  root: string,
+  allow: string,
+  host = 'github.com',
+  publicRead = false,
+  allowForkPush = false,
+): string {
   const path = join(root, 'broker.config.yml')
   writeFileSync(
     path,
-    `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  ${host}:\n    provider: static\n    username: x\n    password: y\n${publicRead ? '    allowPublicRead: true\n' : ''}    allow:\n      - ${allow}\n`,
+    `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  ${host}:\n    provider: static\n    username: x\n    password: y\n${publicRead ? '    allowPublicRead: true\n' : ''}${allowForkPush ? '    allowForkPush: true\n' : ''}    allow:\n      - ${allow}\n`,
     'utf8',
   )
   return path
 }
+
+describe('the host broker fork-check fallback', () => {
+  it('uses the broker account when the selected account has no gh config', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-fork-fallback-'))
+    const repo = join(root, 'checkout')
+    mkdirSync(join(repo, '.git'), { recursive: true })
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8')
+    const config = join(root, 'broker.config.yml')
+    writeFileSync(
+      config,
+      `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  github.com:\n    provider: static\n    username: x\n    password: y\n    allowForkPush: true\n    sshAccounts:\n      ghost: github-ghost\n    allow:\n      - org/repo\n`,
+      'utf8',
+    )
+    const dir = channelDir(join(repo, '.git'))
+    const argvFile = join(root, 'argv')
+    const bin = join(root, 'bin')
+    mkdirSync(bin)
+    const git = join(bin, 'git')
+    writeFileSync(
+      git,
+      `#!/bin/sh\ncase "$*" in *get-url*) echo "ssh://git@github.com/alice/repo.git"; exit 0;; *show-object-format*) echo sha1; exit 0;; *push*) printf '%s\\n' "$@" > ${argvFile};; esac\nexit 0\n`,
+      'utf8',
+    )
+    chmodSync(git, 0o755)
+    const command = join(root, 'not-gh')
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf \'%s\' \'{"fork":true,"parent":{"full_name":"org/repo"}}\'\n',
+      'utf8',
+    )
+    chmodSync(command, 0o755)
+    const previousPath = process.env['PATH']
+    try {
+      process.env['PATH'] = `${bin}:${previousPath ?? ''}`
+      const id = writeRequest(dir, {
+        kind: 'push',
+        repo: 'alice/repo',
+        host: 'github.com',
+        branch: 'feat/x',
+        remote: 'origin',
+        commit: '0123456789abcdef0123456789abcdef01234567',
+        account: 'ghost',
+      })
+      const code = await runHostBroker([
+        '--repo',
+        repo,
+        '--command',
+        command,
+        '--config',
+        config,
+        '--once',
+      ])
+      assert.equal(code, 0)
+      assert.equal(readResult(dir, id)?.error, undefined)
+      assert.equal(
+        readFileSync(argvFile, 'utf8')
+          .trim()
+          .split('\n')
+          .includes('ssh://git@github-ghost/alice/repo.git'),
+        true,
+      )
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env['PATH']
+      } else {
+        process.env['PATH'] = previousPath
+      }
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('the host broker push route', () => {
+  it('refuses a non-allowlisted repository before invoking git', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-push-denied-'))
+    const repo = join(root, 'checkout')
+    mkdirSync(join(repo, '.git'), { recursive: true })
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8')
+    const config = forkConfig(root, 'acme/widget')
+    const dir = channelDir(join(repo, '.git'))
+    const marker = join(root, 'git-ran')
+    const bin = join(root, 'bin')
+    mkdirSync(bin)
+    const git = join(bin, 'git')
+    writeFileSync(git, '#!/bin/sh\ntouch ' + marker + '\nexit 0\n', 'utf8')
+    chmodSync(git, 0o755)
+    const previousPath = process.env['PATH']
+    try {
+      process.env['PATH'] = `${bin}:${previousPath ?? ''}`
+      const id = writeRequest(dir, {
+        kind: 'push',
+        repo: 'evil/other',
+        branch: 'main',
+        commit: '0123456789abcdef0123456789abcdef01234567',
+      })
+      const code = await runHostBroker([
+        '--repo',
+        repo,
+        '--command',
+        join(root, 'not-gh'),
+        '--config',
+        config,
+        '--once',
+      ])
+      assert.equal(code, 0)
+      assert.match(String(readResult(dir, id)?.error), /allowlist/)
+      assert.equal(existsSync(marker), false, 'git must not run for a refused repository')
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env['PATH']
+      } else {
+        process.env['PATH'] = previousPath
+      }
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('allows a fork when its source repository is allowlisted', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-push-fork-'))
+    const repo = join(root, 'checkout')
+    mkdirSync(join(repo, '.git'), { recursive: true })
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8')
+    const config = forkConfig(root, 'org/repo', 'github.com', false, true)
+    const dir = channelDir(join(repo, '.git'))
+    const argvFile = join(root, 'argv')
+    const bin = join(root, 'bin')
+    mkdirSync(bin)
+    const git = join(bin, 'git')
+    writeFileSync(
+      git,
+      `#!/bin/sh\nif [ "$1" = "rev-parse" ] && [ "$2" = "--show-object-format" ]; then echo sha1; exit 0; fi\nprintf '%s\\n' "$@" > ${argvFile}\n`,
+      'utf8',
+    )
+    chmodSync(git, 0o755)
+    const command = join(root, 'not-gh')
+    writeFileSync(
+      command,
+      '#!/bin/sh\nprintf \'%s\' \'{"fork":true,"parent":{"full_name":"org/repo"}}\'\n',
+      'utf8',
+    )
+    chmodSync(command, 0o755)
+    const previousPath = process.env['PATH']
+    try {
+      process.env['PATH'] = `${bin}:${previousPath ?? ''}`
+      const id = writeRequest(dir, {
+        kind: 'push',
+        repo: 'alice/repo',
+        branch: 'feat/x',
+        commit: '0123456789abcdef0123456789abcdef01234567',
+      })
+      const code = await runHostBroker([
+        '--repo',
+        repo,
+        '--command',
+        command,
+        '--config',
+        config,
+        '--once',
+      ])
+      assert.equal(code, 0)
+      assert.equal(readResult(dir, id)?.error, undefined)
+      const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
+      assert.equal(argv.includes('alice/repo.git'), false)
+      assert.equal(
+        argv.some(argument => argument.endsWith('alice/repo.git')),
+        true,
+      )
+      assert.ok(argv.indexOf('push') < argv.indexOf('--no-verify'))
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env['PATH']
+      } else {
+        process.env['PATH'] = previousPath
+      }
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('uses the host SSH alias for the selected account', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-push-ssh-'))
+    const repo = join(root, 'checkout')
+    mkdirSync(join(repo, '.git'), { recursive: true })
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8')
+    const config = join(root, 'broker.config.yml')
+    writeFileSync(
+      config,
+      `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  github.com:\n    provider: static\n    username: x\n    password: y\n    sshAccounts:\n      i1stg: github-i1stg\n    allow:\n      - acme/widget\n`,
+      'utf8',
+    )
+    const dir = channelDir(join(repo, '.git'))
+    const argvFile = join(root, 'argv')
+    const bin = join(root, 'bin')
+    mkdirSync(bin)
+    const git = join(bin, 'git')
+    writeFileSync(
+      git,
+      `#!/bin/sh\ncase "$*" in *get-url*) echo "ssh://git@github.com/acme/widget.git"; exit 0;; *show-object-format*) echo sha1; exit 0;; *push*) printf '%s\\n' "$@" > ${argvFile};; esac\nexit 0\n`,
+      'utf8',
+    )
+    chmodSync(git, 0o755)
+    const command = join(root, 'not-gh')
+    writeFileSync(command, '#!/bin/sh\nexit 0\n', 'utf8')
+    chmodSync(command, 0o755)
+    const previousPath = process.env['PATH']
+    try {
+      process.env['PATH'] = `${bin}:${previousPath ?? ''}`
+      const id = writeRequest(dir, {
+        kind: 'push',
+        repo: 'acme/widget',
+        host: 'github.com',
+        branch: 'feat/x',
+        remote: 'origin',
+        commit: '0123456789abcdef0123456789abcdef01234567',
+        account: 'i1stg',
+      })
+      const code = await runHostBroker([
+        '--repo',
+        repo,
+        '--command',
+        command,
+        '--config',
+        config,
+        '--once',
+      ])
+      assert.equal(code, 0)
+      assert.equal(readResult(dir, id)?.error, undefined)
+      const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
+      assert.equal(argv.includes('ssh://git@github-i1stg/acme/widget.git'), true)
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env['PATH']
+      } else {
+        process.env['PATH'] = previousPath
+      }
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('pushes a branch through the host git with its gh credential helper', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-push-'))
+    const repo = join(root, 'checkout')
+    mkdirSync(join(repo, '.git'), { recursive: true })
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/feat/x\n', 'utf8')
+    const config = forkConfig(root, 'acme/widget')
+    const dir = channelDir(join(repo, '.git'))
+    const argvFile = join(root, 'argv')
+    const bin = join(root, 'bin')
+    mkdirSync(bin)
+    const git = join(bin, 'git')
+    writeFileSync(
+      git,
+      `#!/bin/sh\nif [ "$1" = "rev-parse" ] && [ "$2" = "--show-object-format" ]; then echo sha1; exit 0; fi\nprintf '%s\\n' "$@" > ${argvFile}\n`,
+      'utf8',
+    )
+    chmodSync(git, 0o755)
+    const command = join(root, 'not-gh')
+    writeFileSync(command, '#!/bin/sh\nexit 0\n', 'utf8')
+    chmodSync(command, 0o755)
+    const previousPath = process.env['PATH']
+    try {
+      process.env['PATH'] = `${bin}:${previousPath ?? ''}`
+      const id = writeRequest(dir, {
+        kind: 'push',
+        repo: 'acme/widget',
+        host: 'github.com',
+        branch: 'feat/x',
+        remote: 'upstream',
+        commit: '0123456789abcdef0123456789abcdef01234567',
+        force: true,
+      })
+      const code = await runHostBroker([
+        '--repo',
+        repo,
+        '--command',
+        command,
+        '--config',
+        config,
+        '--once',
+      ])
+      assert.equal(code, 0)
+      const result = readResult(dir, id)
+      assert.equal(result?.url, 'https://github.com/acme/widget/tree/feat/x')
+      const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
+      assert.deepEqual(argv.slice(-3), [
+        '--no-verify',
+        'https://github.com/acme/widget.git',
+        '0123456789abcdef0123456789abcdef01234567:refs/heads/feat/x',
+      ])
+      assert.equal(
+        argv.some(argument => argument === '--git-dir'),
+        true,
+      )
+      assert.equal(argv.includes('--force'), true)
+      assert.ok(argv.indexOf('push') < argv.indexOf('--no-verify'))
+      assert.equal(
+        argv.some(
+          argument =>
+            argument.startsWith('credential.helper=') && argument.includes('auth git-credential'),
+        ),
+        true,
+      )
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env['PATH']
+      } else {
+        process.env['PATH'] = previousPath
+      }
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('the host broker fork route', () => {
   it('runs gh repo fork with the repository and returns its URL', async () => {
@@ -1336,7 +1653,7 @@ describe('the host action route', () => {
         repo: 'acme/widget',
         values: { number: 7 },
       })
-      const old = new Date(Date.now() - 10 * 60_000)
+      const old = new Date(Date.now() - 20 * 60_000)
       utimesSync(join(dir, `${id}.json`), old, old)
       assert.equal(
         await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']),

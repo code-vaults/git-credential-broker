@@ -12,7 +12,7 @@
  * shell; the program it calls is configuration, and it is called with an argument list built here.
  */
 import { execFile, spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
@@ -39,8 +39,10 @@ import {
   HOST,
   REPOSITORY,
   ANSWER_TIMEOUT_MS,
+  PUSH_TIMEOUT_MS,
   type HostRequest,
   type HostResult,
+  type HostPushRequest,
   buildGhArgv,
   getGhAction,
   type BrokerConfig,
@@ -415,7 +417,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         pid: process.pid,
         command,
         startedAt: new Date().toISOString(),
-        kinds: ['pull-request', 'review', 'reply', 'edit', 'action', 'fork'],
+        kinds: ['pull-request', 'review', 'reply', 'edit', 'action', 'fork', 'push'],
       })
     }
   }
@@ -444,7 +446,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
       : `serving ${single}`,
   )
   say(
-    `creating pull requests, issues, reviews, replies and forks with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
+    `creating pull requests, issues, reviews, replies, forks and pushes with ${command}${extra.length > 0 ? ` ${extra.join(' ')}` : ''}, as the request's account or this user`,
   )
 
   for (;;) {
@@ -545,7 +547,9 @@ async function sweep(
                 ? `edited #${result.number} as ${request.account ?? 'this user'}${result.url === undefined ? '' : `: ${result.url}`}`
                 : request.kind === 'action'
                   ? `ran ${request.action} as ${request.account ?? 'this user'}`
-                  : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
+                  : request.kind === 'push'
+                    ? `pushed ${request.branch} as ${request.account ?? 'this user'}`
+                    : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
       )
     } else {
       warn(
@@ -560,7 +564,9 @@ async function sweep(
                   ? `edit on #${request.number}`
                   : request.kind === 'action'
                     ? request.action
-                    : request.head
+                    : request.kind === 'push'
+                      ? request.branch
+                      : request.head
         }: ${result.error}`,
       )
     }
@@ -701,6 +707,145 @@ async function withBodyFile(
   }
 }
 
+/** Drop inherited Git location variables so a caller's GIT_DIR cannot retarget these commands. */
+function withoutGitLocation(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const copy = { ...env }
+  delete copy['GIT_DIR']
+  delete copy['GIT_WORK_TREE']
+  delete copy['GIT_COMMON_DIR']
+  return copy
+}
+
+/** Quote one value for the shell git uses to run a credential helper. */
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`
+}
+
+/** One resolved destination for a host-side push or tip read. */
+interface PushTarget {
+  readonly url: string
+  readonly credentials: readonly string[]
+  readonly cleanEnv: NodeJS.ProcessEnv
+}
+
+/** Resolve the common authorization, transport and credential setup. */
+async function resolvePushTarget(
+  request: HostPushRequest,
+  context: {
+    readonly repo: string
+    readonly command: string
+    readonly extra: readonly string[]
+    readonly allowed: (host: string, repo: string) => boolean
+    readonly blockFor: (host: string) => ReturnType<typeof hostConfig>
+  },
+): Promise<{ target?: PushTarget; error?: string }> {
+  const host = request.host ?? 'github.com'
+  let allowedPush = false
+  try {
+    allowedPush = context.allowed(host, request.repo)
+    if (!allowedPush && context.blockFor(host)?.allowForkPush === true) {
+      let apiEnv: NodeJS.ProcessEnv
+      try {
+        apiEnv = forkEnv(request.proxy, request.account, host)
+      } catch (error) {
+        if (request.account === undefined) {
+          return { error: (error as Error).message }
+        }
+        apiEnv = forkEnv(request.proxy, undefined, host)
+      }
+      const { stdout } = await run(
+        context.command,
+        [...context.extra, 'api', `repos/${request.repo}`],
+        {
+          cwd: context.repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env: apiEnv,
+        },
+      )
+      const body = JSON.parse(stdout) as {
+        fork?: unknown
+        parent?: { full_name?: unknown } | null
+        source?: { full_name?: unknown } | null
+      }
+      const source =
+        typeof body?.source?.full_name === 'string'
+          ? body.source.full_name
+          : typeof body?.parent?.full_name === 'string'
+            ? body.parent.full_name
+            : undefined
+      allowedPush = body?.fork === true && source !== undefined && context.allowed(host, source)
+    }
+  } catch (error) {
+    return { error: (error as Error).message }
+  }
+  if (!allowedPush) {
+    return { error: `repository ${request.repo} is not in the allowlist for ${host}` }
+  }
+  const remote = request.remote ?? 'origin'
+  let transport: 'https' | 'ssh' = 'https'
+  try {
+    const { stdout } = await run('git', ['remote', 'get-url', '--push', remote], {
+      cwd: context.repo,
+      timeout: CREATE_TIMEOUT_MS,
+      maxBuffer: 1 << 20,
+      env: { ...withoutGitLocation(process.env), LC_ALL: 'C', LANG: 'C' },
+    })
+    if (/^(?:ssh:\/\/|[^@/]+@[^/:]+:|[^/:]+\.[^/:]+:)/.test(stdout.trim())) {
+      transport = 'ssh'
+    }
+  } catch (error) {
+    const failure = error as { stderr?: string; message?: string }
+    const reason = (failure.stderr ?? failure.message ?? '').trim()
+    if (!/No such remote|does not have a push url|not a git repository/i.test(reason)) {
+      return { error: reason.slice(0, 300) || 'could not read the remote push URL' }
+    }
+  }
+  if (transport === 'ssh' && request.proxy !== undefined) {
+    return { error: '--proxy/--no-proxy is not supported for SSH pushes' }
+  }
+  let sshHost = host
+  if (transport === 'ssh' && request.account !== undefined) {
+    let alias: string | undefined
+    try {
+      alias = context.blockFor(host)?.sshAccounts?.[request.account.toLowerCase()]
+    } catch (error) {
+      return { error: (error as Error).message }
+    }
+    if (alias === undefined) {
+      return { error: `no SSH host is configured for account ${request.account} on ${host}` }
+    }
+    sshHost = alias
+  }
+  const url =
+    transport === 'ssh'
+      ? `ssh://git@${sshHost}/${request.repo}.git`
+      : `https://${host}/${request.repo}.git`
+  const helper = `!${[context.command, ...context.extra].map(shellQuote).join(' ')} auth git-credential`
+  const credentials =
+    transport === 'ssh'
+      ? []
+      : [
+          '-c',
+          'credential.helper=',
+          '-c',
+          `credential.helper=${helper}`,
+          '-c',
+          'credential.useHttpPath=true',
+        ]
+  try {
+    const cleanEnv = withoutGitLocation({
+      ...forkEnv(request.proxy, transport === 'ssh' ? undefined : request.account, host),
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+      GIT_TERMINAL_PROMPT: '0',
+    })
+    return { target: { url, credentials, cleanEnv } }
+  } catch (error) {
+    return { error: (error as Error).message }
+  }
+}
+
 /**
  * Create one pull request, issue, review, reply, edit or comment.
  *
@@ -754,6 +899,76 @@ async function openOne(
       const failure = error as { stderr?: string; message?: string }
       const reason = (failure.stderr ?? failure.message ?? 'the command failed').trim()
       return { error: reason.slice(0, 300) || 'the command failed' }
+    }
+  }
+
+  if (request.kind === 'push') {
+    const resolved = await resolvePushTarget(request, { repo, command, extra, allowed, blockFor })
+    if (resolved.error !== undefined || resolved.target === undefined) {
+      return { error: resolved.error ?? 'could not resolve the push target' }
+    }
+    const { url, credentials, cleanEnv } = resolved.target
+    const host = request.host ?? 'github.com'
+    let scratch: string | undefined
+    try {
+      scratch = mkdtempSync(join(tmpdir(), 'gcb-push-'))
+      let objectFormat = 'sha1'
+      try {
+        const { stdout } = await run('git', ['rev-parse', '--show-object-format'], {
+          cwd: repo,
+          timeout: CREATE_TIMEOUT_MS,
+          maxBuffer: 1 << 20,
+          env: withoutGitLocation(process.env),
+        })
+        const detected = stdout.trim()
+        if (detected !== '') {
+          objectFormat = detected
+        }
+      } catch {
+        // Git before 2.29 cannot report or create a SHA-256 repository.
+      }
+      await run('git', ['init', '--bare', '--quiet', scratch], {
+        timeout: CREATE_TIMEOUT_MS,
+        maxBuffer: 1 << 20,
+        env: { ...cleanEnv, GIT_DEFAULT_HASH: objectFormat },
+      })
+      const { stdout: objects } = await run('git', ['rev-parse', '--git-path', 'objects'], {
+        cwd: repo,
+        timeout: CREATE_TIMEOUT_MS,
+        maxBuffer: 1 << 20,
+        env: withoutGitLocation(process.env),
+      })
+      mkdirSync(join(scratch, 'objects', 'info'), { recursive: true })
+      writeFileSync(
+        join(scratch, 'objects', 'info', 'alternates'),
+        `${resolve(repo, objects.trim())}\n`,
+      )
+      const { stdout, stderr } = await run(
+        'git',
+        [
+          '--git-dir',
+          scratch,
+          ...credentials,
+          'push',
+          ...(request.forceWithLease === true
+            ? [`--force-with-lease=refs/heads/${request.branch}:${request.expected}`]
+            : []),
+          ...(request.force === true ? ['--force'] : []),
+          '--no-verify',
+          url,
+          `${request.commit}:refs/heads/${request.branch}`,
+        ],
+        { cwd: scratch, timeout: PUSH_TIMEOUT_MS, maxBuffer: 1 << 20, env: cleanEnv },
+      )
+      return { url: `https://${host}/${request.repo}/tree/${request.branch}`, stdout, stderr }
+    } catch (error) {
+      const failure = error as { stderr?: string; message?: string }
+      const reason = (failure.stderr ?? failure.message ?? '').trim().slice(0, 300)
+      return { error: reason || 'git push failed' }
+    } finally {
+      if (scratch !== undefined) {
+        rmSync(scratch, { recursive: true, force: true })
+      }
     }
   }
 

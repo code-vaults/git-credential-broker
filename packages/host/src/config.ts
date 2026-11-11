@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path, { posix } from 'node:path'
 
 import type { BrokerConfig, GithubAppHostConfig, HostConfig, StaticHostConfig } from 'gcb-core'
+import { HOST } from 'gcb-core'
 import { parseDocument } from 'yaml'
 
 import { parseAllowEntry } from './policy.ts'
@@ -334,6 +335,24 @@ function lowerCasedKeys(
   return out
 }
 
+/** Validate the SSH account alias map; aliases become URL hosts. */
+function sshAccountsField(
+  raw: unknown,
+  errors: string[],
+  at: string,
+): Record<string, string> | undefined {
+  const map = lowerCasedKeys(stringMapField(raw, errors, at, 'sshAccounts'))
+  if (map === undefined) {
+    return undefined
+  }
+  for (const [login, alias] of Object.entries(map)) {
+    if (alias.includes(':') || !HOST.test(alias)) {
+      errors.push(`${at}.sshAccounts[${JSON.stringify(login)}] is not a usable SSH host`)
+    }
+  }
+  return map
+}
+
 /**
  * Read an optional map of strings, for REST permission names.
  *
@@ -463,6 +482,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           allowPublicRead: booleanField(blockRaw, 'allowPublicRead', errors, at),
           allowForkPush: booleanField(blockRaw, 'allowForkPush', errors, at),
           allowFork: booleanField(blockRaw, 'allowFork', errors, at),
+          sshAccounts: sshAccountsField(blockRaw['sshAccounts'], errors, at),
           username: stringField(blockRaw, 'username', errors, at),
           password: stringField(blockRaw, 'password', errors, at),
           passwordPath: stringField(blockRaw, 'passwordPath', errors, at),
@@ -478,6 +498,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           allowPublicRead: booleanField(blockRaw, 'allowPublicRead', errors, at),
           allowForkPush: booleanField(blockRaw, 'allowForkPush', errors, at),
           allowFork: booleanField(blockRaw, 'allowFork', errors, at),
+          sshAccounts: sshAccountsField(blockRaw['sshAccounts'], errors, at),
           clientId: stringField(blockRaw, 'clientId', errors, at),
           appId: stringOrNumberField(blockRaw, 'appId', errors, at),
           privateKeyPath: stringField(blockRaw, 'privateKeyPath', errors, at),
