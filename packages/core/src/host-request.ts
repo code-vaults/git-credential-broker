@@ -157,8 +157,6 @@ export interface HostPushRequest {
   readonly branch: string
   /** Git remote whose protocol selects HTTPS or SSH; the URL itself is rebuilt. */
   readonly remote?: string
-  /** Explicit SSH port, when the remote names one. */
-  readonly sshPort?: number
   /** The exact commit to push; the branch may move after the request is written. */
   readonly commit: string
   /** Allow overwriting the remote branch. */
@@ -618,12 +616,6 @@ export function requestProblems(request: HostRequest): string[] {
     if (request.remote !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) {
       problems.push('the remote name is not usable')
     }
-    if (
-      request.sshPort !== undefined &&
-      (!Number.isInteger(request.sshPort) || request.sshPort < 1 || request.sshPort > 65_535)
-    ) {
-      problems.push('the SSH port is not usable')
-    }
     if (request.force !== undefined && typeof request.force !== 'boolean') {
       problems.push('the force flag is not a boolean')
     }
@@ -1062,10 +1054,6 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
                   typeof request.branch === 'string' &&
                   (request.remote === undefined ||
                     /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) &&
-                  (request.sshPort === undefined ||
-                    (Number.isInteger(request.sshPort) &&
-                      request.sshPort > 0 &&
-                      request.sshPort <= 65_535)) &&
                   BRANCH.test(request.branch) &&
                   !request.branch.includes('..') &&
                   !request.branch.includes(':') &&
@@ -1078,10 +1066,6 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
                   typeof request.commit === 'string' &&
                   (request.remote === undefined ||
                     /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) &&
-                  (request.sshPort === undefined ||
-                    (Number.isInteger(request.sshPort) &&
-                      request.sshPort > 0 &&
-                      request.sshPort <= 65_535)) &&
                   (request.force === undefined || typeof request.force === 'boolean') &&
                   (request.forceWithLease === undefined ||
                     typeof request.forceWithLease === 'boolean') &&

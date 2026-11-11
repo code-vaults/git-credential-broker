@@ -806,7 +806,7 @@ async function resolvePushTarget(
   }
   const url =
     transport === 'ssh'
-      ? `ssh://git@${sshHost}${request.sshPort === undefined ? '' : `:${request.sshPort}`}/${request.repo}.git`
+      ? `ssh://git@${sshHost}/${request.repo}.git`
       : `https://${host}/${request.repo}.git`
   const helper = `!${[context.command, ...context.extra].map(shellQuote).join(' ')} auth git-credential`
   const credentials =

@@ -180,8 +180,7 @@ export async function runPush(argv: readonly string[]): Promise<number> {
         host,
         branch,
         remote,
-        ...(found.port === undefined ? {} : { sshPort: found.port }),
-        session: 'push-tip',
+          session: 'push-tip',
         pid: process.pid,
         ...(account === undefined ? {} : { account }),
         ...(proxy === undefined ? {} : { proxy }),
@@ -199,7 +198,6 @@ export async function runPush(argv: readonly string[]): Promise<number> {
       host,
       branch,
       remote,
-      ...(found.port === undefined ? {} : { sshPort: found.port }),
       commit,
       ...(args.has('force') ? { force: true } : {}),
       ...(args.has('force-with-lease')
