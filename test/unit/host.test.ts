@@ -749,12 +749,23 @@ describe('the host broker global channel validation', () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-global-mode-'))
     const config = forkConfig(root, 'acme/widget')
     const dir = globalChannelDir()
+    const marker = join(root, 'ran')
+    const command = join(root, 'not-gh')
+    writeFileSync(
+      command,
+      '#!/bin/sh\ntouch ' + marker + '\necho "https://github.com/me/widget"\n',
+      'utf8',
+    )
+    chmodSync(command, 0o755)
     try {
       mkdirSync(dir, { recursive: true })
       chmodSync(dir, 0o777)
-      const code = await runHostBroker(['--config', config, '--once'])
+      const id = writeRequest(dir, { kind: 'fork', repo: 'acme/widget' })
+      const code = await runHostBroker(['--command', command, '--config', config, '--once'])
       assert.equal(code, 0)
       assert.equal(statSync(dir).mode & 0o777, 0o777)
+      assert.equal(readResult(dir, id), undefined)
+      assert.equal(existsSync(marker), false)
     } finally {
       rmSync(root, { recursive: true, force: true })
       rmSync(dir, { recursive: true, force: true })

@@ -865,6 +865,13 @@ async function resolvePushTarget(
   }
 }
 
+/** Remove this broker's marker from a channel it can no longer serve. */
+function dropOwnMarker(channel: string): void {
+  if (readHostBroker(channel)?.pid === process.pid) {
+    clearHostBroker(channel)
+  }
+}
+
 /** The pre-created shared channel, when it is a real directory. */
 function existingGlobalChannel(): string | undefined {
   const channel = globalChannelDir()
@@ -872,10 +879,12 @@ function existingGlobalChannel(): string | undefined {
     const stat = lstatSync(channel)
     if (!stat.isDirectory() || stat.isSymbolicLink()) {
       warn(`not serving the global channel: ${channel} is not a real directory`)
+      dropOwnMarker(channel)
       return undefined
     }
     if ((stat.mode & 0o077) !== 0) {
       warn(`not serving the global channel: ${channel} is accessible to other users (chmod 700 it)`)
+      dropOwnMarker(channel)
       return undefined
     }
     return channel
