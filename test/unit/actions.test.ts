@@ -296,7 +296,17 @@ describe('gh action catalog', () => {
         name,
       )
     }
-    for (const search of ['crash and hang', 'error (500)', 'this or that', 'bug|crash']) {
+    assert.throws(
+      () => buildGhArgv('discussion:list', { search: 'is:issue) OR (is:issue' }, 'acme/widget'),
+      /unbalanced parentheses/u,
+    )
+    for (const search of [
+      'crash and hang',
+      'error (500)',
+      'this or that',
+      'bug|crash',
+      '(bug OR crash)',
+    ]) {
       assert.doesNotThrow(() => buildGhArgv('discussion:list', { search }, 'acme/widget'), search)
     }
     assert.deepEqual(buildGhArgv('label:list', { search: 'repo:frontend' }, 'acme/widget'), [

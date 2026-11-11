@@ -1238,13 +1238,29 @@ export function buildGhArgv(
       : action.searchScoped === true
         ? [values['search']]
         : []
+  const unbalancedParentheses = (term: string): boolean => {
+    let depth = 0
+    for (const character of term) {
+      if (character === '(') {
+        depth += 1
+      } else if (character === ')') {
+        depth -= 1
+        if (depth < 0) {
+          return true
+        }
+      }
+    }
+    return depth !== 0
+  }
   if (
     searchTerms.some(
-      term => typeof term === 'string' && /(?:^|[\s(])-?(?:repo|org|user):/iu.test(term),
+      term =>
+        typeof term === 'string' &&
+        (/(?:^|[\s(])-?(?:repo|org|user):/iu.test(term) || unbalancedParentheses(term)),
     )
   ) {
     throw new ActionError(
-      'search cannot contain repo:, org: or user:; the broker scopes it to --repo',
+      'search cannot contain repo:, org: or user: or unbalanced parentheses; the broker scopes it to --repo',
     )
   }
   if (typeof values['title'] === 'string') {
