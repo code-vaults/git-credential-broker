@@ -13,19 +13,13 @@
  */
 import { execFile, spawn } from 'node:child_process'
 import {
-  closeSync,
   existsSync,
-  fchmodSync,
-  fstatSync,
   lstatSync,
   mkdirSync,
-  openSync,
   mkdtempSync,
-  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
-  constants as fsConstants,
 } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -321,9 +315,6 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     if (once) {
       return
     }
-    if (ensureStateDirectory() === undefined) {
-      return
-    }
     let collision: boolean
     try {
       collision = canonicalPath(resolvedConfig) === canonicalPath(statusFile)
@@ -384,7 +375,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const targets = (): { repo: string; dir: string }[] => {
     if (single === undefined) {
       const checkouts = scanned.flatMap(root => discoverCheckouts(root, depth))
-      const channel = ensureGlobalChannel()
+      const channel = existingGlobalChannel()
       return channel === undefined ? checkouts : [...checkouts, { repo: channel, dir: channel }]
     }
     const gitDir = findGitDir(single)
@@ -869,103 +860,20 @@ async function resolvePushTarget(
   }
 }
 
-/** Open a real directory without following a symlink, or return undefined. */
-function openDirectory(path: string): number | undefined {
+/** The pre-created shared channel, when it is a real directory. */
+function existingGlobalChannel(): string | undefined {
+  const channel = globalChannelDir()
   try {
-    const fd = openSync(
-      path,
-      fsConstants.O_RDONLY | (fsConstants.O_DIRECTORY ?? 0) | (fsConstants.O_NOFOLLOW ?? 0),
-    )
-    if (!fstatSync(fd).isDirectory()) {
-      closeSync(fd)
-      return undefined
-    }
-    return fd
-  } catch {
-    return undefined
-  }
-}
-
-/** Validate the host state directory, creating it when it is safe to do so. */
-function ensureStateDirectory(): string | undefined {
-  const home = homedir()
-  const parent = join(home, '.gcb-host')
-  try {
-    let stat: ReturnType<typeof lstatSync> | undefined
-    try {
-      stat = lstatSync(parent)
-    } catch {
-      stat = undefined
-    }
-    if (stat === undefined) {
-      mkdirSync(parent, { recursive: true, mode: 0o700 })
-      stat = lstatSync(parent)
-    }
-    if (!stat.isDirectory() || stat.isSymbolicLink()) {
-      warn(`not serving the host state directory: ${parent} is not a real directory`)
-      return undefined
-    }
-    const fd = openDirectory(parent)
-    if (fd === undefined) {
-      warn(`not serving the host state directory: ${parent} is not a real directory`)
-      return undefined
-    }
-    try {
-      const homeReal = realpathSync(home)
-      if (realpathSync(parent) !== join(homeReal, '.gcb-host')) {
-        warn(`not serving the host state directory: ${parent} escapes ${homeReal}`)
-        return undefined
-      }
-      fchmodSync(fd, 0o700)
-      return parent
-    } finally {
-      closeSync(fd)
-    }
-  } catch (error) {
-    warn(`not serving the host state directory: ${(error as Error).message}`)
-    return undefined
-  }
-}
-
-/** Create the shared channel, or report why it cannot be served. */
-function ensureGlobalChannel(): string | undefined {
-  const parent = ensureStateDirectory()
-  if (parent === undefined) {
-    return undefined
-  }
-  const channel = join(parent, 'channel')
-  try {
-    let stat: ReturnType<typeof lstatSync> | undefined
-    try {
-      stat = lstatSync(channel)
-    } catch {
-      stat = undefined
-    }
-    if (stat === undefined) {
-      mkdirSync(channel, { mode: 0o700 })
-      stat = lstatSync(channel)
-    }
+    const stat = lstatSync(channel)
     if (!stat.isDirectory() || stat.isSymbolicLink()) {
       warn(`not serving the global channel: ${channel} is not a real directory`)
       return undefined
     }
-    const fd = openDirectory(channel)
-    if (fd === undefined) {
-      warn(`not serving the global channel: ${channel} is not a real directory`)
-      return undefined
-    }
-    try {
-      if (realpathSync(channel) !== join(realpathSync(parent), 'channel')) {
-        warn(`not serving the global channel: ${channel} is not the channel`)
-        return undefined
-      }
-      fchmodSync(fd, 0o700)
-      return channel
-    } finally {
-      closeSync(fd)
-    }
+    return channel
   } catch (error) {
-    warn(`not serving the global channel: ${(error as Error).message}`)
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      warn(`not serving the global channel: ${(error as Error).message}`)
+    }
     return undefined
   }
 }

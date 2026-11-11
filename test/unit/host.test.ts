@@ -16,9 +16,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
-  statSync,
   rmSync,
-  symlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs'
@@ -730,7 +728,7 @@ describe('the host broker global channel', () => {
 })
 
 describe('the host broker global channel creation', () => {
-  it('creates the shared channel with mode 0700', async () => {
+  it('does not create a missing channel', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-global-create-'))
     const config = forkConfig(root, 'acme/widget')
     const dir = globalChannelDir()
@@ -738,38 +736,12 @@ describe('the host broker global channel creation', () => {
       rmSync(dir, { recursive: true, force: true })
       const code = await runHostBroker(['--config', config, '--once'])
       assert.equal(code, 0)
-      assert.equal(statSync(dir).mode & 0o777, 0o700)
+      assert.equal(existsSync(dir), false)
     } finally {
       rmSync(root, { recursive: true, force: true })
       rmSync(dir, { recursive: true, force: true })
     }
   })
-
-  it(
-    'does not serve a symlinked state directory',
-    { skip: process.platform === 'win32' },
-    async () => {
-      const root = mkdtempSync(join(tmpdir(), 'host-broker-global-link-'))
-      const config = forkConfig(root, 'acme/widget')
-      const target = join(root, 'target')
-      mkdirSync(target)
-      symlinkSync(target, join(root, '.gcb-host'))
-      const previousHome = process.env['HOME']
-      process.env['HOME'] = root
-      try {
-        const code = await runHostBroker(['--config', config, '--once'])
-        assert.equal(code, 0)
-        assert.equal(existsSync(join(target, 'channel')), false)
-      } finally {
-        if (previousHome === undefined) {
-          delete process.env['HOME']
-        } else {
-          process.env['HOME'] = previousHome
-        }
-        rmSync(root, { recursive: true, force: true })
-      }
-    },
-  )
 
   it('does not crash when the channel is not a directory', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-global-file-'))

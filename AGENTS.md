@@ -225,8 +225,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   Opening a pull request is a person action: use `gcb pr create --as-user` (broker's authorized
   person) by default, or `pr create --as-user <login>` for a specific host account; the latter writes
   a request under `<git dir>/gcb/host-broker` (shared with the host, untracked) for `gcb host`.
-  Without a checkout, the same request goes under the shared `~/.gcb-host/channel`; both sides
-  must see the same path. A process that can write that channel can act as the selected account
+  Without a checkout, the same request goes under the shared, pre-created
+  `~/.gcb-host/channel` (mode 0700); both sides must see the same path. A process that can write that channel can act as the selected account
   within the allowlist, so its permissions are part of the boundary.
   A plain `gcb pr create` (app identity) is the exception, only when the operator explicitly asks for
   an App-authored PR; automated reviewers may skip those. The flag-only `gcb pr --as-user` form also
