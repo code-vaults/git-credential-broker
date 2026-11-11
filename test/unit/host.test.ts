@@ -635,60 +635,6 @@ function forkConfig(
   return path
 }
 
-describe('the host broker push-tip route', () => {
-  it('reads the tip with the host credentials', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'host-broker-tip-'))
-    const repo = join(root, 'checkout')
-    mkdirSync(join(repo, '.git'), { recursive: true })
-    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8')
-    const config = forkConfig(root, 'acme/widget')
-    const dir = channelDir(join(repo, '.git'))
-    const bin = join(root, 'bin')
-    mkdirSync(bin)
-    const git = join(bin, 'git')
-    writeFileSync(
-      git,
-      '#!/bin/sh\ncase "$*" in *ls-remote*) echo "0123456789abcdef0123456789abcdef01234567\trefs/heads/feat/x"; exit 0;; esac\nexit 0\n',
-      'utf8',
-    )
-    chmodSync(git, 0o755)
-    const command = join(root, 'not-gh')
-    writeFileSync(command, '#!/bin/sh\nexit 0\n', 'utf8')
-    chmodSync(command, 0o755)
-    const previousPath = process.env['PATH']
-    try {
-      process.env['PATH'] = `${bin}:${previousPath ?? ''}`
-      const id = writeRequest(dir, {
-        kind: 'push-tip',
-        repo: 'acme/widget',
-        host: 'github.com',
-        branch: 'feat/x',
-      })
-      const code = await runHostBroker([
-        '--repo',
-        repo,
-        '--command',
-        command,
-        '--config',
-        config,
-        '--once',
-      ])
-      assert.equal(code, 0)
-      assert.equal(
-        readResult(dir, id)?.remoteTip,
-        '0123456789abcdef0123456789abcdef01234567',
-      )
-    } finally {
-      if (previousPath === undefined) {
-        delete process.env['PATH']
-      } else {
-        process.env['PATH'] = previousPath
-      }
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
-})
-
 describe('the host broker push route', () => {
   it('refuses a non-allowlisted repository before invoking git', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-push-denied-'))
@@ -882,8 +828,7 @@ describe('the host broker push route', () => {
         branch: 'feat/x',
         remote: 'upstream',
         commit: '0123456789abcdef0123456789abcdef01234567',
-        forceWithLease: true,
-        expected: '0123456789abcdef0123456789abcdef01234567',
+        force: true,
       })
       const code = await runHostBroker([
         '--repo',
@@ -900,12 +845,7 @@ describe('the host broker push route', () => {
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
       assert.deepEqual(argv.slice(-3), ['--no-verify', 'https://github.com/acme/widget.git', '0123456789abcdef0123456789abcdef01234567:refs/heads/feat/x'])
       assert.equal(argv.some(argument => argument === '--git-dir'), true)
-      assert.equal(
-        argv.includes(
-          '--force-with-lease=refs/heads/feat/x:0123456789abcdef0123456789abcdef01234567',
-        ),
-        true,
-      )
+      assert.equal(argv.includes('--force'), true)
       assert.ok(argv.indexOf('push') < argv.indexOf('--no-verify'))
       assert.equal(
         argv.some(argument => argument.startsWith('credential.helper=') && argument.includes('auth git-credential')),

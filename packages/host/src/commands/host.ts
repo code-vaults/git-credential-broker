@@ -43,7 +43,6 @@ import {
   type HostRequest,
   type HostResult,
   type HostPushRequest,
-  type HostPushTipRequest,
   buildGhArgv,
   getGhAction,
   type BrokerConfig,
@@ -418,7 +417,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         pid: process.pid,
         command,
         startedAt: new Date().toISOString(),
-        kinds: ['pull-request', 'review', 'reply', 'edit', 'action', 'fork', 'push', 'push-tip'],
+        kinds: ['pull-request', 'review', 'reply', 'edit', 'action', 'fork', 'push'],
       })
     }
   }
@@ -550,8 +549,6 @@ async function sweep(
                   ? `ran ${request.action} as ${request.account ?? 'this user'}`
                   : request.kind === 'push'
                     ? `pushed ${request.branch} as ${request.account ?? 'this user'}`
-                    : request.kind === 'push-tip'
-                      ? `read the tip of ${request.branch} as ${request.account ?? 'this user'}`
                   : `opened #${result.number} as ${request.account ?? 'this user'}: ${result.url}`,
       )
     } else {
@@ -567,8 +564,6 @@ async function sweep(
                   ? `edit on #${request.number}`
                   : request.kind === 'action'
                     ? request.action
-                    : request.kind === 'push-tip'
-                      ? `tip ${request.branch}`
                       : request.kind === 'push'
                         ? request.branch
                         : request.head
@@ -735,7 +730,7 @@ interface PushTarget {
 
 /** Resolve the common authorization, transport and credential setup. */
 async function resolvePushTarget(
-  request: HostPushRequest | HostPushTipRequest,
+  request: HostPushRequest,
   context: {
     readonly repo: string
     readonly command: string
@@ -896,43 +891,13 @@ async function openOne(
     }
   }
 
-  if (request.kind === 'push-tip') {
-    const resolved = await resolvePushTarget(request, { repo, command, extra, allowed, blockFor })
-    if (resolved.error !== undefined || resolved.target === undefined) {
-      return { error: resolved.error ?? 'could not resolve the push target' }
-    }
-    const { url, credentials, cleanEnv } = resolved.target
-    const scratch = mkdtempSync(join(tmpdir(), 'gcb-tip-'))
-    try {
-      const { stdout } = await run('git', [...credentials, 'ls-remote', url, `refs/heads/${request.branch}`], {
-        cwd: scratch,
-        timeout: CREATE_TIMEOUT_MS,
-        maxBuffer: 1 << 20,
-        env: cleanEnv,
-      })
-      const line = stdout.trim()
-      if (line === '') {
-        return { absent: true }
-      }
-      const sha = line.split(/\s+/)[0]
-      if (sha === undefined || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(sha)) {
-        return { error: `unexpected ls-remote output: ${line.slice(0, 300)}` }
-      }
-      return { remoteTip: sha }
-    } catch (error) {
-      const failure = error as { stderr?: string; message?: string }
-      return { error: (failure.stderr ?? failure.message ?? 'ls-remote failed').trim().slice(0, 300) }
-    } finally {
-      rmSync(scratch, { recursive: true, force: true })
-    }
-  }
-
   if (request.kind === 'push') {
     const resolved = await resolvePushTarget(request, { repo, command, extra, allowed, blockFor })
     if (resolved.error !== undefined || resolved.target === undefined) {
       return { error: resolved.error ?? 'could not resolve the push target' }
     }
     const { url, credentials, cleanEnv } = resolved.target
+    const host = request.host ?? 'github.com'
     const scratch = mkdtempSync(join(tmpdir(), 'gcb-push-'))
     try {
       let objectFormat = 'sha1'
@@ -948,22 +913,13 @@ async function openOne(
           objectFormat = detected
         }
       } catch {
-        // Git before 2.29 cannot report or create a SHA-256 repository, so SHA-1 is the only format.
+        // Git before 2.29 cannot report or create a SHA-256 repository.
       }
-      await run(
-        'git',
-        [
-          'init',
-          '--bare',
-          '--quiet',
-          scratch,
-        ],
-        {
+      await run('git', ['init', '--bare', '--quiet', scratch], {
         timeout: CREATE_TIMEOUT_MS,
         maxBuffer: 1 << 20,
         env: { ...cleanEnv, GIT_DEFAULT_HASH: objectFormat },
-      },
-      )
+      })
       const { stdout: objects } = await run('git', ['rev-parse', '--git-path', 'objects'], {
         cwd: repo,
         timeout: CREATE_TIMEOUT_MS,
@@ -971,14 +927,7 @@ async function openOne(
         env: withoutGitLocation(process.env),
       })
       mkdirSync(join(scratch, 'objects', 'info'), { recursive: true })
-      writeFileSync(
-        join(scratch, 'objects', 'info', 'alternates'),
-        `${resolve(repo, objects.trim())}\n`,
-      )
-      const lease =
-        request.forceWithLease === true
-          ? [`--force-with-lease=refs/heads/${request.branch}:${request.expected}`]
-          : []
+      writeFileSync(join(scratch, 'objects', 'info', 'alternates'), `${resolve(repo, objects.trim())}\n`)
       const { stdout, stderr } = await run(
         'git',
         [
@@ -986,7 +935,9 @@ async function openOne(
           scratch,
           ...credentials,
           'push',
-          ...lease,
+          ...(request.forceWithLease === true
+            ? [`--force-with-lease=refs/heads/${request.branch}:${request.expected}`]
+            : []),
           ...(request.force === true ? ['--force'] : []),
           '--no-verify',
           url,
@@ -994,7 +945,6 @@ async function openOne(
         ],
         { cwd: scratch, timeout: PUSH_TIMEOUT_MS, maxBuffer: 1 << 20, env: cleanEnv },
       )
-      const host = request.host ?? 'github.com'
       return { url: `https://${host}/${request.repo}/tree/${request.branch}`, stdout, stderr }
     } catch (error) {
       const failure = error as { stderr?: string; message?: string }

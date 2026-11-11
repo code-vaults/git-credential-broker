@@ -168,21 +168,8 @@ export interface HostPushRequest {
   readonly force?: boolean
   /** Overwrite only if the remote branch still has this sha. */
   readonly forceWithLease?: boolean
-  /** The client's expected remote tip, required with force-with-lease. */
+  /** Expected remote tip for force-with-lease; zeros mean the branch must not exist. */
   readonly expected?: string
-  readonly proxy?: string | null
-  readonly account?: string
-  readonly session?: string
-  readonly pid?: number
-}
-
-/** One request to read a branch tip with the host's credentials. */
-export interface HostPushTipRequest {
-  readonly kind: 'push-tip'
-  readonly repo: string
-  readonly host?: string
-  readonly remote?: string
-  readonly branch: string
   readonly proxy?: string | null
   readonly account?: string
   readonly session?: string
@@ -208,7 +195,6 @@ export type HostRequest =
   | HostEditRequest
   | HostActionRequest
   | HostPushRequest
-  | HostPushTipRequest
   | HostForkRequest
 
 /** What the host broker answered. */
@@ -646,24 +632,6 @@ export function requestProblems(request: HostRequest): string[] {
     }
     return problems
   }
-  if (request.kind === 'push-tip') {
-    if (!REPOSITORY.test(request.repo)) {
-      problems.push('the repository is not owner/name')
-    }
-    if (request.host !== undefined && !HOST.test(request.host)) {
-      problems.push('the host is not a usable host')
-    }
-    if (request.remote !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) {
-      problems.push('the remote name is not usable')
-    }
-    if (!BRANCH.test(request.branch) || request.branch.includes('..') || request.branch.includes(':')) {
-      problems.push('the branch name is not usable')
-    }
-    if (request.account !== undefined && !LOGIN.test(request.account)) {
-      problems.push('the account is not a usable GitHub login')
-    }
-    return problems
-  }
   if (request.kind === 'fork') {
     if (!REPOSITORY.test(request.repo)) {
       problems.push('the repository is not owner/name')
@@ -1046,17 +1014,6 @@ export function claimRequest(dir: string, id: string): HostRequest | undefined {
                 REPOSITORY.test(request.repo) &&
                 (request.host === undefined ||
                   (typeof request.host === 'string' && HOST.test(request.host)))
-              : request.kind === 'push-tip'
-                ? typeof request.repo === 'string' &&
-                  REPOSITORY.test(request.repo) &&
-                  typeof request.branch === 'string' &&
-                  (request.remote === undefined ||
-                    /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(request.remote)) &&
-                  BRANCH.test(request.branch) &&
-                  !request.branch.includes('..') &&
-                  !request.branch.includes(':') &&
-                  (request.host === undefined ||
-                    (typeof request.host === 'string' && HOST.test(request.host)))
                 : request.kind === 'push'
                   ? typeof request.repo === 'string' &&
                   REPOSITORY.test(request.repo) &&

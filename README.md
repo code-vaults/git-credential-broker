@@ -148,8 +148,8 @@ token or remote URL from the container is used. It requires a host broker and a 
 host. The destination must be allowlisted, or be a verified fork whose parent/source is
 allowlisted when `allowForkPush` is on; host push checks the source relationship, not the fork's own
 allowlist entry. It defaults to `origin` and the current branch and takes `gcb push [<remote> [<branch>]]`; `--force`
-is an explicit overwrite and `--force-with-lease` only overwrites if the remote branch still has the
-sha fetched by the host (there is no arbitrary push-argument pass-through). `--as-user=<login>`
+is an explicit overwrite and `--force-with-lease` only overwrites if the local remote-tracking ref still
+matches its expected sha (there is no arbitrary push-argument pass-through). `--as-user=<login>`
 selects `~/.config/gh-<login>` on the host; the host reads the selected remote's protocol only to
 choose `https` or `ssh`, and the repository URL is still rebuilt from the allowlist. SSH uses the
 host's SSH config (key, port and proxy); `sshAccounts` maps a login to its host alias instead of
