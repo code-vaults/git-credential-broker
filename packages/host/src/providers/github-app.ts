@@ -1,5 +1,5 @@
 import { createSign } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
 import {
   getGhAction,
@@ -47,6 +47,7 @@ import {
   isPublicRepository as checkPublicRepository,
   withRepositoryResponse,
 } from '../public-repo.ts'
+import { withTokenLock, writeTokenLocked } from '../token-lock.ts'
 
 /** REST API origin. Overridable for GitHub Enterprise. */
 const DEFAULT_API = 'https://api.github.com'
@@ -627,9 +628,18 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       return undefined
     }
     const path = userTokenPath(cfg.privateKeyPath)
+    const clientId = cfg.clientId
     if (!existsSync(path)) {
       return undefined
     }
+    return withTokenLock(path, () => renewPersonTokenLocked(path, clientId))
+  }
+
+  /** Renew the token while its cross-process lock is held. */
+  async function renewPersonTokenLocked(
+    path: string,
+    clientId: string,
+  ): Promise<string | undefined> {
     const now = Date.now()
     // The file is the only thing that says who the broker may act as, so it is read before the cache is
     // trusted: running `authorize` again — the documented way to change that person, and the only one —
@@ -649,7 +659,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     }
     let next
     try {
-      next = await refreshUserToken(cfg.clientId, held, (url, init) => fetchImpl(url, init))
+      next = await refreshUserToken(clientId, held, (url, init) => fetchImpl(url, init))
     } catch (error) {
       // This is the one place a renewal failure is explained: the caller is an action that failed,
       // and "fetch failed" on its own names neither the host nor the reason.
@@ -660,7 +670,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     }
     if (next.refreshToken !== undefined) {
       try {
-        writeFileSync(path, `${next.refreshToken}\n`, { mode: 0o600 })
+        writeTokenLocked(path, next.refreshToken)
       } catch (error) {
         // GitHub invalidated the token on disk the moment it answered, so this is not transient and not
         // recoverable: the next renewal reads a dead token. Nothing else in the log would say so.

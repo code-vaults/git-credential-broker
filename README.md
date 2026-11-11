@@ -216,11 +216,13 @@ as the same user as the sidecar, the default is correct.
 
 `init` writes the configuration and key as the invoking user, with the key mode 0600. If
 `authorize` has run, it also writes `user.refresh` beside the key, mode 0600 and **read-write**:
-the broker rotates that token on every exchange. The sidecar's user must read the config, key and
-`user.refresh`, and write `log/` (including an existing audit file). If `PUSHER_UID` differs from
-the user running `init`/`authorize`, either run both as that uid or `chown` the config, key,
-`user.refresh`, the log directory and its audit file to it; re-run the `chown` after `authorize`
-creates `user.refresh`. Keep the key and `user.refresh` at 0600; do not make them world-readable.
+the broker rotates that token on every exchange. It creates the `user.refresh.lock` directory beside
+the token, mode 0700, also read-write. The sidecar's user must read the config, key and
+`user.refresh`, write `user.refresh.lock`, and write `log/` (including an existing audit file). If
+`PUSHER_UID` differs from the user running `init`/`authorize`, either run both as that uid or `chown`
+the config, key, `user.refresh`, `user.refresh.lock`, the log directory and its audit file to it;
+re-run the `chown` after `authorize` creates the token and lock. Keep the key and `user.refresh` at
+0600 and the lock directory at 0700; do not make them world-readable.
 
 A deployment directory holds the config, key, log and compose file; `app/` is only a convention
 for a staged commit, and `--code` accepts any directory outside every mount.
@@ -578,29 +580,33 @@ operator and not writable by an untrusted local process. gcb opens the token bef
 and validates the descriptor (regular file, owner, mode); a parent replacement can deny or misplace
 the write, but cannot make the 0600 token readable to another uid.
 
-Compose only adds the writable `user.refresh` mount when that file exists at render time. Create an
-empty `user.refresh` (mode `0600`) as the host user who will run `authorize`, before running
-`gcb compose`. Run `authorize` before starting the sidecar; an empty file is now treated as absent,
-but the supported flow does not rely on that fallback. If the sidecar uid differs, `chown` the token
-to the sidecar uid after `authorize` and before starting the sidecar, so the broker can read and
-rotate it. If Compose was rendered while the file was absent, rerender and recreate the sidecar after
-authorization so the mount is added. To re-authorize later, stop the sidecar first. The identity running
-`authorize` must be able to read `broker.config.yml` and own `user.refresh`, so chown those back (or
-run `authorize` as the sidecar uid); changing only `user.refresh` is not enough. The key is not read
-by `authorize` and can stay with the sidecar uid. After re-authorization, chown the config and token
-back to the sidecar uid, then restart the sidecar.
+Compose adds the writable `user.refresh` and `user.refresh.lock` mounts when the token exists at
+render time; it creates the lock directory. Create an empty `user.refresh` (mode `0600`) as the host
+user who will run `authorize`, before running `gcb compose`; an empty file is treated as absent.
+If the sidecar uid differs, `chown` the token and lock directory to the sidecar uid after
+`authorize`, so the broker can read and rotate them. If Compose was rendered while the file was
+absent, rerender and recreate the sidecar after authorization so the mounts are added. A sidecar
+created before the lock directory existed also needs a rerender and recreate. When the sidecar runs as the same uid, re-authorize while it keeps running: `gcb authorize` takes
+the shared `user.refresh.lock` directory for its replacement, and the broker takes the same lock
+around read → exchange → write. If the sidecar uid differs, either run `authorize` as that uid (the
+live path) or stop the sidecar, chown the token/lock directory, and restart it. The identity running `authorize` must be able to read
+`broker.config.yml` and own `user.refresh` and `user.refresh.lock`, so chown those back (or run
+`authorize` as the sidecar uid); changing only `user.refresh` is not enough. The key is not read by
+`authorize` and can stay with the sidecar uid. After re-authorization as the sidecar uid, no restart is needed; the broker re-reads the token on
+its next renewal.
 
-These ownership and restart steps belong to the host/deployment operator. An agent inside the container
-cannot stop its sidecar or chown host files; container-initiated re-authorization needs a typed
-idsh/deployment operation that performs the stop, ownership handover and restart around the device flow.
+These ownership steps belong to the host/deployment operator. An agent inside the container
+cannot chown host files; container-initiated re-authorization needs a typed idsh/deployment operation
+that performs the ownership handover around the device flow.
 
 The user token is used where the person identity is required or preferred: authoring a pull request,
 submitting a review, resolving a review thread (GraphQL refuses that for an app), replying to or
 editing a review comment, and creating an issue through the broker action path.
 
-The file needs to be **writable by the broker**, unlike the key: GitHub rotates the refresh token on
-every exchange, so mount it read-write (`./user.refresh:/etc/git-cred-broker/user.refresh:rw` in the
-sidecar). A read-only mount works until the first renewal, which is the worst moment to find out.
+The token and its `user.refresh.lock` directory need to be **writable by the broker**, unlike the
+key: GitHub rotates the refresh token on every exchange, so mount both read-write
+(`./user.refresh:/etc/git-cred-broker/user.refresh:rw` and
+`./user.refresh.lock:/etc/git-cred-broker/user.refresh.lock:rw` in the sidecar). A read-only mount works until the first renewal, which is the worst moment to find out.
 
 The allowlist says what this channel **may be used for**, not what the app is installed on: an entry for a
 repository the app was never installed on is meaningful, because `authorize` and the host broker act as a

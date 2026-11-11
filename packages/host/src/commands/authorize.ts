@@ -13,16 +13,7 @@
  * Exit codes: 0 stored, 1 refused.
  */
 
-import {
-  closeSync,
-  constants,
-  fchmodSync,
-  fstatSync,
-  ftruncateSync,
-  mkdirSync,
-  openSync,
-  writeFileSync,
-} from 'node:fs'
+import { closeSync, constants, fchmodSync, fstatSync, mkdirSync, openSync } from 'node:fs'
 import { dirname, join, resolve as resolvePath } from 'node:path'
 
 import { fail, insideMountedPath, isInsideContainer, parseArgs, say, warn } from 'gcb-core'
@@ -30,6 +21,7 @@ import { fail, insideMountedPath, isInsideContainer, parseArgs, say, warn } from
 import { USER_TOKEN_FILE, userTokenPath, loadConfig, resolveConfigPath } from '../config.ts'
 import { collectUserToken, startDeviceFlow, type Fetcher } from '../device-flow.ts'
 import { fetcherFor, parseProxy } from '../http.ts'
+import { withTokenLock, writeTokenThrough } from '../token-lock.ts'
 
 /** Usage text for `authorize`. */
 export const AUTHORIZE_USAGE = `Usage: gcb authorize [options]
@@ -102,7 +94,11 @@ export interface AuthorizationPlacement {
  */
 export function openTokenTarget(target: string): number {
   mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
-  const flags = constants.O_WRONLY | constants.O_CREAT | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+  const flags =
+    constants.O_WRONLY |
+    constants.O_CREAT |
+    (constants.O_NOFOLLOW ?? 0) |
+    (constants.O_NONBLOCK ?? 0)
   const fd = openSync(target, flags, 0o600)
   try {
     const info = fstatSync(fd)
@@ -121,12 +117,15 @@ export function openTokenTarget(target: string): number {
   }
 }
 
-/** Write the refresh token through the descriptor opened before the device flow. */
-function writeToken(fd: number, token: string): void {
-  ftruncateSync(fd, 0)
-  writeFileSync(fd, `${token}\n`)
-  // ACL-based shares can ignore the create/open mode; set it again after the write.
-  fchmodSync(fd, 0o600)
+/** Replace the token through the validated descriptor, under its lock. */
+async function writeToken(fd: number, target: string, token: string): Promise<void> {
+  try {
+    await withTokenLock(target, async () => {
+      writeTokenThrough(fd, token)
+    })
+  } finally {
+    closeSync(fd)
+  }
 }
 
 /**
@@ -135,7 +134,7 @@ function writeToken(fd: number, token: string): void {
  * @param input - The configuration path, target override and injectable guards.
  * @returns The target and an optional warning.
  * @throws {Error} When the placement would put the token inside a container mount without the
- * explicit broker-container acknowledgement.
+ *   explicit broker-container acknowledgement.
  */
 export function resolveAuthorizationPlacement(
   input: AuthorizationPlacementInput,
@@ -222,7 +221,7 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
   }
   say(`the refresh token will be written to ${placement.target}`)
 
-  let tokenFd: number
+  let tokenFd: number | undefined
   try {
     tokenFd = openTokenTarget(placement.target)
   } catch (error) {
@@ -247,11 +246,15 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
           '  Select "Expire user authorization tokens" in the app settings and authorize again.',
       )
     }
-    writeToken(tokenFd, token.refreshToken)
+    const fd = tokenFd
+    tokenFd = undefined
+    await writeToken(fd, placement.target, token.refreshToken)
   } catch (error) {
     failure = error as Error
   } finally {
-    closeSync(tokenFd)
+    if (tokenFd !== undefined) {
+      closeSync(tokenFd)
+    }
   }
   if (failure !== undefined) {
     fail(failure.message)
@@ -280,5 +283,3 @@ export async function runAuthorize(argv: readonly string[]): Promise<number> {
   )
   return 0
 }
-
-
