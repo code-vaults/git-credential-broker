@@ -40,8 +40,8 @@ import { canonicalPath } from './paths.ts'
 export const CHANNEL_PATH = 'gcb/host-broker'
 
 /** The shared channel used when the caller has no checkout. */
-export function globalChannelDir(home: string = homedir()): string {
-  return join(home, '.gcb-host', 'channel')
+export function globalChannelDir(): string {
+  return join(homedir(), '.gcb-host', 'channel')
 }
 
 /** The file naming the running host broker. */

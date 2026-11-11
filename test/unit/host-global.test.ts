@@ -20,7 +20,7 @@ describe('host submit outside a checkout', () => {
     const previousCwd = process.cwd()
     process.env['HOME'] = root
     process.chdir(root)
-    const dir = globalChannelDir(root)
+    const dir = globalChannelDir()
     mkdirSync(dir, { recursive: true })
     chmodSync(dir, 0o700)
     writeHostBroker(dir, { pid: 1, kinds: ['fork'] })
