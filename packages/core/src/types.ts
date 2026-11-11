@@ -191,6 +191,8 @@ export interface BaseHostConfig {
   readonly allowForkPush?: boolean
   /** Allow actions on a repository whose fork is allowlisted, after verifying the fork relationship. */
   readonly allowFork?: boolean
+  /** SSH host aliases keyed by gh account, e.g. `{ i1stg: github-i1stg }`. */
+  readonly sshAccounts?: Readonly<Record<string, string>>
 }
 
 /** Host block backed by one fixed username/password pair. */

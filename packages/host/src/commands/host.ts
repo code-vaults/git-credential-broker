@@ -41,6 +41,8 @@ import {
   ANSWER_TIMEOUT_MS,
   type HostRequest,
   type HostResult,
+  type HostPushRequest,
+  type HostPushTipRequest,
   buildGhArgv,
   getGhAction,
   type BrokerConfig,
@@ -723,6 +725,107 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`
 }
 
+/** One resolved destination for a host-side push or tip read. */
+interface PushTarget {
+  readonly url: string
+  readonly credentials: readonly string[]
+  readonly cleanEnv: NodeJS.ProcessEnv
+}
+
+/** Resolve the common authorization, transport and credential setup. */
+async function resolvePushTarget(
+  request: HostPushRequest | HostPushTipRequest,
+  context: {
+    readonly repo: string
+    readonly command: string
+    readonly extra: readonly string[]
+    readonly allowed: (host: string, repo: string) => boolean
+    readonly blockFor: (host: string) => ReturnType<typeof hostConfig>
+  },
+): Promise<{ target?: PushTarget; error?: string }> {
+  const host = request.host ?? 'github.com'
+  let allowedPush = false
+  try {
+    allowedPush = context.allowed(host, request.repo)
+    if (!allowedPush && context.blockFor(host)?.allowForkPush === true) {
+      const { stdout } = await run(context.command, [...context.extra, 'api', `repos/${request.repo}`], {
+        cwd: context.repo,
+        timeout: CREATE_TIMEOUT_MS,
+        maxBuffer: 1 << 20,
+        env: forkEnv(request.proxy, request.account, host),
+      })
+      const body = JSON.parse(stdout) as {
+        fork?: unknown
+        parent?: { full_name?: unknown } | null
+        source?: { full_name?: unknown } | null
+      }
+      const source =
+        typeof body?.source?.full_name === 'string'
+          ? body.source.full_name
+          : typeof body?.parent?.full_name === 'string'
+            ? body.parent.full_name
+            : undefined
+      allowedPush = body?.fork === true && source !== undefined && context.allowed(host, source)
+    }
+  } catch (error) {
+    return { error: (error as Error).message }
+  }
+  if (!allowedPush) {
+    return { error: `repository ${request.repo} is not in the allowlist for ${host}` }
+  }
+
+  const remote = request.remote ?? 'origin'
+  let transport: 'https' | 'ssh' = 'https'
+  try {
+    const { stdout } = await run('git', ['remote', 'get-url', '--push', remote], {
+      cwd: context.repo,
+      timeout: CREATE_TIMEOUT_MS,
+      maxBuffer: 1 << 20,
+      env: withoutGitLocation(process.env),
+    })
+    if (/^(?:ssh:\/\/|[^@/]+@[^/:]+:|[^/:]+\.[^/:]+:)/.test(stdout.trim())) {
+      transport = 'ssh'
+    }
+  } catch (error) {
+    const failure = error as { stderr?: string; message?: string }
+    const reason = (failure.stderr ?? failure.message ?? '').trim()
+    if (!/No such remote|does not have a push url|not a git repository/i.test(reason)) {
+      return { error: reason.slice(0, 300) || 'could not read the remote push URL' }
+    }
+  }
+  if (transport === 'ssh' && request.proxy !== undefined) {
+    return { error: '--proxy/--no-proxy is not supported for SSH pushes' }
+  }
+  let sshHost = host
+  if (transport === 'ssh' && request.account !== undefined) {
+    const alias = context.blockFor(host)?.sshAccounts?.[request.account.toLowerCase()]
+    if (alias === undefined) {
+      return { error: `no SSH host is configured for account ${request.account} on ${host}` }
+    }
+    sshHost = alias
+  }
+  const url =
+    transport === 'ssh'
+      ? `ssh://git@${sshHost}${request.sshPort === undefined ? '' : `:${request.sshPort}`}/${request.repo}.git`
+      : `https://${host}/${request.repo}.git`
+  const helper = `!${[context.command, ...context.extra].map(shellQuote).join(' ')} auth git-credential`
+  const credentials =
+    transport === 'ssh'
+      ? []
+      : ['-c', 'credential.helper=', '-c', `credential.helper=${helper}`, '-c', 'credential.useHttpPath=true']
+  try {
+    const cleanEnv = withoutGitLocation({
+      ...forkEnv(request.proxy, request.account, host),
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+      GIT_TERMINAL_PROMPT: '0',
+    })
+    return { target: { url, credentials, cleanEnv } }
+  } catch (error) {
+    return { error: (error as Error).message }
+  }
+}
+
 /**
  * Create one pull request, issue, review, reply, edit or comment.
  *
@@ -780,84 +883,19 @@ async function openOne(
   }
 
   if (request.kind === 'push-tip') {
-    const host = request.host ?? 'github.com'
-    let allowedPush = false
-    try {
-      allowedPush = allowed(host, request.repo)
-      if (!allowedPush && blockFor(host)?.allowForkPush === true) {
-        const { stdout } = await run(command, [...extra, 'api', `repos/${request.repo}`], {
-          cwd: repo,
-          timeout: CREATE_TIMEOUT_MS,
-          maxBuffer: 1 << 20,
-          env: forkEnv(request.proxy, request.account, host),
-        })
-        const body = JSON.parse(stdout) as {
-          fork?: unknown
-          parent?: { full_name?: unknown } | null
-          source?: { full_name?: unknown } | null
-        }
-        const source =
-          typeof body?.source?.full_name === 'string'
-            ? body.source.full_name
-            : typeof body?.parent?.full_name === 'string'
-              ? body.parent.full_name
-              : undefined
-        allowedPush = body?.fork === true && source !== undefined && allowed(host, source)
-      }
-    } catch (error) {
-      return { error: (error as Error).message }
+    const resolved = await resolvePushTarget(request, { repo, command, extra, allowed, blockFor })
+    if (resolved.error !== undefined || resolved.target === undefined) {
+      return { error: resolved.error ?? 'could not resolve the push target' }
     }
-    if (!allowedPush) {
-      return { error: `repository ${request.repo} is not in the allowlist for ${host}` }
-    }
-    const remote = request.remote ?? 'origin'
-    let transport: 'https' | 'ssh' = 'https'
-    try {
-      const { stdout } = await run('git', ['remote', 'get-url', '--push', remote], {
-        cwd: repo,
-        timeout: CREATE_TIMEOUT_MS,
-        maxBuffer: 1 << 20,
-        env: withoutGitLocation(process.env),
-      })
-      if (/^(?:ssh:\/\/|[^@/]+@[^/:]+:|[^/:]+\.[^/:]+:)/.test(stdout.trim())) {
-        transport = 'ssh'
-      }
-    } catch {
-      return { error: `remote ${JSON.stringify(remote)} has no readable push URL` }
-    }
-    if (transport === 'ssh' && request.proxy !== undefined) {
-      return { error: '--proxy/--no-proxy is not supported for SSH pushes' }
-    }
-    if (transport === 'ssh' && request.account !== undefined) {
-      return { error: 'SSH uses the host identity; --as-user is not supported' }
-    }
-    const url =
-      transport === 'ssh'
-        ? `ssh://git@${host}${request.sshPort === undefined ? '' : `:${request.sshPort}`}/${request.repo}.git`
-        : `https://${host}/${request.repo}.git`
-    const helper = `!${[command, ...extra].map(shellQuote).join(' ')} auth git-credential`
-    const credentials =
-      transport === 'ssh'
-        ? []
-        : ['-c', 'credential.helper=', '-c', `credential.helper=${helper}`, '-c', 'credential.useHttpPath=true']
-    let cleanEnv: NodeJS.ProcessEnv
-    try {
-      cleanEnv = withoutGitLocation({
-        ...forkEnv(request.proxy, request.account, host),
-        GIT_CONFIG_NOSYSTEM: '1',
-        GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
-        GIT_TERMINAL_PROMPT: '0',
-      })
-    } catch (error) {
-      return { error: (error as Error).message }
-    }
+    const { url, credentials, cleanEnv } = resolved.target
     const scratch = mkdtempSync(join(tmpdir(), 'gcb-tip-'))
     try {
-      const { stdout } = await run(
-        'git',
-        [...credentials, 'ls-remote', url, `refs/heads/${request.branch}`],
-        { cwd: scratch, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: cleanEnv },
-      )
+      const { stdout } = await run('git', [...credentials, 'ls-remote', url, `refs/heads/${request.branch}`], {
+        cwd: scratch,
+        timeout: CREATE_TIMEOUT_MS,
+        maxBuffer: 1 << 20,
+        env: cleanEnv,
+      })
       const line = stdout.trim()
       if (line === '') {
         return { absent: true }
@@ -876,82 +914,11 @@ async function openOne(
   }
 
   if (request.kind === 'push') {
-    const host = request.host ?? 'github.com'
-    let allowedPush = false
-    try {
-      allowedPush = allowed(host, request.repo)
-      if (!allowedPush && blockFor(host)?.allowForkPush === true) {
-        const { stdout } = await run(command, [...extra, 'api', `repos/${request.repo}`], {
-          cwd: repo,
-          timeout: CREATE_TIMEOUT_MS,
-          maxBuffer: 1 << 20,
-          env: forkEnv(request.proxy, request.account, host),
-        })
-        const body = JSON.parse(stdout) as {
-          fork?: unknown
-          parent?: { full_name?: unknown } | null
-          source?: { full_name?: unknown } | null
-        }
-        const source =
-          typeof body?.source?.full_name === 'string'
-            ? body.source.full_name
-            : typeof body?.parent?.full_name === 'string'
-              ? body.parent.full_name
-              : undefined
-        allowedPush = body?.fork === true && source !== undefined && allowed(host, source)
-      }
-    } catch (error) {
-      return { error: (error as Error).message }
+    const resolved = await resolvePushTarget(request, { repo, command, extra, allowed, blockFor })
+    if (resolved.error !== undefined || resolved.target === undefined) {
+      return { error: resolved.error ?? 'could not resolve the push target' }
     }
-    if (!allowedPush) {
-      return { error: `repository ${request.repo} is not in the allowlist for ${host}` }
-    }
-    let transport: 'https' | 'ssh' = 'https'
-    const remote = request.remote ?? 'origin'
-    try {
-      const { stdout } = await run('git', ['remote', 'get-url', '--push', remote], {
-        cwd: repo,
-        timeout: CREATE_TIMEOUT_MS,
-        maxBuffer: 1 << 20,
-        env: withoutGitLocation(process.env),
-      })
-      if (/^(?:ssh:\/\/|[^@/]+@[^/:]+:|[^/:]+\.[^/:]+:)/.test(stdout.trim())) {
-        transport = 'ssh'
-      }
-    } catch (error) {
-      const failure = error as { stderr?: string; message?: string }
-      const reason = (failure.stderr ?? failure.message ?? '').trim()
-      if (!/No such remote|does not have a push url|not a git repository/i.test(reason)) {
-        return { error: reason.slice(0, 300) || 'could not read the remote push URL' }
-      }
-      // No usable remote: keep the HTTPS default.
-    }
-    const url =
-      transport === 'ssh'
-        ? `ssh://git@${host}${request.sshPort === undefined ? '' : `:${request.sshPort}`}/${request.repo}.git`
-        : `https://${host}/${request.repo}.git`
-    const helper = `!${[command, ...extra].map(shellQuote).join(' ')} auth git-credential`
-    const credentials =
-      transport === 'ssh'
-        ? []
-        : ['-c', 'credential.helper=', '-c', `credential.helper=${helper}`, '-c', 'credential.useHttpPath=true']
-    if (transport === 'ssh' && request.proxy !== undefined) {
-      return { error: '--proxy/--no-proxy is not supported for SSH pushes' }
-    }
-    if (transport === 'ssh' && request.account !== undefined) {
-      return { error: 'SSH uses the host identity; --as-user is not supported' }
-    }
-    let cleanEnv: NodeJS.ProcessEnv
-    try {
-      cleanEnv = withoutGitLocation({
-        ...forkEnv(request.proxy, request.account, host),
-        GIT_CONFIG_NOSYSTEM: '1',
-        GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
-        GIT_TERMINAL_PROMPT: '0',
-      })
-    } catch (error) {
-      return { error: (error as Error).message }
-    }
+    const { url, credentials, cleanEnv } = resolved.target
     const scratch = mkdtempSync(join(tmpdir(), 'gcb-push-'))
     try {
       await run('git', ['init', '--bare', '--quiet', scratch], {
@@ -959,16 +926,12 @@ async function openOne(
         maxBuffer: 1 << 20,
         env: cleanEnv,
       })
-      const { stdout: objects } = await run(
-        'git',
-        ['rev-parse', '--path-format=absolute', '--git-path', 'objects'],
-        {
-          cwd: repo,
-          timeout: CREATE_TIMEOUT_MS,
-          maxBuffer: 1 << 20,
-          env: withoutGitLocation(process.env),
-        },
-      )
+      const { stdout: objects } = await run('git', ['rev-parse', '--path-format=absolute', '--git-path', 'objects'], {
+        cwd: repo,
+        timeout: CREATE_TIMEOUT_MS,
+        maxBuffer: 1 << 20,
+        env: withoutGitLocation(process.env),
+      })
       mkdirSync(join(scratch, 'objects', 'info'), { recursive: true })
       writeFileSync(join(scratch, 'objects', 'info', 'alternates'), `${objects.trim()}\n`)
       const lease =
@@ -988,13 +951,9 @@ async function openOne(
           url,
           `${request.commit}:refs/heads/${request.branch}`,
         ],
-        {
-          cwd: scratch,
-          timeout: CREATE_TIMEOUT_MS,
-          maxBuffer: 1 << 20,
-          env: cleanEnv,
-        },
+        { cwd: scratch, timeout: CREATE_TIMEOUT_MS, maxBuffer: 1 << 20, env: cleanEnv },
       )
+      const host = request.host ?? 'github.com'
       return { url: `https://${host}/${request.repo}/tree/${request.branch}`, stdout, stderr }
     } catch (error) {
       const failure = error as { stderr?: string; message?: string }
