@@ -1,5 +1,20 @@
 # gcb-host
 
+## 0.11.0
+
+### Minor Changes
+
+- [#154](https://github.com/code-vaults/git-credential-broker/pull/154) [`ee1a932`](https://github.com/code-vaults/git-credential-broker/commit/ee1a932a177abff27781f33414e9dff0ac58daa7) Thanks [@JounQin](https://github.com/JounQin)! - `gcb doctor` also reports the `gh` found on PATH and the host broker's status file, including a stale
+  pid.
+
+- [#156](https://github.com/code-vaults/git-credential-broker/pull/156) [`5977e71`](https://github.com/code-vaults/git-credential-broker/commit/5977e71f7e27fb1b35e4c83a3f569f4fad5a2833) Thanks [@JounQin](https://github.com/JounQin)! - Allow `hosts.<host>.actions.<name>.deny` to deny a catalogued action on one host; a top-level
+  `actions` deny still applies to every host.
+
+### Patch Changes
+
+- Updated dependencies [[`5977e71`](https://github.com/code-vaults/git-credential-broker/commit/5977e71f7e27fb1b35e4c83a3f569f4fad5a2833)]:
+  - gcb-core@0.11.0
+
 ## 0.10.0
 
 ### Minor Changes
