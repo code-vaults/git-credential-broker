@@ -326,9 +326,16 @@ export async function runGh(
   const tristates = new Set(
     action.flags.filter(flag => flag.type === 'tristate').map(flag => flag.name),
   )
-  const parsedRest = rest.map(argument =>
-    /^--[^=]+$/.test(argument) && tristates.has(argument.slice(2)) ? `${argument}=true` : argument,
-  )
+  let terminated = false
+  const parsedRest = rest.map(argument => {
+    if (argument === '--') {
+      terminated = true
+      return argument
+    }
+    return !terminated && /^--[^=]+$/.test(argument) && tristates.has(argument.slice(2))
+      ? `${argument}=true`
+      : argument
+  })
   const booleans = action.flags.filter(flag => flag.type === 'boolean').map(flag => flag.name)
   const args = parseArgs(parsedRest, { booleans: [...booleans, 'no-proxy'] })
   if (args.has('no-proxy') && args.value('proxy') !== undefined) {
