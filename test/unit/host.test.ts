@@ -1723,6 +1723,12 @@ describe('the host action route', () => {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })) as typeof fetch
+    const previousTokens = {
+      GH_TOKEN: process.env['GH_TOKEN'],
+      GITHUB_TOKEN: process.env['GITHUB_TOKEN'],
+    }
+    delete process.env['GH_TOKEN']
+    delete process.env['GITHUB_TOKEN']
     try {
       const id = writeRequest(dir, {
         kind: 'action',
@@ -1738,6 +1744,13 @@ describe('the host action route', () => {
       assert.match(readResult(dir, id)?.error ?? '', /no gh config for account/u)
     } finally {
       globalThis.fetch = originalFetch
+      for (const [key, value] of Object.entries(previousTokens)) {
+        if (value === undefined) {
+          delete process.env[key]
+        } else {
+          process.env[key] = value
+        }
+      }
       rmSync(root, { recursive: true, force: true })
     }
   })

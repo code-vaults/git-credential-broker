@@ -1009,6 +1009,7 @@ async function resolvePushTarget(
         transport === 'ssh' ? undefined : request.account,
         host,
         context.command,
+        context.extra,
       ),
       GIT_CONFIG_NOSYSTEM: '1',
       GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
