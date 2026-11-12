@@ -10,6 +10,7 @@
 import { spawn } from 'node:child_process'
 import { timingSafeEqual } from 'node:crypto'
 import http from 'node:http'
+import https from 'node:https'
 import type { IncomingMessage, Server } from 'node:http'
 
 /** One request the server saw. */
@@ -28,6 +29,8 @@ export interface GitHttpServerOptions {
   readonly username: string
   /** The only accepted Basic auth password. */
   readonly password: string
+  /** TLS key/cert; when set the server speaks HTTPS. */
+  readonly tls?: { readonly key: string | Buffer; readonly cert: string | Buffer }
   /** Diagnostics sink. */
   readonly log?: (message: string) => void
 }
@@ -144,7 +147,7 @@ export function createGitHttpServer(options: GitHttpServerOptions): GitHttpServe
   const attempts: AuthAttempt[] = []
   let port = 0
 
-  const server = http.createServer((request, response) => {
+  const handler = (request: IncomingMessage, response: import('node:http').ServerResponse): void => {
     void (async (): Promise<void> => {
       const credentials = parseBasicAuth(request.headers.authorization)
       const authorized =
@@ -233,7 +236,11 @@ export function createGitHttpServer(options: GitHttpServerOptions): GitHttpServe
       child.stdin.on('error', () => {})
       child.stdin.end(body)
     })()
-  })
+  }
+
+  const server = options.tls
+    ? https.createServer(options.tls, handler)
+    : http.createServer(handler)
 
   return {
     attempts,

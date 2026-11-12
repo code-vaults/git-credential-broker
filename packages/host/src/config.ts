@@ -105,33 +105,6 @@ export function inferMode(config: BrokerConfig): DeploymentMode {
 }
 
 /**
- * Refuse to start when a person's token is named but not there.
- *
- * Same reasoning as the key: a path that does not resolve is a deployment mistake, and the process
- * that runs the broker is the one whose paths count.
- *
- * @param config - The loaded configuration.
- */
-export function assertUserTokensReadable(config: BrokerConfig): void {
-  for (const [host, block] of Object.entries(config.hosts)) {
-    if (block.provider !== 'github-app') {
-      continue
-    }
-    for (const [owner, tokenPath] of Object.entries(block.userTokens ?? {})) {
-      if (existsSync(tokenPath)) {
-        continue
-      }
-      throw new Error(
-        `cannot read the token for ${host}/${owner}: ${tokenPath} does not exist.\n` +
-          `       Create a fine-grained token with pull requests: read and write, contents: read and\n` +
-          `       metadata: read, for the repositories the allowlist names, and put it there — or drop\n` +
-          `       userTokens to keep opening pull requests as the app.`,
-      )
-    }
-  }
-}
-
-/**
  * Check that each recorded private key is readable, before the caller tries to read it.
  *
  * Both the daemon and `diagnose` need this, because both read the key, and a bare `ENOENT ...
@@ -478,7 +451,6 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
         const block: StaticHostConfig = {
           provider: 'static',
           allow,
-          allowInsecureHttp: booleanField(blockRaw, 'allowInsecureHttp', errors, at),
           allowPublicRead: booleanField(blockRaw, 'allowPublicRead', errors, at),
           allowForkPush: booleanField(blockRaw, 'allowForkPush', errors, at),
           allowFork: booleanField(blockRaw, 'allowFork', errors, at),
@@ -494,7 +466,6 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
         const block: GithubAppHostConfig = {
           provider: 'github-app',
           allow,
-          allowInsecureHttp: booleanField(blockRaw, 'allowInsecureHttp', errors, at),
           allowPublicRead: booleanField(blockRaw, 'allowPublicRead', errors, at),
           allowForkPush: booleanField(blockRaw, 'allowForkPush', errors, at),
           allowFork: booleanField(blockRaw, 'allowFork', errors, at),
@@ -502,12 +473,6 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           clientId: stringField(blockRaw, 'clientId', errors, at),
           appId: stringOrNumberField(blockRaw, 'appId', errors, at),
           privateKeyPath: stringField(blockRaw, 'privateKeyPath', errors, at),
-          // Keys are owners, and every other owner in this codebase is compared lower-cased. A key spelled
-          // `An-Org` used to validate and then never match, which meant the pull request was created as the app
-          // while the operator believed a person would author it.
-          userTokens: lowerCasedKeys(
-            stringMapField(blockRaw['userTokens'], errors, at, 'userTokens'),
-          ),
           privateKeyPem: stringField(blockRaw, 'privateKeyPem', errors, at),
           permissions: stringMapField(blockRaw['permissions'], errors, at),
           apiBaseUrl: httpsUrlField(blockRaw, 'apiBaseUrl', errors, at),

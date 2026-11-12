@@ -224,8 +224,8 @@ export function createRequestHandler(
       )
     }
 
-    // Host first: whether plaintext is tolerated is a property of the *host's* configuration,
-    // not of the request, so the protocol can only be judged once the host is known.
+    // Host first: a deny is audited against a host, and an unknown host is its own refusal, so
+    // the host is resolved before the protocol or repository is judged.
     const block = hostConfig(current.config, message['host'])
     if (!block) {
       return deny(
@@ -240,17 +240,12 @@ export function createRequestHandler(
     context.host = block.host
 
     const protocol = message['protocol']
-    const insecureHttpAllowed = block.allowInsecureHttp === true
-    if (
-      message['op'] === 'credential' &&
-      protocol !== 'https' &&
-      !(protocol === 'http' && insecureHttpAllowed)
-    ) {
+    if (message['op'] === 'credential' && protocol !== 'https') {
       return deny(
         context,
         CODES.PROTOCOL_NOT_HTTPS,
-        `protocol=${JSON.stringify(protocol)} (allowInsecureHttp=${String(insecureHttpAllowed)})`,
-        'only https is served for this host (a plaintext request would expose the credential on the wire)',
+        `protocol=${JSON.stringify(protocol)}`,
+        'only https is served (a plaintext request would expose the credential on the wire)',
       )
     }
 

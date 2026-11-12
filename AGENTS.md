@@ -176,7 +176,7 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   and a malformed `allow` entry is rejected at load
   time. It fails closed either way, but silently — and a typo that looks like configuration is
   worse than a crash. Do not soften this to be helpful. What is checked is the fields the block
-  defines: an unknown key inside `hosts` is dropped rather than refused, so a misspelled `userTokens`
+  defines: an unknown key inside `hosts` is dropped rather than refused, so a misspelled `permissions` entry
   is not a typo this will catch.
 - **Never log the credential.** The audit log records a SHA-256 _fingerprint_ plus host, repo,
   DSH session id and expiry. `src/audit.ts` also redacts secret-looking keys defensively
@@ -251,11 +251,9 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   deployment controls which account directories exist, and the container chooses among them.
 
   **More than one way to be the author exists, and none of them replaces another.** The host broker (no
-  long-lived secret, one process), `userTokens` (one process, a token per owner), and authorization on
-  the existing app (one process, no manual rotation, a token that can do anything that person can)
-  answer the same question with different trades. Adding one is not a reason to remove another: a
-  deployment chooses, and when you add the next one, document it beside the others rather than
-  rewriting them.
+  long-lived secret, one process) and authorization on the existing app (one process, no manual
+  rotation, a token that can do anything that person can) answer the same question with different
+  trades. A deployment chooses; when adding another, document it beside the existing ones.
 
   Authorization is not a token to place: `authorize` runs the device flow once from a browser
   somewhere else and leaves a refresh token beside the key, which the broker renews by itself. The user

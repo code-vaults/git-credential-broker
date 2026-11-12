@@ -717,13 +717,12 @@ describe('createGithubAppProvider', () => {
 
   it('uses the person token for a public read requested with --as-user', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'gcb-public-user-'))
-    const tokenPath = join(dir, 'acme.token')
-    writeFileSync(tokenPath, 'github_pat_public_user\n')
+    writeFileSync(join(dir, 'user.refresh'), 'refresh-from-authorize\n', 'utf8')
     const gh = join(dir, 'gh')
     writeFileSync(gh, '#!/bin/sh\nprintf "TOKEN=%s\\n" "$GH_TOKEN"\n')
     chmodSync(gh, 0o755)
     const stub = createStubFetch({ installations: [{ id: 42, account: { login: 'Acme' } }], nowMs })
-    const provider = providerFor(stub, { userTokens: { acme: tokenPath } }, gh)
+    const provider = providerFor(stub, { privateKeyPath: join(dir, 'app.pem') }, gh)
     try {
       const result = await provider.runAction?.({
         host: 'github.com',
@@ -736,7 +735,7 @@ describe('createGithubAppProvider', () => {
         publicRead: true,
       })
       assert.equal(result?.code, 0)
-      assert.match(result?.stdout ?? '', /TOKEN=github_pat_public_user/u)
+      assert.match(result?.stdout ?? '', /TOKEN=person-token/u)
       assert.equal(
         stub.calls.some(call => call.url.includes('/access_tokens')),
         false,
@@ -1521,7 +1520,6 @@ describe('createGithubAppProvider', () => {
       )
       rmSync(dir, { recursive: true, force: true })
     })
-
   })
 
   it('replies with the authorized user token', async () => {
@@ -1635,27 +1633,6 @@ describe('createGithubAppProvider', () => {
     const request = stub.calls.find(call => call.url.endsWith('/forks'))
     assert.equal(request?.authorization, 'Bearer person-token')
     assert.equal(request?.method, 'POST')
-    rmSync(dir, { recursive: true, force: true })
-  })
-
-  it('forks with a token per owner when there is no authorized user', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'fork-owner-'))
-    const tokenPath = join(dir, 'acme.token')
-    writeFileSync(tokenPath, 'github_pat_fork\n', 'utf8')
-    const stub = createStubFetch({
-      installations: [{ id: 42, account: { login: 'acme' } }],
-      nowMs,
-      fork: { full_name: 'me/widget', html_url: 'https://github.com/me/widget' },
-    })
-    await providerFor(stub, { userTokens: { acme: tokenPath } }).pullRequest!({
-      action: 'fork',
-      identity: 'user',
-      host: 'github.com',
-      owner: 'acme',
-      repo: 'widget',
-    })
-    const request = stub.calls.find(call => call.url.endsWith('/forks'))
-    assert.equal(request?.authorization, 'Bearer github_pat_fork')
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -1849,40 +1826,6 @@ describe('createGithubAppProvider', () => {
       false,
       'no installation token is minted for a resolve',
     )
-  })
-
-  it('resolves a thread with a token per owner, which is a person acting too', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'resolve-owner-'))
-    const tokenPath = join(dir, 'upstream.token')
-    writeFileSync(tokenPath, 'github_pat_x\n', 'utf8')
-
-    // No installation: the repository the app was never installed on, resolved as a person.
-    const stub = createStubFetch({ installations: [], nowMs, threadRepo: 'upstream/upstream' })
-    const answered = await providerFor(stub, { userTokens: { upstream: tokenPath } }).pullRequest!({
-      action: 'resolve',
-      host: 'github.com',
-      owner: 'upstream',
-      repo: 'upstream',
-      number: 4,
-      threadId: 'PRRT_x',
-    })
-    assert.ok(answered, 'the resolve went through')
-
-    const mutation = stub.calls.find(
-      call => typeof call.raw === 'string' && call.raw.includes('resolveReviewThread'),
-    )
-    assert.ok(mutation, 'the mutation was sent')
-    assert.equal(
-      mutation?.authorization,
-      'Bearer github_pat_x',
-      'and a token per owner is what sent it',
-    )
-    assert.equal(
-      stub.calls.some(call => call.url.includes('/access_tokens')),
-      false,
-      'without asking for an installation, which GraphQL refuses for this',
-    )
-    rmSync(dir, { recursive: true, force: true })
   })
 
   it('refuses to resolve a thread that belongs to another repository', async () => {

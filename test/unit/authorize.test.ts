@@ -12,6 +12,7 @@ import {
   refreshTokenPath,
   resolveAuthorizationPlacement,
 } from '../../packages/host/src/commands/authorize.ts'
+import { userTokenPath } from '../../packages/host/src/config.ts'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const hostBin = fileURLToPath(new URL('../../packages/host/bin/gcb.js', import.meta.url))
@@ -88,6 +89,10 @@ describe('gcb authorize', () => {
     assert.match(placement.warning ?? '', /not shared with the agent container/u)
   })
 
+  it('agrees with the broker when the key and configuration share a directory', () => {
+    assert.equal(refreshTokenPath('/deploy/broker.config.yml'), userTokenPath('/deploy/app.pem'))
+  })
+
   it('does not anchor the target on the key directory', () => {
     const keyPath = '/broker/key/app.pem'
     assert.notEqual(refreshTokenPath(configPath), brokerReadsPath(keyPath))
@@ -96,7 +101,7 @@ describe('gcb authorize', () => {
         configPath,
         brokerContainer: true,
         isInsideContainer: () => false,
-        }).target,
+      }).target,
       refreshTokenPath(configPath),
     )
   })

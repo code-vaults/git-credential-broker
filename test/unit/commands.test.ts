@@ -766,7 +766,6 @@ describe('init', () => {
   # keep this static host
   "git.example.internal:8443":
     provider: static
-    allowInsecureHttp: true
     username: git
     password: p
     allow: [infra/*]

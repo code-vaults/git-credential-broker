@@ -16,7 +16,6 @@ import { createAudit } from './audit.ts'
 import { startBroker } from './broker.ts'
 import {
   assertKeysReadable,
-  assertUserTokensReadable,
   loadConfigText,
   readConfigText,
   resolveConfigPath,
@@ -116,7 +115,6 @@ export async function runDaemon(
     const text = readConfigText(resolved)
     const next = loadConfigText(text, resolved)
     assertKeysReadable(next)
-    assertUserTokensReadable(next)
     return {
       config: next,
       providers: buildProviders(next, { log: message => stderr.write(`gcb daemon: ${message}\n`) }),

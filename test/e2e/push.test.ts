@@ -16,7 +16,7 @@
  * Requires the compiled entry points, so run `yarn build` first (`yarn test` does).
  */
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
@@ -103,9 +103,9 @@ function auditRecords(auditPath: string): Array<Record<string, unknown>> {
  * @returns The harness.
  */
 async function setupHarness(
-  options: { allow?: readonly string[]; withBroker?: boolean; allowInsecureHttp?: boolean } = {},
+  options: { allow?: readonly string[]; withBroker?: boolean } = {},
 ): Promise<Harness> {
-  const { allow = [REPO], withBroker = true, allowInsecureHttp = true } = options
+  const { allow = [REPO], withBroker = true } = options
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-e2e-'))
   const reposDir = path.join(root, 'repos')
@@ -122,7 +122,21 @@ async function setupHarness(
     await runAsync('git', ['-C', dir, 'config', 'http.receivepack', 'true'])
   }
 
-  const httpServer = createGitHttpServer({ root: reposDir, username: USERNAME, password: PASSWORD })
+  const tlsDir = path.join(root, 'tls')
+  fs.mkdirSync(tlsDir, { recursive: true })
+  const key = path.join(tlsDir, 'key.pem')
+  const cert = path.join(tlsDir, 'cert.pem')
+  execFileSync(
+    'openssl',
+    ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '1', '-subj', '/CN=127.0.0.1'],
+    { stdio: 'ignore' },
+  )
+  const httpServer = createGitHttpServer({
+    root: reposDir,
+    username: USERNAME,
+    password: PASSWORD,
+    tls: { key: fs.readFileSync(key), cert: fs.readFileSync(cert) },
+  })
   const port = await httpServer.listen()
   const host = `127.0.0.1:${port}`
 
@@ -140,9 +154,6 @@ async function setupHarness(
         [host]: {
           provider: 'static',
           allow,
-          // The local test server speaks plaintext http; the flag is the operator's
-          // explicit opt-in, and it lives host-side where the agent cannot reach it.
-          allowInsecureHttp,
           username: USERNAME,
           password: PASSWORD,
           expiresInSeconds: 3600,
@@ -201,6 +212,7 @@ async function setupHarness(
         HOME: homeDir,
         GIT_CONFIG_NOSYSTEM: '1',
         GIT_TERMINAL_PROMPT: '0',
+        GIT_SSL_NO_VERIFY: '1',
         GIT_AUTHOR_NAME: 'Broker Test',
         GIT_AUTHOR_EMAIL: 'broker@example.invalid',
         GIT_COMMITTER_NAME: 'Broker Test',
@@ -294,7 +306,7 @@ describe('end-to-end push through the broker', () => {
         harness.workDir,
         ...withHelper(),
         'push',
-        `http://${harness.host}/${REPO}.git`,
+        `https://${harness.host}/${REPO}.git`,
         'main',
       ],
       { env: harness.gitEnv() },
@@ -352,7 +364,7 @@ describe('end-to-end push through the broker', () => {
   it('refuses a fetch with no credentials at all, proving the server enforces auth', async () => {
     const anonymous = await tryRunAsync(
       'git',
-      ['-c', 'credential.helper=', 'ls-remote', `http://${harness.host}/${REPO}.git`],
+      ['-c', 'credential.helper=', 'ls-remote', `https://${harness.host}/${REPO}.git`],
       { env: harness.gitEnv() },
     )
     assert.notEqual(anonymous.status, 0, 'an unauthenticated fetch must fail')
@@ -365,7 +377,7 @@ describe('end-to-end push through the broker', () => {
       // Both repositories exist on the server, so the only reason to fail is the policy.
       const attempt = await tryRunAsync(
         'git',
-        [...withHelper(), 'ls-remote', `http://${harness.host}/${slug}.git`],
+        [...withHelper(), 'ls-remote', `https://${harness.host}/${slug}.git`],
         {
           env: harness.gitEnv(),
         },
@@ -404,7 +416,7 @@ describe('end-to-end push through the broker', () => {
         '-c',
         'credential.useHttpPath=false',
         'ls-remote',
-        `http://${harness.host}/${REPO}.git`,
+        `https://${harness.host}/${REPO}.git`,
       ],
       { env: harness.gitEnv() },
     )
@@ -498,23 +510,6 @@ describe('end-to-end push through the broker', () => {
 })
 
 describe('end-to-end failure behaviour', () => {
-  it('refuses a plaintext remote unless the host has opted in', async () => {
-    const strict = await setupHarness({ allowInsecureHttp: false })
-    try {
-      const attempt = await tryRunAsync(
-        'git',
-        [...withHelper(), 'ls-remote', `http://${strict.host}/${REPO}.git`],
-        { env: strict.gitEnv() },
-      )
-      assert.notEqual(attempt.status, 0, 'the default must be https-only')
-
-      const denials = auditRecords(strict.auditPath).filter(record => record['decision'] === 'deny')
-      assert.equal(denials.length >= 1, true)
-      assert.equal(denials[0]?.['code'], 'protocol-not-https')
-    } finally {
-      await strict.dispose()
-    }
-  })
 
   it('fails fast and closed when the broker is gone', async () => {
     const local = await setupHarness()
@@ -522,7 +517,7 @@ describe('end-to-end failure behaviour', () => {
       const expected = await seedCommit(local)
       const ok = await tryRunAsync(
         'git',
-        ['-C', local.workDir, ...withHelper(), 'push', `http://${local.host}/${REPO}.git`, 'main'],
+        ['-C', local.workDir, ...withHelper(), 'push', `https://${local.host}/${REPO}.git`, 'main'],
         { env: local.gitEnv() },
       )
       assert.equal(ok.status, 0, `the warm-up push must succeed:\n${ok.stderr}`)
@@ -533,7 +528,7 @@ describe('end-to-end failure behaviour', () => {
       const started = Date.now()
       const attempt = await tryRunAsync(
         'git',
-        [...withHelper(), 'ls-remote', `http://${local.host}/${REPO}.git`],
+        [...withHelper(), 'ls-remote', `https://${local.host}/${REPO}.git`],
         {
           env: local.gitEnv(),
         },
