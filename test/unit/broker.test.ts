@@ -51,9 +51,10 @@ function makeHarness(
     allowForkPush?: boolean
     allowFork?: boolean
     actions?: BrokerConfig['actions']
+    actionRateLimit?: number
   } = {},
 ): Harness {
-  const { actions, ...hostOptions } = options
+  const { actions, actionRateLimit, ...hostOptions } = options
   const block: StaticHostConfig = {
     provider: 'static',
     allow,
@@ -66,6 +67,7 @@ function makeHarness(
     socketMode: 0o660,
     auditPath,
     ...(actions === undefined ? {} : { actions }),
+    ...(actionRateLimit === undefined ? {} : { actionRateLimit }),
     tokenCacheSkewSeconds: 300,
     hosts: { [HOST]: block },
   }
@@ -655,6 +657,31 @@ describe('audit redaction', () => {
 })
 
 describe('broker actions', () => {
+  it('enforces the per-host action rate limit', async () => {
+    let calls = 0
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async () => {
+        calls += 1
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
+      },
+    }
+    const harness = makeHarness(['acme/widget'], provider, null, { actionRateLimit: 1 })
+    const request = {
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'pr:view',
+      values: { number: 7 },
+    }
+    assert.equal((await harness.handle(request)).ok, true)
+    const limited = await harness.handle(request)
+    assert.equal(limited.ok, false)
+    assert.equal(limited.code, CODES.RATE_LIMITED)
+    assert.equal(calls, 1)
+  })
+
   it('denies a configured action before running the provider', async () => {
     let called = false
     const provider: Provider = {

@@ -59,6 +59,7 @@ export const CODES = {
   HOST_NOT_ALLOWED: 'host-not-allowed',
   PATH_REQUIRED: 'path-required',
   REPO_NOT_ALLOWED: 'repo-not-allowed',
+  RATE_LIMITED: 'rate-limited',
   ACTION_DENIED: 'action-denied',
   PROVIDER_ERROR: 'provider-error',
 } as const
@@ -147,6 +148,24 @@ export function createRequestHandler(
 ): (message: Record<string, unknown>) => Promise<WireResponse> {
   const { audit, log = () => {} } = options
   const state = options.state
+  const actionTimes = new Map<string, number[]>()
+
+  /** Consume one action slot for a host, or report that its rolling minute is full. */
+  function actionRateLimited(host: string): boolean {
+    const limit = state.config.actionRateLimit
+    if (limit === undefined) {
+      return false
+    }
+    const now = Date.now()
+    const times = (actionTimes.get(host) ?? []).filter(time => now - time < 60_000)
+    if (times.length >= limit) {
+      actionTimes.set(host, times)
+      return true
+    }
+    times.push(now)
+    actionTimes.set(host, times)
+    return false
+  }
 
   /**
    * Record a refusal and produce the caller-visible response.
@@ -473,6 +492,13 @@ export function createRequestHandler(
           )
         }
         publicRead = true
+      }
+      if (actionRateLimited(block.host)) {
+        return denyAction(
+          CODES.RATE_LIMITED,
+          'action rate limit exceeded',
+          'too many actions for this host; try again shortly',
+        )
       }
       const startedAt = Date.now()
       try {

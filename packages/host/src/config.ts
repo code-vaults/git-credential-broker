@@ -416,6 +416,14 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
     errors.push('tokenCacheSkewSeconds must be a number')
   }
 
+  const rateLimitRaw = raw['actionRateLimit']
+  if (
+    rateLimitRaw !== undefined &&
+    (typeof rateLimitRaw !== 'number' || !Number.isInteger(rateLimitRaw) || rateLimitRaw <= 0)
+  ) {
+    errors.push('actionRateLimit must be a positive integer')
+  }
+
   const actionsRaw = raw['actions']
   const actions: Record<string, ActionPolicy> = {}
   if (actionsRaw !== undefined) {
@@ -545,6 +553,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
     auditMaxBytes: typeof auditMaxRaw === 'number' ? auditMaxRaw : undefined,
     auditKeep: typeof auditKeepRaw === 'number' ? auditKeepRaw : undefined,
     ...(actionsRaw === undefined ? {} : { actions }),
+    ...(typeof rateLimitRaw === 'number' ? { actionRateLimit: rateLimitRaw } : {}),
     tokenCacheSkewSeconds: typeof skewRaw === 'number' ? skewRaw : 300,
     hosts,
   }

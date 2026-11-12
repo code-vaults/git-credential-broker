@@ -358,6 +358,24 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const blockFor = (host: string) => hostConfig(configFor(), host)
   /** Whether the configuration denies this catalogued action. */
   const actionDenied = (name: string): boolean => configFor().actions?.[name]?.deny === true
+  const actionTimes = new Map<string, number[]>()
+  /** Consume one action slot for a host, or report that its rolling minute is full. */
+  const actionRateLimited = (host: string): boolean => {
+    const limit = configFor().actionRateLimit
+    if (limit === undefined) {
+      return false
+    }
+    const key = host.toLowerCase()
+    const now = Date.now()
+    const times = (actionTimes.get(key) ?? []).filter(time => now - time < 60_000)
+    if (times.length >= limit) {
+      actionTimes.set(key, times)
+      return true
+    }
+    times.push(now)
+    actionTimes.set(key, times)
+    return false
+  }
   /**
    * Whether the broker config allowlist permits this host/repository for a fork, reply or explicit
    * repository.
@@ -475,7 +493,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
       // must not stop the host broker serving every other root, under Restart=always least of all.
       try {
         advertise(dir)
-        await sweep(dir, repo, command, extra, allowed, blockFor, actionDenied)
+        await sweep(dir, repo, command, extra, allowed, blockFor, actionDenied, actionRateLimited)
       } catch (error) {
         warn(`could not serve ${repo}: ${(error as Error).message}`)
       }
@@ -504,6 +522,7 @@ async function sweep(
   allowed: (host: string, repo: string) => boolean,
   blockFor: (host: string) => ReturnType<typeof hostConfig>,
   actionDenied: (name: string) => boolean,
+  actionRateLimited: (host: string) => boolean,
 ): Promise<number> {
   let answered = 0
   const reclaimed = reclaimAbandoned(dir)
@@ -564,6 +583,7 @@ async function sweep(
       allowed,
       blockFor,
       actionDenied,
+      actionRateLimited,
     )
     writeResult(dir, id, result)
     removeRequest(dir, id)
@@ -940,6 +960,7 @@ async function openOne(
   allowed: (host: string, repo: string) => boolean,
   blockFor: (host: string) => ReturnType<typeof hostConfig>,
   actionDenied: (name: string) => boolean,
+  actionRateLimited: (host: string) => boolean,
 ): Promise<HostResult> {
   if (request.kind === 'fork') {
     if (request.host !== undefined && !HOST.test(request.host)) {
@@ -1061,6 +1082,14 @@ async function openOne(
     try {
       if (actionDenied(request.action)) {
         return { error: `action ${request.action} is denied by the broker configuration` }
+      }
+    } catch (error) {
+      return { error: (error as Error).message }
+    }
+
+    try {
+      if (actionRateLimited(host)) {
+        return { error: `too many actions for ${host}; try again shortly` }
       }
     } catch (error) {
       return { error: (error as Error).message }
