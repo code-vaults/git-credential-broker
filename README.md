@@ -374,7 +374,8 @@ edit is a manual full-file write and does not take that lock.
 
 `doctor` is host-side and read-only: it validates the config, prints its SHA-256 digest, asks the
 running daemon for its active audit path (labelling it active or configured), the last `config` audit
-record, and the socket state (socket, missing, symlink or another file).
+record, the socket state (socket, missing, symlink or another file), the `gh` on PATH and the host
+broker's status file.
 
 `diagnose` asks GitHub what the app can actually see — the only reliable way to tell "repository
 does not exist" from "not selected for this installation", which GitHub reports identically. It reads the
@@ -857,7 +858,8 @@ docker compose exec gcb gcb doctor --config /etc/git-cred-broker/config/broker.c
 gcb --version   # in the pushing environment; must be the same release line
 ```
 
-`gcb doctor` checks configuration and the audit path; it is not a daemon-liveness probe. Check
+`gcb doctor` checks configuration, the audit path, `gh` and the host broker; it is not a probe of
+the app daemon's socket liveness. Check
 liveness from the pushing environment with `gcb probe --repo <owner/name>`: exit `0` means allowed,
 `1` denied, and `3` means the broker is unreachable. Alert on a non-zero doctor result; restart only
 when `probe` returns `3` or the socket is gone; a configuration error needs an operator.
