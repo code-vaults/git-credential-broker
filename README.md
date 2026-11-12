@@ -96,6 +96,9 @@ node --conditions=development packages/client/bin/gcb.js --help
 node --conditions=development packages/host/bin/gcb.js --help
 ```
 
+That explicit `node --conditions=development ...` form is the source-development path: no global
+install is needed. The `bin/gcb.js` entry is only a shim; the condition selects each package's
+`development` export (`src/index.ts`), so the implementation that runs is TypeScript.
 Keep the checkout outside every container mount.
 
 ## GitHub actions
