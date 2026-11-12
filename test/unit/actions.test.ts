@@ -307,6 +307,35 @@ describe('gh action catalog', () => {
     )
   })
 
+  it('models template and comment-pagination dependencies', () => {
+    assert.throws(
+      () => buildGhArgv('discussion:view', { number: 12, template: '{{.}}' }, 'acme/widget'),
+      /needs --json with --template/u,
+    )
+    assert.doesNotThrow(() =>
+      buildGhArgv(
+        'discussion:view',
+        { number: 12, json: 'number', template: '{{.}}' },
+        'acme/widget',
+      ),
+    )
+    assert.throws(
+      () => buildGhArgv('discussion:view', { number: 12, after: 'cursor' }, 'acme/widget'),
+      /needs --comments with --after/u,
+    )
+    assert.doesNotThrow(() =>
+      buildGhArgv(
+        'discussion:view',
+        { number: 12, after: 'cursor', comments: true },
+        'acme/widget',
+      ),
+    )
+    assert.throws(
+      () => buildGhArgv('pr:checks', { number: 12, template: '{{.}}' }, 'acme/widget'),
+      /needs --json with --template/u,
+    )
+  })
+
   it('refuses a repository qualifier only in repository-scoped searches', () => {
     for (const name of ['discussion:list', 'issue:list']) {
       assert.throws(

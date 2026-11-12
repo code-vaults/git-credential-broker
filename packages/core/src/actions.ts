@@ -425,6 +425,7 @@ const DISCUSSION_VIEW: GhAction = {
     { name: 'template', type: 'string' },
   ],
   conflicts: [['comments', 'json']],
+  requires: [['after', 'comments']],
   permissions: { discussions: 'read' },
   timeoutSeconds: 120,
   readOnly: true,
@@ -1245,6 +1246,13 @@ export function buildGhArgv(
     throw new ActionError(
       'search cannot contain repo:, org: or user:; the broker scopes it to --repo',
     )
+  }
+  if (
+    present.has('template') &&
+    !present.has('json') &&
+    action.flags.some(flag => flag.name === 'json')
+  ) {
+    throw new ActionError(`${name} needs --json with --template`)
   }
   if (typeof values['title'] === 'string') {
     if (values['title'].trim() === '') {
