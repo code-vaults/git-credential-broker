@@ -101,5 +101,9 @@ describe('the audit log', () => {
       () => validateConfig({ ...base, actions: { 'not:an-action': { deny: true } } }),
       /not a catalogued action/u,
     )
+    assert.throws(
+      () => validateConfig({ ...base, actions: { 'pr:view': { deny: null } } }),
+      /deny must be a boolean/u,
+    )
   })
 })

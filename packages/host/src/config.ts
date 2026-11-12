@@ -429,7 +429,12 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           errors.push(`actions[${JSON.stringify(name)}] must be an object`)
           continue
         }
-        actions[name] = { deny: booleanField(policyRaw, 'deny', errors, `actions[${name}]`) }
+        if (Object.hasOwn(policyRaw, 'deny') && typeof policyRaw['deny'] !== 'boolean') {
+          errors.push(`actions[${name}].deny must be a boolean`)
+          continue
+        }
+        actions[name] =
+          policyRaw['deny'] === undefined ? {} : { deny: policyRaw['deny'] as boolean }
       }
     } else {
       errors.push('actions must be an object keyed by catalogued action name')

@@ -1214,6 +1214,13 @@ async function openOne(
   }
 
   if (request.kind === 'edit') {
+    try {
+      if (actionDenied('pr:edit')) {
+        return { error: 'action pr:edit is denied by the broker configuration' }
+      }
+    } catch (error) {
+      return { error: (error as Error).message }
+    }
     const host = request.host ?? 'github.com'
     return personRun(host, request.repo, allowed, async host => {
       const invoke = (bodyFile?: string) =>
@@ -1242,6 +1249,13 @@ async function openOne(
   }
 
   if (request.kind === 'review') {
+    try {
+      if (actionDenied('pr:review')) {
+        return { error: 'action pr:review is denied by the broker configuration' }
+      }
+    } catch (error) {
+      return { error: (error as Error).message }
+    }
     const host = request.host ?? 'github.com'
     const flag =
       request.event === 'approve'
