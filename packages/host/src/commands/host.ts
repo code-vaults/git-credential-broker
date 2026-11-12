@@ -66,6 +66,7 @@ import {
 import { parseDocument } from 'yaml'
 
 import { loadConfig, resolveConfigPath } from '../config.ts'
+import { clearInheritedTokens, setHostToken, tokenKeys } from '../gh-env.ts'
 import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts'
 import { hostConfig, parseAllowEntry, repoAllowed } from '../policy.ts'
 import { isForkOfRepository, isPublicRepository } from '../public-repo.ts'
@@ -657,17 +658,8 @@ function activeAccount(dir: string, host = 'github.com'): string | undefined {
 }
 
 /** Whether the inherited environment names a usable token, not merely an empty variable. */
-/** Whether a host uses GH_TOKEN (github.com and Enterprise Cloud) or GH_ENTERPRISE_TOKEN (GHES). */
-function dotComHost(host: string): boolean {
-  const lower = host.toLowerCase()
-  return lower === 'github.com' || lower.endsWith('.ghe.com')
-}
-
 function hasInheritedToken(env: NodeJS.ProcessEnv, host = 'github.com'): boolean {
-  const keys = dotComHost(host)
-    ? ['GH_TOKEN', 'GITHUB_TOKEN']
-    : ['GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN']
-  for (const key of keys) {
+  for (const key of tokenKeys(host)) {
     const value = env[key]
     if (typeof value === 'string' && value.trim() !== '') {
       return true
@@ -685,10 +677,7 @@ function accountToken(
   account: string,
 ): string | undefined {
   const env: NodeJS.ProcessEnv = { ...process.env, GH_CONFIG_DIR: dir }
-  delete env['GH_TOKEN']
-  delete env['GITHUB_TOKEN']
-  delete env['GH_ENTERPRISE_TOKEN']
-  delete env['GITHUB_ENTERPRISE_TOKEN']
+  clearInheritedTokens(env)
   delete env['GH_HOST']
   try {
     const token = execFileSync(
@@ -736,10 +725,7 @@ function hostEnv(
       const active = activeAccount(dir, host)
       if (active === undefined || active.toLowerCase() === account.toLowerCase()) {
         // The directory is the selected account; inherited tokens must not override it.
-        delete env['GH_TOKEN']
-        delete env['GITHUB_TOKEN']
-        delete env['GH_ENTERPRISE_TOKEN']
-        delete env['GITHUB_ENTERPRISE_TOKEN']
+        clearInheritedTokens(env)
         delete env['GH_HOST']
         env['GH_CONFIG_DIR'] = dir
       } else if (hasInheritedToken(env, host)) {
@@ -753,11 +739,7 @@ function hostEnv(
             `gh config for account ${JSON.stringify(account)} is logged in as ${JSON.stringify(active)}, and gh auth token --user ${account} found no token`,
           )
         }
-        delete env['GH_TOKEN']
-        delete env['GITHUB_TOKEN']
-        delete env['GH_ENTERPRISE_TOKEN']
-        delete env['GITHUB_ENTERPRISE_TOKEN']
-        env[dotComHost(host) ? 'GH_TOKEN' : 'GH_ENTERPRISE_TOKEN'] = token
+        setHostToken(env, host, token)
         env['GH_CONFIG_DIR'] = dir
       }
     } else if (!hasInheritedToken(env, host)) {

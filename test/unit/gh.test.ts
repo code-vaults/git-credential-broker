@@ -41,6 +41,22 @@ describe('runGhAction', { skip: onWindows }, () => {
     assert.doesNotMatch(result.stdout, /host-token/)
   })
 
+  it('uses the enterprise token variable for a GHES host', async () => {
+    const gh = shim('printf "TOKEN=%s\\nGH=%s\\n" "$GH_ENTERPRISE_TOKEN" "$GH_TOKEN"')
+    const result = await runGhAction({
+      action: 'pr:view',
+      values: { number: 7 },
+      repo: 'acme/widget',
+      host: 'ghe.example',
+      token: 'app-token',
+      ghPath: gh,
+      env: { PATH: process.env.PATH },
+    })
+    assert.equal(result.code, 0)
+    assert.match(result.stdout, /TOKEN=app-token/u)
+    assert.match(result.stdout, /GH=/u)
+  })
+
   it('refuses an issue-only action on a pull request', async () => {
     const gh = shim('if [ "$1" = "api" ]; then echo true; exit 0; fi; echo SHOULD_NOT_RUN')
     await assert.rejects(
