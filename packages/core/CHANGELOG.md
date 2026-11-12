@@ -1,5 +1,23 @@
 # gcb-core
 
+## 0.10.0
+
+### Minor Changes
+
+- [#150](https://github.com/code-vaults/git-credential-broker/pull/150) [`96829bf`](https://github.com/code-vaults/git-credential-broker/commit/96829bfd3ae2b169eb6c05fb75d593b08541ef2f) Thanks [@JounQin](https://github.com/JounQin)! - Allow the broker configuration to deny a catalogued action with `actions.<name>.deny: true`;
+  both the app broker and the host route refuse it before running gh.
+
+- [#151](https://github.com/code-vaults/git-credential-broker/pull/151) [`9964a33`](https://github.com/code-vaults/git-credential-broker/commit/9964a33c84f0267110424f2ea9edbfe37bec74db) Thanks [@JounQin](https://github.com/JounQin)! - Add `actionRateLimit`: at most N catalogued actions per host in a rolling minute per host per broker process; omitted means unlimited.
+
+- [#149](https://github.com/code-vaults/git-credential-broker/pull/149) [`3d936af`](https://github.com/code-vaults/git-credential-broker/commit/3d936afc2bf8ca41f1ddb3d8140d8150401f127a) Thanks [@JounQin](https://github.com/JounQin)! - Rotate the audit log by size and retain a bounded number of segments via `auditMaxBytes` and
+  `auditKeep` (defaults: 10 MiB and 5).
+
+- [#135](https://github.com/code-vaults/git-credential-broker/pull/135) [`08d4ef4`](https://github.com/code-vaults/git-credential-broker/commit/08d4ef407c44141b45a67bfe95ba92122d5f2de9) Thanks [@JounQin](https://github.com/JounQin)! - Add the GitHub discussion catalog actions: `discussion:create`, `discussion:list`, `discussion:view`, `discussion:comment` and `discussion:edit`. They use `gh discussion` (the preview command), require `discussions: read` or `discussions: write`, and are available through `gcb gh discussion …` and the `gcb discussion …` shorthand.
+
+- [#137](https://github.com/code-vaults/git-credential-broker/pull/137) [`af188bd`](https://github.com/code-vaults/git-credential-broker/commit/af188bd195df2cac8de8a314c1f31fddab6456d8) Thanks [@JounQin](https://github.com/JounQin)! - Remove the unused `allowInsecureHttp` and `userTokens` configuration options. Credentials are
+  HTTPS-only, and person routes use the token written by `gcb authorize`; there is no per-owner token
+  fallback.
+
 ## 0.9.0
 
 ### Minor Changes

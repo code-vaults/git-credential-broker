@@ -1,5 +1,17 @@
 # gcb-client
 
+## 0.10.0
+
+### Minor Changes
+
+- [#147](https://github.com/code-vaults/git-credential-broker/pull/147) [`cdb5364`](https://github.com/code-vaults/git-credential-broker/commit/cdb5364568d4012c16ad9d46bb367ec9367d5b11) Thanks [@JounQin](https://github.com/JounQin)! - Remove the transitional `gcb pr --close` tombstone and the `--as-user owner/name` overload on
+  `gcb repo fork`; use `gcb pr close` and the positional repository respectively.
+
+### Patch Changes
+
+- Updated dependencies [[`96829bf`](https://github.com/code-vaults/git-credential-broker/commit/96829bfd3ae2b169eb6c05fb75d593b08541ef2f), [`9964a33`](https://github.com/code-vaults/git-credential-broker/commit/9964a33c84f0267110424f2ea9edbfe37bec74db), [`3d936af`](https://github.com/code-vaults/git-credential-broker/commit/3d936afc2bf8ca41f1ddb3d8140d8150401f127a), [`08d4ef4`](https://github.com/code-vaults/git-credential-broker/commit/08d4ef407c44141b45a67bfe95ba92122d5f2de9), [`af188bd`](https://github.com/code-vaults/git-credential-broker/commit/af188bd195df2cac8de8a314c1f31fddab6456d8)]:
+  - gcb-core@0.10.0
+
 ## 0.9.0
 
 ### Minor Changes
