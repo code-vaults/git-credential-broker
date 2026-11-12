@@ -1,5 +1,12 @@
 # gcb-core
 
+## 0.11.0
+
+### Minor Changes
+
+- [#156](https://github.com/code-vaults/git-credential-broker/pull/156) [`5977e71`](https://github.com/code-vaults/git-credential-broker/commit/5977e71f7e27fb1b35e4c83a3f569f4fad5a2833) Thanks [@JounQin](https://github.com/JounQin)! - Allow `hosts.<host>.actions.<name>.deny` to deny a catalogued action on one host; a top-level
+  `actions` deny still applies to every host.
+
 ## 0.10.0
 
 ### Minor Changes
