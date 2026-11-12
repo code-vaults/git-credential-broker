@@ -39,6 +39,10 @@ node --conditions=development packages/host/bin/gcb.js compose --socket-dir /tmp
 node --conditions=development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml --check
 ```
 
+This is the supported development mode: the explicit entry and `--conditions=development` are the
+whole mechanism. There is no pointer or re-exec step, and a supervisor can run the same argv
+directly from a checkout; do not install `gcb` globally just to develop against one.
+
 Commands find the configuration by convention — `--config`, else `$GIT_BROKER_CONFIG`, else
 `broker.config.yml` — so pass `--config` explicitly when working inside the repository, or the CLI
 may read whatever personal configuration happens to be sitting in the working tree (`/broker.config.yml`

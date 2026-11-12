@@ -96,7 +96,8 @@ node --conditions=development packages/client/bin/gcb.js --help
 node --conditions=development packages/host/bin/gcb.js --help
 ```
 
-Keep the checkout outside every container mount.
+That explicit command is the source-development path: it needs no global install and no dev-mode
+pointer. Keep the checkout outside every container mount.
 
 ## GitHub actions
 
