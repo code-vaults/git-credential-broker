@@ -122,10 +122,14 @@ export function createAudit(options: AuditOptions = {}): AuditSink {
         const size = statSync(path).size
         if (size > 0 && size + Buffer.byteLength(line) > maxBytes) {
           try {
-            ensureAuditFile(path)
             rotateAuditFile(path, keep)
           } catch (error) {
             stderr.write(`gcb daemon: audit rotation failed: ${(error as Error).message}\n`)
+          }
+          try {
+            ensureAuditFile(path)
+          } catch (error) {
+            stderr.write(`gcb daemon: audit recreate failed: ${(error as Error).message}\n`)
           }
         }
         appendFileSync(path, line, { mode: 0o600 })

@@ -63,7 +63,10 @@ describe('the audit log', () => {
         true,
       )
       for (const file of [path, `${path}.1`, `${path}.2`]) {
-        assert.equal(statSync(file).mode & 0o777, 0o600, file)
+        assert.equal(existsSync(file), true, file)
+        if (process.platform !== 'win32') {
+          assert.equal(statSync(file).mode & 0o777, 0o600, file)
+        }
       }
     } finally {
       rmSync(root, { recursive: true, force: true })
