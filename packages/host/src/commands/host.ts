@@ -365,14 +365,15 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     if (limit === undefined) {
       return false
     }
+    const key = host.toLowerCase()
     const now = Date.now()
-    const times = (actionTimes.get(host) ?? []).filter(time => now - time < 60_000)
+    const times = (actionTimes.get(key) ?? []).filter(time => now - time < 60_000)
     if (times.length >= limit) {
-      actionTimes.set(host, times)
+      actionTimes.set(key, times)
       return true
     }
     times.push(now)
-    actionTimes.set(host, times)
+    actionTimes.set(key, times)
     return false
   }
   /**

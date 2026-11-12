@@ -3,5 +3,4 @@
 "gcb-host": minor
 ---
 
-Add `actionRateLimit`: at most N catalogued actions per host in a rolling minute across the app and
-host routes; omitted means unlimited.
+Add `actionRateLimit`: at most N catalogued actions per host in a rolling minute per host per broker process; omitted means unlimited.
