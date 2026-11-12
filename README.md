@@ -168,6 +168,13 @@ writing the request; the host never runs container-owned hooks. The hook's remot
 remote-tracking ref (zeros when the branch was never fetched), not the value the remote advertises
 during a real push.
 
+`gcb push` authorizes the **destination**, not the source. The commit comes from the host checkout,
+which the container can write, so a container can send an allowlisted repository and push a commit
+made in another checkout; the host cannot prove provenance without a host-owned clone or signed
+commits. That is the same boundary as ordinary `git push`, and the allowlist should be read as
+"this destination may be written", not "this source produced the commit". Use a host-owned clone or
+signed commits when provenance matters.
+
 `gcb repo fork [owner/name]` creates a fork under a person's account. An app cannot own a fork, so
 `--as-user` is required: bare uses the broker's authorized user, a login uses the host broker. Without
 a repository it forks the checkout's `origin`. `--host` selects the host; otherwise the origin remote's host is
