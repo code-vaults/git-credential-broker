@@ -174,27 +174,42 @@ function ghLine(): string {
 /** One line for the host broker's status file; a stale pid is named rather than reported healthy. */
 function hostBrokerLine(): string {
   const path = hostStatusPath()
-  let parsed: { pid?: unknown; version?: unknown; config?: unknown }
+  let fd: number
   try {
-    parsed = JSON.parse(readFileSync(path, 'utf8')) as typeof parsed
+    // O_NONBLOCK keeps a FIFO on this path from hanging the command; fstat rejects it below.
+    fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK)
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'ENOENT'
       ? `host broker: no status file at ${path}`
       : `host broker: cannot read ${path}: ${(error as Error).message}`
   }
-  const pid = parsed.pid
-  if (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0) {
-    return `host broker: invalid status file at ${path}`
-  }
   try {
-    process.kill(pid, 0)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
-      return `host broker: stale pid ${String(pid)} in ${path}`
+    if (!fstatSync(fd).isFile()) {
+      return `host broker: not a regular file at ${path}`
     }
-    // EPERM means the process exists but belongs to someone else; report it as running.
+    const raw = JSON.parse(readFileSync(fd, 'utf8')) as unknown
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      return `host broker: invalid status file at ${path}`
+    }
+    const parsed = raw as { pid?: unknown; version?: unknown; config?: unknown }
+    const pid = parsed.pid
+    if (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0) {
+      return `host broker: invalid status file at ${path}`
+    }
+    try {
+      process.kill(pid, 0)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+        return `host broker: stale pid ${String(pid)} in ${path}`
+      }
+      // EPERM means the process exists but belongs to someone else; report it as running.
+    }
+    return `host broker: running pid ${String(pid)}, version ${String(parsed.version ?? 'unknown')}, config ${String(parsed.config ?? 'none')}`
+  } catch (error) {
+    return `host broker: cannot read ${path}: ${(error as Error).message}`
+  } finally {
+    closeSync(fd)
   }
-  return `host broker: running pid ${String(pid)}, version ${String(parsed.version ?? 'unknown')}, config ${String(parsed.config ?? 'none')}`
 }
 
 /** How long doctor waits for the daemon's ping answer. */

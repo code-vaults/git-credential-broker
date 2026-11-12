@@ -565,6 +565,16 @@ describe('gcb doctor', () => {
       assert.match(text, /host broker: running pid/)
       assert.match(text, /version 9\.9\.9/)
       assert.match(text, /config \/tmp\/broker\.yml/)
+      fs.writeFileSync(path.join(host.root, '.gcb-host', 'status.json'), 'null')
+      assert.match(await output(['--config', host.config]), /host broker: invalid status file/)
+      if (process.platform !== 'win32') {
+        const status = path.join(host.root, '.gcb-host', 'status.json')
+        fs.rmSync(status)
+        process.env['PATH'] = previousPath
+        execFileSync('mkfifo', [status])
+        process.env['PATH'] = emptyBin
+        assert.match(await output(['--config', host.config]), /host broker: not a regular file/)
+      }
     } finally {
       if (previousHome === undefined) {
         delete process.env['HOME']
