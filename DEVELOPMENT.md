@@ -40,8 +40,11 @@ node --conditions=development packages/host/bin/gcb.js daemon --config /tmp/depl
 ```
 
 This is the supported development mode: the explicit entry and `--conditions=development` are the
-whole mechanism. There is no pointer or re-exec step, and a supervisor can run the same argv
-directly from a checkout; do not install `gcb` globally just to develop against one.
+whole mechanism. The executable entry is still `packages/*/bin/gcb.js`, a small shim; the condition
+selects the package's `development` export (`src/index.ts`), so the implementation that runs is
+TypeScript. There is no separate `.ts` bin. There is no pointer or re-exec step, and a supervisor
+can run the same argv directly from a checkout; do not install `gcb` globally just to develop
+against one.
 
 Commands find the configuration by convention — `--config`, else `$GIT_BROKER_CONFIG`, else
 `broker.config.yml` — so pass `--config` explicitly when working inside the repository, or the CLI
