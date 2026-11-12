@@ -2155,10 +2155,12 @@ it('uses an inherited GH_TOKEN when no account directory exists', async () => {
     HOME: process.env['HOME'],
     GH_TOKEN: process.env['GH_TOKEN'],
     GITHUB_TOKEN: process.env['GITHUB_TOKEN'],
+    GH_CONFIG_DIR: process.env['GH_CONFIG_DIR'],
   }
   process.env['HOME'] = root
   process.env['GH_TOKEN'] = 'inherited-token'
   delete process.env['GITHUB_TOKEN']
+  delete process.env['GH_CONFIG_DIR']
   try {
     const id = writeRequest(dir, {
       head: 'feat/ok',

@@ -636,7 +636,7 @@ async function sweep(
 }
 
 /** The active github.com user in one gh config directory, when it can be read. */
-function activeAccount(dir: string): string | undefined {
+function activeAccount(dir: string, host = 'github.com'): string | undefined {
   let parsed: unknown
   try {
     parsed = parseDocument(readFileSync(join(dir, 'hosts.yml'), 'utf8')).toJS()
@@ -646,17 +646,23 @@ function activeAccount(dir: string): string | undefined {
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     return undefined
   }
-  const github = (parsed as Record<string, unknown>)['github.com']
-  if (typeof github !== 'object' || github === null || Array.isArray(github)) {
+  const entry = Object.entries(parsed as Record<string, unknown>).find(
+    ([key]) => key.toLowerCase() === host.toLowerCase(),
+  )?.[1]
+  if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
     return undefined
   }
-  const active = (github as Record<string, unknown>)['user']
+  const active = (entry as Record<string, unknown>)['user']
   return typeof active === 'string' && active !== '' ? active : undefined
 }
 
 /** Whether the inherited environment names a usable token, not merely an empty variable. */
-function hasInheritedToken(env: NodeJS.ProcessEnv): boolean {
-  for (const key of ['GH_TOKEN', 'GITHUB_TOKEN']) {
+function hasInheritedToken(env: NodeJS.ProcessEnv, host = 'github.com'): boolean {
+  const keys =
+    host.toLowerCase() === 'github.com'
+      ? ['GH_TOKEN', 'GITHUB_TOKEN']
+      : ['GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN']
+  for (const key of keys) {
     const value = env[key]
     if (typeof value === 'string' && value.trim() !== '') {
       return true
@@ -722,7 +728,7 @@ function hostEnv(
   if (account !== undefined) {
     const dir = join(homedir(), '.config', `gh-${account}`)
     if (existsSync(dir) && statSync(dir).isDirectory()) {
-      const active = activeAccount(dir)
+      const active = activeAccount(dir, host)
       if (active === undefined || active.toLowerCase() === account.toLowerCase()) {
         // The directory is the selected account; inherited tokens must not override it.
         delete env['GH_TOKEN']
@@ -731,7 +737,7 @@ function hostEnv(
         delete env['GITHUB_ENTERPRISE_TOKEN']
         delete env['GH_HOST']
         env['GH_CONFIG_DIR'] = dir
-      } else if (hasInheritedToken(env)) {
+      } else if (hasInheritedToken(env, host)) {
         // A token exported for this broker is the identity; keep it and use the directory for
         // settings only.
         env['GH_CONFIG_DIR'] = dir
@@ -748,7 +754,7 @@ function hostEnv(
         delete env['GITHUB_ENTERPRISE_TOKEN']
         env['GH_CONFIG_DIR'] = dir
       }
-    } else if (!hasInheritedToken(env)) {
+    } else if (!hasInheritedToken(env, host)) {
       throw new Error(
         `no gh config for account ${JSON.stringify(account)} at ${dir}, and no inherited GH_TOKEN/GITHUB_TOKEN`,
       )
