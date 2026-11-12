@@ -1520,7 +1520,6 @@ describe('createGithubAppProvider', () => {
       )
       rmSync(dir, { recursive: true, force: true })
     })
-
   })
 
   it('replies with the authorized user token', async () => {
@@ -1636,7 +1635,6 @@ describe('createGithubAppProvider', () => {
     assert.equal(request?.method, 'POST')
     rmSync(dir, { recursive: true, force: true })
   })
-
 
   it('forces the app identity when asked, even with a user token on disk', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'identity-app-'))
@@ -1829,7 +1827,6 @@ describe('createGithubAppProvider', () => {
       'no installation token is minted for a resolve',
     )
   })
-
 
   it('refuses to resolve a thread that belongs to another repository', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'resolve-scope-'))

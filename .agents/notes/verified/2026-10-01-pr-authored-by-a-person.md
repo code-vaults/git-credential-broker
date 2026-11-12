@@ -1,3 +1,6 @@
+> **Superseded:** `userTokens` and `allowInsecureHttp` were removed in #137. The remaining person
+> routes are `gcb authorize` and the host broker; this note records the earlier tree.
+
 # A user token on the existing App, so a person can be the author of the pull request
 
 Status: built. See `src/commands/authorize.ts`, `src/device-flow.ts`, and the second half of

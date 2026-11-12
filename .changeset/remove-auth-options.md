@@ -1,4 +1,5 @@
 ---
+"gcb-core": minor
 "gcb-host": minor
 ---
 

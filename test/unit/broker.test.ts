@@ -40,13 +40,11 @@ interface Harness {
  *
  * @param allow - The allowlist for the configured host.
  * @param providerOverride - A provider to use instead of the static one.
- * @param _allowInsecureHttp - Retained for call-site compatibility; HTTP is never allowed.
  * @returns The harness.
  */
 function makeHarness(
   allow: readonly string[] = ['acme/widget'],
   providerOverride?: Provider,
-  _allowInsecureHttp?: boolean,
   auditPath: string | null = null,
   options: { allowPublicRead?: boolean; allowForkPush?: boolean; allowFork?: boolean } = {},
 ): Harness {
@@ -127,14 +125,14 @@ describe('broker request handling', () => {
 
   it('returns a configured audit path from ping', async () => {
     const auditPath = path.join(os.tmpdir(), 'gcb-unit', 'audit.jsonl')
-    const { handle } = makeHarness(['acme/widget'], undefined, undefined, auditPath)
+    const { handle } = makeHarness(['acme/widget'], undefined, auditPath)
     const response = await handle({ op: 'ping' })
     assert.equal(response.ok, true)
     assert.equal(response.auditPath, auditPath)
   })
 
   it('reports a relative audit path as absolute from ping', async () => {
-    const { handle } = makeHarness(['acme/widget'], undefined, undefined, 'relative-audit.jsonl')
+    const { handle } = makeHarness(['acme/widget'], undefined, 'relative-audit.jsonl')
     const response = await handle({ op: 'ping' })
     assert.equal(response.ok, true)
     assert.equal(response.auditPath, path.resolve('relative-audit.jsonl'))
@@ -147,7 +145,7 @@ describe('broker request handling', () => {
     assert.equal(response.code, CODES.BAD_REQUEST)
   })
 
-  it('refuses a plaintext or unknown protocol unless the host opts in', async () => {
+  it('refuses a plaintext or unknown protocol', async () => {
     const { handle } = makeHarness()
     for (const protocol of ['http', 'ftp', undefined]) {
       const response = await handle({ ...REQUEST, protocol })
@@ -157,19 +155,6 @@ describe('broker request handling', () => {
         `expected a refusal for ${String(protocol)}`,
       )
     }
-  })
-
-  it('refuses every plaintext http remote', async () => {
-    const strict = makeHarness()
-    assert.equal(
-      (await strict.handle({ ...REQUEST, protocol: 'http' })).code,
-      CODES.PROTOCOL_NOT_HTTPS,
-    )
-    const formerlyRelaxed = makeHarness(['acme/widget'], undefined, true)
-    assert.equal(
-      (await formerlyRelaxed.handle({ ...REQUEST, protocol: 'http' })).code,
-      CODES.PROTOCOL_NOT_HTTPS,
-    )
   })
 
   it('refuses a host that is not configured', async () => {
@@ -791,7 +776,7 @@ describe('broker actions', () => {
         }
       },
     }
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true })
+    const harness = makeHarness(['acme/widget'], provider, null, { allowPublicRead: true })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
@@ -820,7 +805,7 @@ describe('broker actions', () => {
         timedOut: false,
       }),
     }
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true })
+    const harness = makeHarness(['acme/widget'], provider, null, { allowPublicRead: true })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
@@ -845,7 +830,7 @@ describe('broker actions', () => {
         return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
     }
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true })
+    const harness = makeHarness(['acme/widget'], provider, null, { allowPublicRead: true })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
@@ -868,7 +853,7 @@ describe('broker actions', () => {
         return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
     }
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true })
+    const harness = makeHarness(['acme/widget'], provider, null, { allowPublicRead: true })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
@@ -920,7 +905,7 @@ describe('broker actions', () => {
         return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
     }
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowPublicRead: true })
+    const harness = makeHarness(['acme/widget'], provider, null, { allowPublicRead: true })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
@@ -944,7 +929,7 @@ describe('broker actions', () => {
         return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
     }
-    const harness = makeHarness(['alice/widget'], provider, false, null, { allowFork: true })
+    const harness = makeHarness(['alice/widget'], provider, null, { allowFork: true })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
@@ -972,7 +957,7 @@ describe('broker actions', () => {
         return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
     }
-    const harness = makeHarness(['alice/widget', 'bob/widget'], provider, false, null, {
+    const harness = makeHarness(['alice/widget', 'bob/widget'], provider, null, {
       allowFork: true,
     })
     const response = await harness.handle({
@@ -1001,7 +986,7 @@ describe('broker actions', () => {
         return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
     }
-    const harness = makeHarness(['alice/widget'], provider, false, null, {
+    const harness = makeHarness(['alice/widget'], provider, null, {
       allowFork: true,
       allowPublicRead: true,
     })
@@ -1033,7 +1018,7 @@ describe('broker actions', () => {
         timedOut: false,
       }),
     }
-    const harness = makeHarness(['alice/widget'], provider, false, null, {
+    const harness = makeHarness(['alice/widget'], provider, null, {
       allowFork: true,
       allowPublicRead: true,
     })
@@ -1061,7 +1046,7 @@ describe('broker actions', () => {
         return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
     }
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowForkPush: true })
+    const harness = makeHarness(['acme/widget'], provider, null, { allowForkPush: true })
     const response = await harness.handle({
       op: 'action',
       host: HOST,
@@ -1081,7 +1066,7 @@ describe('broker actions', () => {
       },
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
     }
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowForkPush: true })
+    const harness = makeHarness(['acme/widget'], provider, null, { allowForkPush: true })
     const response = await harness.handle({
       op: 'credential',
       host: HOST,
@@ -1101,7 +1086,7 @@ describe('broker actions', () => {
         owner === 'alice' && repo === 'widget' && bases.includes('acme/widget'),
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
     }
-    const harness = makeHarness(['acme/widget'], provider, false, null, { allowForkPush: true })
+    const harness = makeHarness(['acme/widget'], provider, null, { allowForkPush: true })
     const response = await harness.handle({
       op: 'credential',
       host: HOST,
