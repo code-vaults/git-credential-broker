@@ -39,12 +39,11 @@ node --conditions=development packages/host/bin/gcb.js compose --socket-dir /tmp
 node --conditions=development packages/host/bin/gcb.js daemon --config /tmp/deploy/broker.config.yml --check
 ```
 
-This is the supported development mode: the explicit entry and `--conditions=development` are the
+This is the source-development path: the explicit entry and `--conditions=development` are the
 whole mechanism. The executable entry is still `packages/*/bin/gcb.js`, a small shim; the condition
 selects the package's `development` export (`src/index.ts`), so the implementation that runs is
-TypeScript. There is no separate `.ts` bin. There is no pointer or re-exec step, and a supervisor
-can run the same argv directly from a checkout; do not install `gcb` globally just to develop
-against one.
+TypeScript. There is no separate `.ts` bin and no additional wrapper or re-exec step. A
+supervisor can run the same argv directly from a checkout; do not install `gcb` globally just to develop against one.
 
 The `development` condition is workspace-only. `prepack` runs `clean-pkg-json`, and the published
 tarball's exports contain only `types` and `default`; production Node never sees the condition. Even
