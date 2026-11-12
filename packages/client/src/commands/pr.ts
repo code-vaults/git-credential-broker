@@ -23,7 +23,6 @@ const KNOWN_FLAGS = new Set([
   'help',
   'h',
   'draft',
-  'close',
   'comment',
   'file',
   'line',
@@ -174,7 +173,7 @@ export async function runPr(argv: readonly string[]): Promise<number> {
       'request-changes',
       'review-comment',
     ],
-    optionalValues: ['as-user', 'close'],
+    optionalValues: ['as-user'],
   })
   if (validateArgs(args, argv, KNOWN_FLAGS, 'gcb pr')) {
     say(PR_USAGE)
@@ -184,10 +183,6 @@ export async function runPr(argv: readonly string[]): Promise<number> {
     fail('unexpected argument ' + JSON.stringify(args.positionals[0]) + ' for gcb pr')
   }
 
-  // Before --repo: the point of the message is to name the command that does it now.
-  if (args.has('close') || args.value('close') !== undefined) {
-    fail('--close moved to: gcb gh pr close <number> --repo owner/name')
-  }
   // Before --repo too: a bare `gcb pr --comment` should hear what the flag needs, not that --repo
   // is missing. An anchored comment (--file and --line) is still this command's to post.
   if (args.has('comment') && args.value('file') === undefined && args.value('line') === undefined) {

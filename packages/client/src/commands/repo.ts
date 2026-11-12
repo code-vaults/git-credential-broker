@@ -53,20 +53,11 @@ export async function runRepo(argv: readonly string[]): Promise<number> {
   if (asUser && accounts.length > 0) {
     fail('--as-user cannot be both bare and given a login')
   }
-  // `--as-user acme/widget` is an unambiguous source repository, not an account: a login cannot
-  // contain a slash. It saves making the positional depend on whether a bare flag was used.
-  let account = accounts[0]
-  let sourceFromAsUser: string | undefined
-  if (account !== undefined && REPOSITORY.test(account)) {
-    sourceFromAsUser = account
-    account = undefined
-  }
+  const account = accounts[0]
   if (account !== undefined && !LOGIN.test(account)) {
-    fail(
-      `--as-user must be a GitHub login, a repository, or no value, got ${JSON.stringify(account)}`,
-    )
+    fail(`--as-user must be a GitHub login or no value, got ${JSON.stringify(account)}`)
   }
-  if (account === undefined && sourceFromAsUser === undefined && !asUser) {
+  if (account === undefined && !asUser) {
     fail('--as-user is required for fork: the app identity cannot own a fork')
   }
 
@@ -81,9 +72,7 @@ export async function runRepo(argv: readonly string[]): Promise<number> {
 
   const origin = remoteRepo('origin', process.cwd())
   const source =
-    sourceFromAsUser ??
-    args.positionals[1] ??
-    (origin === undefined ? undefined : `${origin.owner}/${origin.repo}`)
+    args.positionals[1] ?? (origin === undefined ? undefined : `${origin.owner}/${origin.repo}`)
   if (source === undefined) {
     fail('pass owner/name, or run this from a checkout with an origin remote')
   }
