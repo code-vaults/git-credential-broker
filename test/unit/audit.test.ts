@@ -73,6 +73,21 @@ describe('the audit log', () => {
     }
   })
 
+  it('recreates a missing active file before the next record', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'gcb-audit-recover-'))
+    const path = join(root, 'audit.jsonl')
+    try {
+      const sink = createAudit({ path })
+      sink.record({ event: 'first' })
+      rmSync(path)
+      sink.record({ event: 'second' })
+      await sink.close()
+      assert.match(readFileSync(path, 'utf8'), /second/u)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('validates the rotation options', () => {
     const base = {
       socketPath: '/tmp/gcb.sock',

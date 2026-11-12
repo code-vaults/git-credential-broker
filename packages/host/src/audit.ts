@@ -107,8 +107,10 @@ export function createAudit(options: AuditOptions = {}): AuditSink {
     stderr = process.stderr,
   } = options
 
+  let secured = false
   if (path) {
     ensureAuditFile(path)
+    secured = true
   }
 
   return {
@@ -116,6 +118,15 @@ export function createAudit(options: AuditOptions = {}): AuditSink {
     record(event: Record<string, unknown>): void {
       if (path === null) {
         return
+      }
+      if (!secured || !existsSync(path)) {
+        try {
+          ensureAuditFile(path)
+          secured = true
+        } catch (error) {
+          stderr.write(`gcb daemon: audit recreate failed: ${(error as Error).message}\n`)
+          return
+        }
       }
       const line = `${JSON.stringify({ ts: new Date(now()).toISOString(), ...redact(event) })}\n`
       try {
@@ -128,7 +139,9 @@ export function createAudit(options: AuditOptions = {}): AuditSink {
           }
           try {
             ensureAuditFile(path)
+            secured = true
           } catch (error) {
+            secured = false
             stderr.write(`gcb daemon: audit recreate failed: ${(error as Error).message}\n`)
             return
           }
