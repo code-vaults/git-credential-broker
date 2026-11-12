@@ -1,5 +1,12 @@
 # gcb-client
 
+## 0.11.2
+
+### Patch Changes
+
+- Updated dependencies []:
+  - gcb-core@0.11.2
+
 ## 0.11.1
 
 ### Patch Changes

@@ -1,5 +1,14 @@
 # gcb-host
 
+## 0.11.2
+
+### Patch Changes
+
+- [#160](https://github.com/code-vaults/git-credential-broker/pull/160) [`36bb817`](https://github.com/code-vaults/git-credential-broker/commit/36bb817c6683356638929797f3c1808cf84b4e43) Thanks [@JounQin](https://github.com/JounQin)! - Refuse `--as-user <login>` when `~/.config/gh-<login>` is logged in as another active user, instead
+  of silently performing the person action as that other account.
+- Updated dependencies []:
+  - gcb-core@0.11.2
+
 ## 0.11.1
 
 ### Patch Changes
