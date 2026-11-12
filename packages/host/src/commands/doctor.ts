@@ -5,18 +5,29 @@
  * audit's last `config` record says whether the running daemon accepted it or is still on the last
  * good snapshot.
  */
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from 'node:fs'
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readSync,
+} from 'node:fs'
 import net from 'node:net'
 
 import { createLineReader, fail, parseArgs, say } from 'gcb-core'
 import { parseDocument } from 'yaml'
 
 import { loadConfigText, readConfigText, resolveConfigPath } from '../config.ts'
+import { hostStatusPath } from './host.ts'
 
 export const DOCTOR_USAGE = `Usage: gcb doctor [options]
 
-Report the configuration digest, the audit path, the last reload result and the socket file.
+Report the configuration digest, the audit path, the last reload result, the socket file, the
+installed gh and the host broker status.
 
   --config <path>  Config file (default: $GIT_BROKER_CONFIG, else ./broker.config.yml)
   -h, --help       Show this help
@@ -144,6 +155,46 @@ export function rawString(text: string, key: 'auditPath' | 'socketPath'): string
   }
   const value = match?.[3]?.trim()
   return value === undefined || value === '' || value === 'null' || value === '~' ? null : value
+}
+
+/** One line for the gh on PATH, without making doctor fail when it is absent. */
+function ghLine(): string {
+  const result = spawnSync('gh', ['--version'], { encoding: 'utf8', timeout: 2_000 })
+  if (result.error !== undefined) {
+    return (result.error as NodeJS.ErrnoException).code === 'ENOENT'
+      ? 'gh: not found on PATH'
+      : `gh: cannot run: ${result.error.message}`
+  }
+  const first = result.stdout.split('\n')[0]?.trim()
+  return result.status === 0 && first
+    ? `gh: ${first}`
+    : `gh: --version failed: ${(result.stderr.trim() || `exit ${String(result.status)}`).slice(0, 200)}`
+}
+
+/** One line for the host broker's status file; a stale pid is named rather than reported healthy. */
+function hostBrokerLine(): string {
+  const path = hostStatusPath()
+  let parsed: { pid?: unknown; version?: unknown; config?: unknown }
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8')) as typeof parsed
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT'
+      ? `host broker: no status file at ${path}`
+      : `host broker: cannot read ${path}: ${(error as Error).message}`
+  }
+  const pid = parsed.pid
+  if (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0) {
+    return `host broker: invalid status file at ${path}`
+  }
+  try {
+    process.kill(pid, 0)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') {
+      return `host broker: stale pid ${String(pid)} in ${path}`
+    }
+    // EPERM means the process exists but belongs to someone else; report it as running.
+  }
+  return `host broker: running pid ${String(pid)}, version ${String(parsed.version ?? 'unknown')}, config ${String(parsed.config ?? 'none')}`
 }
 
 /** How long doctor waits for the daemon's ping answer. */
@@ -283,5 +334,7 @@ export async function runDoctor(
   if (config !== undefined) {
     write(`socket: ${socketLine(config.socketPath, config.socketMode)}`)
   }
+  write(ghLine())
+  write(hostBrokerLine())
   return loadError === undefined ? 0 : 1
 }

@@ -546,6 +546,40 @@ describe('gcb doctor', () => {
     }
   })
 
+  it('reports gh and the host broker status', async () => {
+    const host = fixture()
+    const previousHome = process.env['HOME']
+    const previousPath = process.env['PATH']
+    const emptyBin = path.join(host.root, 'bin')
+    fs.mkdirSync(emptyBin)
+    fs.mkdirSync(path.join(host.root, '.gcb-host'))
+    fs.writeFileSync(
+      path.join(host.root, '.gcb-host', 'status.json'),
+      JSON.stringify({ pid: process.pid, version: '9.9.9', config: '/tmp/broker.yml' }),
+    )
+    try {
+      process.env['HOME'] = host.root
+      process.env['PATH'] = emptyBin
+      const text = await output(['--config', host.config])
+      assert.match(text, /gh: not found on PATH/)
+      assert.match(text, /host broker: running pid/)
+      assert.match(text, /version 9\.9\.9/)
+      assert.match(text, /config \/tmp\/broker\.yml/)
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env['HOME']
+      } else {
+        process.env['HOME'] = previousHome
+      }
+      if (previousPath === undefined) {
+        delete process.env['PATH']
+      } else {
+        process.env['PATH'] = previousPath
+      }
+      host.cleanup()
+    }
+  })
+
   it('reports no reload record when the audit log is absent', async () => {
     const host = fixture()
     try {
