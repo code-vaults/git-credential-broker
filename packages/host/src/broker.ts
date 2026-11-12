@@ -441,7 +441,10 @@ export function createRequestHandler(
         }
         throw error
       }
-      if (current.config.actions?.[ghAction]?.deny === true) {
+      if (
+        current.config.actions?.[ghAction]?.deny === true ||
+        block.actions?.[ghAction]?.deny === true
+      ) {
         return denyAction(
           CODES.ACTION_DENIED,
           'action denied by configuration',

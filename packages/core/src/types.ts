@@ -184,6 +184,8 @@ export interface BaseHostConfig {
   readonly allowFork?: boolean
   /** SSH host aliases keyed by gh account, e.g. `{ 'example-user': 'github-example-user' }`. */
   readonly sshAccounts?: Readonly<Record<string, string>>
+  /** Per-host action policy; a global deny still wins. */
+  readonly actions?: Readonly<Record<string, ActionPolicy>>
 }
 
 /** Host block backed by one fixed username/password pair. */

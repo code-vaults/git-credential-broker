@@ -332,6 +332,38 @@ function sshAccountsField(
   return map
 }
 
+/** Validate a per-action policy map, keyed by catalogued action name. */
+function actionPoliciesField(
+  raw: unknown,
+  errors: string[],
+  at: string,
+): Record<string, ActionPolicy> | undefined {
+  if (raw === undefined) {
+    return undefined
+  }
+  if (!isRecord(raw)) {
+    errors.push(`${at} must be an object keyed by catalogued action name`)
+    return undefined
+  }
+  const out: Record<string, ActionPolicy> = {}
+  for (const [name, policyRaw] of Object.entries(raw)) {
+    if (!(GH_ACTION_NAMES as readonly string[]).includes(name)) {
+      errors.push(`${at}[${JSON.stringify(name)}] is not a catalogued action`)
+      continue
+    }
+    if (!isRecord(policyRaw)) {
+      errors.push(`${at}[${JSON.stringify(name)}] must be an object`)
+      continue
+    }
+    if (Object.hasOwn(policyRaw, 'deny') && typeof policyRaw['deny'] !== 'boolean') {
+      errors.push(`${at}[${JSON.stringify(name)}].deny must be a boolean`)
+      continue
+    }
+    out[name] = policyRaw['deny'] === undefined ? {} : { deny: policyRaw['deny'] as boolean }
+  }
+  return out
+}
+
 /**
  * Read an optional map of strings, for REST permission names.
  *
@@ -424,30 +456,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
     errors.push('actionRateLimit must be a positive integer')
   }
 
-  const actionsRaw = raw['actions']
-  const actions: Record<string, ActionPolicy> = {}
-  if (actionsRaw !== undefined) {
-    if (isRecord(actionsRaw)) {
-      for (const [name, policyRaw] of Object.entries(actionsRaw)) {
-        if (!(GH_ACTION_NAMES as readonly string[]).includes(name)) {
-          errors.push(`actions[${JSON.stringify(name)}] is not a catalogued action`)
-          continue
-        }
-        if (!isRecord(policyRaw)) {
-          errors.push(`actions[${JSON.stringify(name)}] must be an object`)
-          continue
-        }
-        if (Object.hasOwn(policyRaw, 'deny') && typeof policyRaw['deny'] !== 'boolean') {
-          errors.push(`actions[${name}].deny must be a boolean`)
-          continue
-        }
-        actions[name] =
-          policyRaw['deny'] === undefined ? {} : { deny: policyRaw['deny'] as boolean }
-      }
-    } else {
-      errors.push('actions must be an object keyed by catalogued action name')
-    }
-  }
+  const actions = actionPoliciesField(raw['actions'], errors, 'actions')
 
   const hostsRaw = raw['hosts']
   const hosts: Record<string, HostConfig> = {}
@@ -510,6 +519,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           allowForkPush: booleanField(blockRaw, 'allowForkPush', errors, at),
           allowFork: booleanField(blockRaw, 'allowFork', errors, at),
           sshAccounts: sshAccountsField(blockRaw['sshAccounts'], errors, at),
+          actions: actionPoliciesField(blockRaw['actions'], errors, `${at}.actions`),
           username: stringField(blockRaw, 'username', errors, at),
           password: stringField(blockRaw, 'password', errors, at),
           passwordPath: stringField(blockRaw, 'passwordPath', errors, at),
@@ -525,6 +535,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
           allowForkPush: booleanField(blockRaw, 'allowForkPush', errors, at),
           allowFork: booleanField(blockRaw, 'allowFork', errors, at),
           sshAccounts: sshAccountsField(blockRaw['sshAccounts'], errors, at),
+          actions: actionPoliciesField(blockRaw['actions'], errors, `${at}.actions`),
           clientId: stringField(blockRaw, 'clientId', errors, at),
           appId: stringOrNumberField(blockRaw, 'appId', errors, at),
           privateKeyPath: stringField(blockRaw, 'privateKeyPath', errors, at),
@@ -552,7 +563,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
     auditPath: typeof auditRaw === 'string' ? auditRaw : null,
     auditMaxBytes: typeof auditMaxRaw === 'number' ? auditMaxRaw : undefined,
     auditKeep: typeof auditKeepRaw === 'number' ? auditKeepRaw : undefined,
-    ...(actionsRaw === undefined ? {} : { actions }),
+    ...(actions === undefined ? {} : { actions }),
     ...(typeof rateLimitRaw === 'number' ? { actionRateLimit: rateLimitRaw } : {}),
     tokenCacheSkewSeconds: typeof skewRaw === 'number' ? skewRaw : 300,
     hosts,

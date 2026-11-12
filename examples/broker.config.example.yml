@@ -52,6 +52,10 @@ hosts:
     # prefix matching, so "acme/widget" can never authorize "acme/widget-evil". A malformed entry
     # (no slash, three segments, a partial wildcard like "wid*") is rejected at startup. Quote
     # entries that begin with `*`, `&`, `!` or contain a colon followed by a space.
+    # Per-host action policy; a top-level actions deny still wins.
+    # actions:
+    #   pr:close:
+    #     deny: true
     allow:
       - code-vaults/example-repo
       - code-vaults/*

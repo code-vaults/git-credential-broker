@@ -803,7 +803,7 @@ describe('the host broker action policy', () => {
     const config = join(root, 'broker.config.yml')
     writeFileSync(
       config,
-      `socketPath: ${join(root, 'broker.sock')}\nactions:\n  pr:view:\n    deny: true\n  pr:edit:\n    deny: true\n  pr:review:\n    deny: true\nhosts:\n  github.com:\n    provider: static\n    username: x\n    password: y\n    allow:\n      - acme/widget\n`,
+      `socketPath: ${join(root, 'broker.sock')}\nhosts:\n  github.com:\n    provider: static\n    username: x\n    password: y\n    actions:\n      pr:view:\n        deny: true\n      pr:edit:\n        deny: true\n      pr:review:\n        deny: true\n    allow:\n      - acme/widget\n`,
       'utf8',
     )
     const marker = join(root, 'ran')
