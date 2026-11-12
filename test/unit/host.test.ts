@@ -794,6 +794,59 @@ describe('the host broker global channel validation', () => {
   })
 })
 
+describe('the host broker action policy', () => {
+  it('refuses an action denied by configuration', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'host-broker-action-deny-'))
+    const repo = join(root, 'checkout')
+    mkdirSync(join(repo, '.git'), { recursive: true })
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8')
+    const config = join(root, 'broker.config.yml')
+    writeFileSync(
+      config,
+      `socketPath: ${join(root, 'broker.sock')}\nactions:\n  pr:view:\n    deny: true\n  pr:edit:\n    deny: true\n  pr:review:\n    deny: true\nhosts:\n  github.com:\n    provider: static\n    username: x\n    password: y\n    allow:\n      - acme/widget\n`,
+      'utf8',
+    )
+    const marker = join(root, 'ran')
+    const command = join(root, 'not-gh')
+    writeFileSync(command, '#!/bin/sh\ntouch ' + marker + '\n', 'utf8')
+    chmodSync(command, 0o755)
+    try {
+      const dir = channelDir(join(repo, '.git'))
+      const ids = [
+        writeRequest(dir, {
+          kind: 'action',
+          action: 'pr:view',
+          repo: 'acme/widget',
+          values: { number: 7 },
+        }),
+        writeRequest(dir, {
+          kind: 'edit',
+          repo: 'acme/widget',
+          number: 7,
+          title: 'fixed',
+        }),
+        writeRequest(dir, {
+          kind: 'review',
+          repo: 'acme/widget',
+          number: 7,
+          event: 'approve',
+          body: 'ok',
+        }),
+      ]
+      assert.equal(
+        await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']),
+        0,
+      )
+      for (const id of ids) {
+        assert.match(readResult(dir, id)?.error ?? '', /denied/u, id)
+      }
+      assert.equal(existsSync(marker), false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('the host broker push route', () => {
   it('refuses a non-allowlisted repository before invoking git', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-push-denied-'))

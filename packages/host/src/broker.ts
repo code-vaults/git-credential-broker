@@ -59,6 +59,7 @@ export const CODES = {
   HOST_NOT_ALLOWED: 'host-not-allowed',
   PATH_REQUIRED: 'path-required',
   REPO_NOT_ALLOWED: 'repo-not-allowed',
+  ACTION_DENIED: 'action-denied',
   PROVIDER_ERROR: 'provider-error',
 } as const
 
@@ -420,6 +421,13 @@ export function createRequestHandler(
           return denyAction(CODES.BAD_REQUEST, error.message, error.message)
         }
         throw error
+      }
+      if (current.config.actions?.[ghAction]?.deny === true) {
+        return denyAction(
+          CODES.ACTION_DENIED,
+          'action denied by configuration',
+          'this action is denied by the broker configuration',
+        )
       }
       if (identity === 'user' && spec.appUser !== true) {
         return denyAction(
