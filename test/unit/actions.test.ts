@@ -31,6 +31,7 @@ describe('gh action catalog', () => {
       'pr:comment-edit',
       'pr:comment-delete',
       'pr:review',
+      'pr:review-edit',
       'pr:review-by-id',
       'discussion:create',
       'discussion:edit',
@@ -652,6 +653,33 @@ describe('buildGhArgv', () => {
     assert.throws(
       () => buildGhArgv('pr:review-by-id', { number: 42, id: 2 ** 53 }, 'acme/widget'),
       /positive integer/,
+    )
+  })
+
+  it('builds the review-body edit api request', () => {
+    assert.deepEqual(
+      buildGhArgv(
+        'pr:review-edit',
+        { number: 42, id: 9, body: 'updated' },
+        'acme/widget',
+        '/tmp/body.json',
+      ),
+      [
+        'api',
+        '--method',
+        'PUT',
+        'repos/acme/widget/pulls/42/reviews/9',
+        '--input',
+        '/tmp/body.json',
+      ],
+    )
+    assert.throws(
+      () => buildGhArgv('pr:review-edit', { number: 42, id: 9 }, 'acme/widget'),
+      /body/u,
+    )
+    assert.throws(
+      () => buildGhArgv('pr:review-edit', { number: 42, id: 9, body: '  ' }, 'acme/widget'),
+      /non-empty/u,
     )
   })
 
