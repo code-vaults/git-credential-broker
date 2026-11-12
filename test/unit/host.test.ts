@@ -2048,8 +2048,8 @@ it('refuses an account directory logged in as another user', async () => {
   const previousToken = process.env['GH_TOKEN']
   const previousGithubToken = process.env['GITHUB_TOKEN']
   process.env['HOME'] = root
-  delete process.env['GH_TOKEN']
-  delete process.env['GITHUB_TOKEN']
+  process.env['GH_TOKEN'] = ''
+  process.env['GITHUB_TOKEN'] = ''
   try {
     const id = writeRequest(dir, {
       head: 'feat/ok',

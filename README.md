@@ -516,7 +516,8 @@ already exist. Selection is deterministic:
    the active account is not switched.
 4. If none of those names the account, the request is refused.
 
-This also refuses a directory symlinked to a config whose active account is somebody else. Any existing account directory can be named, so this is a selector rather than a
+A directory symlinked to a config whose active account is somebody else is not used directly;
+steps 2–4 decide whether the request can proceed. Any existing account directory can be named, so this is a selector rather than a
 gate. A request with no `--as-user` uses the broker route and does not select the host broker's login.
 The host broker never runs a shell, and
 the program it calls is configuration rather than a hard-coded `gh`: `--command /path/to/gh`, or
