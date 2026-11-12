@@ -506,8 +506,20 @@ submit requests as the selected account within the allowlist.
 `--as-user <login>`
 selects `~/.config/gh-<login>` on the host, matching the login exactly including case; create that
 directory once with `GH_CONFIG_DIR="$HOME/.config/gh-octocat" gh auth login`. The directory must
-already exist, and inherited `GH_TOKEN`/`GITHUB_TOKEN`/`GH_ENTERPRISE_TOKEN`/`GITHUB_ENTERPRISE_TOKEN`/`GH_HOST` are ignored
-for that request. Any existing account directory can be named, so this is a selector rather than a
+already exist. Selection is deterministic:
+
+1. If the directory's active user for the requested host is that login, it is used; inherited
+   tokens are cleared so they cannot override it.
+2. If the active user differs, an inherited token for that host (`GH_TOKEN`/`GITHUB_TOKEN` for
+   github.com and `*.ghe.com`, the enterprise equivalents for GitHub Enterprise Server) is used
+   next, so a host broker started from a shell that exports its identity works without a
+   directory.
+3. Otherwise `gh auth token --hostname <host> --user <login>` supplies that account's token for
+   this request only; the active account is not switched.
+4. If none of those names the account, the request is refused.
+
+A directory symlinked to a config whose active account is somebody else is not used directly;
+steps 2–4 decide whether the request can proceed. Any existing account directory can be named, so this is a selector rather than a
 gate. A request with no `--as-user` uses the broker route and does not select the host broker's login.
 The host broker never runs a shell, and
 the program it calls is configuration rather than a hard-coded `gh`: `--command /path/to/gh`, or

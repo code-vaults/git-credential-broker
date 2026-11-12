@@ -1723,6 +1723,12 @@ describe('the host action route', () => {
         status: 200,
         headers: { 'content-type': 'application/json' },
       })) as typeof fetch
+    const previousTokens = {
+      GH_TOKEN: process.env['GH_TOKEN'],
+      GITHUB_TOKEN: process.env['GITHUB_TOKEN'],
+    }
+    delete process.env['GH_TOKEN']
+    delete process.env['GITHUB_TOKEN']
     try {
       const id = writeRequest(dir, {
         kind: 'action',
@@ -1738,6 +1744,13 @@ describe('the host action route', () => {
       assert.match(readResult(dir, id)?.error ?? '', /no gh config for account/u)
     } finally {
       globalThis.fetch = originalFetch
+      for (const [key, value] of Object.entries(previousTokens)) {
+        if (value === undefined) {
+          delete process.env[key]
+        } else {
+          process.env[key] = value
+        }
+      }
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -2021,6 +2034,167 @@ describe('a claim that someone else holds', () => {
     assert.ok(existsSync(claim), 'nor is a claim removed that this process does not hold')
     rmSync(root, { recursive: true, force: true })
   })
+})
+
+it('refuses an account directory logged in as another user', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'host-broker-account-mismatch-'))
+  const repo = join(root, 'checkout')
+  mkdirSync(join(repo, '.git'), { recursive: true })
+  writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8')
+  const dir = channelDir(join(repo, '.git'))
+  const marker = join(root, 'ran')
+  const command = join(root, 'not-gh')
+  writeFileSync(
+    command,
+    '#!/bin/sh\ncase "$1" in auth) exit 1;; esac\ntouch ' + marker + '\n',
+    'utf8',
+  )
+  chmodSync(command, 0o755)
+  const configDir = join(root, '.config', 'gh-alice')
+  mkdirSync(configDir, { recursive: true })
+  writeFileSync(
+    join(configDir, 'hosts.yml'),
+    'github.com:\n  users:\n    mallory:\n      oauth_token: not-a-secret\n  user: mallory\n',
+    'utf8',
+  )
+  const previousHome = process.env['HOME']
+  const previousToken = process.env['GH_TOKEN']
+  const previousGithubToken = process.env['GITHUB_TOKEN']
+  process.env['HOME'] = root
+  process.env['GH_TOKEN'] = ''
+  process.env['GITHUB_TOKEN'] = ''
+  try {
+    const id = writeRequest(dir, {
+      head: 'feat/ok',
+      base: 'main',
+      title: 'x',
+      body: '',
+      account: 'alice',
+    })
+    assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--once']), 0)
+    assert.match(readResult(dir, id)?.error ?? '', /logged in as .*mallory/u)
+    assert.equal(existsSync(marker), false, 'the program did not run')
+  } finally {
+    if (previousToken === undefined) {
+      delete process.env['GH_TOKEN']
+    } else {
+      process.env['GH_TOKEN'] = previousToken
+    }
+    if (previousGithubToken === undefined) {
+      delete process.env['GITHUB_TOKEN']
+    } else {
+      process.env['GITHUB_TOKEN'] = previousGithubToken
+    }
+    if (previousHome === undefined) {
+      delete process.env['HOME']
+    } else {
+      process.env['HOME'] = previousHome
+    }
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('uses gh auth token --user when the active user differs', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'host-broker-account-token-user-'))
+  const repo = join(root, 'checkout')
+  mkdirSync(join(repo, '.git'), { recursive: true })
+  writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8')
+  const dir = channelDir(join(repo, '.git'))
+  const envFile = join(root, 'env')
+  const command = join(root, 'not-gh')
+  writeFileSync(
+    command,
+    '#!/bin/sh\nif [ "$1" = auth ]; then echo token-from-gh; exit 0; fi\nprintf \'%s|%s\\n\' "$GH_TOKEN" "$GH_CONFIG_DIR" > ' +
+      envFile +
+      '\necho "https://github.com/acme/widget/pull/7"\n',
+    'utf8',
+  )
+  chmodSync(command, 0o755)
+  const configDir = join(root, '.config', 'gh-alice')
+  mkdirSync(configDir, { recursive: true })
+  writeFileSync(
+    join(configDir, 'hosts.yml'),
+    'github.com:\n  users:\n    mallory:\n      oauth_token: not-a-secret\n  user: mallory\n',
+    'utf8',
+  )
+  const previous = {
+    HOME: process.env['HOME'],
+    GH_TOKEN: process.env['GH_TOKEN'],
+    GITHUB_TOKEN: process.env['GITHUB_TOKEN'],
+  }
+  process.env['HOME'] = root
+  delete process.env['GH_TOKEN']
+  delete process.env['GITHUB_TOKEN']
+  try {
+    const id = writeRequest(dir, {
+      head: 'feat/ok',
+      base: 'main',
+      title: 'x',
+      body: '',
+      account: 'alice',
+    })
+    assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--once']), 0)
+    assert.equal(readResult(dir, id)?.error, undefined)
+    assert.equal(readFileSync(envFile, 'utf8').trim(), 'token-from-gh|' + configDir)
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('uses an inherited GH_TOKEN when no account directory exists', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'host-broker-account-token-'))
+  const repo = join(root, 'checkout')
+  mkdirSync(join(repo, '.git'), { recursive: true })
+  writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8')
+  const dir = channelDir(join(repo, '.git'))
+  const envFile = join(root, 'env')
+  const command = join(root, 'not-gh')
+  writeFileSync(
+    command,
+    '#!/bin/sh\nprintf \'%s|%s\\n\' "$GH_TOKEN" "$GH_CONFIG_DIR" > ' +
+      envFile +
+      '\necho "https://github.com/acme/widget/pull/7"\n',
+    'utf8',
+  )
+  chmodSync(command, 0o755)
+  const previous = {
+    HOME: process.env['HOME'],
+    GH_TOKEN: process.env['GH_TOKEN'],
+    GITHUB_TOKEN: process.env['GITHUB_TOKEN'],
+    GH_CONFIG_DIR: process.env['GH_CONFIG_DIR'],
+  }
+  process.env['HOME'] = root
+  process.env['GH_TOKEN'] = 'inherited-token'
+  delete process.env['GITHUB_TOKEN']
+  delete process.env['GH_CONFIG_DIR']
+  try {
+    const id = writeRequest(dir, {
+      head: 'feat/ok',
+      base: 'main',
+      title: 'x',
+      body: '',
+      account: 'alice',
+    })
+    assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--once']), 0)
+    assert.equal(readResult(dir, id)?.error, undefined)
+    assert.equal(readFileSync(envFile, 'utf8').trim(), 'inherited-token|')
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 describe('the host broker account selection', () => {

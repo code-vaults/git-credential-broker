@@ -11,12 +11,13 @@
  * It has no other power than the catalogued actions: it cannot push or merge, and it never runs a
  * shell; the program it calls is configuration, and it is called with an argument list built here.
  */
-import { execFile, spawn } from 'node:child_process'
+import { execFile, execFileSync, spawn } from 'node:child_process'
 import {
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -62,6 +63,7 @@ import {
   validateArgs,
   warn,
 } from 'gcb-core'
+import { parseDocument } from 'yaml'
 
 import { loadConfig, resolveConfigPath } from '../config.ts'
 import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts'
@@ -633,29 +635,138 @@ async function sweep(
   return answered
 }
 
+/** The active github.com user in one gh config directory, when it can be read. */
+function activeAccount(dir: string, host = 'github.com'): string | undefined {
+  let parsed: unknown
+  try {
+    parsed = parseDocument(readFileSync(join(dir, 'hosts.yml'), 'utf8')).toJS()
+  } catch {
+    return undefined
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return undefined
+  }
+  const entry = Object.entries(parsed as Record<string, unknown>).find(
+    ([key]) => key.toLowerCase() === host.toLowerCase(),
+  )?.[1]
+  if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+    return undefined
+  }
+  const active = (entry as Record<string, unknown>)['user']
+  return typeof active === 'string' && active !== '' ? active : undefined
+}
+
+/** Whether the inherited environment names a usable token, not merely an empty variable. */
+/** Whether a host uses GH_TOKEN (github.com and Enterprise Cloud) or GH_ENTERPRISE_TOKEN (GHES). */
+function dotComHost(host: string): boolean {
+  const lower = host.toLowerCase()
+  return lower === 'github.com' || lower.endsWith('.ghe.com')
+}
+
+function hasInheritedToken(env: NodeJS.ProcessEnv, host = 'github.com'): boolean {
+  const keys = dotComHost(host)
+    ? ['GH_TOKEN', 'GITHUB_TOKEN']
+    : ['GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN']
+  for (const key of keys) {
+    const value = env[key]
+    if (typeof value === 'string' && value.trim() !== '') {
+      return true
+    }
+  }
+  return false
+}
+
+/** Ask gh for one named account's token without switching the active account. */
+function accountToken(
+  command: string,
+  extra: readonly string[],
+  dir: string,
+  host: string,
+  account: string,
+): string | undefined {
+  const env: NodeJS.ProcessEnv = { ...process.env, GH_CONFIG_DIR: dir }
+  delete env['GH_TOKEN']
+  delete env['GITHUB_TOKEN']
+  delete env['GH_ENTERPRISE_TOKEN']
+  delete env['GITHUB_ENTERPRISE_TOKEN']
+  delete env['GH_HOST']
+  try {
+    const token = execFileSync(
+      command,
+      [...extra, 'auth', 'token', '--hostname', host, '--user', account],
+      {
+        env,
+        encoding: 'utf8',
+        timeout: 5_000,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    ).trim()
+    return token === '' ? undefined : token
+  } catch {
+    return undefined
+  }
+}
+
 /** Environment for one gh call: the selected account or inherited config, plus the proxy choice. */
-function forkEnv(proxy: ProxyChoice, account: string | undefined, host: string): NodeJS.ProcessEnv {
-  const env = hostEnv(proxy, account)
+function forkEnv(
+  proxy: ProxyChoice,
+  account: string | undefined,
+  host: string,
+  command = 'gh',
+  extra: readonly string[] = [],
+): NodeJS.ProcessEnv {
+  const env = hostEnv(proxy, account, command, host, extra)
   // gh chooses between GH_TOKEN and GH_ENTERPRISE_TOKEN by host; forcing GH_HOST is what keeps an
   // inherited token from selecting another instance. Named accounts already had their tokens removed.
   env['GH_HOST'] = host
   return env
 }
 
-function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
+function hostEnv(
+  proxy: ProxyChoice,
+  account?: string,
+  command = 'gh',
+  host = 'github.com',
+  extra: readonly string[] = [],
+): NodeJS.ProcessEnv {
   const env = { ...process.env }
   if (account !== undefined) {
     const dir = join(homedir(), '.config', `gh-${account}`)
-    if (!existsSync(dir) || !statSync(dir).isDirectory()) {
-      throw new Error(`no gh config for account ${JSON.stringify(account)} at ${dir}`)
+    if (existsSync(dir) && statSync(dir).isDirectory()) {
+      const active = activeAccount(dir, host)
+      if (active === undefined || active.toLowerCase() === account.toLowerCase()) {
+        // The directory is the selected account; inherited tokens must not override it.
+        delete env['GH_TOKEN']
+        delete env['GITHUB_TOKEN']
+        delete env['GH_ENTERPRISE_TOKEN']
+        delete env['GITHUB_ENTERPRISE_TOKEN']
+        delete env['GH_HOST']
+        env['GH_CONFIG_DIR'] = dir
+      } else if (hasInheritedToken(env, host)) {
+        // A token exported for this broker is the identity; keep it and use the directory for
+        // settings only.
+        env['GH_CONFIG_DIR'] = dir
+      } else {
+        const token = accountToken(command, extra, dir, host, account)
+        if (token === undefined) {
+          throw new Error(
+            `gh config for account ${JSON.stringify(account)} is logged in as ${JSON.stringify(active)}, and gh auth token --user ${account} found no token`,
+          )
+        }
+        delete env['GH_TOKEN']
+        delete env['GITHUB_TOKEN']
+        delete env['GH_ENTERPRISE_TOKEN']
+        delete env['GITHUB_ENTERPRISE_TOKEN']
+        env[dotComHost(host) ? 'GH_TOKEN' : 'GH_ENTERPRISE_TOKEN'] = token
+        env['GH_CONFIG_DIR'] = dir
+      }
+    } else if (!hasInheritedToken(env, host)) {
+      throw new Error(
+        `no gh config for account ${JSON.stringify(account)} at ${dir}, and no inherited token for ${host}`,
+      )
     }
-    // Tokens in the host broker's own environment would override the selected account's config.
-    delete env['GH_TOKEN']
-    delete env['GITHUB_TOKEN']
-    delete env['GH_ENTERPRISE_TOKEN']
-    delete env['GITHUB_ENTERPRISE_TOKEN']
-    delete env['GH_HOST']
-    env['GH_CONFIG_DIR'] = dir
+    // Without an account directory the inherited token is the identity. gh gives GH_TOKEN priority
+    // over GH_CONFIG_DIR, so leave it in place rather than inventing a directory for it.
   }
   applyProxyChoice(env, proxy)
   return env
@@ -804,12 +915,12 @@ async function resolvePushTarget(
     if (!allowedPush && context.blockFor(host)?.allowForkPush === true) {
       let apiEnv: NodeJS.ProcessEnv
       try {
-        apiEnv = forkEnv(request.proxy, request.account, host)
+        apiEnv = forkEnv(request.proxy, request.account, host, context.command, context.extra)
       } catch (error) {
         if (request.account === undefined) {
           return { error: (error as Error).message }
         }
-        apiEnv = forkEnv(request.proxy, undefined, host)
+        apiEnv = forkEnv(request.proxy, undefined, host, context.command, context.extra)
       }
       const { stdout } = await run(
         context.command,
@@ -893,7 +1004,13 @@ async function resolvePushTarget(
         ]
   try {
     const cleanEnv = withoutGitLocation({
-      ...forkEnv(request.proxy, transport === 'ssh' ? undefined : request.account, host),
+      ...forkEnv(
+        request.proxy,
+        transport === 'ssh' ? undefined : request.account,
+        host,
+        context.command,
+        context.extra,
+      ),
       GIT_CONFIG_NOSYSTEM: '1',
       GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
       GIT_TERMINAL_PROMPT: '0',
@@ -985,7 +1102,7 @@ async function openOne(
         cwd: repo,
         timeout: CREATE_TIMEOUT_MS,
         maxBuffer: 1 << 20,
-        env: forkEnv(request.proxy, request.account, host),
+        env: forkEnv(request.proxy, request.account, host, command, extra),
       })
       const match = /https:\/\/[^\s]+\/[^\s/]+\/[^\s/]+/.exec(stdout)
       if (match?.[0] !== undefined) {
@@ -1200,14 +1317,14 @@ async function openOne(
         return { error: (error as Error).message }
       }
       try {
-        return await runAction(forkEnv(request.proxy, request.account, host))
+        return await runAction(forkEnv(request.proxy, request.account, host, command, extra))
       } catch (error) {
         return { error: (error as Error).message }
       }
     }
 
     return personRun(host, request.repo, allowedByFork ? () => true : allowed, async host =>
-      runAction(forkEnv(request.proxy, request.account, host)),
+      runAction(forkEnv(request.proxy, request.account, host, command, extra)),
     )
   }
 
@@ -1229,7 +1346,7 @@ async function openOne(
           cwd: repo,
           timeout: CREATE_TIMEOUT_MS,
           maxBuffer: 1 << 20,
-          env: forkEnv(request.proxy, request.account, host),
+          env: forkEnv(request.proxy, request.account, host, command, extra),
         },
       )
       let answer: unknown = null
@@ -1276,7 +1393,7 @@ async function openOne(
             cwd: repo,
             timeout: CREATE_TIMEOUT_MS,
             maxBuffer: 1 << 20,
-            env: forkEnv(request.proxy, request.account, host),
+            env: forkEnv(request.proxy, request.account, host, command, extra),
           },
         ).then(({ stdout }) => pullRequestUrl(stdout) ?? { number: request.number })
       return request.body === undefined ? invoke() : withBodyFile(request.body, invoke)
@@ -1316,7 +1433,7 @@ async function openOne(
             cwd: repo,
             timeout: CREATE_TIMEOUT_MS,
             maxBuffer: 1 << 20,
-            env: forkEnv(request.proxy, request.account, host),
+            env: forkEnv(request.proxy, request.account, host, command, extra),
           },
         ).then(({ stdout }) => {
           const match = /https:\/\/[^\s]+\/pull\/\d+(?:#pullrequestreview-\d+)?/.exec(stdout)
@@ -1370,8 +1487,8 @@ async function openOne(
           maxBuffer: 1 << 20,
           env:
             target === undefined
-              ? hostEnv(request.proxy, request.account)
-              : forkEnv(request.proxy, request.account, 'github.com'),
+              ? hostEnv(request.proxy, request.account, command, 'github.com', extra)
+              : forkEnv(request.proxy, request.account, 'github.com', command, extra),
         },
       )
       const found = pullRequestUrl(stdout)
