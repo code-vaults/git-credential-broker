@@ -2023,6 +2023,46 @@ describe('a claim that someone else holds', () => {
   })
 })
 
+it('refuses an account directory logged in as another user', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'host-broker-account-mismatch-'))
+  const repo = join(root, 'checkout')
+  mkdirSync(join(repo, '.git'), { recursive: true })
+  writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8')
+  const dir = channelDir(join(repo, '.git'))
+  const marker = join(root, 'ran')
+  const command = join(root, 'not-gh')
+  writeFileSync(command, '#!/bin/sh\ntouch ' + marker + '\n', 'utf8')
+  chmodSync(command, 0o755)
+  const configDir = join(root, '.config', 'gh-alice')
+  mkdirSync(configDir, { recursive: true })
+  writeFileSync(
+    join(configDir, 'hosts.yml'),
+    'github.com:\n  users:\n    mallory:\n      oauth_token: not-a-secret\n  user: mallory\n',
+    'utf8',
+  )
+  const previous = process.env['HOME']
+  process.env['HOME'] = root
+  try {
+    const id = writeRequest(dir, {
+      head: 'feat/ok',
+      base: 'main',
+      title: 'x',
+      body: '',
+      account: 'alice',
+    })
+    assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--once']), 0)
+    assert.match(readResult(dir, id)?.error ?? '', /logged in as .*mallory/u)
+    assert.equal(existsSync(marker), false, 'the program did not run')
+  } finally {
+    if (previous === undefined) {
+      delete process.env['HOME']
+    } else {
+      process.env['HOME'] = previous
+    }
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 describe('the host broker account selection', () => {
   it('uses ~/.config/gh-<login> and clears inherited tokens', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-account-'))

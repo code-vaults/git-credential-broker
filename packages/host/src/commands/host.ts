@@ -17,6 +17,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -62,6 +63,7 @@ import {
   validateArgs,
   warn,
 } from 'gcb-core'
+import { parseDocument } from 'yaml'
 
 import { loadConfig, resolveConfigPath } from '../config.ts'
 import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts'
@@ -633,6 +635,39 @@ async function sweep(
   return answered
 }
 
+/**
+ * Refuse an account directory whose active GitHub login is not the requested one.
+ *
+ * `GH_CONFIG_DIR` selects a config directory, not a user inside it; a symlink to the default config
+ * (or a directory with a different active user) would otherwise run the person action as somebody
+ * else. Only the github.com active user is checked; a missing or unreadable hosts.yml falls through
+ * to gh, which reports its own error.
+ */
+function assertAccountUser(dir: string, account: string): void {
+  let parsed: unknown
+  try {
+    parsed = parseDocument(readFileSync(join(dir, 'hosts.yml'), 'utf8')).toJS()
+  } catch {
+    return
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return
+  }
+  const github = (parsed as Record<string, unknown>)['github.com']
+  if (typeof github !== 'object' || github === null || Array.isArray(github)) {
+    return
+  }
+  const active = (github as Record<string, unknown>)['user']
+  if (typeof active !== 'string' || active === '') {
+    return
+  }
+  if (active.toLowerCase() !== account.toLowerCase()) {
+    throw new Error(
+      `gh config for account ${JSON.stringify(account)} is logged in as ${JSON.stringify(active)}; run gh auth switch --user ${account} in ${dir} (or log that account in there)`,
+    )
+  }
+}
+
 /** Environment for one gh call: the selected account or inherited config, plus the proxy choice. */
 function forkEnv(proxy: ProxyChoice, account: string | undefined, host: string): NodeJS.ProcessEnv {
   const env = hostEnv(proxy, account)
@@ -655,6 +690,7 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
     delete env['GH_ENTERPRISE_TOKEN']
     delete env['GITHUB_ENTERPRISE_TOKEN']
     delete env['GH_HOST']
+    assertAccountUser(dir, account)
     env['GH_CONFIG_DIR'] = dir
   }
   applyProxyChoice(env, proxy)
