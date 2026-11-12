@@ -895,6 +895,7 @@ actions. Grant them on the App, then approve any changed permissions on each ins
 | `pr comment-edit`                    | `pull_requests: write`                                                    |
 | `pr comment-delete`                  | `pull_requests: write`                                                    |
 | `pr review`                          | `pull_requests: write`                                                    |
+| `pr review-edit`                     | `pull_requests: write`                                                    |
 | `pr review --id` (`pr:review-by-id`) | `pull_requests: read`                                                     |
 | `discussion create`                  | `discussions: write`                                                      |
 | `discussion edit`                    | `discussions: write`                                                      |

@@ -349,6 +349,25 @@ const PR_REVIEW_BY_ID: GhAction = {
   },
 }
 
+// GitHub: PATCH /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+const PR_REVIEW_EDIT: GhAction = {
+  name: 'pr:review-edit',
+  command: ['pr', 'review-edit'],
+  positionals: [
+    { name: 'number', type: 'number', required: true },
+    { name: 'id', type: 'number', required: true },
+  ],
+  flags: [{ name: 'body', type: 'string', required: true, nonEmpty: true }],
+  permissions: { pull_requests: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+  api: {
+    method: 'PATCH',
+    endpoint: 'repos/{owner}/{repo}/pulls/{number}/reviews/{id}',
+    jsonBody: true,
+  },
+}
+
 // GitHub: POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews
 const PR_REVIEW: GhAction = {
   name: 'pr:review',
@@ -950,6 +969,7 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:comment-edit': PR_COMMENT_EDIT,
   'pr:comment-delete': PR_COMMENT_DELETE,
   'pr:review': PR_REVIEW,
+  'pr:review-edit': PR_REVIEW_EDIT,
   'pr:review-by-id': PR_REVIEW_BY_ID,
   'discussion:create': DISCUSSION_CREATE,
   'discussion:edit': DISCUSSION_EDIT,
