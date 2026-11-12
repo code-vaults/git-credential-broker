@@ -1,5 +1,12 @@
 # gcb-core
 
+## 0.11.1
+
+### Patch Changes
+
+- [#157](https://github.com/code-vaults/git-credential-broker/pull/157) [`03d1a95`](https://github.com/code-vaults/git-credential-broker/commit/03d1a959580f6cc76f6ea479ecafd614265b4ab6) Thanks [@JounQin](https://github.com/JounQin)! - Add `pr:review-edit <number> <id> --body`: update the body of an existing pull request review
+  through the fixed `PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}` endpoint.
+
 ## 0.11.0
 
 ### Minor Changes
