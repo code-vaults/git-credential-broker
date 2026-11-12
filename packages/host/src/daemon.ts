@@ -14,12 +14,7 @@ import type { BrokerConfig, Provider } from 'gcb-core'
 
 import { createAudit } from './audit.ts'
 import { startBroker } from './broker.ts'
-import {
-  assertKeysReadable,
-  loadConfigText,
-  readConfigText,
-  resolveConfigPath,
-} from './config.ts'
+import { assertKeysReadable, loadConfigText, readConfigText, resolveConfigPath } from './config.ts'
 import { createProvider } from './providers/index.ts'
 import type { ProviderDeps } from './providers/index.ts'
 import { ConfigWatcher } from './reload.ts'
@@ -143,7 +138,12 @@ export async function runDaemon(
     return 0
   }
 
-  const audit = createAudit({ path: config.auditPath, stderr })
+  const audit = createAudit({
+    path: config.auditPath,
+    maxBytes: config.auditMaxBytes,
+    keep: config.auditKeep,
+    stderr,
+  })
   let broker: Awaited<ReturnType<typeof startBroker>>
   try {
     broker = await startBroker({

@@ -5,12 +5,31 @@
  * itself: callers pass only a short SHA-256 fingerprint. A defensive redaction pass drops any
  * secret-looking key a future caller might add by accident, and the file is created 0600 so it
  * stays broker-owned.
+ *
+ * The file rotates before a write would exceed the configured size; older files are kept up to the
+ * configured count. Rotation is deliberately synchronous: a request that is being audited should
+ * not race a rotate that is moving its own log file.
  */
-import { chmodSync, closeSync, createWriteStream, mkdirSync, openSync } from 'node:fs'
-import type { WriteStream } from 'node:fs'
+import {
+  appendFileSync,
+  chmodSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  renameSync,
+  rmSync,
+  statSync,
+} from 'node:fs'
 import { dirname } from 'node:path'
 
 import type { AuditSink } from 'gcb-core'
+
+/** The default audit segment size: 10 MiB. */
+export const AUDIT_MAX_BYTES = 10 * 1024 * 1024
+
+/** The default number of rotated audit segments to keep. */
+export const AUDIT_KEEP = 5
 
 /**
  * Keys whose values must never reach the audit log.
@@ -26,6 +45,10 @@ const FORBIDDEN_KEY_RE = /pass(word)?|secret|^token(?!_fingerprint)|token$|crede
 export interface AuditOptions {
   /** Log path; omitted or null means "log nothing to disk". */
   path?: string | null
+  /** Rotate before a write would make the active file larger than this. */
+  maxBytes?: number
+  /** How many rotated files to retain, excluding the active file. */
+  keep?: number
   /** Clock, injectable for tests. */
   now?: () => number
   /** Where write failures are reported. */
@@ -46,6 +69,29 @@ export function redact(event: Record<string, unknown>): Record<string, unknown> 
   return out
 }
 
+/** Create the active audit file 0600, even when the directory already existed. */
+function ensureAuditFile(path: string): void {
+  mkdirSync(dirname(path), { recursive: true })
+  // The mode passed to create is advisory on ACL shares; chmod is the actual boundary.
+  closeSync(openSync(path, 'a', 0o600))
+  chmodSync(path, 0o600)
+}
+
+/** Shift the current file to `.1`, keeping at most `keep` numbered segments. */
+function rotateAuditFile(path: string, keep: number): void {
+  for (let index = keep - 1; index >= 1; index -= 1) {
+    const from = `${path}.${index}`
+    if (!existsSync(from)) {
+      continue
+    }
+    const to = `${path}.${index + 1}`
+    rmSync(to, { force: true })
+    renameSync(from, to)
+  }
+  rmSync(`${path}.1`, { force: true })
+  renameSync(path, `${path}.1`)
+}
+
 /**
  * Create the audit sink.
  *
@@ -53,39 +99,42 @@ export function redact(event: Record<string, unknown>): Record<string, unknown> 
  * @returns The sink; a null path yields a sink that writes nothing.
  */
 export function createAudit(options: AuditOptions = {}): AuditSink {
-  const { path = null, now = () => Date.now(), stderr = process.stderr } = options
+  const {
+    path = null,
+    maxBytes = AUDIT_MAX_BYTES,
+    keep = AUDIT_KEEP,
+    now = () => Date.now(),
+    stderr = process.stderr,
+  } = options
 
-  let stream: WriteStream | null = null
   if (path) {
-    mkdirSync(dirname(path), { recursive: true })
-    // Create, restrict, then append through the stream. The mode passed to a create call is
-    // advisory on an ACL-based share, which would leave the audit trail writable by other local
-    // users — and an audit trail someone else can append to is not an audit trail.
-    closeSync(openSync(path, 'a', 0o600))
-    chmodSync(path, 0o600)
-    stream = createWriteStream(path, { flags: 'a', mode: 0o600 })
-    stream.on('error', (error: Error) => {
-      stderr.write(`gcb daemon: audit write failed: ${error.message}\n`)
-    })
+    ensureAuditFile(path)
   }
 
   return {
     path,
     record(event: Record<string, unknown>): void {
-      if (!stream) {
+      if (path === null) {
         return
       }
-      stream.write(`${JSON.stringify({ ts: new Date(now()).toISOString(), ...redact(event) })}\n`)
+      const line = `${JSON.stringify({ ts: new Date(now()).toISOString(), ...redact(event) })}\n`
+      try {
+        const size = statSync(path).size
+        if (size > 0 && size + Buffer.byteLength(line) > maxBytes) {
+          try {
+            ensureAuditFile(path)
+            rotateAuditFile(path, keep)
+          } catch (error) {
+            stderr.write(`gcb daemon: audit rotation failed: ${(error as Error).message}\n`)
+          }
+        }
+        appendFileSync(path, line, { mode: 0o600 })
+      } catch (error) {
+        stderr.write(`gcb daemon: audit write failed: ${(error as Error).message}\n`)
+      }
     },
     close(): Promise<void> {
-      const target = stream
-      return new Promise(resolve => {
-        if (!target) {
-          resolve()
-          return
-        }
-        target.end(resolve)
-      })
+      return Promise.resolve()
     },
   }
 }

@@ -690,6 +690,8 @@ Top level:
 | `socketPath`            | — (required) | Absolute path of the unix socket the broker binds.                                |
 | `socketMode`            | `432` (0660) | Socket permissions, in decimal. `0660` is right when broker uid == container uid. |
 | `auditPath`             | `null`       | Append-only JSONL. Keep it outside the container's mounts.                        |
+| `auditMaxBytes`         | `10485760`   | Rotate the active audit file before a write would exceed this size.               |
+| `auditKeep`             | `5`          | Number of rotated audit files to retain.                                          |
 | `tokenCacheSkewSeconds` | `300`        | Re-mint a cached credential this long before it expires.                          |
 
 Per host, keyed exactly as git reports it (`github.com`, or `host:port` for other ports):
