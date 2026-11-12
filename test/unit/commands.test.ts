@@ -2168,11 +2168,11 @@ describe('the anchor flags, at the CLI boundary', () => {
     assert.match(result.stderr, /--jq needs an expression/)
   })
 
-  it('refuses --close with a value too', () => {
-    for (const argv of [['--close', '7'], ['--close=7']]) {
-      const moved = cli([...base, ...argv])
-      assert.equal(moved.status, 1)
-      assert.match(moved.stderr, /gcb gh pr close/)
+  it('no longer accepts --close', () => {
+    for (const argv of [['--close'], ['--close', '7'], ['--close=7']]) {
+      const result = cli([...base, ...argv])
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /unknown option --close/u)
     }
   })
 
@@ -2260,20 +2260,6 @@ describe('the anchor flags, at the CLI boundary', () => {
     const bare = cli(['--comment'])
     assert.equal(bare.status, 1)
     assert.match(bare.stderr, /anchored review comment/, 'before --repo too')
-  })
-
-  it('points --close at the gh action', () => {
-    const moved = cli([...base, '--close'])
-    assert.equal(moved.status, 1)
-    assert.match(moved.stderr, /gcb gh pr close/)
-
-    const bare = cli(['--close'])
-    assert.equal(bare.status, 1)
-    assert.match(
-      bare.stderr,
-      /gcb gh pr close/,
-      'before --repo, so the message names the replacement',
-    )
   })
 
   it('refuses a side that is neither, and a line that is not a line', () => {

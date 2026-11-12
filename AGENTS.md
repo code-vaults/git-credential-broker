@@ -207,8 +207,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
 - **Open a pull request; the agent opens it, and can close or update it.**
   `gcb pr` covers most of the lifecycle: `--head`/`--base`/`--title` to open,
   `--number` with none of the acting flags (which updates the title, body or base). Closing is the
-  catalogued `pr:close` action: `gcb pr close <number>` (or `gcb gh pr close`), and `--close`
-  refuses with a pointer there.
+  catalogued `pr:close` action: `gcb pr close <number>` (or `gcb gh pr close`); the old
+  `--close` flag is not accepted.
   The broker performs each action without the token leaving it, and prints the number, the URL and
   the state.
 

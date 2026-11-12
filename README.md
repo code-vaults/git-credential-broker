@@ -140,7 +140,7 @@ catalog does not expose `--web`.
 Catalogued actions dispatch through `GCB_PRIMARY` (default `gh`; an unsupported name fails closed).
 The flag-only `gcb pr` form
 described below is still what runs the lifecycle `gh` cannot express (opening as a person, review
-threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr close`.
+threads); `gcb pr --close` is not accepted; use `gcb pr close <number>` (or `gcb gh pr close`).
 
 For that flag-only form, creation uses the app's installation token by default; `--as-user` without
 a value uses the broker's authorized user token for open, review, reply, resolve, edit, comment and
