@@ -170,10 +170,11 @@ during a real push.
 
 `gcb push` authorizes the **destination**, not the source. The commit comes from the host checkout,
 which the container can write, so a container can send an allowlisted repository and push a commit
-made in another checkout; the host cannot prove provenance without a host-owned clone or signed
-commits. That is the same boundary as ordinary `git push`, and the allowlist should be read as
-"this destination may be written", not "this source produced the commit". Use a host-owned clone or
-signed commits when provenance matters.
+made in another checkout; the host cannot prove checkout provenance without a host-owned clone.
+Commit signatures can establish who signed the commit object, not which checkout produced it. That is
+the same boundary as ordinary `git push`, and the allowlist should be read as "this destination may
+be written", not "this source produced the commit". Use a host-owned clone when checkout provenance
+matters, and signed commits when the signer matters.
 
 `gcb repo fork [owner/name]` creates a fork under a person's account. An app cannot own a fork, so
 `--as-user` is required: bare uses the broker's authorized user, a login uses the host broker. Without

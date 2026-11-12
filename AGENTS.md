@@ -205,7 +205,8 @@ sources must stay erasable (`erasableSyntaxOnly` is on: no enums, no parameter p
   person-token credential for git in the container, and no transparent interception of `git push`.
   The allowlist is a **destination** authorization: the commit still comes from the container-writable
   checkout, so `gcb push` does not attest that it was produced by the named repository. Do not add a
-  check that pretends otherwise; use a host-owned clone or signed commits when provenance matters.
+  check that pretends otherwise; use a host-owned clone when checkout provenance matters. Signed
+  commits authenticate the signer, not the checkout.
 
 - **Open a pull request; the agent opens it, and can close or update it.**
   `gcb pr` covers most of the lifecycle: `--head`/`--base`/`--title` to open,
