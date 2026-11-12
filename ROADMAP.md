@@ -2,9 +2,11 @@
 
 This is the staged plan for the next version. `README.md` documents the tree as it exists today;
 this file documents where it is going. YAML configuration, the three-package split, the typed action
-catalog, the `gcb gh` broker/client path and a host image with `gh` are implemented. The executor
-exists, but several Phase 2 items remain incomplete; the old `pr`/`logs` commands remain, and
-host-user delegation is implemented for creation and review comments; live reload and `gcb doctor`'s config digest/last reload report are implemented.
+catalog, the `gcb gh` broker/client path and the host image with `gh` are implemented. Host-user
+delegation covers creation, review, replies, edits and catalogued actions; live reload, audit
+rotation/retention, the per-host action rate limit and `gcb doctor`'s config digest/last-reload
+report are implemented. The remaining large piece is config-defined actions; the plugin and skills
+are later phases.
 
 ## Locked decisions
 
@@ -103,10 +105,9 @@ The configuration is the source of truth and must be comfortable to edit by hand
       `stage`, if kept, exports a commit and does not build a self-contained artifact.
 - [x] Decide the global-install shape: `gcb` installed globally (`npm i -g` / `corepack`) is the
       only command skills and docs name. It must work from any checkout and from the container.
-- [ ] Development mode: the globally installed `gcb` detects an explicit dev pointer (e.g.
-      `GCB_DEV=1` plus `~/.config/gcb/dev.json`, written by `gcb dev use <checkout>`) and re-execs
-      the development entry with the same argv. Production ignores the pointer. The dev path never
-      changes the socket, token, or host paths unless the developer sets them.
+- [x] Development mode is the explicit `node --conditions=development packages/*/bin/gcb.js` path;
+      no pointer or re-exec step. A supervisor can run that argv from a checkout. Dropped the
+      pointer design: the explicit command is sufficient and avoids a second resolution path.
 - [ ] Define config v1:
   - top-level `version`;
   - hosts keyed by git host;
@@ -213,7 +214,9 @@ host_broker:
     subcommand. (Wired: any `pr` subcommand the catalog has, plus `run` and `issue`; the
     flag-only `gcb pr` stays for the lifecycle `gh` cannot express, and `--close` refuses with a
     pointer at `gcb gh pr close`.)
-- [ ] Remove the built-in `pr` and `logs` commands. `gcb run view --job <id> --log` replaces `logs`.
+- [x] Decided not to remove them: `gcb logs` is kept because a job id and a run id are different
+      inputs; `gcb pr` remains for the flag-only lifecycle (`--reply-to`, `--resolve`, `--edit`,
+      `--comment`) that the catalog does not express as subcommands.
 - [x] Build the command table. Every entry has:
   - canonical subcommand (no aliases, no abbreviations);
   - allowed flags and their types;
@@ -429,10 +432,12 @@ actionable error, and a failed `pr create` returns `pr-create-failed` without a 
 
 - [ ] `gcb doctor`: config validity, `gh` version/path, host broker liveness, account selection,
       socket permissions; no ruleset or App-permission audit.
-- [ ] Audit rotation and a documented retention policy; rate/size limits for `gcb gh`.
+- [x] Audit rotation and a documented retention policy (#149).
+- [x] A per-host catalogued-action rate limit (`actionRateLimit`, #151); output and timeout caps
+      already existed.
 - [ ] Timeout and output-cap defaults validated against a slow proxy; document how to raise them.
-- [ ] Remove or make opt-in the old App-permission pre-flight (`verifyAppPermissions`) on the
-      runtime path. `diagnose` may still report what the App sees.
+- [x] Decided to keep the App-permission pre-flight on by default; `verifyAppPermissions: false`
+      opts out. `diagnose` remains the report of what the App sees.
 - [ ] Commit signing without a private key in the container (non-blocking; low priority):
   - `git commit -S` needs a signer, and the key must not be copied into the agent container;
   - options: forward the host's `gpg-agent` extra socket, forward an SSH agent for
