@@ -16,6 +16,9 @@ socketMode: 432
 # Append-only JSONL, deliberately unreadable from the container. Records grants and refusals,
 # never credentials.
 auditPath: /var/log/git-cred-broker/audit.jsonl
+# Rotate before 10 MiB and keep five older segments.
+auditMaxBytes: 10485760
+auditKeep: 5
 
 # Re-mint a cached token this many seconds before it expires.
 tokenCacheSkewSeconds: 300

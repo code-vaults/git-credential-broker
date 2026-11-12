@@ -384,6 +384,22 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
     errors.push('auditPath must be a string when present')
   }
 
+  const auditMaxRaw = raw['auditMaxBytes']
+  if (
+    auditMaxRaw !== undefined &&
+    (typeof auditMaxRaw !== 'number' || !Number.isInteger(auditMaxRaw) || auditMaxRaw <= 0)
+  ) {
+    errors.push('auditMaxBytes must be a positive integer')
+  }
+
+  const auditKeepRaw = raw['auditKeep']
+  if (
+    auditKeepRaw !== undefined &&
+    (typeof auditKeepRaw !== 'number' || !Number.isInteger(auditKeepRaw) || auditKeepRaw <= 0)
+  ) {
+    errors.push('auditKeep must be a positive integer')
+  }
+
   const socketModeRaw = raw['socketMode']
   if (socketModeRaw !== undefined && !Number.isInteger(socketModeRaw)) {
     errors.push('socketMode must be an integer (octal literal, e.g. 432 for 0660)')
@@ -495,6 +511,8 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
     socketPath: typeof socketPathRaw === 'string' ? socketPathRaw : '',
     socketMode: typeof socketModeRaw === 'number' ? socketModeRaw : 0o660,
     auditPath: typeof auditRaw === 'string' ? auditRaw : null,
+    auditMaxBytes: typeof auditMaxRaw === 'number' ? auditMaxRaw : undefined,
+    auditKeep: typeof auditKeepRaw === 'number' ? auditKeepRaw : undefined,
     tokenCacheSkewSeconds: typeof skewRaw === 'number' ? skewRaw : 300,
     hosts,
   }

@@ -226,6 +226,10 @@ export interface BrokerConfig {
   readonly socketPath: string
   readonly socketMode: number
   readonly auditPath: string | null
+  /** Rotate the audit file before it grows beyond this many bytes. */
+  readonly auditMaxBytes?: number
+  /** How many rotated audit files to retain. */
+  readonly auditKeep?: number
   readonly tokenCacheSkewSeconds: number
   readonly hosts: Readonly<Record<string, HostConfig>>
 }
