@@ -129,7 +129,7 @@ gcb gh discussion view 12 -R owner/name --comments
 
 `-R` is the short form of `--repo`, as in `gh` itself. The `gh discussion` commands require
 GitHub CLI 2.94.0 or newer and remain a preview command in gh. `discussion view --comments` cannot
-be combined with `--json`, `--after` needs `--comments`, `--template` needs `--json`, and the
+be combined with `--json`, `--after` needs `--comments`, `--jq` and `--template` need `--json`, and the
 catalog does not expose `--web`.
 
 `gcb pr <subcommand>`, `gcb run <subcommand>`, `gcb issue <subcommand>` and

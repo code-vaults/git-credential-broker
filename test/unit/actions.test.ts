@@ -334,6 +334,13 @@ describe('gh action catalog', () => {
       () => buildGhArgv('pr:checks', { number: 12, template: '{{.}}' }, 'acme/widget'),
       /needs --json with --template/u,
     )
+    assert.throws(
+      () => buildGhArgv('discussion:list', { jq: '.number' }, 'acme/widget'),
+      /needs --json with --jq/u,
+    )
+    assert.doesNotThrow(() =>
+      buildGhArgv('discussion:list', { json: 'number', jq: '.number' }, 'acme/widget'),
+    )
   })
 
   it('refuses a repository qualifier only in repository-scoped searches', () => {

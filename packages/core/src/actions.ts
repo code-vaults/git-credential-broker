@@ -1248,6 +1248,13 @@ export function buildGhArgv(
     )
   }
   if (
+    present.has('jq') &&
+    !present.has('json') &&
+    action.flags.some(flag => flag.name === 'json')
+  ) {
+    throw new ActionError(`${name} needs --json with --jq`)
+  }
+  if (
     present.has('template') &&
     !present.has('json') &&
     action.flags.some(flag => flag.name === 'json')
