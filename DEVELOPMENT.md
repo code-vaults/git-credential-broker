@@ -46,6 +46,11 @@ TypeScript. There is no separate `.ts` bin. There is no pointer or re-exec step,
 can run the same argv directly from a checkout; do not install `gcb` globally just to develop
 against one.
 
+The `development` condition is workspace-only. `prepack` runs `clean-pkg-json`, and the published
+tarball's exports contain only `types` and `default`; production Node never sees the condition. Even
+without that removal, Node ignores an unknown condition and falls through to `default` unless
+`--conditions=development` is passed.
+
 Commands find the configuration by convention — `--config`, else `$GIT_BROKER_CONFIG`, else
 `broker.config.yml` — so pass `--config` explicitly when working inside the repository, or the CLI
 may read whatever personal configuration happens to be sitting in the working tree (`/broker.config.yml`

@@ -98,7 +98,8 @@ node --conditions=development packages/host/bin/gcb.js --help
 
 That explicit command is the source-development path: it needs no global install and no dev-mode
 pointer. The `bin/gcb.js` entry is only a shim; `--conditions=development` selects the packages'
-`development` export (`src/index.ts`), so the code that runs is TypeScript. Keep the checkout
+`development` export (`src/index.ts`), so the code that runs is TypeScript. That condition is
+stripped by `prepack`, so published packages contain only `types`/`default`. Keep the checkout
 outside every container mount.
 
 ## GitHub actions
