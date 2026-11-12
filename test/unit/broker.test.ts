@@ -46,12 +46,18 @@ function makeHarness(
   allow: readonly string[] = ['acme/widget'],
   providerOverride?: Provider,
   auditPath: string | null = null,
-  options: { allowPublicRead?: boolean; allowForkPush?: boolean; allowFork?: boolean } = {},
+  options: {
+    allowPublicRead?: boolean
+    allowForkPush?: boolean
+    allowFork?: boolean
+    actions?: BrokerConfig['actions']
+  } = {},
 ): Harness {
+  const { actions, ...hostOptions } = options
   const block: StaticHostConfig = {
     provider: 'static',
     allow,
-    ...options,
+    ...hostOptions,
     username: 'x-access-token',
     password: SECRET,
   }
@@ -59,6 +65,7 @@ function makeHarness(
     socketPath: path.join(os.tmpdir(), 'gcb-unit', 'broker.sock'),
     socketMode: 0o660,
     auditPath,
+    ...(actions === undefined ? {} : { actions }),
     tokenCacheSkewSeconds: 300,
     hosts: { [HOST]: block },
   }
@@ -648,6 +655,31 @@ describe('audit redaction', () => {
 })
 
 describe('broker actions', () => {
+  it('denies a configured action before running the provider', async () => {
+    let called = false
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async () => {
+        called = true
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
+      },
+    }
+    const harness = makeHarness(['acme/widget'], provider, null, {
+      actions: { 'pr:view': { deny: true } },
+    })
+    const response = await harness.handle({
+      op: 'action',
+      host: HOST,
+      path: 'acme/widget',
+      ghAction: 'pr:view',
+      values: { number: 7 },
+    })
+    assert.equal(response.ok, false)
+    assert.equal(response.code, CODES.ACTION_DENIED)
+    assert.equal(called, false)
+  })
+
   it('validates and audits a catalogued action through the provider', async () => {
     const calls: unknown[] = []
     const provider: Provider = {

@@ -23,6 +23,12 @@ auditKeep: 5
 # Re-mint a cached token this many seconds before it expires.
 tokenCacheSkewSeconds: 300
 
+# Refuse catalogued actions for this deployment. The action is still in the catalog, but both
+# broker routes reject it before running gh.
+# actions:
+#   pr:close:
+#     deny: true
+
 hosts:
   # Each entry is keyed by the host exactly as git reports it: "github.com" (no port) or
   # "host:port" for a non-default port. Provider is "github-app" or "static".

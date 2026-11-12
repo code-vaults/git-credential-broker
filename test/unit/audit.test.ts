@@ -96,5 +96,10 @@ describe('the audit log', () => {
     assert.doesNotThrow(() => validateConfig({ ...base, auditMaxBytes: 1024, auditKeep: 3 }))
     assert.throws(() => validateConfig({ ...base, auditMaxBytes: 0 }), /auditMaxBytes/u)
     assert.throws(() => validateConfig({ ...base, auditKeep: 1.5 }), /auditKeep/u)
+    assert.doesNotThrow(() => validateConfig({ ...base, actions: { 'pr:view': { deny: true } } }))
+    assert.throws(
+      () => validateConfig({ ...base, actions: { 'not:an-action': { deny: true } } }),
+      /not a catalogued action/u,
+    )
   })
 })

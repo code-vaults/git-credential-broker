@@ -6,8 +6,14 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path, { posix } from 'node:path'
 
-import type { BrokerConfig, GithubAppHostConfig, HostConfig, StaticHostConfig } from 'gcb-core'
-import { HOST } from 'gcb-core'
+import type {
+  ActionPolicy,
+  BrokerConfig,
+  GithubAppHostConfig,
+  HostConfig,
+  StaticHostConfig,
+} from 'gcb-core'
+import { GH_ACTION_NAMES, HOST } from 'gcb-core'
 import { parseDocument } from 'yaml'
 
 import { parseAllowEntry } from './policy.ts'
@@ -410,6 +416,26 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
     errors.push('tokenCacheSkewSeconds must be a number')
   }
 
+  const actionsRaw = raw['actions']
+  const actions: Record<string, ActionPolicy> = {}
+  if (actionsRaw !== undefined) {
+    if (isRecord(actionsRaw)) {
+      for (const [name, policyRaw] of Object.entries(actionsRaw)) {
+        if (!(GH_ACTION_NAMES as readonly string[]).includes(name)) {
+          errors.push(`actions[${JSON.stringify(name)}] is not a catalogued action`)
+          continue
+        }
+        if (!isRecord(policyRaw)) {
+          errors.push(`actions[${JSON.stringify(name)}] must be an object`)
+          continue
+        }
+        actions[name] = { deny: booleanField(policyRaw, 'deny', errors, `actions[${name}]`) }
+      }
+    } else {
+      errors.push('actions must be an object keyed by catalogued action name')
+    }
+  }
+
   const hostsRaw = raw['hosts']
   const hosts: Record<string, HostConfig> = {}
   if (!isRecord(hostsRaw) || Object.keys(hostsRaw).length === 0) {
@@ -513,6 +539,7 @@ export function validateConfig(raw: unknown, source = '<config>'): BrokerConfig 
     auditPath: typeof auditRaw === 'string' ? auditRaw : null,
     auditMaxBytes: typeof auditMaxRaw === 'number' ? auditMaxRaw : undefined,
     auditKeep: typeof auditKeepRaw === 'number' ? auditKeepRaw : undefined,
+    ...(actionsRaw === undefined ? {} : { actions }),
     tokenCacheSkewSeconds: typeof skewRaw === 'number' ? skewRaw : 300,
     hosts,
   }

@@ -338,8 +338,8 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     }
   }
   let config: BrokerConfig | undefined
-  /** Resolve one host block, loading the configuration on first use. */
-  const blockFor = (host: string) => {
+  /** Load the configuration on first use; every policy lookup shares this snapshot. */
+  const configFor = (): BrokerConfig => {
     if (config === undefined) {
       try {
         config = loadConfig(resolvedConfig)
@@ -352,8 +352,12 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
         )
       }
     }
-    return hostConfig(config, host)
+    return config
   }
+  /** Resolve one host block from the loaded configuration. */
+  const blockFor = (host: string) => hostConfig(configFor(), host)
+  /** Whether the configuration denies this catalogued action. */
+  const actionDenied = (name: string): boolean => configFor().actions?.[name]?.deny === true
   /**
    * Whether the broker config allowlist permits this host/repository for a fork, reply or explicit
    * repository.
@@ -471,7 +475,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
       // must not stop the host broker serving every other root, under Restart=always least of all.
       try {
         advertise(dir)
-        await sweep(dir, repo, command, extra, allowed, blockFor)
+        await sweep(dir, repo, command, extra, allowed, blockFor, actionDenied)
       } catch (error) {
         warn(`could not serve ${repo}: ${(error as Error).message}`)
       }
@@ -499,6 +503,7 @@ async function sweep(
   extra: readonly string[],
   allowed: (host: string, repo: string) => boolean,
   blockFor: (host: string) => ReturnType<typeof hostConfig>,
+  actionDenied: (name: string) => boolean,
 ): Promise<number> {
   let answered = 0
   const reclaimed = reclaimAbandoned(dir)
@@ -551,7 +556,15 @@ async function sweep(
       answered += 1
       continue
     }
-    const result = await openOne(repo, command, extra, { ...request, proxy }, allowed, blockFor)
+    const result = await openOne(
+      repo,
+      command,
+      extra,
+      { ...request, proxy },
+      allowed,
+      blockFor,
+      actionDenied,
+    )
     writeResult(dir, id, result)
     removeRequest(dir, id)
     if (result.error === undefined) {
@@ -926,6 +939,7 @@ async function openOne(
   request: HostRequest,
   allowed: (host: string, repo: string) => boolean,
   blockFor: (host: string) => ReturnType<typeof hostConfig>,
+  actionDenied: (name: string) => boolean,
 ): Promise<HostResult> {
   if (request.kind === 'fork') {
     if (request.host !== undefined && !HOST.test(request.host)) {
@@ -1041,6 +1055,13 @@ async function openOne(
     let action: ReturnType<typeof getGhAction>
     try {
       action = getGhAction(request.action)
+    } catch (error) {
+      return { error: (error as Error).message }
+    }
+    try {
+      if (actionDenied(request.action)) {
+        return { error: `action ${request.action} is denied by the broker configuration` }
+      }
     } catch (error) {
       return { error: (error as Error).message }
     }

@@ -222,6 +222,12 @@ export interface GithubAppHostConfig extends BaseHostConfig {
 export type HostConfig = StaticHostConfig | GithubAppHostConfig
 
 /** A validated broker configuration. */
+/** One catalogued action's host-controlled policy. */
+export interface ActionPolicy {
+  /** Refuse the action even though the catalog defines it. */
+  readonly deny?: boolean
+}
+
 export interface BrokerConfig {
   readonly socketPath: string
   readonly socketMode: number
@@ -230,6 +236,8 @@ export interface BrokerConfig {
   readonly auditMaxBytes?: number
   /** How many rotated audit files to retain. */
   readonly auditKeep?: number
+  /** Per-action policy, keyed by catalogued action name. */
+  readonly actions?: Readonly<Record<string, ActionPolicy>>
   readonly tokenCacheSkewSeconds: number
   readonly hosts: Readonly<Record<string, HostConfig>>
 }
