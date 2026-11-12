@@ -356,8 +356,14 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   }
   /** Resolve one host block from the loaded configuration. */
   const blockFor = (host: string) => hostConfig(configFor(), host)
-  /** Whether the configuration denies this catalogued action. */
-  const actionDenied = (name: string): boolean => configFor().actions?.[name]?.deny === true
+  /** Whether the configuration denies this catalogued action for a host. */
+  const actionDenied = (host: string, name: string): boolean => {
+    const loaded = configFor()
+    return (
+      loaded.actions?.[name]?.deny === true ||
+      hostConfig(loaded, host)?.actions?.[name]?.deny === true
+    )
+  }
   const actionTimes = new Map<string, number[]>()
   /** Consume one action slot for a host, or report that its rolling minute is full. */
   const actionRateLimited = (host: string): boolean => {
@@ -521,7 +527,7 @@ async function sweep(
   extra: readonly string[],
   allowed: (host: string, repo: string) => boolean,
   blockFor: (host: string) => ReturnType<typeof hostConfig>,
-  actionDenied: (name: string) => boolean,
+  actionDenied: (host: string, name: string) => boolean,
   actionRateLimited: (host: string) => boolean,
 ): Promise<number> {
   let answered = 0
@@ -959,7 +965,7 @@ async function openOne(
   request: HostRequest,
   allowed: (host: string, repo: string) => boolean,
   blockFor: (host: string) => ReturnType<typeof hostConfig>,
-  actionDenied: (name: string) => boolean,
+  actionDenied: (host: string, name: string) => boolean,
   actionRateLimited: (host: string) => boolean,
 ): Promise<HostResult> {
   if (request.kind === 'fork') {
@@ -1080,7 +1086,7 @@ async function openOne(
       return { error: (error as Error).message }
     }
     try {
-      if (actionDenied(request.action)) {
+      if (actionDenied(host, request.action)) {
         return { error: `action ${request.action} is denied by the broker configuration` }
       }
     } catch (error) {
@@ -1244,7 +1250,7 @@ async function openOne(
 
   if (request.kind === 'edit') {
     try {
-      if (actionDenied('pr:edit')) {
+      if (actionDenied(request.host ?? 'github.com', 'pr:edit')) {
         return { error: 'action pr:edit is denied by the broker configuration' }
       }
     } catch (error) {
@@ -1279,7 +1285,7 @@ async function openOne(
 
   if (request.kind === 'review') {
     try {
-      if (actionDenied('pr:review')) {
+      if (actionDenied(request.host ?? 'github.com', 'pr:review')) {
         return { error: 'action pr:review is denied by the broker configuration' }
       }
     } catch (error) {

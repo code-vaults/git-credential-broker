@@ -105,6 +105,32 @@ describe('the audit log', () => {
       () => validateConfig({ ...base, actions: { 'pr:view': { deny: null } } }),
       /deny must be a boolean/u,
     )
+    assert.doesNotThrow(() =>
+      validateConfig({
+        ...base,
+        hosts: {
+          'github.com': {
+            provider: 'static',
+            allow: ['acme/widget'],
+            actions: { 'pr:view': { deny: true } },
+          },
+        },
+      }),
+    )
+    assert.throws(
+      () =>
+        validateConfig({
+          ...base,
+          hosts: {
+            'github.com': {
+              provider: 'static',
+              allow: ['acme/widget'],
+              actions: { 'not:an-action': { deny: true } },
+            },
+          },
+        }),
+      /not a catalogued action/u,
+    )
     assert.doesNotThrow(() => validateConfig({ ...base, actionRateLimit: 1 }))
     assert.throws(() => validateConfig({ ...base, actionRateLimit: 0 }), /actionRateLimit/u)
     assert.throws(() => validateConfig({ ...base, actionRateLimit: 1.5 }), /actionRateLimit/u)
