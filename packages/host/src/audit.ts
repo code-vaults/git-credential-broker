@@ -130,6 +130,7 @@ export function createAudit(options: AuditOptions = {}): AuditSink {
             ensureAuditFile(path)
           } catch (error) {
             stderr.write(`gcb daemon: audit recreate failed: ${(error as Error).message}\n`)
+            return
           }
         }
         appendFileSync(path, line, { mode: 0o600 })
