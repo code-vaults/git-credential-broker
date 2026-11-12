@@ -238,6 +238,8 @@ export interface BrokerConfig {
   readonly auditKeep?: number
   /** Per-action policy, keyed by catalogued action name. */
   readonly actions?: Readonly<Record<string, ActionPolicy>>
+  /** Maximum catalogued actions per host in a rolling minute; omitted/0 disables it. */
+  readonly actionRateLimit?: number
   readonly tokenCacheSkewSeconds: number
   readonly hosts: Readonly<Record<string, HostConfig>>
 }

@@ -28,6 +28,8 @@ tokenCacheSkewSeconds: 300
 # actions:
 #   pr:close:
 #     deny: true
+# At most 30 catalogued actions per host in any rolling minute.
+# actionRateLimit: 30
 
 hosts:
   # Each entry is keyed by the host exactly as git reports it: "github.com" (no port) or

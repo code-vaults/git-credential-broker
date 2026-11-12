@@ -693,6 +693,7 @@ Top level:
 | `auditMaxBytes`         | `10485760`   | Rotate the active audit file before a write would exceed this size.               |
 | `auditKeep`             | `5`          | Number of rotated audit files to retain.                                          |
 | `actions`               | —            | Per-action policy, keyed by catalogued action; `{ deny: true }` disables it.      |
+| `actionRateLimit`       | —            | Maximum catalogued actions per host in a rolling minute; omitted disables it.     |
 | `tokenCacheSkewSeconds` | `300`        | Re-mint a cached credential this long before it expires.                          |
 
 Per host, keyed exactly as git reports it (`github.com`, or `host:port` for other ports):
