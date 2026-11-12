@@ -657,11 +657,16 @@ function activeAccount(dir: string, host = 'github.com'): string | undefined {
 }
 
 /** Whether the inherited environment names a usable token, not merely an empty variable. */
+/** Whether a host uses GH_TOKEN (github.com and Enterprise Cloud) or GH_ENTERPRISE_TOKEN (GHES). */
+function dotComHost(host: string): boolean {
+  const lower = host.toLowerCase()
+  return lower === 'github.com' || lower.endsWith('.ghe.com')
+}
+
 function hasInheritedToken(env: NodeJS.ProcessEnv, host = 'github.com'): boolean {
-  const keys =
-    host.toLowerCase() === 'github.com'
-      ? ['GH_TOKEN', 'GITHUB_TOKEN']
-      : ['GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN']
+  const keys = dotComHost(host)
+    ? ['GH_TOKEN', 'GITHUB_TOKEN']
+    : ['GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN']
   for (const key of keys) {
     const value = env[key]
     if (typeof value === 'string' && value.trim() !== '') {
@@ -748,15 +753,16 @@ function hostEnv(
             `gh config for account ${JSON.stringify(account)} is logged in as ${JSON.stringify(active)}, and gh auth token --user ${account} found no token`,
           )
         }
-        env['GH_TOKEN'] = token
+        delete env['GH_TOKEN']
         delete env['GITHUB_TOKEN']
         delete env['GH_ENTERPRISE_TOKEN']
         delete env['GITHUB_ENTERPRISE_TOKEN']
+        env[dotComHost(host) ? 'GH_TOKEN' : 'GH_ENTERPRISE_TOKEN'] = token
         env['GH_CONFIG_DIR'] = dir
       }
     } else if (!hasInheritedToken(env, host)) {
       throw new Error(
-        `no gh config for account ${JSON.stringify(account)} at ${dir}, and no inherited GH_TOKEN/GITHUB_TOKEN`,
+        `no gh config for account ${JSON.stringify(account)} at ${dir}, and no inherited token for ${host}`,
       )
     }
     // Without an account directory the inherited token is the identity. gh gives GH_TOKEN priority

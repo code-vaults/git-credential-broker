@@ -511,8 +511,9 @@ already exist. Selection is deterministic:
 1. If the directory's active user for the requested host is that login, it is used; inherited
    tokens are cleared so they cannot override it.
 2. If the active user differs, an inherited token for that host (`GH_TOKEN`/`GITHUB_TOKEN` for
-   github.com, the enterprise equivalents otherwise) is used next, so a host broker started from
-   a shell that exports its identity works without a directory.
+   github.com and `*.ghe.com`, the enterprise equivalents for GitHub Enterprise Server) is used
+   next, so a host broker started from a shell that exports its identity works without a
+   directory.
 3. Otherwise `gh auth token --hostname <host> --user <login>` supplies that account's token for
    this request only; the active account is not switched.
 4. If none of those names the account, the request is refused.
