@@ -144,8 +144,8 @@ threads); `gcb pr --close` is gone and refuses with a pointer at `gcb gh pr clos
 
 For that flag-only form, creation uses the app's installation token by default; `--as-user` without
 a value uses the broker's authorized user token for open, review, reply, resolve, edit, comment and
-catalogued reads, and `--as-user <login>` uses the host broker for creation, review, reply and
-edit. Resolving a review
+catalogued actions including issue and discussion creation, and `--as-user <login>` uses the host
+broker for creation, review, reply and edit. Resolving a review
 thread defaults to the user identity because the pull-request token this broker mints is narrowed to
 `pull_requests: write` and `contents: read`, while `resolveReviewThread` needs
 `contents: write` — a grant the broker gives only to the credential git pushes with, never to a

@@ -420,7 +420,7 @@ describe('gcb gh', () => {
     }
   })
 
-  it('accepts bare --as-user for an appUser action', async () => {
+  it('accepts bare --as-user for issue and discussion creation', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-as-user-'))
     const socketPath = path.join(root, 'broker.sock')
     const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] }
@@ -432,12 +432,12 @@ describe('gcb gh', () => {
       hosts: { 'github.com': block },
     }
     const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() }
-    let identity: string | undefined
+    const seen: { action: string; identity: string | undefined }[] = []
     const provider: Provider = {
       name: 'static',
       getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
       runAction: async request => {
-        identity = request.identity
+        seen.push({ action: request.action, identity: request.identity })
         return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
       },
     }
@@ -447,20 +447,27 @@ describe('gcb gh', () => {
       providers: new Map([['github.com', provider]]),
     })
     try {
-      const result = await runGhCli([
-        'issue',
-        'comment',
-        '7',
-        '--body',
-        'x',
-        '--as-user',
-        '--repo',
-        'acme/widget',
-        '--socket',
-        socketPath,
+      const cases = [
+        ['issue', 'comment', '7', '--body', 'x'],
+        ['issue', 'create', '--title', 't', '--body', 'b'],
+        ['discussion', 'create', '--category', 'Q&A', '--title', 't', '--body', 'b'],
+      ] as const
+      for (const args of cases) {
+        const result = await runGhCli([
+          ...args,
+          '--as-user',
+          '--repo',
+          'acme/widget',
+          '--socket',
+          socketPath,
+        ])
+        assert.equal(result.status, 0, args.join(' '))
+      }
+      assert.deepEqual(seen, [
+        { action: 'issue:comment', identity: 'user' },
+        { action: 'issue:create', identity: 'user' },
+        { action: 'discussion:create', identity: 'user' },
       ])
-      assert.equal(result.status, 0)
-      assert.equal(identity, 'user')
     } finally {
       await broker.close()
       fs.rmSync(root, { recursive: true, force: true })
