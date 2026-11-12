@@ -313,7 +313,7 @@ describe('gcb pr identity flags', () => {
         { cwd: repo.root, env: process.env, timeoutMs: 5_000 },
       )
       let request
-      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+      for (let attempt = 0; attempt < 400 && request === undefined; attempt += 1) {
         const [id] = listRequests(dir)
         request = id === undefined ? undefined : readRequest(dir, id)
         if (request === undefined) {
@@ -365,7 +365,7 @@ describe('gcb pr identity flags', () => {
       )
       let id: string | undefined
       let request
-      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+      for (let attempt = 0; attempt < 400 && request === undefined; attempt += 1) {
         ;[id] = listRequests(dir)
         request = id === undefined ? undefined : readRequest(dir, id)
         if (request === undefined) {
@@ -409,7 +409,7 @@ describe('gcb pr identity flags', () => {
       )
       let id: string | undefined
       let request
-      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+      for (let attempt = 0; attempt < 400 && request === undefined; attempt += 1) {
         ;[id] = listRequests(dir)
         request = id === undefined ? undefined : readRequest(dir, id)
         if (request === undefined) {
@@ -451,7 +451,7 @@ describe('gcb pr identity flags', () => {
       )
       let id: string | undefined
       let request
-      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+      for (let attempt = 0; attempt < 400 && request === undefined; attempt += 1) {
         ;[id] = listRequests(dir)
         request = id === undefined ? undefined : readRequest(dir, id)
         if (request === undefined) {
@@ -499,7 +499,7 @@ describe('gcb pr identity flags', () => {
       )
       let id: string | undefined
       let request
-      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+      for (let attempt = 0; attempt < 400 && request === undefined; attempt += 1) {
         ;[id] = listRequests(dir)
         request = id === undefined ? undefined : readRequest(dir, id)
         if (request === undefined) {

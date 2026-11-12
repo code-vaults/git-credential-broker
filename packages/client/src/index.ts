@@ -39,6 +39,7 @@ Commands
   run        Run a workflow run action: ${cataloguedSubcommands('run')}
   issue      Run an issue action: ${cataloguedSubcommands('issue')}
   push       Push the current branch from the host, without a token here
+  discussion Run a discussion action: ${cataloguedSubcommands('discussion')}
   repo       Create a fork as a person: fork
   gh         Run a catalogued GitHub action through the broker
 
@@ -122,6 +123,11 @@ export async function runClient(argv: readonly string[], primary?: Primary): Pro
       return (await choose()).run(['issue', ...rest])
     case 'push':
       return (await import('./commands/push.ts')).runPush(rest)
+    case 'discussion':
+      if (await actionAsksHelp('discussion', rest[0], rest)) {
+        return (await import('./commands/gh.ts')).runGh(['discussion', ...rest])
+      }
+      return (await choose()).run(['discussion', ...rest])
     case 'repo':
       return (await import('./commands/repo.ts')).runRepo(rest)
     case 'gh':

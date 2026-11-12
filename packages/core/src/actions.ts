@@ -17,6 +17,7 @@ export type GhPermission =
   | 'actions'
   | 'checks'
   | 'contents'
+  | 'discussions'
   | 'issues'
   | 'pull_requests'
   | 'statuses'
@@ -36,7 +37,7 @@ export interface PositionalSpec {
 /** A long flag an action accepts. */
 export interface FlagSpec {
   readonly name: string
-  readonly type: 'boolean' | 'number' | 'string'
+  readonly type: 'boolean' | 'number' | 'string' | 'tristate'
   /** The flag may be repeated, and the value is a list. */
   readonly repeatable?: boolean
   /** The flag must be present. */
@@ -78,6 +79,8 @@ export interface GhAction {
   readonly permissions: Readonly<Partial<Record<GhPermission, PermissionLevel>>>
   /** The default per-action timeout, in seconds. */
   readonly timeoutSeconds: number
+  /** The search flag is a GitHub search query, so repo/org/user qualifiers could escape --repo. */
+  readonly searchScoped?: boolean
   /** The object kind this action may target, when the CLI command also accepts the other kind. */
   readonly target?: 'issue' | 'pr'
   /** Whether the app broker may run this with `identity: 'user'`. */
@@ -364,6 +367,100 @@ const PR_REVIEW: GhAction = {
   appUser: true,
 }
 
+// GitHub GraphQL: createDiscussion
+const DISCUSSION_CREATE: GhAction = {
+  name: 'discussion:create',
+  command: ['discussion', 'create'],
+  positionals: [],
+  flags: [
+    { name: 'category', type: 'string', required: true },
+    { name: 'title', type: 'string', required: true },
+    { name: 'body', type: 'string', required: true },
+    { name: 'label', type: 'string', repeatable: true },
+  ],
+  permissions: { discussions: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+}
+
+// GitHub GraphQL: discussions query (gh discussion list)
+const DISCUSSION_LIST: GhAction = {
+  name: 'discussion:list',
+  command: ['discussion', 'list'],
+  positionals: [],
+  flags: [
+    { name: 'after', type: 'string' },
+    { name: 'answered', type: 'tristate' },
+    { name: 'author', type: 'string' },
+    { name: 'category', type: 'string' },
+    { name: 'jq', type: 'string' },
+    { name: 'json', type: 'string' },
+    { name: 'label', type: 'string', repeatable: true },
+    { name: 'limit', type: 'number' },
+    { name: 'order', type: 'string' },
+    { name: 'search', type: 'string' },
+    { name: 'sort', type: 'string' },
+    { name: 'state', type: 'string' },
+    { name: 'template', type: 'string' },
+  ],
+  permissions: { discussions: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+  searchScoped: true,
+}
+
+// GitHub GraphQL: discussion and comments queries (gh discussion view)
+const DISCUSSION_VIEW: GhAction = {
+  name: 'discussion:view',
+  command: ['discussion', 'view'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [
+    { name: 'after', type: 'string' },
+    { name: 'comments', type: 'boolean' },
+    { name: 'jq', type: 'string' },
+    { name: 'json', type: 'string' },
+    { name: 'limit', type: 'number' },
+    { name: 'order', type: 'string' },
+    { name: 'template', type: 'string' },
+  ],
+  conflicts: [['comments', 'json']],
+  requires: [['after', 'comments']],
+  permissions: { discussions: 'read' },
+  timeoutSeconds: 120,
+  readOnly: true,
+  appUser: true,
+}
+
+// GitHub GraphQL: addDiscussionComment
+const DISCUSSION_COMMENT: GhAction = {
+  name: 'discussion:comment',
+  command: ['discussion', 'comment'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [{ name: 'body', type: 'string', required: true }],
+  permissions: { discussions: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+}
+
+// GitHub GraphQL: updateDiscussion
+const DISCUSSION_EDIT: GhAction = {
+  name: 'discussion:edit',
+  command: ['discussion', 'edit'],
+  positionals: [{ name: 'number', type: 'number', required: true }],
+  flags: [
+    { name: 'add-label', type: 'string', repeatable: true },
+    { name: 'body', type: 'string' },
+    { name: 'category', type: 'string' },
+    { name: 'remove-label', type: 'string', repeatable: true },
+    { name: 'title', type: 'string' },
+  ],
+  atLeastOneOf: ['body', 'category', 'title', 'add-label', 'remove-label'],
+  permissions: { discussions: 'write' },
+  timeoutSeconds: 120,
+  appUser: true,
+}
+
 // GitHub: POST /repos/{owner}/{repo}/issues
 const ISSUE_CREATE: GhAction = {
   name: 'issue:create',
@@ -518,6 +615,7 @@ const ISSUE_LIST: GhAction = {
   timeoutSeconds: 120,
   readOnly: true,
   appUser: true,
+  searchScoped: true,
 }
 
 // GitHub GraphQL:
@@ -853,6 +951,11 @@ export const GH_ACTIONS: Readonly<Record<string, GhAction>> = Object.freeze({
   'pr:comment-delete': PR_COMMENT_DELETE,
   'pr:review': PR_REVIEW,
   'pr:review-by-id': PR_REVIEW_BY_ID,
+  'discussion:create': DISCUSSION_CREATE,
+  'discussion:edit': DISCUSSION_EDIT,
+  'discussion:list': DISCUSSION_LIST,
+  'discussion:view': DISCUSSION_VIEW,
+  'discussion:comment': DISCUSSION_COMMENT,
   'issue:create': ISSUE_CREATE,
   'issue:edit': ISSUE_EDIT,
   'issue:comment': ISSUE_COMMENT,
@@ -1044,6 +1147,17 @@ export function buildGhArgv(
       continue
     }
 
+    if (flag.type === 'tristate') {
+      if (typeof value !== 'boolean' && value !== 'true' && value !== 'false') {
+        throw new ActionError(`--${flag.name} is a boolean`)
+      }
+      const on = value === true || value === 'true'
+      argv.push(on ? `--${flag.name}` : `--${flag.name}=false`)
+      present.add(flag.name)
+      provided.add(flag.name)
+      continue
+    }
+
     if (flag.name === 'body' && action.api?.jsonBody === true) {
       const text = asString(value, flag.name)
       if (flag.nonEmpty === true && text.trim() === '') {
@@ -1116,15 +1230,36 @@ export function buildGhArgv(
     }
   }
 
-  if (action.command[0] === 'search') {
-    const terms = Array.isArray(values['query']) ? values['query'] : [values['query']]
-    if (
-      terms.some(term => typeof term === 'string' && /(?:^|[\s(])-?(?:repo|org|user):/iu.test(term))
-    ) {
-      throw new ActionError(
-        'search query cannot contain repo:, org: or user:; the broker scopes it to --repo',
-      )
-    }
+  const searchTerms =
+    action.command[0] === 'search'
+      ? Array.isArray(values['query'])
+        ? values['query']
+        : [values['query']]
+      : action.searchScoped === true
+        ? [values['search']]
+        : []
+  if (
+    searchTerms.some(
+      term => typeof term === 'string' && /(?:^|[\s(])-?(?:repo|org|user):/iu.test(term),
+    )
+  ) {
+    throw new ActionError(
+      'search cannot contain repo:, org: or user:; the broker scopes it to --repo',
+    )
+  }
+  if (
+    present.has('jq') &&
+    !present.has('json') &&
+    action.flags.some(flag => flag.name === 'json')
+  ) {
+    throw new ActionError(`${name} needs --json with --jq`)
+  }
+  if (
+    present.has('template') &&
+    !present.has('json') &&
+    action.flags.some(flag => flag.name === 'json')
+  ) {
+    throw new ActionError(`${name} needs --json with --template`)
   }
   if (typeof values['title'] === 'string') {
     if (values['title'].trim() === '') {

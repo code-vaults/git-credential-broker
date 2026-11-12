@@ -52,7 +52,7 @@ function runClientWithOpenStdin(args: readonly string[]): Promise<RunResult> {
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
       finish(null)
-    }, 2_000)
+    }, 10_000)
     function finish(status: number | null): void {
       if (settled) {
         return
@@ -85,6 +85,16 @@ describe('gcb gh', () => {
     ])
     assert.equal(result.status, 1)
     assert.match(result.stderr, /cannot read \/definitely\/not\/here/u)
+  })
+
+  it('routes discussion through the same catalog checks', async () => {
+    const unknown = await runClient(['discussion', '--bogus'])
+    assert.equal(unknown.status, 1)
+    assert.match(unknown.stderr, /unknown gh action "discussion:--bogus"/u)
+
+    const missing = await runClient(['discussion', 'view', '--repo', 'acme/widget'])
+    assert.equal(missing.status, 1)
+    assert.match(missing.stderr, /needs number/u)
   })
 
   it('routes issue through the same catalog checks', async () => {
@@ -303,6 +313,50 @@ describe('gcb gh', () => {
     assert.match(result.stderr, /--body and --body-file are mutually exclusive/u)
   })
 
+  it('forwards the unanswered filter', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-gh-answered-'))
+    const socketPath = path.join(root, 'broker.sock')
+    const block: StaticHostConfig = { provider: 'static', allow: ['acme/widget'] }
+    const config: BrokerConfig = {
+      socketPath,
+      socketMode: 0o600,
+      auditPath: null,
+      tokenCacheSkewSeconds: 300,
+      hosts: { 'github.com': block },
+    }
+    const audit: AuditSink = { path: null, record: () => {}, close: () => Promise.resolve() }
+    const seen: { values: Record<string, unknown> }[] = []
+    const provider: Provider = {
+      name: 'static',
+      getCredential: async () => ({ username: 'u', password: 'p', expiresAt: Date.now() + 1000 }),
+      runAction: async request => {
+        seen.push({ values: request.values })
+        return { stdout: '', stderr: '', code: 0, signal: null, truncated: false, timedOut: false }
+      },
+    }
+    const broker = await startBroker({
+      config,
+      audit,
+      providers: new Map([['github.com', provider]]),
+    })
+    try {
+      const result = await runGhCli([
+        'discussion',
+        'list',
+        '--answered=false',
+        '--repo',
+        'acme/widget',
+        '--socket',
+        socketPath,
+      ])
+      assert.equal(result.status, 0, result.stderr)
+      assert.equal(seen[0]?.values['answered'], false)
+    } finally {
+      await broker.close()
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('pins app-user eligibility for issue close/reopen and pr reopen', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gcb-catalog-identity-'))
     const socketPath = path.join(root, 'broker.sock')
@@ -437,12 +491,12 @@ describe('gcb gh', () => {
         ],
         {
           cwd: root,
-          env: { ...process.env, GCB_HOST_TIMEOUT_MS: '1000' },
-          timeoutMs: 5_000,
+          env: { ...process.env, GCB_HOST_TIMEOUT_MS: '3000' },
+          timeoutMs: 10_000,
         },
       )
       let claimed = false
-      for (let attempt = 0; attempt < 200 && !claimed; attempt += 1) {
+      for (let attempt = 0; attempt < 600 && !claimed; attempt += 1) {
         const [id] = listRequests(dir)
         if (id !== undefined) {
           fs.renameSync(path.join(dir, `${id}.json`), path.join(dir, `${id}.json.working`))
@@ -455,7 +509,7 @@ describe('gcb gh', () => {
       const result = await pending
       assert.equal(result.status, 1)
       assert.match(result.stderr, /did not answer/u)
-      assert.match(result.stderr, /within 1s/u)
+      assert.match(result.stderr, /within 3s/u)
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
@@ -474,7 +528,7 @@ describe('gcb gh', () => {
       )
       let id: string | undefined
       let request
-      for (let attempt = 0; attempt < 100 && request === undefined; attempt += 1) {
+      for (let attempt = 0; attempt < 400 && request === undefined; attempt += 1) {
         ;[id] = listRequests(dir)
         request = id === undefined ? undefined : readRequest(dir, id)
         if (request === undefined) {

@@ -28,6 +28,7 @@ export const CLIENT_COMMANDS = [
   'run',
   'issue',
   'push',
+  'discussion',
   'repo',
   'gh',
 ] as const

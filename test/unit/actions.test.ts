@@ -32,6 +32,11 @@ describe('gh action catalog', () => {
       'pr:comment-delete',
       'pr:review',
       'pr:review-by-id',
+      'discussion:create',
+      'discussion:edit',
+      'discussion:list',
+      'discussion:view',
+      'discussion:comment',
       'issue:create',
       'issue:edit',
       'issue:comment',
@@ -99,6 +104,10 @@ describe('gh action catalog', () => {
       checks: 'read',
       statuses: 'read',
     })
+    assert.deepEqual(getGhAction('discussion:list').permissions, { discussions: 'read' })
+    assert.deepEqual(getGhAction('discussion:view').permissions, { discussions: 'read' })
+    assert.deepEqual(getGhAction('discussion:comment').permissions, { discussions: 'write' })
+    assert.deepEqual(getGhAction('discussion:edit').permissions, { discussions: 'write' })
     assert.deepEqual(getGhAction('issue:view').permissions, { issues: 'read' })
     assert.deepEqual(getGhAction('issue:list').permissions, { issues: 'read' })
     assert.deepEqual(getGhAction('issue:comment-edit').permissions, { issues: 'write' })
@@ -145,6 +154,8 @@ describe('gh action catalog', () => {
       'pr:checks',
       'pr:status',
       'pr:review-by-id',
+      'discussion:list',
+      'discussion:view',
       'issue:view',
       'issue:list',
       'run:view',
@@ -208,6 +219,187 @@ describe('gh action catalog', () => {
       assert.equal(getGhAction(name).timeoutSeconds, seconds, name)
     }
     assert.equal(getGhAction('run:rerun').positionals[0]?.required, undefined)
+  })
+
+  it('declares the discussion-create policy', () => {
+    const action = getGhAction('discussion:create')
+    assert.equal(action.appUser, true)
+    assert.deepEqual(action.permissions, { discussions: 'write' })
+    assert.equal(action.timeoutSeconds, 120)
+    assert.deepEqual(
+      buildGhArgv(
+        'discussion:create',
+        { category: 'Q&A', title: 'Hello', body: 'Body', label: ['question'] },
+        'acme/widget',
+      ),
+      [
+        'discussion',
+        'create',
+        '--category',
+        'Q&A',
+        '--title',
+        'Hello',
+        '--body',
+        'Body',
+        '--label',
+        'question',
+        '--repo',
+        'acme/widget',
+      ],
+    )
+  })
+
+  it('declares the discussion actions', () => {
+    assert.deepEqual(buildGhArgv('discussion:list', { state: 'all', limit: 5 }, 'acme/widget'), [
+      'discussion',
+      'list',
+      '--limit',
+      '5',
+      '--state',
+      'all',
+      '--repo',
+      'acme/widget',
+    ])
+    assert.deepEqual(
+      buildGhArgv('discussion:view', { number: 12, comments: true }, 'acme/widget'),
+      ['discussion', 'view', '12', '--comments', '--repo', 'acme/widget'],
+    )
+    assert.deepEqual(
+      buildGhArgv('discussion:comment', { number: 12, body: 'Thanks' }, 'acme/widget'),
+      ['discussion', 'comment', '12', '--body', 'Thanks', '--repo', 'acme/widget'],
+    )
+    assert.deepEqual(
+      buildGhArgv(
+        'discussion:edit',
+        { number: 12, title: 'New', 'add-label': ['question'] },
+        'acme/widget',
+      ),
+      [
+        'discussion',
+        'edit',
+        '12',
+        '--add-label',
+        'question',
+        '--title',
+        'New',
+        '--repo',
+        'acme/widget',
+      ],
+    )
+  })
+
+  it('does not expose web mode or the broken comments/json combination', () => {
+    for (const name of ['discussion:list', 'discussion:view']) {
+      assert.equal(
+        getGhAction(name).flags.some(flag => flag.name === 'web'),
+        false,
+        name,
+      )
+    }
+    assert.throws(
+      () =>
+        buildGhArgv(
+          'discussion:view',
+          { number: 12, comments: true, json: 'number,title' },
+          'acme/widget',
+        ),
+      /does not allow --comments with --json/u,
+    )
+  })
+
+  it('models template and comment-pagination dependencies', () => {
+    assert.throws(
+      () => buildGhArgv('discussion:view', { number: 12, template: '{{.}}' }, 'acme/widget'),
+      /needs --json with --template/u,
+    )
+    assert.doesNotThrow(() =>
+      buildGhArgv(
+        'discussion:view',
+        { number: 12, json: 'number', template: '{{.}}' },
+        'acme/widget',
+      ),
+    )
+    assert.throws(
+      () => buildGhArgv('discussion:view', { number: 12, after: 'cursor' }, 'acme/widget'),
+      /needs --comments with --after/u,
+    )
+    assert.doesNotThrow(() =>
+      buildGhArgv(
+        'discussion:view',
+        { number: 12, after: 'cursor', comments: true },
+        'acme/widget',
+      ),
+    )
+    assert.throws(
+      () => buildGhArgv('pr:checks', { number: 12, template: '{{.}}' }, 'acme/widget'),
+      /needs --json with --template/u,
+    )
+    assert.throws(
+      () => buildGhArgv('discussion:list', { jq: '.number' }, 'acme/widget'),
+      /needs --json with --jq/u,
+    )
+    assert.doesNotThrow(() =>
+      buildGhArgv('discussion:list', { json: 'number', jq: '.number' }, 'acme/widget'),
+    )
+  })
+
+  it('refuses a repository qualifier only in repository-scoped searches', () => {
+    for (const name of ['discussion:list', 'issue:list']) {
+      assert.throws(
+        () => buildGhArgv(name, { search: 'repo:cli/cli' }, 'acme/widget'),
+        /search cannot contain repo:/u,
+        name,
+      )
+    }
+    for (const search of [
+      'crash and hang',
+      'error (500)',
+      'this or that',
+      'bug|crash',
+      '(bug OR crash)',
+    ]) {
+      assert.doesNotThrow(() => buildGhArgv('discussion:list', { search }, 'acme/widget'), search)
+    }
+    assert.deepEqual(buildGhArgv('label:list', { search: 'repo:frontend' }, 'acme/widget'), [
+      'label',
+      'list',
+      '--search',
+      'repo:frontend',
+      '--repo',
+      'acme/widget',
+    ])
+  })
+
+  it('serializes the unanswered filter explicitly', () => {
+    assert.deepEqual(buildGhArgv('discussion:list', { answered: false }, 'acme/widget'), [
+      'discussion',
+      'list',
+      '--answered=false',
+      '--repo',
+      'acme/widget',
+    ])
+    assert.deepEqual(buildGhArgv('discussion:list', { answered: true }, 'acme/widget'), [
+      'discussion',
+      'list',
+      '--answered',
+      '--repo',
+      'acme/widget',
+    ])
+  })
+
+  it('does not let a discussion argument choose the repository', () => {
+    for (const name of ['discussion:view', 'discussion:comment', 'discussion:edit']) {
+      assert.equal(getGhAction(name).positionals[0]?.type, 'number', name)
+    }
+    assert.throws(
+      () =>
+        buildGhArgv(
+          'discussion:view',
+          { number: 'https://github.com/other/repo/discussions/1' },
+          'acme/widget',
+        ),
+      /number/u,
+    )
   })
 
   it('declares the issue-admin policy', () => {
@@ -304,7 +496,7 @@ describe('buildGhArgv', () => {
     ]) {
       assert.throws(
         () => buildGhArgv('search:issues', { query }, 'acme/widget'),
-        /cannot contain repo:, org: or user:/u,
+        /cannot contain repo:/u,
       )
     }
     for (const query of [
@@ -319,12 +511,18 @@ describe('buildGhArgv', () => {
     ]) {
       assert.throws(
         () => buildGhArgv('search:issues', { query }, 'acme/widget'),
-        /cannot contain repo:, org: or user:/u,
+        /cannot contain repo:/u,
         query,
       )
     }
     assert.doesNotThrow(() =>
       buildGhArgv('search:issues', { query: 'is:issue label:bug' }, 'acme/widget'),
+    )
+    assert.doesNotThrow(() =>
+      buildGhArgv('search:issues', { query: '(bug OR crash) label:triage' }, 'acme/widget'),
+    )
+    assert.doesNotThrow(() =>
+      buildGhArgv('search:issues', { query: ['(', 'bug', ')'] }, 'acme/widget'),
     )
 
     assert.deepEqual(
