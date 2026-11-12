@@ -667,7 +667,7 @@ describe('buildGhArgv', () => {
       [
         'api',
         '--method',
-        'PATCH',
+        'PUT',
         'repos/acme/widget/pulls/42/reviews/9',
         '--input',
         '/tmp/body.json',

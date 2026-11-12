@@ -48,7 +48,7 @@ export interface FlagSpec {
 
 /** A fixed `gh api` request, with only typed values substituted. */
 export interface ApiSpec {
-  readonly method: 'GET' | 'PATCH' | 'DELETE'
+  readonly method: 'GET' | 'PATCH' | 'PUT' | 'DELETE'
   readonly endpoint: string
   /** When true, the action sends `{ body }` as JSON through gh api --input. */
   readonly jsonBody?: true
@@ -349,7 +349,7 @@ const PR_REVIEW_BY_ID: GhAction = {
   },
 }
 
-// GitHub: PATCH /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
+// GitHub: PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}
 const PR_REVIEW_EDIT: GhAction = {
   name: 'pr:review-edit',
   command: ['pr', 'review-edit'],
@@ -362,7 +362,7 @@ const PR_REVIEW_EDIT: GhAction = {
   timeoutSeconds: 120,
   appUser: true,
   api: {
-    method: 'PATCH',
+    method: 'PUT',
     endpoint: 'repos/{owner}/{repo}/pulls/{number}/reviews/{id}',
     jsonBody: true,
   },
