@@ -681,17 +681,22 @@ function hostEnv(proxy: ProxyChoice, account?: string): NodeJS.ProcessEnv {
   const env = { ...process.env }
   if (account !== undefined) {
     const dir = join(homedir(), '.config', `gh-${account}`)
-    if (!existsSync(dir) || !statSync(dir).isDirectory()) {
-      throw new Error(`no gh config for account ${JSON.stringify(account)} at ${dir}`)
+    if (existsSync(dir) && statSync(dir).isDirectory()) {
+      // Tokens in the host broker's own environment would override the selected account's config.
+      delete env['GH_TOKEN']
+      delete env['GITHUB_TOKEN']
+      delete env['GH_ENTERPRISE_TOKEN']
+      delete env['GITHUB_ENTERPRISE_TOKEN']
+      delete env['GH_HOST']
+      assertAccountUser(dir, account)
+      env['GH_CONFIG_DIR'] = dir
+    } else if (env['GH_TOKEN'] === undefined && env['GITHUB_TOKEN'] === undefined) {
+      throw new Error(
+        `no gh config for account ${JSON.stringify(account)} at ${dir}, and no inherited GH_TOKEN/GITHUB_TOKEN`,
+      )
     }
-    // Tokens in the host broker's own environment would override the selected account's config.
-    delete env['GH_TOKEN']
-    delete env['GITHUB_TOKEN']
-    delete env['GH_ENTERPRISE_TOKEN']
-    delete env['GITHUB_ENTERPRISE_TOKEN']
-    delete env['GH_HOST']
-    assertAccountUser(dir, account)
-    env['GH_CONFIG_DIR'] = dir
+    // Without an account directory the inherited token is the identity. gh gives GH_TOKEN priority
+    // over GH_CONFIG_DIR, so leave it in place rather than inventing a directory for it.
   }
   applyProxyChoice(env, proxy)
   return env

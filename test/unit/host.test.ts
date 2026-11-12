@@ -2063,6 +2063,53 @@ it('refuses an account directory logged in as another user', async () => {
   }
 })
 
+it('uses an inherited GH_TOKEN when no account directory exists', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'host-broker-account-token-'))
+  const repo = join(root, 'checkout')
+  mkdirSync(join(repo, '.git'), { recursive: true })
+  writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n', 'utf8')
+  const dir = channelDir(join(repo, '.git'))
+  const envFile = join(root, 'env')
+  const command = join(root, 'not-gh')
+  writeFileSync(
+    command,
+    '#!/bin/sh\nprintf \'%s|%s\\n\' "$GH_TOKEN" "$GH_CONFIG_DIR" > ' +
+      envFile +
+      '\necho "https://github.com/acme/widget/pull/7"\n',
+    'utf8',
+  )
+  chmodSync(command, 0o755)
+  const previous = {
+    HOME: process.env['HOME'],
+    GH_TOKEN: process.env['GH_TOKEN'],
+    GITHUB_TOKEN: process.env['GITHUB_TOKEN'],
+  }
+  process.env['HOME'] = root
+  process.env['GH_TOKEN'] = 'inherited-token'
+  delete process.env['GITHUB_TOKEN']
+  try {
+    const id = writeRequest(dir, {
+      head: 'feat/ok',
+      base: 'main',
+      title: 'x',
+      body: '',
+      account: 'alice',
+    })
+    assert.equal(await runHostBroker(['--repo', repo, '--command', command, '--once']), 0)
+    assert.equal(readResult(dir, id)?.error, undefined)
+    assert.equal(readFileSync(envFile, 'utf8').trim(), 'inherited-token|')
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 describe('the host broker account selection', () => {
   it('uses ~/.config/gh-<login> and clears inherited tokens', async () => {
     const root = mkdtempSync(join(tmpdir(), 'host-broker-account-'))
