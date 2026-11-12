@@ -1317,7 +1317,7 @@ describe('the host action route', () => {
         kind: 'action',
         action: 'pr:view',
         repo: 'acme/widget',
-        values: { number: 7, jq: '.number' },
+        values: { number: 7, json: 'number', jq: '.number' },
       })
       assert.equal(
         await runHostBroker(['--repo', repo, '--command', command, '--config', config, '--once']),

@@ -120,7 +120,7 @@ describe('runGhAction', { skip: onWindows }, () => {
     )
     const result = await runGhAction({
       action: 'pr:view',
-      values: { number: 7, jq: '.body' },
+      values: { number: 7, json: 'body', jq: '.body' },
       repo: 'acme/widget',
       token: 'app-token',
       host: 'GitHub.com',
@@ -143,7 +143,7 @@ describe('runGhAction', { skip: onWindows }, () => {
       await assert.rejects(
         runGhAction({
           action: 'pr:view',
-          values: { number: 7, jq: '.body' },
+          values: { number: 7, json: 'body', jq: '.body' },
           repo: 'acme/widget',
           token: 'app-token',
           ghPath: gh,
@@ -155,7 +155,7 @@ describe('runGhAction', { skip: onWindows }, () => {
     await assert.rejects(
       runGhAction({
         action: 'pr:view',
-        values: { number: 7, jq: '.body' },
+        values: { number: 7, json: 'body', jq: '.body' },
         repo: 'acme/widget',
         token: 'app-token',
         ghPath: gh,
@@ -167,7 +167,7 @@ describe('runGhAction', { skip: onWindows }, () => {
     const allowed = shim('echo jq-ok')
     const result = await runGhAction({
       action: 'pr:view',
-      values: { number: 7, jq: '.body' },
+      values: { number: 7, json: 'body', jq: '.body' },
       repo: 'acme/widget',
       token: 'app-token',
       ghPath: allowed,
