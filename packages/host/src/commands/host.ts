@@ -65,11 +65,12 @@ import {
 } from 'gcb-core'
 import { parseDocument } from 'yaml'
 
-import { loadConfig, resolveConfigPath } from '../config.ts'
+import { loadConfigSnapshot, resolveConfigPath } from '../config.ts'
 import { clearInheritedTokens, setHostToken, tokenKeys } from '../gh-env.ts'
 import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts'
 import { hostConfig, parseAllowEntry, repoAllowed } from '../policy.ts'
 import { isForkOfRepository, isPublicRepository } from '../public-repo.ts'
+import { ConfigWatcher } from '../reload.ts'
 
 const run = promisify(execFile)
 
@@ -297,6 +298,8 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const configSelected =
     Boolean(configPath) || Boolean(process.env['GIT_BROKER_CONFIG']) || existsSync(resolvedConfig)
   let loadedConfig: string | null = configSelected ? resolvedConfig : null
+  let configWatcher: ConfigWatcher | undefined
+  let configDigest: string | undefined
   /** Remove the status file only when this process owns it. */
   function removeOwnStatus(): void {
     try {
@@ -345,9 +348,12 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const configFor = (): BrokerConfig => {
     if (config === undefined) {
       try {
-        config = loadConfig(resolvedConfig)
+        const snapshot = loadConfigSnapshot(resolvedConfig)
+        config = snapshot.config
+        configDigest = snapshot.digest
         loadedConfig = resolvedConfig
         writeStatus()
+        startConfigWatcher()
       } catch (error) {
         throw new Error(
           `a fork, reply or explicit repository needs the broker config allowlist: ${(error as Error).message}; pass --config or set GIT_BROKER_CONFIG`,
@@ -356,6 +362,28 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
       }
     }
     return config
+  }
+  /** Reload the configuration after a watch or poll event; invalid files keep the last snapshot. */
+  const reloadConfig = (): string => {
+    const snapshot = loadConfigSnapshot(resolvedConfig)
+    config = snapshot.config
+    loadedConfig = resolvedConfig
+    configDigest = snapshot.digest
+    writeStatus()
+    return configDigest
+  }
+  /** Start the watcher after the first accepted load, with that load's own digest as its baseline. */
+  function startConfigWatcher(): void {
+    if (once || configWatcher !== undefined || configDigest === undefined) {
+      return
+    }
+    configWatcher = new ConfigWatcher({
+      file: resolvedConfig,
+      initialDigest: configDigest,
+      reload: reloadConfig,
+      onError: error => warn(`config reload failed: ${error.message}`),
+    })
+    configWatcher.start()
   }
   /** Resolve one host block from the loaded configuration. */
   const blockFor = (host: string) => hostConfig(configFor(), host)
@@ -467,6 +495,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   // marker would tell the container a host broker is there and make it wait for an answer that is not
   // coming.
   process.on('exit', () => {
+    configWatcher?.stop()
     removeOwnStatus()
     for (const dir of advertised) {
       try {
@@ -481,6 +510,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const stop = () => process.exit(0)
   process.on('SIGINT', stop)
   process.on('SIGTERM', stop)
+  process.on('SIGHUP', () => configWatcher?.check(true))
 
   say(
     single === undefined
@@ -1436,7 +1466,20 @@ async function openOne(
     }
     try {
       if (!allowed('github.com', target)) {
-        return { error: `repository ${target} is not in the allowlist for github.com` }
+        const block = blockFor('github.com')
+        const allowedByFork =
+          block?.allowFork === true &&
+          (await forkAllows(
+            'github.com',
+            block.allow,
+            target,
+            request.proxy,
+            'apiBaseUrl' in block ? block.apiBaseUrl : undefined,
+            'apiBaseUrl' in block ? block.apiVersion : undefined,
+          ))
+        if (!allowedByFork) {
+          return { error: `repository ${target} is not in the allowlist for github.com` }
+        }
       }
     } catch (error) {
       return { error: (error as Error).message }
