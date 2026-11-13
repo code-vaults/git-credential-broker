@@ -70,6 +70,7 @@ import { clearInheritedTokens, setHostToken, tokenKeys } from '../gh-env.ts'
 import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts'
 import { hostConfig, parseAllowEntry, repoAllowed } from '../policy.ts'
 import { isForkOfRepository, isPublicRepository } from '../public-repo.ts'
+import { ConfigWatcher, fingerprintConfig } from '../reload.ts'
 
 const run = promisify(execFile)
 
@@ -297,6 +298,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const configSelected =
     Boolean(configPath) || Boolean(process.env['GIT_BROKER_CONFIG']) || existsSync(resolvedConfig)
   let loadedConfig: string | null = configSelected ? resolvedConfig : null
+  let configWatcher: ConfigWatcher | undefined
   /** Remove the status file only when this process owns it. */
   function removeOwnStatus(): void {
     try {
@@ -356,6 +358,14 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
       }
     }
     return config
+  }
+  /** Reload the configuration after a watch or poll event; invalid files keep the last snapshot. */
+  const reloadConfig = (): string => {
+    const next = loadConfig(resolvedConfig)
+    config = next
+    loadedConfig = resolvedConfig
+    writeStatus()
+    return fingerprintConfig(resolvedConfig)?.digest ?? ''
   }
   /** Resolve one host block from the loaded configuration. */
   const blockFor = (host: string) => hostConfig(configFor(), host)
@@ -467,6 +477,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   // marker would tell the container a host broker is there and make it wait for an answer that is not
   // coming.
   process.on('exit', () => {
+    configWatcher?.stop()
     removeOwnStatus()
     for (const dir of advertised) {
       try {
@@ -481,6 +492,15 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const stop = () => process.exit(0)
   process.on('SIGINT', stop)
   process.on('SIGTERM', stop)
+  if (!once) {
+    configWatcher = new ConfigWatcher({
+      file: resolvedConfig,
+      reload: reloadConfig,
+      onError: error => warn(`config reload failed: ${error.message}`),
+    })
+    configWatcher.start()
+    process.on('SIGHUP', () => configWatcher?.check(true))
+  }
 
   say(
     single === undefined
@@ -1436,7 +1456,20 @@ async function openOne(
     }
     try {
       if (!allowed('github.com', target)) {
-        return { error: `repository ${target} is not in the allowlist for github.com` }
+        const block = blockFor('github.com')
+        const allowedByFork =
+          block?.allowFork === true &&
+          (await forkAllows(
+            'github.com',
+            block.allow,
+            target,
+            request.proxy,
+            'apiBaseUrl' in block ? block.apiBaseUrl : undefined,
+            'apiBaseUrl' in block ? block.apiVersion : undefined,
+          ))
+        if (!allowedByFork) {
+          return { error: `repository ${target} is not in the allowlist for github.com` }
+        }
       }
     } catch (error) {
       return { error: (error as Error).message }

@@ -490,7 +490,7 @@ actions include issue create/edit/comment/close/reopen and pull request close/re
 merge action. For `repo fork`, review replies, reviews, pull request edit, issue edit/comment and any
 request that names `--repo` explicitly — every review always carries its repository, even when
 derived from origin — it checks the repository against the broker config's allowlist (pass
-`--config`), except a `readOnly` action with `allowPublicRead`, or a catalogued action on the parent of an allowlisted fork with `allowFork` (see the configuration table). An
+`--config`), except a `readOnly` action with `allowPublicRead`, or a catalogued action / `gcb pr create` on the parent of an allowlisted fork with `allowFork` (see the configuration table). An
 explicit `--repo` needs no checkout of that repository; without one, a checkout must exist. When
 there is no checkout at all, the client and host broker use the shared
 `~/.gcb-host/channel` instead of `.git/gcb/host-broker`; the request must carry `--repo`, and the
@@ -688,7 +688,7 @@ file.
 
 ## Configuration reference
 
-The daemon watches the configuration directory with `fs.watch` for low latency and also runs a 5-second digest poll as a safety net; if the native watcher is unavailable, polling runs alone. A valid change is applied without restarting, and an invalid one keeps the last good snapshot. Send `SIGHUP` to force a reload after fixing a file. `socketPath`, `socketMode`, `auditPath`, `auditMaxBytes` and `auditKeep` require a restart.
+The daemon watches the configuration directory with `fs.watch` for low latency and also runs a 5-second digest poll as a safety net; if the native watcher is unavailable, polling runs alone. A valid change is applied without restarting, and an invalid one keeps the last good snapshot. Send `SIGHUP` to force a reload after fixing a file. `socketPath`, `socketMode`, `auditPath`, `auditMaxBytes` and `auditKeep` require a restart. `gcb host` watches the same file for allowlist, fork and action-policy changes; it needs no restart for those, and `SIGHUP` forces the same reload.
 
 The broker only reads this file. It is YAML. The loader discovers `broker.config.yml` by default;
 the old `broker.config.json` name is no longer discovered, so rename or convert an existing
@@ -722,7 +722,7 @@ Per host, keyed exactly as git reports it (`github.com`, or `host:port` for othe
 | `allowForkPush`   | Default `false`. Allow a **public** fork whose parent/source is an allowlisted repository. For `gcb push`, the host verifies the relation and uses the host account/SSH key; the App need not be installed on the fork. For the app credential path, the App must be installed with `contents: write`.                                                                                                                                                                                              |
 | `sshAccounts`     | Optional map from gh login to an SSH host alias for `gcb push`, e.g. `{ "example-user": "github-example-user" }`. SSH aliases keep their own key/port/proxy settings; a login without an entry is refused rather than falling back to the default key.                                                                                                                                                                                                                                              |
 | `actions`         | Optional per-host action policy, e.g. `{ "pr:close": { "deny": true } }`. A global top-level `actions` deny still wins.                                                                                                                                                                                                                                                                                                                                                                             |
-| `allowFork`       | Default `false`. Allow a **catalogued action** (`gcb gh …`, `gcb issue …`) on the public parent/source of an allowlisted **public** fork, after GitHub confirms the relationship. Wildcard entries are not used for inference. It does not cover the lifecycle `gcb pr create` path; that still needs the target repository in `allow`.                                                                                                                                                             |
+| `allowFork`       | Default `false`. Allow a **catalogued action** (`gcb gh …`, `gcb issue …`) and lifecycle `gcb pr create` on the public parent/source of an allowlisted **public** fork, after GitHub confirms the relationship. Wildcard entries are not used for inference.                                                                                                                                                                                                                                        |     |
 
 `github-app`: `clientId` (preferred `iss`), `appId` (fallback), `privateKeyPath` or `privateKeyPem`,
 `permissions`, `apiBaseUrl` (GitHub Enterprise, must be HTTPS), `apiVersion`, `installationCacheSeconds`,
