@@ -13,6 +13,7 @@ import { StringDecoder } from 'node:string_decoder'
 
 import { apiBodyJson, buildGhArgv, getGhAction, type ActionValues } from 'gcb-core'
 
+import { setHostToken } from './gh-env.ts'
 import { applyProxyChoice, PROXY_ENV_KEYS } from './http.ts'
 
 /** The default stdout/stderr ceiling, in bytes per stream. */
@@ -236,7 +237,7 @@ export async function runGhAction(options: GhRunOptions): Promise<GhRunResult> {
     }
   }
   if (!usesJq) {
-    env.GH_TOKEN = options.token
+    setHostToken(env, host, options.token)
   }
 
   const action = getGhAction(options.action)
