@@ -12,7 +12,6 @@
  * shell; the program it calls is configuration, and it is called with an argument list built here.
  */
 import { execFile, execFileSync, spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import {
   existsSync,
   lstatSync,
@@ -66,7 +65,7 @@ import {
 } from 'gcb-core'
 import { parseDocument } from 'yaml'
 
-import { loadConfigText, readConfigText, resolveConfigPath } from '../config.ts'
+import { loadConfigSnapshot, resolveConfigPath } from '../config.ts'
 import { clearInheritedTokens, setHostToken, tokenKeys } from '../gh-env.ts'
 import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts'
 import { hostConfig, parseAllowEntry, repoAllowed } from '../policy.ts'
@@ -349,9 +348,9 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const configFor = (): BrokerConfig => {
     if (config === undefined) {
       try {
-        const text = readConfigText(resolvedConfig)
-        config = loadConfigText(text, resolvedConfig)
-        configDigest = createHash('sha256').update(text).digest('hex')
+        const snapshot = loadConfigSnapshot(resolvedConfig)
+        config = snapshot.config
+        configDigest = snapshot.digest
         loadedConfig = resolvedConfig
         writeStatus()
         startConfigWatcher()
@@ -366,10 +365,10 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   }
   /** Reload the configuration after a watch or poll event; invalid files keep the last snapshot. */
   const reloadConfig = (): string => {
-    const text = readConfigText(resolvedConfig)
-    config = loadConfigText(text, resolvedConfig)
+    const snapshot = loadConfigSnapshot(resolvedConfig)
+    config = snapshot.config
     loadedConfig = resolvedConfig
-    configDigest = createHash('sha256').update(text).digest('hex')
+    configDigest = snapshot.digest
     writeStatus()
     return configDigest
   }

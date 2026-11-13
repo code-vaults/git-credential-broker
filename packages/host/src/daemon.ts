@@ -7,14 +7,13 @@
  * without binding the socket, which is what a deployment script should run before restarting the
  * service.
  */
-import { createHash } from 'node:crypto'
 import type { Writable } from 'node:stream'
 
 import type { BrokerConfig, Provider } from 'gcb-core'
 
 import { createAudit } from './audit.ts'
 import { startBroker } from './broker.ts'
-import { assertKeysReadable, loadConfigText, readConfigText, resolveConfigPath } from './config.ts'
+import { assertKeysReadable, loadConfigSnapshot, resolveConfigPath } from './config.ts'
 import { createProvider } from './providers/index.ts'
 import type { ProviderDeps } from './providers/index.ts'
 import { ConfigWatcher } from './reload.ts'
@@ -107,13 +106,14 @@ export async function runDaemon(
   const resolved = resolveConfigPath(configPath)
 
   const load = (): { config: BrokerConfig; providers: Map<string, Provider>; digest: string } => {
-    const text = readConfigText(resolved)
-    const next = loadConfigText(text, resolved)
-    assertKeysReadable(next)
+    const snapshot = loadConfigSnapshot(resolved)
+    assertKeysReadable(snapshot.config)
     return {
-      config: next,
-      providers: buildProviders(next, { log: message => stderr.write(`gcb daemon: ${message}\n`) }),
-      digest: createHash('sha256').update(text).digest('hex'),
+      config: snapshot.config,
+      providers: buildProviders(snapshot.config, {
+        log: message => stderr.write(`gcb daemon: ${message}\n`),
+      }),
+      digest: snapshot.digest,
     }
   }
   let config: BrokerConfig

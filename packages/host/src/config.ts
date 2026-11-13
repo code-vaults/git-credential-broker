@@ -3,6 +3,7 @@
  * agent container can see, and validated eagerly so a broken or over-broad configuration stops the
  * daemon at startup instead of silently denying (or silently allowing) at push time.
  */
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import path, { posix } from 'node:path'
 
@@ -586,7 +587,19 @@ export function readConfigText(path: string): string {
  * @returns The validated configuration.
  */
 export function loadConfig(path: string): BrokerConfig {
-  return loadConfigText(readConfigText(path), path)
+  return loadConfigSnapshot(path).config
+}
+
+/** Read, validate and hash one configuration snapshot from the same bytes. */
+export function loadConfigSnapshot(path: string): {
+  readonly config: BrokerConfig
+  readonly digest: string
+} {
+  const text = readConfigText(path)
+  return {
+    config: loadConfigText(text, path),
+    digest: createHash('sha256').update(text).digest('hex'),
+  }
 }
 
 /** Parse and validate configuration text already read from `path`. */
