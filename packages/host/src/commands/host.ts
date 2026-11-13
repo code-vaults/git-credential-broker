@@ -12,6 +12,7 @@
  * shell; the program it calls is configuration, and it is called with an argument list built here.
  */
 import { execFile, execFileSync, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
   existsSync,
   lstatSync,
@@ -65,12 +66,12 @@ import {
 } from 'gcb-core'
 import { parseDocument } from 'yaml'
 
-import { loadConfig, resolveConfigPath } from '../config.ts'
+import { loadConfigText, readConfigText, resolveConfigPath } from '../config.ts'
 import { clearInheritedTokens, setHostToken, tokenKeys } from '../gh-env.ts'
 import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts'
 import { hostConfig, parseAllowEntry, repoAllowed } from '../policy.ts'
 import { isForkOfRepository, isPublicRepository } from '../public-repo.ts'
-import { ConfigWatcher, fingerprintConfig } from '../reload.ts'
+import { ConfigWatcher } from '../reload.ts'
 
 const run = promisify(execFile)
 
@@ -299,6 +300,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
     Boolean(configPath) || Boolean(process.env['GIT_BROKER_CONFIG']) || existsSync(resolvedConfig)
   let loadedConfig: string | null = configSelected ? resolvedConfig : null
   let configWatcher: ConfigWatcher | undefined
+  let configDigest: string | undefined
   /** Remove the status file only when this process owns it. */
   function removeOwnStatus(): void {
     try {
@@ -347,9 +349,12 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const configFor = (): BrokerConfig => {
     if (config === undefined) {
       try {
-        config = loadConfig(resolvedConfig)
+        const text = readConfigText(resolvedConfig)
+        config = loadConfigText(text, resolvedConfig)
+        configDigest = createHash('sha256').update(text).digest('hex')
         loadedConfig = resolvedConfig
         writeStatus()
+        startConfigWatcher()
       } catch (error) {
         throw new Error(
           `a fork, reply or explicit repository needs the broker config allowlist: ${(error as Error).message}; pass --config or set GIT_BROKER_CONFIG`,
@@ -361,11 +366,25 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   }
   /** Reload the configuration after a watch or poll event; invalid files keep the last snapshot. */
   const reloadConfig = (): string => {
-    const next = loadConfig(resolvedConfig)
-    config = next
+    const text = readConfigText(resolvedConfig)
+    config = loadConfigText(text, resolvedConfig)
     loadedConfig = resolvedConfig
+    configDigest = createHash('sha256').update(text).digest('hex')
     writeStatus()
-    return fingerprintConfig(resolvedConfig)?.digest ?? ''
+    return configDigest
+  }
+  /** Start the watcher after the first accepted load, with that load's own digest as its baseline. */
+  function startConfigWatcher(): void {
+    if (once || configWatcher !== undefined || configDigest === undefined) {
+      return
+    }
+    configWatcher = new ConfigWatcher({
+      file: resolvedConfig,
+      initialDigest: configDigest,
+      reload: reloadConfig,
+      onError: error => warn(`config reload failed: ${error.message}`),
+    })
+    configWatcher.start()
   }
   /** Resolve one host block from the loaded configuration. */
   const blockFor = (host: string) => hostConfig(configFor(), host)
@@ -492,15 +511,7 @@ export async function runHostBroker(argv: readonly string[]): Promise<number> {
   const stop = () => process.exit(0)
   process.on('SIGINT', stop)
   process.on('SIGTERM', stop)
-  if (!once) {
-    configWatcher = new ConfigWatcher({
-      file: resolvedConfig,
-      reload: reloadConfig,
-      onError: error => warn(`config reload failed: ${error.message}`),
-    })
-    configWatcher.start()
-    process.on('SIGHUP', () => configWatcher?.check(true))
-  }
+  process.on('SIGHUP', () => configWatcher?.check(true))
 
   say(
     single === undefined
