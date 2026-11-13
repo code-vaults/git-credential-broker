@@ -1,5 +1,18 @@
 # gcb-host
 
+## 0.11.3
+
+### Patch Changes
+
+- [#162](https://github.com/code-vaults/git-credential-broker/pull/162) [`d462a04`](https://github.com/code-vaults/git-credential-broker/commit/d462a0463a56fbec82cd8206b62e4a47e8d81436) Thanks [@JounQin](https://github.com/JounQin)! - Centralize the gh token environment variables and host classification. GHES action execution now
+  uses `GH_ENTERPRISE_TOKEN` instead of the ignored `GH_TOKEN`, and the host account selectors share
+  one token-key helper.
+
+- [#164](https://github.com/code-vaults/git-credential-broker/pull/164) [`5530573`](https://github.com/code-vaults/git-credential-broker/commit/553057312ca3512720e6eeb259f93ba2926a6fb6) Thanks [@JounQin](https://github.com/JounQin)! - Reload the host broker's configuration on watch/poll/SIGHUP, as the app daemon already does, and let
+  `allowFork` cover lifecycle `gcb pr create` on the parent of an allowlisted fork.
+- Updated dependencies []:
+  - gcb-core@0.11.3
+
 ## 0.11.2
 
 ### Patch Changes
