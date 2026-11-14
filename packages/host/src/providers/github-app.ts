@@ -286,6 +286,8 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     method: string,
     url: string,
     body?: Record<string, unknown>,
+    signal?: AbortSignal,
+    authStage = false,
   ): Promise<{ json: unknown; link: string | null }> {
     const jwt = signAppJwt({ privateKeyPem: keyPem, iss, nowMs: now() })
     const headers: Record<string, string> = {
@@ -302,6 +304,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       method,
       headers,
       ...(body ? { body: JSON.stringify(body) } : {}),
+      ...(signal === undefined ? {} : { signal }),
     })
 
     const text = await response.text()
@@ -312,6 +315,11 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       json = null
     }
     if (!response.ok) {
+      if (authStage && (response.status === 403 || response.status === 429)) {
+        throw new ProviderConfigError(
+          `GitHub rate-limited or refused the app installation token request; retry later`,
+        )
+      }
       const message =
         json !== null && typeof json === 'object' && 'message' in json
           ? String((json as { message: unknown }).message)
@@ -718,7 +726,11 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
    * @param repo - The repository name.
    * @returns The installation id, or undefined when the app is not installed there.
    */
-  async function repositoryInstallation(owner: string, repo: string): Promise<number | undefined> {
+  async function repositoryInstallation(
+    owner: string,
+    repo: string,
+    signal?: AbortSignal,
+  ): Promise<number | undefined> {
     const jwt = signAppJwt({ privateKeyPem: keyPem, iss, nowMs: now() })
     const response = await fetchImpl(`${api}/repos/${owner}/${repo}/installation`, {
       method: 'GET',
@@ -728,11 +740,17 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         'x-github-api-version': apiVersion,
         'user-agent': 'gcb',
       },
+      ...(signal === undefined ? {} : { signal }),
     })
     if (response.status === 404) {
       return undefined
     }
     if (!response.ok) {
+      if (response.status === 403 || response.status === 429) {
+        throw new ProviderConfigError(
+          'GitHub rate-limited or refused the app installation lookup; retry later',
+        )
+      }
       const text = await response.text()
       throw new Error(
         `GitHub API GET /repos/${owner}/${repo}/installation failed with ${response.status}: ${text.slice(0, 200)}`,
@@ -914,39 +932,82 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       tokens.set(request.full, credential)
       return { ...credential, cached: false }
     },
-    /** Check a public fork with no credential; only confirmed fork relationships pass. */
+    /** Check a public fork through the app installation on that fork, not an anonymous request. */
     async isForkOf(owner: string, repo: string, bases: readonly string[]): Promise<boolean> {
-      return withRepositoryResponse(
-        fetchImpl,
-        api,
-        `${owner}/${repo}`,
-        { apiVersion, label: 'fork' },
-        async response => {
-          if (!response.ok) {
-            return false
-          }
-          const text = await response.text()
-          let body: {
-            fork?: unknown
-            parent?: { full_name?: unknown } | null
-            source?: { full_name?: unknown } | null
-          } | null
-          try {
-            body = JSON.parse(text) as typeof body
-          } catch {
-            return false
-          }
-          if (body?.fork !== true) {
-            return false
-          }
-          for (const candidate of [body.parent?.full_name, body.source?.full_name]) {
-            if (typeof candidate === 'string' && repoAllowed(bases, candidate)) {
-              return true
-            }
-          }
+      const signal = AbortSignal.timeout(10_000)
+      try {
+        const installationId = await repositoryInstallation(owner, repo, signal)
+        if (installationId === undefined) {
           return false
-        },
-      )
+        }
+        const { json } = await call(
+          'POST',
+          `${api}/app/installations/${installationId}/access_tokens`,
+          {
+            repositories: [repo],
+            permissions: { metadata: 'read' },
+          },
+          signal,
+          true,
+        )
+        const token = (json as { token?: unknown } | null)?.token
+        if (typeof token !== 'string' || token === '') {
+          return false
+        }
+        const authenticated: FetchLike = (url, init) =>
+          fetchImpl(url, {
+            ...init,
+            headers: { ...init.headers, authorization: `Bearer ${token}` },
+          })
+        return await withRepositoryResponse(
+          authenticated,
+          api,
+          `${owner}/${repo}`,
+          { apiVersion, label: 'fork', authenticated: true, signal },
+          async response => {
+            if (!response.ok) {
+              return false
+            }
+            const text = await response.text()
+            let body: {
+              fork?: unknown
+              private?: unknown
+              visibility?: unknown
+              parent?: { full_name?: unknown; private?: unknown; visibility?: unknown } | null
+              source?: { full_name?: unknown; private?: unknown; visibility?: unknown } | null
+            } | null
+            try {
+              body = JSON.parse(text) as typeof body
+            } catch {
+              return false
+            }
+            const isPublic = (
+              value: { private?: unknown; visibility?: unknown } | null | undefined,
+            ): boolean =>
+              typeof value === 'object' &&
+              value !== null &&
+              value.private === false &&
+              (typeof value.visibility !== 'string' || value.visibility === 'public')
+            if (body?.fork !== true || !isPublic(body)) {
+              return false
+            }
+            return [body.parent, body.source].some(
+              candidate =>
+                isPublic(candidate) &&
+                typeof candidate?.full_name === 'string' &&
+                repoAllowed(bases, candidate.full_name),
+            )
+          },
+        )
+      } catch (error) {
+        if (signal.aborted) {
+          throw new ProviderConfigError('GitHub timed out during the fork check; retry later')
+        }
+        if (error instanceof ProviderConfigError) {
+          throw error
+        }
+        return false
+      }
     },
 
     /** Verify a public repository with no credential; a 403/429 is a provider error. */
@@ -1019,9 +1080,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       if (request.action === 'fork') {
         const token = await personalToken()
         if (token === undefined) {
-          throw new ProviderConfigError(
-            'no user token for fork; run gcb authorize',
-          )
+          throw new ProviderConfigError('no user token for fork; run gcb authorize')
         }
         const { text } = await callWithToken(
           'POST',

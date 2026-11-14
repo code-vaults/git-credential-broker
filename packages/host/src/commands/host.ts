@@ -69,7 +69,7 @@ import { loadConfigSnapshot, resolveConfigPath } from '../config.ts'
 import { clearInheritedTokens, setHostToken, tokenKeys } from '../gh-env.ts'
 import { applyProxyChoice, fetcherFor, parseProxy, type ProxyChoice } from '../http.ts'
 import { hostConfig, parseAllowEntry, repoAllowed } from '../policy.ts'
-import { isForkOfRepository, isPublicRepository } from '../public-repo.ts'
+import { isPublicRepository } from '../public-repo.ts'
 import { ConfigWatcher } from '../reload.ts'
 
 const run = promisify(execFile)
@@ -801,25 +801,26 @@ async function repoIsPublic(
 /**
  * Whether an allowlisted fork's parent is the requested repository.
  *
- * @param host - The forge host.
- * @param allow - The configured allowlist entries.
- * @param repository - The requested parent repository.
- * @param proxy - The proxy choice for the check.
- * @param apiBaseUrl - An optional API base.
- * @param apiVersion - The API version header.
- * @returns True when one allowlisted fork names the repository as its parent.
+ * The check runs through the host's gh account, so it uses its authenticated quota and the same
+ * proxy/account configuration as the operation it authorizes. The unauthenticated public API is
+ * rate-limited by shared egress addresses, which would silently turn allowFork off.
  */
 async function forkAllows(
   host: string,
   allow: readonly string[],
   repository: string,
   proxy: ProxyChoice,
-  apiBaseUrl?: string,
-  apiVersion = '2022-11-28',
+  command: string,
+  extra: readonly string[],
+  account: string | undefined,
+  cwd: string,
 ): Promise<boolean> {
-  const base =
-    apiBaseUrl ??
-    (host.toLowerCase() === 'github.com' ? 'https://api.github.com' : `https://${host}/api/v3`)
+  let env: NodeJS.ProcessEnv
+  try {
+    env = forkEnv(proxy, account, host, command, extra)
+  } catch {
+    return false
+  }
   for (const raw of allow) {
     const entry = parseAllowEntry(raw)
     if (!entry || entry.owner === '*' || entry.repo === '*') {
@@ -830,7 +831,40 @@ async function forkAllows(
       continue
     }
     try {
-      if (await isForkOfRepository(fetcherFor(proxy), base, fork, repository, apiVersion)) {
+      const result = await runBounded(command, [...extra, 'api', `repos/${fork}`], {
+        cwd,
+        env,
+        timeoutMs: 10_000,
+      })
+      if (result.code !== 0) {
+        continue
+      }
+      interface RepoMeta {
+        full_name?: unknown
+        private?: unknown
+        visibility?: unknown
+      }
+      const body = JSON.parse(result.stdout) as {
+        fork?: unknown
+        private?: unknown
+        visibility?: unknown
+        parent?: RepoMeta | null
+        source?: RepoMeta | null
+      } | null
+      const isPublic = (repo: RepoMeta | null | undefined): boolean =>
+        typeof repo === 'object' &&
+        repo !== null &&
+        repo.private === false &&
+        (typeof repo.visibility !== 'string' || repo.visibility === 'public')
+      if (body?.fork !== true || !isPublic(body)) {
+        continue
+      }
+      const parent = [body.parent, body.source].find(
+        (repo): repo is RepoMeta =>
+          typeof repo?.full_name === 'string' &&
+          repo.full_name.toLowerCase() === repository.toLowerCase(),
+      )
+      if (parent !== undefined && isPublic(parent)) {
         return true
       }
     } catch {
@@ -1303,15 +1337,15 @@ async function openOne(
     }
     let allowedByFork = false
     if (!repoAllowed(hostBlock.allow, request.repo) && hostBlock.allowFork === true) {
-      const apiBaseUrl = 'apiBaseUrl' in hostBlock ? hostBlock.apiBaseUrl : undefined
-      const apiVersion = 'apiVersion' in hostBlock ? hostBlock.apiVersion : undefined
       allowedByFork = await forkAllows(
         host,
         hostBlock.allow,
         request.repo,
         request.proxy,
-        apiBaseUrl,
-        apiVersion,
+        command,
+        extra,
+        request.account,
+        repo,
       )
     }
     if (!repoAllowed(hostBlock.allow, request.repo) && !allowedByFork) {
@@ -1474,8 +1508,10 @@ async function openOne(
             block.allow,
             target,
             request.proxy,
-            'apiBaseUrl' in block ? block.apiBaseUrl : undefined,
-            'apiBaseUrl' in block ? block.apiVersion : undefined,
+            command,
+            extra,
+            request.account,
+            repo,
           ))
         if (!allowedByFork) {
           return { error: `repository ${target} is not in the allowlist for github.com` }

@@ -44,17 +44,12 @@ it('runs an action on the parent of an allowlisted fork', async () => {
   )
   const dir = channelDir(join(repo, '.git'))
   const command = join(root, 'not-gh')
-  writeFileSync(command, '#!/bin/sh\necho "fork action"\n', 'utf8')
+  writeFileSync(
+    command,
+    '#!/bin/sh\nif [ "$1" = api ]; then\n  case "$2" in repos/alice/widget) ;; *) echo "unexpected $2" >&2; exit 1;; esac\n  echo \'{"fork":true,"private":false,"visibility":"public","parent":{"full_name":"Acme/Widget","private":false,"visibility":"public"}}\'\n  exit 0\nfi\necho "fork action"\n',
+    'utf8',
+  )
   chmodSync(command, 0o755)
-  const originalFetch = globalThis.fetch
-  let requested = ''
-  globalThis.fetch = (async (input: string | URL | Request) => {
-    requested = String(input)
-    return new Response(JSON.stringify({ fork: true, parent: { full_name: 'Acme/Widget' } }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    })
-  }) as typeof fetch
   try {
     const id = writeRequest(dir, {
       kind: 'action',
@@ -68,10 +63,8 @@ it('runs an action on the parent of an allowlisted fork', async () => {
       0,
     )
     assert.equal(readResult(dir, id)?.stdout, 'fork action\n')
-    assert.match(requested, /\/repos\/alice\/widget$/u)
     assert.equal(existsSync(join(repo, '.git', 'gcb', 'host-broker', `${id}.json`)), false)
   } finally {
-    globalThis.fetch = originalFetch
     rmSync(root, { recursive: true, force: true })
   }
 })
