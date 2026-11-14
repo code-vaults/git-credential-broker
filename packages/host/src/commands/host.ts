@@ -841,10 +841,16 @@ async function forkAllows(
       }
       const body = JSON.parse(result.stdout) as {
         fork?: unknown
+        private?: unknown
+        visibility?: unknown
         parent?: { full_name?: unknown } | null
         source?: { full_name?: unknown } | null
       } | null
-      if (body?.fork !== true) {
+      if (
+        body?.fork !== true ||
+        body.private !== false ||
+        (typeof body.visibility === 'string' && body.visibility !== 'public')
+      ) {
         continue
       }
       const names = [body.parent?.full_name, body.source?.full_name]

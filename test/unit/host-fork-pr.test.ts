@@ -25,7 +25,7 @@ describe('opening a pull request on a fork parent', () => {
     const command = join(root, 'not-gh')
     writeFileSync(
       command,
-      '#!/bin/sh\nif [ "$1" = api ]; then echo \'{"fork":true,"parent":{"full_name":"vite-hub/vitehub"}}\'; exit 0; fi\nprintf \'%s\\n\' "$@" > ' +
+      '#!/bin/sh\nif [ "$1" = api ]; then echo \'{"fork":true,"private":false,"visibility":"public","parent":{"full_name":"vite-hub/vitehub"}}\'; exit 0; fi\nprintf \'%s\\n\' "$@" > ' +
         argvFile +
         '\necho "https://github.com/vite-hub/vitehub/pull/9"\n',
       'utf8',
