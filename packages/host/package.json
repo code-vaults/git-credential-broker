@@ -1,6 +1,6 @@
 {
   "name": "gcb-host",
-  "version": "0.11.3",
+  "version": "0.11.4",
   "type": "module",
   "description": "Host-side gcb broker, configuration, providers and administration commands.",
   "repository": {
@@ -31,7 +31,7 @@
     "prepack": "clean-pkg-json"
   },
   "dependencies": {
-    "gcb-core": "0.11.3",
+    "gcb-core": "0.11.4",
     "node-fetch-native": "^1.6.7",
     "x-fetch": "^0.3.0",
     "yaml": "^2.9.1"

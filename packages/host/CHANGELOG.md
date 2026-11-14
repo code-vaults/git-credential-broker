@@ -1,5 +1,15 @@
 # gcb-host
 
+## 0.11.4
+
+### Patch Changes
+
+- [#166](https://github.com/code-vaults/git-credential-broker/pull/166) [`49e733d`](https://github.com/code-vaults/git-credential-broker/commit/49e733d6cd49b9e20e382041ebe3cbd79d0cf018) Thanks [@JounQin](https://github.com/JounQin)! - Check `allowFork` through authenticated credentials instead of the unauthenticated public API: the
+  host uses its `gh` account, and the app provider uses the installation on the fork (rejecting a fork
+  without one). Both require a public fork and a public matched parent/source.
+- Updated dependencies []:
+  - gcb-core@0.11.4
+
 ## 0.11.3
 
 ### Patch Changes
