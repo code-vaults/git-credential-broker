@@ -935,12 +935,11 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     /** Check a public fork through the app installation on that fork, not an anonymous request. */
     async isForkOf(owner: string, repo: string, bases: readonly string[]): Promise<boolean> {
       const signal = AbortSignal.timeout(10_000)
-      const installationId = await repositoryInstallation(owner, repo, signal)
-      if (installationId === undefined) {
-        return false
-      }
-      let token: string
       try {
+        const installationId = await repositoryInstallation(owner, repo, signal)
+        if (installationId === undefined) {
+          return false
+        }
         const { json } = await call(
           'POST',
           `${api}/app/installations/${installationId}/access_tokens`,
@@ -951,23 +950,15 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
           signal,
           true,
         )
-        const minted = (json as { token?: unknown } | null)?.token
-        if (typeof minted !== 'string' || minted === '') {
+        const token = (json as { token?: unknown } | null)?.token
+        if (typeof token !== 'string' || token === '') {
           return false
         }
-        token = minted
-      } catch (error) {
-        if (error instanceof ProviderConfigError) {
-          throw error
-        }
-        return false
-      }
-      const authenticated: FetchLike = (url, init) =>
-        fetchImpl(url, {
-          ...init,
-          headers: { ...init.headers, authorization: `Bearer ${token}` },
-        })
-      try {
+        const authenticated: FetchLike = (url, init) =>
+          fetchImpl(url, {
+            ...init,
+            headers: { ...init.headers, authorization: `Bearer ${token}` },
+          })
         return await withRepositoryResponse(
           authenticated,
           api,
@@ -1009,6 +1000,9 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
           },
         )
       } catch (error) {
+        if (signal.aborted) {
+          throw new ProviderConfigError('GitHub timed out during the fork check; retry later')
+        }
         if (error instanceof ProviderConfigError) {
           throw error
         }
