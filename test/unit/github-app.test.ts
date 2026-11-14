@@ -607,7 +607,7 @@ describe('createGithubAppProvider', () => {
     }
   })
 
-  it('passes the deadline and redirect refusal to the fork lookup', async () => {
+  it('authenticates the fork lookup and passes the deadline and redirect policy', async () => {
     const calls: RecordedCall[] = []
     const provider = providerFor({
       calls,
@@ -621,15 +621,28 @@ describe('createGithubAppProvider', () => {
           signal: init.signal,
           redirect: init.redirect,
         })
-        return jsonResponse({ fork: true, parent: { full_name: 'acme/widget' } })
+        if (url.endsWith('/repos/alice/widget/installation')) {
+          return jsonResponse({ id: 42 })
+        }
+        if (url.includes('/access_tokens')) {
+          return jsonResponse({ token: 'ghs_fork_token' }, 201)
+        }
+        return jsonResponse({
+          fork: true,
+          private: false,
+          visibility: 'public',
+          parent: { full_name: 'acme/widget', private: false, visibility: 'public' },
+        })
       },
     })
     assert.equal(await provider.isForkOf!('alice', 'widget', ['acme/widget']), true)
-    assert.ok(calls[0]?.signal instanceof AbortSignal, 'the fork check must carry the abort signal')
-    assert.equal(calls[0]?.redirect, 'error', 'the fork check must refuse redirects')
+    const forkCall = calls.find(call => call.url.endsWith('/repos/alice/widget'))
+    assert.ok(forkCall?.signal instanceof AbortSignal, 'the fork check must carry the abort signal')
+    assert.equal(forkCall?.redirect, 'error', 'the fork check must refuse redirects')
+    assert.equal(forkCall?.authorization, 'Bearer ghs_fork_token')
   })
 
-  it('classifies public and fork lookups without credentials', async () => {
+  it('classifies public lookups without credentials', async () => {
     const response = (status: number, body: unknown) => ({
       ok: status >= 200 && status < 300,
       status,
@@ -649,31 +662,73 @@ describe('createGithubAppProvider', () => {
     assert.equal(await provider(404, {}).isPublicRepository!('acme', 'widget'), false)
     await assert.rejects(provider(429, {}).isPublicRepository!('acme', 'widget'), /rate-limited/u)
     await assert.rejects(provider(403, {}).isPublicRepository!('acme', 'widget'), /refused/u)
+  })
+
+  it('checks forks through the installation and requires public metadata', async () => {
+    const response = (status: number, body: unknown) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: () => null },
+      text: async () => JSON.stringify(body),
+    })
+    const check = async (
+      status: number,
+      body: unknown,
+      installed = true,
+    ): Promise<{ result?: boolean; error?: Error }> => {
+      const calls: RecordedCall[] = []
+      const provider = providerFor({
+        calls,
+        fetchImpl: async (url, init) => {
+          calls.push({
+            url,
+            method: init.method,
+            body: recordedBody(init.body),
+            authorization: init.headers['authorization'],
+            raw: init.body ?? '',
+          })
+          if (url.endsWith('/repos/alice/widget/installation')) {
+            return installed ? jsonResponse({ id: 42 }) : jsonResponse({}, 404)
+          }
+          if (url.includes('/access_tokens')) {
+            return jsonResponse({ token: 'ghs_fork_token' }, 201)
+          }
+          return response(status, body)
+        },
+      })
+      try {
+        return { result: await provider.isForkOf!('alice', 'widget', ['acme/widget']) }
+      } catch (error) {
+        return { error: error as Error }
+      }
+    }
+    const parent = { full_name: 'acme/widget', private: false, visibility: 'public' }
     assert.equal(
-      await provider(200, { fork: true, parent: { full_name: 'acme/widget' } }).isForkOf!(
-        'alice',
-        'widget',
-        ['acme/widget'],
-      ),
+      (await check(200, { fork: true, private: false, visibility: 'public', parent })).result,
       true,
     )
     assert.equal(
-      await provider(200, { fork: true, source: { full_name: 'acme/widget' } }).isForkOf!(
-        'alice',
-        'widget',
-        ['acme/widget'],
-      ),
+      (await check(200, { fork: true, private: false, visibility: 'public', source: parent }))
+        .result,
       true,
     )
     assert.equal(
-      await provider(200, { fork: false }).isForkOf!('alice', 'widget', ['acme/widget']),
+      (await check(200, { fork: true, private: true, visibility: 'private', parent })).result,
       false,
     )
-    assert.equal(await provider(404, {}).isForkOf!('alice', 'widget', ['acme/widget']), false)
-    await assert.rejects(
-      provider(429, {}).isForkOf!('alice', 'widget', ['acme/widget']),
-      /rate-limited/u,
+    assert.equal(
+      (
+        await check(200, {
+          fork: true,
+          private: false,
+          visibility: 'public',
+          parent: { ...parent, private: true, visibility: 'private' },
+        })
+      ).result,
+      false,
     )
+    assert.equal((await check(200, {}, false)).result, false)
+    assert.match((await check(429, {})).error?.message ?? '', /rate-limited/u)
   })
 
   it('mints a metadata-only token for a verified public read', async () => {

@@ -914,39 +914,82 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       tokens.set(request.full, credential)
       return { ...credential, cached: false }
     },
-    /** Check a public fork with no credential; only confirmed fork relationships pass. */
+    /** Check a public fork through the app installation on that fork, not an anonymous request. */
     async isForkOf(owner: string, repo: string, bases: readonly string[]): Promise<boolean> {
-      return withRepositoryResponse(
-        fetchImpl,
-        api,
-        `${owner}/${repo}`,
-        { apiVersion, label: 'fork' },
-        async response => {
-          if (!response.ok) {
-            return false
-          }
-          const text = await response.text()
-          let body: {
-            fork?: unknown
-            parent?: { full_name?: unknown } | null
-            source?: { full_name?: unknown } | null
-          } | null
-          try {
-            body = JSON.parse(text) as typeof body
-          } catch {
-            return false
-          }
-          if (body?.fork !== true) {
-            return false
-          }
-          for (const candidate of [body.parent?.full_name, body.source?.full_name]) {
-            if (typeof candidate === 'string' && repoAllowed(bases, candidate)) {
-              return true
-            }
-          }
+      const installationId = await repositoryInstallation(owner, repo)
+      if (installationId === undefined) {
+        return false
+      }
+      let token: string
+      try {
+        const { json } = await call(
+          'POST',
+          `${api}/app/installations/${installationId}/access_tokens`,
+          {
+            repositories: [repo],
+            permissions: { metadata: 'read' },
+          },
+        )
+        const minted = (json as { token?: unknown } | null)?.token
+        if (typeof minted !== 'string' || minted === '') {
           return false
-        },
-      )
+        }
+        token = minted
+      } catch {
+        return false
+      }
+      const authenticated: FetchLike = (url, init) =>
+        fetchImpl(url, {
+          ...init,
+          headers: { ...init.headers, authorization: `Bearer ${token}` },
+        })
+      try {
+        return await withRepositoryResponse(
+          authenticated,
+          api,
+          `${owner}/${repo}`,
+          { apiVersion, label: 'fork', authenticated: true },
+          async response => {
+            if (!response.ok) {
+              return false
+            }
+            const text = await response.text()
+            let body: {
+              fork?: unknown
+              private?: unknown
+              visibility?: unknown
+              parent?: { full_name?: unknown; private?: unknown; visibility?: unknown } | null
+              source?: { full_name?: unknown; private?: unknown; visibility?: unknown } | null
+            } | null
+            try {
+              body = JSON.parse(text) as typeof body
+            } catch {
+              return false
+            }
+            const isPublic = (
+              value: { private?: unknown; visibility?: unknown } | null | undefined,
+            ): boolean =>
+              typeof value === 'object' &&
+              value !== null &&
+              value.private === false &&
+              (typeof value.visibility !== 'string' || value.visibility === 'public')
+            if (body?.fork !== true || !isPublic(body)) {
+              return false
+            }
+            return [body.parent, body.source].some(
+              candidate =>
+                isPublic(candidate) &&
+                typeof candidate?.full_name === 'string' &&
+                repoAllowed(bases, candidate.full_name),
+            )
+          },
+        )
+      } catch (error) {
+        if (error instanceof ProviderConfigError) {
+          throw error
+        }
+        return false
+      }
     },
 
     /** Verify a public repository with no credential; a 403/429 is a provider error. */
@@ -1019,9 +1062,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       if (request.action === 'fork') {
         const token = await personalToken()
         if (token === undefined) {
-          throw new ProviderConfigError(
-            'no user token for fork; run gcb authorize',
-          )
+          throw new ProviderConfigError('no user token for fork; run gcb authorize')
         }
         const { text } = await callWithToken(
           'POST',

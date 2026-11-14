@@ -12,10 +12,12 @@ export interface RepositoryCheckOptions {
   readonly timeoutMs?: number
   /** Name used in the timeout and rate-limit messages. */
   readonly label?: string
+  /** Whether the request carried an app token; changes only the refusal wording. */
+  readonly authenticated?: boolean
 }
 
 /**
- * Run one unauthenticated repository request with a deadline and no redirects.
+ * Run one repository request with a deadline and no redirects.
  *
  * @param fetchImpl - The transport for this host's proxy choice.
  * @param apiBaseUrl - The API base, without a trailing path.
@@ -52,8 +54,8 @@ export async function withRepositoryResponse<T>(
       const label = options.label ?? 'repository'
       throw new ProviderConfigError(
         exhausted
-          ? `GitHub rate-limited the unauthenticated ${label} check; retry later or allowlist the repository`
-          : `GitHub refused the unauthenticated ${label} check; check the access policy or allowlist the repository`,
+          ? `GitHub rate-limited the ${options.authenticated === true ? 'authenticated' : 'unauthenticated'} ${label} check; retry later or allowlist the repository`
+          : `GitHub refused the ${options.authenticated === true ? 'authenticated' : 'unauthenticated'} ${label} check; check the access policy or allowlist the repository`,
       )
     }
     return await handle(response)
