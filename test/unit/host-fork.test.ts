@@ -46,7 +46,7 @@ it('runs an action on the parent of an allowlisted fork', async () => {
   const command = join(root, 'not-gh')
   writeFileSync(
     command,
-    '#!/bin/sh\nif [ "$1" = api ]; then echo \'{"fork":true,"private":false,"visibility":"public","parent":{"full_name":"Acme/Widget"}}\'; exit 0; fi\necho "fork action"\n',
+    '#!/bin/sh\nif [ "$1" = api ]; then\n  case "$2" in repos/alice/widget) ;; *) echo "unexpected $2" >&2; exit 1;; esac\n  echo \'{"fork":true,"private":false,"visibility":"public","parent":{"full_name":"Acme/Widget","private":false,"visibility":"public"}}\'\n  exit 0\nfi\necho "fork action"\n',
     'utf8',
   )
   chmodSync(command, 0o755)

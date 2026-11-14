@@ -839,24 +839,32 @@ async function forkAllows(
       if (result.code !== 0) {
         continue
       }
+      interface RepoMeta {
+        full_name?: unknown
+        private?: unknown
+        visibility?: unknown
+      }
       const body = JSON.parse(result.stdout) as {
         fork?: unknown
         private?: unknown
         visibility?: unknown
-        parent?: { full_name?: unknown } | null
-        source?: { full_name?: unknown } | null
+        parent?: RepoMeta | null
+        source?: RepoMeta | null
       } | null
-      if (
-        body?.fork !== true ||
-        body.private !== false ||
-        (typeof body.visibility === 'string' && body.visibility !== 'public')
-      ) {
+      const isPublic = (repo: RepoMeta | null | undefined): boolean =>
+        typeof repo === 'object' &&
+        repo !== null &&
+        repo.private === false &&
+        (typeof repo.visibility !== 'string' || repo.visibility === 'public')
+      if (body?.fork !== true || !isPublic(body)) {
         continue
       }
-      const names = [body.parent?.full_name, body.source?.full_name]
-        .filter((name): name is string => typeof name === 'string')
-        .map(name => name.toLowerCase())
-      if (names.includes(repository.toLowerCase())) {
+      const parent = [body.parent, body.source].find(
+        (repo): repo is RepoMeta =>
+          typeof repo?.full_name === 'string' &&
+          repo.full_name.toLowerCase() === repository.toLowerCase(),
+      )
+      if (parent !== undefined && isPublic(parent)) {
         return true
       }
     } catch {
