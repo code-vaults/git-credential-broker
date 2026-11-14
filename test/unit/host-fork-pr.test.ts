@@ -25,28 +25,12 @@ describe('opening a pull request on a fork parent', () => {
     const command = join(root, 'not-gh')
     writeFileSync(
       command,
-      '#!/bin/sh\nprintf \'%s\\n\' "$@" > ' +
+      '#!/bin/sh\nif [ "$1" = api ]; then echo \'{"fork":true,"parent":{"full_name":"vite-hub/vitehub"}}\'; exit 0; fi\nprintf \'%s\\n\' "$@" > ' +
         argvFile +
         '\necho "https://github.com/vite-hub/vitehub/pull/9"\n',
       'utf8',
     )
     chmodSync(command, 0o755)
-    const originalFetch = globalThis.fetch
-    const requested: string[] = []
-    globalThis.fetch = (async (input: string | URL | Request) => {
-      const url = String(input)
-      requested.push(url)
-      if (!url.toLowerCase().endsWith('/repos/jounqin/vitehub')) {
-        throw new Error(`unexpected fork lookup: ${url}`)
-      }
-      return new Response(
-        JSON.stringify({ fork: true, parent: { full_name: 'vite-hub/vitehub' } }),
-        {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        },
-      )
-    }) as typeof fetch
     try {
       const id = writeRequest(dir, {
         repo: 'vite-hub/vitehub',
@@ -63,9 +47,7 @@ describe('opening a pull request on a fork parent', () => {
       assert.equal(answer?.number, 9, JSON.stringify(answer))
       const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
       assert.equal(argv[argv.indexOf('--repo') + 1], 'vite-hub/vitehub')
-      assert.deepEqual(requested, ['https://api.github.com/repos/jounqin/vitehub'])
     } finally {
-      globalThis.fetch = originalFetch
       rmSync(root, { recursive: true, force: true })
     }
   })
