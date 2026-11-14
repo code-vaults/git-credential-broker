@@ -638,6 +638,14 @@ describe('createGithubAppProvider', () => {
     assert.equal(await provider.isForkOf!('alice', 'widget', ['acme/widget']), true)
     const forkCall = calls.find(call => call.url.endsWith('/repos/alice/widget'))
     assert.ok(forkCall?.signal instanceof AbortSignal, 'the fork check must carry the abort signal')
+    assert.ok(
+      calls.find(call => call.url.endsWith('/installation'))?.signal instanceof AbortSignal,
+      'the installation lookup shares the deadline',
+    )
+    assert.ok(
+      calls.find(call => call.url.includes('/access_tokens'))?.signal instanceof AbortSignal,
+      'the token mint shares the deadline',
+    )
     assert.equal(forkCall?.redirect, 'error', 'the fork check must refuse redirects')
     assert.equal(forkCall?.authorization, 'Bearer ghs_fork_token')
   })
@@ -675,6 +683,7 @@ describe('createGithubAppProvider', () => {
       status: number,
       body: unknown,
       installed = true,
+      tokenStatus = 201,
     ): Promise<{ result?: boolean; error?: Error }> => {
       const calls: RecordedCall[] = []
       const provider = providerFor({
@@ -691,7 +700,9 @@ describe('createGithubAppProvider', () => {
             return installed ? jsonResponse({ id: 42 }) : jsonResponse({}, 404)
           }
           if (url.includes('/access_tokens')) {
-            return jsonResponse({ token: 'ghs_fork_token' }, 201)
+            return tokenStatus === 201
+              ? jsonResponse({ token: 'ghs_fork_token' }, 201)
+              : jsonResponse({ message: 'rate limited' }, tokenStatus)
           }
           return response(status, body)
         },
@@ -729,6 +740,10 @@ describe('createGithubAppProvider', () => {
     )
     assert.equal((await check(200, {}, false)).result, false)
     assert.match((await check(429, {})).error?.message ?? '', /rate-limited/u)
+    assert.match(
+      (await check(200, { fork: true }, true, 403)).error?.message ?? '',
+      /rate-limited|refused/u,
+    )
   })
 
   it('mints a metadata-only token for a verified public read', async () => {

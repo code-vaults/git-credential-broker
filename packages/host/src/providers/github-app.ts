@@ -286,6 +286,8 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     method: string,
     url: string,
     body?: Record<string, unknown>,
+    signal?: AbortSignal,
+    authStage = false,
   ): Promise<{ json: unknown; link: string | null }> {
     const jwt = signAppJwt({ privateKeyPem: keyPem, iss, nowMs: now() })
     const headers: Record<string, string> = {
@@ -302,6 +304,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       method,
       headers,
       ...(body ? { body: JSON.stringify(body) } : {}),
+      ...(signal === undefined ? {} : { signal }),
     })
 
     const text = await response.text()
@@ -312,6 +315,11 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
       json = null
     }
     if (!response.ok) {
+      if (authStage && (response.status === 403 || response.status === 429)) {
+        throw new ProviderConfigError(
+          `GitHub rate-limited or refused the app installation token request; retry later`,
+        )
+      }
       const message =
         json !== null && typeof json === 'object' && 'message' in json
           ? String((json as { message: unknown }).message)
@@ -718,7 +726,11 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
    * @param repo - The repository name.
    * @returns The installation id, or undefined when the app is not installed there.
    */
-  async function repositoryInstallation(owner: string, repo: string): Promise<number | undefined> {
+  async function repositoryInstallation(
+    owner: string,
+    repo: string,
+    signal?: AbortSignal,
+  ): Promise<number | undefined> {
     const jwt = signAppJwt({ privateKeyPem: keyPem, iss, nowMs: now() })
     const response = await fetchImpl(`${api}/repos/${owner}/${repo}/installation`, {
       method: 'GET',
@@ -728,11 +740,17 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
         'x-github-api-version': apiVersion,
         'user-agent': 'gcb',
       },
+      ...(signal === undefined ? {} : { signal }),
     })
     if (response.status === 404) {
       return undefined
     }
     if (!response.ok) {
+      if (response.status === 403 || response.status === 429) {
+        throw new ProviderConfigError(
+          'GitHub rate-limited or refused the app installation lookup; retry later',
+        )
+      }
       const text = await response.text()
       throw new Error(
         `GitHub API GET /repos/${owner}/${repo}/installation failed with ${response.status}: ${text.slice(0, 200)}`,
@@ -916,7 +934,8 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
     },
     /** Check a public fork through the app installation on that fork, not an anonymous request. */
     async isForkOf(owner: string, repo: string, bases: readonly string[]): Promise<boolean> {
-      const installationId = await repositoryInstallation(owner, repo)
+      const signal = AbortSignal.timeout(10_000)
+      const installationId = await repositoryInstallation(owner, repo, signal)
       if (installationId === undefined) {
         return false
       }
@@ -929,13 +948,18 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
             repositories: [repo],
             permissions: { metadata: 'read' },
           },
+          signal,
+          true,
         )
         const minted = (json as { token?: unknown } | null)?.token
         if (typeof minted !== 'string' || minted === '') {
           return false
         }
         token = minted
-      } catch {
+      } catch (error) {
+        if (error instanceof ProviderConfigError) {
+          throw error
+        }
         return false
       }
       const authenticated: FetchLike = (url, init) =>
@@ -948,7 +972,7 @@ export function createGithubAppProvider(options: GithubAppProviderOptions): Prov
           authenticated,
           api,
           `${owner}/${repo}`,
-          { apiVersion, label: 'fork', authenticated: true },
+          { apiVersion, label: 'fork', authenticated: true, signal },
           async response => {
             if (!response.ok) {
               return false

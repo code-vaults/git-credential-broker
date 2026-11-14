@@ -14,6 +14,8 @@ export interface RepositoryCheckOptions {
   readonly label?: string
   /** Whether the request carried an app token; changes only the refusal wording. */
   readonly authenticated?: boolean
+  /** Caller-owned deadline shared with the stages around this request. */
+  readonly signal?: AbortSignal
 }
 
 /**
@@ -35,6 +37,10 @@ export async function withRepositoryResponse<T>(
 ): Promise<T> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? CHECK_TIMEOUT_MS)
+  const signal =
+    options.signal === undefined
+      ? controller.signal
+      : AbortSignal.any([controller.signal, options.signal])
   try {
     const response = await fetchImpl(`${apiBaseUrl}/repos/${repository}`, {
       method: 'GET',
@@ -43,7 +49,7 @@ export async function withRepositoryResponse<T>(
         'x-github-api-version': options.apiVersion ?? '2022-11-28',
         'user-agent': 'gcb',
       },
-      signal: controller.signal,
+      signal,
       redirect: 'error',
     })
     if (response.status === 403 || response.status === 429) {
@@ -60,7 +66,7 @@ export async function withRepositoryResponse<T>(
     }
     return await handle(response)
   } catch (error) {
-    if (controller.signal.aborted) {
+    if (signal.aborted) {
       throw new ProviderConfigError(
         `GitHub timed out during the ${options.label ?? 'repository'} check; retry later`,
       )
